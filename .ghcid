@@ -1,0 +1,3 @@
+--command "stack repl --main-is hanostr:exe:app"
+--test ":main"
+--restart=package.yaml

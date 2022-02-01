@@ -1,0 +1,13 @@
+.stack-work/
+.vscode/
+.idea/
+haddock/
+dist-newstyle/
+dist-docs.*/
+*~
+*.aux
+*.hp
+*.prof
+*.ps
+*.ser
+cabal.project.local*
