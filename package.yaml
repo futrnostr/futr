@@ -1,34 +1,42 @@
-name:                hanostr
+name:                futr
 version:             0.1.0.0
 #synopsis:
 #description:
-homepage:            https://github.com/prolic/hanostr#readme
-license:             BSD3
-author:              Author name here
-maintainer:          example@example.com
-copyright:           2021 Author name here
+homepage:            https://github.com/prolic/futr#readme
+license:             MIT
+author:              Sascha-Oliver Prolic
+maintainer:          saschaprolic@googlemail.com
+copyright:           2022 Sascha-Oliver Prolic
 #category:
 extra-source-files:
 - README.md
 
-default-extensions:
-- OverloadedStrings
-
 dependencies:
-  - base >= 4.7 && < 5
+  - aeson
+  - base >=4.9 && <5
+  - base16 >=0.3.0.1
+  - bytestring >=0.10.8 && <0.11
+  - cryptohash-sha256
   - data-default
   - lens
   - monomer
   - mtl
+  - network
+  - connection
+  - parallel-io
+  - secp256k1-schnorr
   - text
   - text-show
-  - wuss
+  - unix-time
+  - vector
   - websockets
+  - wuss
 
 executables:
   app:
     source-dirs:      src
     main:             Main.hs
+    extra-libraries:  secp256k1
     ghc-options:
     - -fwarn-incomplete-patterns
     - -threaded

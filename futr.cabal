@@ -4,13 +4,13 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           hanostr
+name:           futr
 version:        0.1.0.0
-homepage:       https://github.com/githubuser/hanostr#readme
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2021 Author name here
-license:        BSD3
+homepage:       https://github.com/prolic/futr#readme
+author:         Sascha-Oliver Prolic
+maintainer:     saschaprolic@googlemail.com
+copyright:      2022 Sascha-Oliver Prolic
+license:        MIT
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
@@ -19,20 +19,31 @@ extra-source-files:
 executable app
   main-is: Main.hs
   other-modules:
-      Paths_monomer_starter
+      NostrTypes
+      Paths_futr
   hs-source-dirs:
       src
-  default-extensions:
-      OverloadedStrings
   ghc-options: -fwarn-incomplete-patterns -threaded
+  extra-libraries:
+      secp256k1
   build-depends:
-      base >=4.7 && <5
+      aeson
+    , base >=4.9 && <5
+    , base16 >=0.3.0.1
+    , bytestring >=0.10.8 && <0.11
+    , connection
+    , cryptohash-sha256
     , data-default
     , lens
     , monomer
     , mtl
+    , network
+    , parallel-io
+    , secp256k1-schnorr
     , text
     , text-show
+    , unix-time
+    , vector
     , websockets
     , wuss
   default-language: Haskell2010

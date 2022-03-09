@@ -18,6 +18,45 @@ packages:
       sha256: 6972485b1da425a7af7be4407217748fc83fbef272d9c7174ca65cd7faf201bb
   original:
     hackage: monomer-1.3.0.0
+- completed:
+    hackage: parallel-io-0.3.5@sha256:97db32eb84b3141f4957f6d208c0ef8adce647cbf68099417e93c7d9a45f9b35,3482
+    pantry-tree:
+      size: 706
+      sha256: 9c81a6a331620aca19c7f8cfb88df2a9584346820687d75147b2a7bab87e112b
+  original:
+    hackage: parallel-io-0.3.5
+- completed:
+    hackage: DRBG-0.5.5@sha256:3b8040bed356e2b63927a27fb6d5adbd19d70c9e1d1bb66111bbeb33e56900eb,2259
+    pantry-tree:
+      size: 896
+      sha256: 586ee2257b255cb7f2a3663711199f9de9e70445ce7cb192f5af07dd66eadac2
+  original:
+    hackage: DRBG-0.5.5@sha256:3b8040bed356e2b63927a27fb6d5adbd19d70c9e1d1bb66111bbeb33e56900eb,2259
+- completed:
+    hackage: cipher-aes128-0.7.0.6@sha256:6efdf4af08772b6c99e47ec7586bdc26deb33d8ca797c64affcb4bd7aaae9884,3413
+    pantry-tree:
+      size: 1232
+      sha256: c6e97f26dcb0975380131fc0899a2a4d44c5b1adefcfa471fa9008b68300ffac
+  original:
+    hackage: cipher-aes128-0.7.0.6@sha256:6efdf4af08772b6c99e47ec7586bdc26deb33d8ca797c64affcb4bd7aaae9884,3413
+- completed:
+    hackage: cryptohash-sha256-0.11.102.1@sha256:188d0b5a0491e8b686b32d9b144c9287760ba333d2509bf3f17e3d846fbc2332,5629
+    pantry-tree:
+      size: 726
+      sha256: 081a11b38601ba83db14767b7a0664846bd6bc4902c1d3c5efa6ca5e5ee45f51
+  original:
+    hackage: cryptohash-sha256-0.11.102.1@sha256:188d0b5a0491e8b686b32d9b144c9287760ba333d2509bf3f17e3d846fbc2332,5629
+- completed:
+    name: secp256k1-schnorr
+    version: 0.0.1
+    git: https://github.com/prolic/secp256k1-schnorr.git
+    pantry-tree:
+      size: 773
+      sha256: 5bb4b424c06201b0ba480a1eb86406bf1dd938951bb0f4f7fcd39399c0d453d9
+    commit: bdfb38a9cf170e95c373ceb564f7c5e5232b6542
+  original:
+    git: https://github.com/prolic/secp256k1-schnorr.git
+    commit: bdfb38a9cf170e95c373ceb564f7c5e5232b6542
 snapshots:
 - completed:
     size: 586292
