@@ -65,7 +65,6 @@ data AppModel =
     }
   deriving (Eq)
 
---newtype AppModel = AppModel
 data AppEvent
   = AppInit
   | RelayConnected Relay
@@ -103,26 +102,33 @@ buildUI wenv model =
         , label $ T.pack $ exportXOnlyPubKey $ deriveXOnlyPubKey k
         ] `styleBasic`
       [padding 10]
-    Nothing ->
-      vstack
-        [ label "Welcome to nostr"
-        , label "Wanna generate a new key pair to start?"
+    Nothing -> generateOrImportKeyPairStack model
+
+generateOrImportKeyPairStack :: AppModel -> WidgetNode AppModel AppEvent
+generateOrImportKeyPairStack model =
+  vstack
+    [ label "Welcome to nostr"
+    , spacer
+    , label "To get started, you need a valid key pair first"
+    , spacer
+    , hstack
+        [ label "Generate new key pair"
         , spacer
-        , hstack
-            [ label "Generate new key pair"
-            , spacer
-            , button "Generate" GenerateKeyPair
-            ]
+        , button "Generate" GenerateKeyPair
+        ]
+    , spacer
+    , label "or import an existing private key"
+    , spacer
+    , hstack
+        [ textField mySecKeyInput `nodeKey` "importmyprivatekey"
         , spacer
-        , hstack
-            [ label "or import an existing private key"
-            , spacer
-            , textField mySecKeyInput `nodeKey` "importmyprivatekey"
-            , spacer
-            , button "Import" $ ImportSecKey
-            ]
-        ] `styleBasic`
-      [padding 10]
+        , button "Import" ImportSecKey `nodeEnabled` isValidPrivateKey
+        ]
+    ] `styleBasic`
+  [padding 10]
+  where
+    isValidPrivateKey =
+      isJust $ maybe Nothing secKey $ decodeHex $ view mySecKeyInput model
 
 handleEvent ::
      WidgetEnv AppModel AppEvent
@@ -131,15 +137,13 @@ handleEvent ::
   -> AppEvent
   -> [AppEventResponse AppModel AppEvent]
 handleEvent wenv node model evt =
-  case evt
-  --AppInit -> map ($ \r -> Producer $ connectRelay r) defaultPool
-        of
+  case evt of
     AppInit -> []
     RelayConnected r -> []
+    RelayDisconnected r -> []
     AddRelay r -> [Producer $ connectRelay r]
     AppIncrease -> [Model (model & clickCount +~ 1)]
     GenerateKeyPair -> [Producer generateNewKeyPair]
-    --SecKeyGenerated k -> [Model (model & mySecKey .~ Just k)]
     KeyPairGenerated k ->
       [ Model
           model
