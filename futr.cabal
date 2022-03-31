@@ -16,7 +16,7 @@ build-type:     Simple
 extra-source-files:
     README.md
 
-executable app
+executable futr
   main-is: Main.hs
   other-modules:
       NostrTypes

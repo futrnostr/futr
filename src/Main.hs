@@ -57,8 +57,11 @@ defaultPool =
 
 data AppModel =
   AppModel
-    { _clickCount :: Int
-    , pool        :: [Relay]
+    { _clickCount    :: Int
+    , _myKeyPair     :: Maybe KeyPair
+    , _myXOnlyPubKey :: Maybe XOnlyPubKey
+    , _pool          :: [Relay]
+    , _mySecKeyInput :: Text
     }
   deriving (Eq)
 
@@ -69,15 +72,18 @@ data AppEvent
   | AddRelay Relay
   | AppIncrease
   | RelayDisconnected Relay
+  | GenerateKeyPair
+  | KeyPairGenerated KeyPair
+  | ImportSecKey
   deriving (Eq, Show)
 
 makeLenses 'AppModel
 
 buildUI ::
      WidgetEnv AppModel AppEvent -> AppModel -> WidgetNode AppModel AppEvent
-buildUI wenv model = widgetTree
-  where
-    widgetTree =
+buildUI wenv model =
+  case view myKeyPair model of
+    Just k ->
       vstack
         [ label "Hello, nostr"
         , label "Haskell GUI Development"
@@ -86,6 +92,34 @@ buildUI wenv model = widgetTree
             [ label $ "Click count: " <> showt (model ^. clickCount)
             , spacer
             , button "Increase count" AppIncrease
+            ]
+        , spacer
+        , label "KeyPair"
+        , spacer
+        , label $ T.pack $ exportKeyPair k
+        , spacer
+        , label "XOnlyPubKey"
+        , spacer
+        , label $ T.pack $ exportXOnlyPubKey $ deriveXOnlyPubKey k
+        ] `styleBasic`
+      [padding 10]
+    Nothing ->
+      vstack
+        [ label "Welcome to nostr"
+        , label "Wanna generate a new key pair to start?"
+        , spacer
+        , hstack
+            [ label "Generate new key pair"
+            , spacer
+            , button "Generate" GenerateKeyPair
+            ]
+        , spacer
+        , hstack
+            [ label "or import an existing private key"
+            , spacer
+            , textField mySecKeyInput `nodeKey` "importmyprivatekey"
+            , spacer
+            , button "Import" $ ImportSecKey
             ]
         ] `styleBasic`
       [padding 10]
@@ -100,10 +134,18 @@ handleEvent wenv node model evt =
   case evt
   --AppInit -> map ($ \r -> Producer $ connectRelay r) defaultPool
         of
-    AppInit          -> []
+    AppInit -> []
     RelayConnected r -> []
-    AddRelay r       -> [Producer $ connectRelay r]
-    AppIncrease      -> [Model (model & clickCount +~ 1)]
+    AddRelay r -> [Producer $ connectRelay r]
+    AppIncrease -> [Model (model & clickCount +~ 1)]
+    GenerateKeyPair -> [Producer generateNewKeyPair]
+    --SecKeyGenerated k -> [Model (model & mySecKey .~ Just k)]
+    KeyPairGenerated k ->
+      [ Model
+          model
+            {_myKeyPair = Just k, _myXOnlyPubKey = Just $ deriveXOnlyPubKey k}
+      ]
+    ImportSecKey -> [Model $ importSecKey model]
 
 {-
 initRelayConnections :: [Relay] -> IO AppEvent
@@ -114,7 +156,20 @@ initRelayConnections p = do
 connectRelay :: Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay r sendMsg = do
   runSecureClient (host r) (port r) "/" (app r)
-  sendMsg (RelayConnected r)
+  sendMsg $ RelayConnected r
+
+generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
+generateNewKeyPair sendMsg = do
+  k <- generateKeyPair
+  sendMsg $ KeyPairGenerated k
+
+importSecKey :: AppModel -> AppModel
+importSecKey m = m {_myKeyPair = kp, _mySecKeyInput = "", _myXOnlyPubKey = pk}
+  where
+    kp =
+      fmap keyPairFromSecKey $
+      maybe Nothing secKey $ decodeHex $ view mySecKeyInput m
+    pk = fmap deriveXOnlyPubKey kp
 
 app :: Relay -> ClientApp ()
 app r conn = do
@@ -153,7 +208,7 @@ createConnection relay = do
         )
         -}
   context <- Connection.initConnectionContext
-  connection <- Connection.connectTo context (connectionParams relay)
+  connection <- Connection.connectTo context $ connectionParams relay
   stream <-
     Stream.makeStream
       (fmap Just (Connection.connectionGetChunk connection))
@@ -180,17 +235,13 @@ connectionParams relay =
     }
 
 main :: IO ()
-main = do
-  putStrLn "Hello, World!"
-{-
-  startApp model handleEvent buildUI config
+main = startApp model handleEvent buildUI config
   where
-    config = [
-      appWindowTitle "Hello world",
-      appTheme darkTheme,
-      appFontDef "Regular" "./assets/fonts/Roboto-Regular.ttf",
-      appInitEvent AppInit,
-      appRenderOnMainThread
+    config =
+      [ appWindowTitle "FuTr"
+      , appTheme darkTheme
+      , appFontDef "Regular" "./assets/fonts/Roboto-Regular.ttf"
+      , appInitEvent AppInit
+      , appRenderOnMainThread
       ]
-    model = AppModel 0 []
--}
+    model = AppModel 0 Nothing Nothing [] ""

@@ -33,7 +33,7 @@ dependencies:
   - wuss
 
 executables:
-  app:
+  futr:
     source-dirs:      src
     main:             Main.hs
     extra-libraries:  secp256k1
