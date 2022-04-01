@@ -19,6 +19,7 @@ extra-source-files:
 executable futr
   main-is: Main.hs
   other-modules:
+      AppTypes
       NostrTypes
       Paths_futr
   hs-source-dirs:
@@ -40,6 +41,7 @@ executable futr
     , network
     , parallel-io
     , secp256k1-schnorr
+    , stm
     , text
     , text-show
     , unix-time

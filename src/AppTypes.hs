@@ -1,0 +1,49 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
+
+module AppTypes where
+
+import           Control.Concurrent.STM.TChan
+import           Control.Lens
+import           Crypto.Schnorr
+import           Data.Default
+import           Data.Text
+import qualified Network.Connection           as Connection
+import           Network.Socket
+
+import           NostrTypes
+
+newtype AppEnv =
+  AppEnv
+    { _envChannel :: TChan [(Relay, Connection.Connection)]
+    }
+
+data AppModel =
+  AppModel
+    { _clickCount    :: Int
+    , _myKeyPair     :: Maybe KeyPair
+    , _myXOnlyPubKey :: Maybe XOnlyPubKey
+    , _pool          :: Pool
+    , _mySecKeyInput :: Text
+    , _newPostInput  :: Text
+    }
+  deriving (Eq, Show)
+
+instance Default AppModel where
+  def = AppModel 0 Nothing Nothing [] "" ""
+
+data AppEvent
+  = AppInit
+  | RelayConnected Relay
+  | AddRelay Relay
+  | AppIncrease
+  | RelayDisconnected Relay
+  | GenerateKeyPair
+  | KeyPairGenerated KeyPair
+  | ImportSecKey
+  | Post
+  deriving (Eq, Show)
+
+makeLenses 'AppEnv
+
+makeLenses 'AppModel

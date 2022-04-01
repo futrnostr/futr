@@ -25,6 +25,7 @@ dependencies:
   - connection
   - parallel-io
   - secp256k1-schnorr
+  - stm
   - text
   - text-show
   - unix-time

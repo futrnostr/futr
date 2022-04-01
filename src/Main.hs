@@ -7,6 +7,7 @@ module Main where
 
 import           Control.Concurrent                   (forkIO)
 import           Control.Concurrent.ParallelIO.Global
+import           Control.Concurrent.STM.TChan
 import qualified Control.Exception                    as Exception
 import           Control.Lens
 import           Control.Monad                        (forever, unless)
@@ -29,70 +30,19 @@ import           Network.Socket
 import           Network.WebSockets                   (ClientApp, Connection,
                                                        receiveData, sendClose,
                                                        sendTextData)
-import qualified Network.WebSockets                   as WebSockets
+import qualified Network.WebSockets                   as WS
 import qualified Network.WebSockets.Stream            as Stream
 import           TextShow
 import           Wuss
 
-data Relay =
-  Relay
-    { host      :: String
-    , port      :: PortNumber
-    , readable  :: Bool
-    , writable  :: Bool
-    , connected :: Bool
-    }
-  deriving (Eq, Show)
+import           AppTypes
+import           NostrTypes
 
-type Pool = [Relay]
+type AppWenv = WidgetEnv AppModel AppEvent
 
-instance Default Pool where
-  def =
-    [ Relay
-        { host = "relayer.fiatjaf.com"
-        , port = 443
-        , readable = True
-        , writable = True
-        , connected = False
-        }
-    , Relay
-        { host = "nostr-pub.wellorder.net"
-        , port = 443
-        , readable = True
-        , writable = True
-        , connected = False
-        }
-    ]
+type AppNode = WidgetNode AppModel AppEvent
 
-data AppModel =
-  AppModel
-    { _clickCount    :: Int
-    , _myKeyPair     :: Maybe KeyPair
-    , _myXOnlyPubKey :: Maybe XOnlyPubKey
-    , _pool          :: Pool
-    , _mySecKeyInput :: Text
-    , _newPostInput  :: Text
-    }
-  deriving (Eq, Show)
-
-instance Default AppModel where
-    def = AppModel 0 Nothing Nothing [] "" ""
-
-data AppEvent
-  = AppInit
-  | RelayConnected Relay
-  | AddRelay Relay
-  | AppIncrease
-  | RelayDisconnected Relay
-  | GenerateKeyPair
-  | KeyPairGenerated KeyPair
-  | ImportSecKey
-  | Post
-  deriving (Eq, Show)
-
-makeLenses ''AppModel
-
-buildUI :: WidgetEnv AppModel AppEvent -> AppModel -> WidgetNode AppModel AppEvent
+buildUI :: AppWenv -> AppModel -> AppNode
 buildUI wenv model =
   case view myKeyPair model of
     Just k ->
@@ -124,7 +74,7 @@ buildUI wenv model =
       [padding 10]
     Nothing -> generateOrImportKeyPairStack model
 
-generateOrImportKeyPairStack :: AppModel -> WidgetNode AppModel AppEvent
+generateOrImportKeyPairStack :: AppModel -> AppNode
 generateOrImportKeyPairStack model =
   vstack
     [ label "Welcome to nostr"
@@ -151,12 +101,13 @@ generateOrImportKeyPairStack model =
       isJust $ maybe Nothing secKey $ decodeHex $ view mySecKeyInput model
 
 handleEvent ::
-     WidgetEnv AppModel AppEvent
-  -> WidgetNode AppModel AppEvent
+     AppEnv
+  -> AppWenv
+  -> AppNode
   -> AppModel
   -> AppEvent
   -> [AppEventResponse AppModel AppEvent]
-handleEvent wenv node model evt =
+handleEvent env wenv node model evt =
   case evt of
     AppInit -> []
     --AppInit -> map (\r -> Producer $ connectRelay r) def
@@ -166,11 +117,18 @@ handleEvent wenv node model evt =
     AppIncrease -> [Model (model & clickCount +~ 1)]
     GenerateKeyPair -> [Producer generateNewKeyPair]
     KeyPairGenerated k ->
-      [ Model
-          model
-            {_myKeyPair = Just k, _myXOnlyPubKey = Just $ deriveXOnlyPubKey k}
+      [ Model $
+        model & myKeyPair .~ (Just k) &
+        myXOnlyPubKey .~ (Just $ deriveXOnlyPubKey k)
       ]
-    ImportSecKey -> [Model $ importSecKey model]
+    ImportSecKey ->
+      [ Model $
+        model & myKeyPair .~ kp & myXOnlyPubKey .~ (fmap deriveXOnlyPubKey kp) &
+        mySecKeyInput .~ ""
+      ]
+      where kp =
+              fmap keyPairFromSecKey $
+              maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
     --Post -> [Producer $ event model]
     Post -> []
 
@@ -184,14 +142,6 @@ generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do
   k <- generateKeyPair
   sendMsg $ KeyPairGenerated k
-
-importSecKey :: AppModel -> AppModel
-importSecKey m = m {_myKeyPair = kp, _mySecKeyInput = "", _myXOnlyPubKey = pk}
-  where
-    kp =
-      fmap keyPairFromSecKey $
-      maybe Nothing secKey $ decodeHex $ view mySecKeyInput m
-    pk = fmap deriveXOnlyPubKey kp
 
 app :: Relay -> ClientApp ()
 app r conn = do
@@ -257,7 +207,9 @@ connectionParams relay =
     }
 
 main :: IO ()
-main = startApp def handleEvent buildUI config
+main = do
+  channel <- newTChanIO
+  startApp def (handleEvent $ AppEnv channel) buildUI config
   where
     config =
       [ appWindowTitle "FuTr"

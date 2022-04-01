@@ -1,8 +1,10 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
 
 module NostrTypes where
 
@@ -18,6 +20,7 @@ import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import           Data.ByteString.Lazy   (toStrict)
+import           Data.Default
 import           Data.Maybe             (fromJust)
 import           Data.Text              (Text, pack, unpack)
 import qualified Data.Vector            as V
@@ -30,12 +33,33 @@ import           System.Posix.Types     (EpochTime)
 
 data Relay =
   Relay
-    { host     :: String
-    , port     :: PortNumber
-    , readable :: Bool
-    , writable :: Bool
+    { host      :: String
+    , port      :: PortNumber
+    , readable  :: Bool
+    , writable  :: Bool
+    , connected :: Bool
     }
   deriving (Eq, Show)
+
+type Pool = [Relay]
+
+instance Default Pool where
+  def =
+    [ Relay
+        { host = "relayer.fiatjaf.com"
+        , port = 443
+        , readable = True
+        , writable = True
+        , connected = False
+        }
+    , Relay
+        { host = "nostr-pub.wellorder.net"
+        , port = 443
+        , readable = True
+        , writable = True
+        , connected = False
+        }
+    ]
 
 type RelayURL = Text
 
