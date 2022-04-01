@@ -8,7 +8,7 @@ module NostrTypes where
 
 import           Control.Monad          (mzero, (<=<))
 import qualified Crypto.Hash.SHA256     as SHA256
-import           Crypto.Schnorr         (Msg, SchnorrSig, XOnlyPubKey,
+import           Crypto.Schnorr         (KeyPair, Msg, SchnorrSig, XOnlyPubKey,
                                          verifyMsgSchnorr)
 import qualified Crypto.Schnorr         as Schnorr
 import           Data.Aeson
@@ -94,6 +94,16 @@ data Event =
     }
   deriving (Eq, Show)
 
+data RawEvent =
+  RawEvent
+    { pubKey'     :: XOnlyPubKey
+    , created_at' :: EpochTime
+    , kind'       :: Int
+    , tags'       :: [Tag]
+    , content'    :: Text
+    }
+  deriving (Eq, Show)
+
 data Tag
   = ETag (EventId, RelayURL)
   | PTag (XOnlyPubKey, RelayURL)
@@ -142,13 +152,27 @@ serializeEvent e =
   toStrict $
   encode $
   AesonTypes.Array $
-  fromList $ --- @todo this must be a Data.Vector (aka JSON Array)
+  fromList $
   [ AesonTypes.Number 0
   , AesonTypes.String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey e
   , AesonTypes.Number $ fromIntegral $ epochTimeToSec $ created_at e
   , AesonTypes.Number $ fromIntegral $ kind e
   , serializeTags $ tags e
   , AesonTypes.String $ content e
+  ]
+
+serializeRawEvent :: RawEvent -> ByteString
+serializeRawEvent e =
+  toStrict $
+  encode $
+  AesonTypes.Array $
+  fromList $
+  [ AesonTypes.Number 0
+  , AesonTypes.String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey' e
+  , AesonTypes.Number $ fromIntegral $ epochTimeToSec $ created_at' e
+  , AesonTypes.Number $ fromIntegral $ kind' e
+  , serializeTags $ tags' e
+  , AesonTypes.String $ content' e
   ]
 
 epochTimeToSec :: EpochTime -> Int
@@ -184,3 +208,42 @@ verifySignature e =
   where
     p = pubKey e
     s = sig e
+
+setMetadata :: Text -> Text -> Text -> XOnlyPubKey -> EpochTime -> RawEvent
+setMetadata name about picture xo t =
+  RawEvent
+    { pubKey' = xo
+    , created_at' = t
+    , kind' = 0
+    , tags' = []
+    , content' =
+        pack $
+        "{name:" ++
+        unpack name ++
+        ",about:" ++ unpack about ++ ",picture:" ++ unpack picture ++ "}"
+    }
+
+textNote :: Text -> XOnlyPubKey -> EpochTime -> RawEvent
+textNote note xo t =
+  RawEvent
+    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [], content' = note}
+
+recommendServer :: RelayURL -> XOnlyPubKey -> EpochTime -> RawEvent
+recommendServer url xo t =
+  RawEvent
+    {pubKey' = xo, created_at' = t, kind' = 3, tags' = [], content' = url}
+
+signEvent :: RawEvent -> KeyPair -> XOnlyPubKey -> Event
+signEvent r kp xo =
+  Event
+    { eventId = eid
+    , pubKey = xo
+    , created_at = created_at' r
+    , kind = kind' r
+    , tags = tags' r
+    , content = content' r
+    , sig = s
+    }
+  where
+    eid = EventId {getEventId = SHA256.hash $ serializeRawEvent r}
+    s = Schnorr.signMsgSchnorr kp $ fromJust $ Schnorr.msg $ getEventId eid

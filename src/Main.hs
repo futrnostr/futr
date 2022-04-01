@@ -1,5 +1,7 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Main where
 
@@ -14,6 +16,7 @@ import qualified Data.ByteString                      as BS
 import qualified Data.ByteString.Base16               as B16
 import qualified Data.ByteString.Char8                as B8
 import qualified Data.ByteString.Lazy                 as LazyBytes
+import           Data.Default
 import           Data.Either                          (fromRight)
 import           Data.Maybe
 import           Data.Text                            (Text)
@@ -33,37 +36,47 @@ import           Wuss
 
 data Relay =
   Relay
-    { host     :: String
-    , port     :: PortNumber
-    , readable :: Bool
-    , writable :: Bool
+    { host      :: String
+    , port      :: PortNumber
+    , readable  :: Bool
+    , writable  :: Bool
+    , connected :: Bool
     }
   deriving (Eq, Show)
 
-defaultPool =
-  [ Relay
-      { host = "relayer.fiatjaf.com"
-      , port = 443
-      , readable = True
-      , writable = True
-      }
-  , Relay
-      { host = "nostr-pub.wellorder.net"
-      , port = 443
-      , readable = True
-      , writable = True
-      }
-  ]
+type Pool = [Relay]
+
+instance Default Pool where
+  def =
+    [ Relay
+        { host = "relayer.fiatjaf.com"
+        , port = 443
+        , readable = True
+        , writable = True
+        , connected = False
+        }
+    , Relay
+        { host = "nostr-pub.wellorder.net"
+        , port = 443
+        , readable = True
+        , writable = True
+        , connected = False
+        }
+    ]
 
 data AppModel =
   AppModel
     { _clickCount    :: Int
     , _myKeyPair     :: Maybe KeyPair
     , _myXOnlyPubKey :: Maybe XOnlyPubKey
-    , _pool          :: [Relay]
+    , _pool          :: Pool
     , _mySecKeyInput :: Text
+    , _newPostInput  :: Text
     }
-  deriving (Eq)
+  deriving (Eq, Show)
+
+instance Default AppModel where
+    def = AppModel 0 Nothing Nothing [] "" ""
 
 data AppEvent
   = AppInit
@@ -74,23 +87,30 @@ data AppEvent
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
   | ImportSecKey
+  | Post
   deriving (Eq, Show)
 
-makeLenses 'AppModel
+makeLenses ''AppModel
 
-buildUI ::
-     WidgetEnv AppModel AppEvent -> AppModel -> WidgetNode AppModel AppEvent
+buildUI :: WidgetEnv AppModel AppEvent -> AppModel -> WidgetNode AppModel AppEvent
 buildUI wenv model =
   case view myKeyPair model of
     Just k ->
       vstack
         [ label "Hello, nostr"
-        , label "Haskell GUI Development"
         , spacer
         , hstack
             [ label $ "Click count: " <> showt (model ^. clickCount)
             , spacer
             , button "Increase count" AppIncrease
+            ]
+        , spacer
+        , hstack
+            [ label $ "New Post"
+            , spacer
+            , textField newPostInput `nodeKey` "newPost"
+            , spacer
+            , button "Post" Post
             ]
         , spacer
         , label "KeyPair"
@@ -139,7 +159,8 @@ handleEvent ::
 handleEvent wenv node model evt =
   case evt of
     AppInit -> []
-    RelayConnected r -> []
+    --AppInit -> map (\r -> Producer $ connectRelay r) def
+    RelayConnected r -> [Model $ model & pool %~ (r <|)]
     RelayDisconnected r -> []
     AddRelay r -> [Producer $ connectRelay r]
     AppIncrease -> [Model (model & clickCount +~ 1)]
@@ -150,16 +171,13 @@ handleEvent wenv node model evt =
             {_myKeyPair = Just k, _myXOnlyPubKey = Just $ deriveXOnlyPubKey k}
       ]
     ImportSecKey -> [Model $ importSecKey model]
+    --Post -> [Producer $ event model]
+    Post -> []
 
-{-
-initRelayConnections :: [Relay] -> IO AppEvent
-initRelayConnections p = do
-    parallel_ $ fmap connectRelay p
-    return RelaysInitialized
--}
 connectRelay :: Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay r sendMsg = do
-  runSecureClient (host r) (port r) "/" (app r)
+  conn <- createConnection r
+  putStrLn $ "Connected to " ++ (host r) ++ ":" ++ (show (port r))
   sendMsg $ RelayConnected r
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
@@ -239,7 +257,7 @@ connectionParams relay =
     }
 
 main :: IO ()
-main = startApp model handleEvent buildUI config
+main = startApp def handleEvent buildUI config
   where
     config =
       [ appWindowTitle "FuTr"
@@ -248,4 +266,3 @@ main = startApp model handleEvent buildUI config
       , appInitEvent AppInit
       , appRenderOnMainThread
       ]
-    model = AppModel 0 Nothing Nothing [] ""
