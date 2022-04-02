@@ -25,6 +25,8 @@ executable futr
   hs-source-dirs:
       src
   ghc-options: -fwarn-incomplete-patterns -threaded
+  extra-lib-dirs:
+      /usr/local/lib
   extra-libraries:
       secp256k1
   build-depends:
@@ -35,6 +37,7 @@ executable futr
     , connection
     , cryptohash-sha256
     , data-default
+    , datetime
     , lens
     , monomer
     , mtl
@@ -44,7 +47,6 @@ executable futr
     , stm
     , text
     , text-show
-    , unix-time
     , vector
     , websockets
     , wuss

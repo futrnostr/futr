@@ -8,14 +8,14 @@ import           Control.Lens
 import           Crypto.Schnorr
 import           Data.Default
 import           Data.Text
-import qualified Network.Connection           as Connection
+import qualified Network.WebSockets                   as WS
 import           Network.Socket
 
 import           NostrTypes
 
 newtype AppEnv =
   AppEnv
-    { _envChannel :: TChan [(Relay, Connection.Connection)]
+    { _channel :: TChan Event
     }
 
 data AppModel =
@@ -23,7 +23,7 @@ data AppModel =
     { _clickCount    :: Int
     , _myKeyPair     :: Maybe KeyPair
     , _myXOnlyPubKey :: Maybe XOnlyPubKey
-    , _pool          :: Pool
+    , _pool          :: [Relay]
     , _mySecKeyInput :: Text
     , _newPostInput  :: Text
     }
@@ -42,8 +42,9 @@ data AppEvent
   | KeyPairGenerated KeyPair
   | ImportSecKey
   | Post
+  | EventAppeared Event
+  | NoOp
   deriving (Eq, Show)
 
 makeLenses 'AppEnv
-
 makeLenses 'AppModel

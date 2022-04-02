@@ -47,6 +47,13 @@ packages:
   original:
     hackage: cryptohash-sha256-0.11.102.1@sha256:188d0b5a0491e8b686b32d9b144c9287760ba333d2509bf3f17e3d846fbc2332,5629
 - completed:
+    hackage: datetime-0.3.1@sha256:7e275bd0ce7a2f66445bedfa0006abaf4d41af4c2204c3f8004c17eab5480e74,1534
+    pantry-tree:
+      size: 334
+      sha256: d41d182c143676464cb1774f0b7777e870ddeaf8b6cd5fee6ff0114997a1f504
+  original:
+    hackage: datetime-0.3.1@sha256:7e275bd0ce7a2f66445bedfa0006abaf4d41af4c2204c3f8004c17eab5480e74,1534
+- completed:
     name: secp256k1-schnorr
     version: 0.0.1
     git: https://github.com/prolic/secp256k1-schnorr.git

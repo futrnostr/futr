@@ -6,17 +6,19 @@
 module Main where
 
 import           Control.Concurrent                   (forkIO)
-import           Control.Concurrent.ParallelIO.Global
 import           Control.Concurrent.STM.TChan
 import qualified Control.Exception                    as Exception
 import           Control.Lens
-import           Control.Monad                        (forever, unless)
+import           Control.Monad                        (forever, unless, void)
+import           Control.Monad.STM                    (atomically)
 import           Control.Monad.Trans                  (liftIO)
 import           Crypto.Schnorr
+import           Data.Aeson
 import qualified Data.ByteString                      as BS
 import qualified Data.ByteString.Base16               as B16
 import qualified Data.ByteString.Char8                as B8
 import qualified Data.ByteString.Lazy                 as LazyBytes
+import           Data.DateTime
 import           Data.Default
 import           Data.Either                          (fromRight)
 import           Data.Maybe
@@ -109,11 +111,11 @@ handleEvent ::
   -> [AppEventResponse AppModel AppEvent]
 handleEvent env wenv node model evt =
   case evt of
-    AppInit -> []
-    --AppInit -> map (\r -> Producer $ connectRelay r) def
+    NoOp -> []
+    AppInit -> map (\r -> Producer $ connectRelay env r) defaultPool
     RelayConnected r -> [Model $ model & pool %~ (r <|)]
     RelayDisconnected r -> []
-    AddRelay r -> [Producer $ connectRelay r]
+    AddRelay r -> [Producer $ connectRelay env r]
     AppIncrease -> [Model (model & clickCount +~ 1)]
     GenerateKeyPair -> [Producer generateNewKeyPair]
     KeyPairGenerated k ->
@@ -129,82 +131,44 @@ handleEvent env wenv node model evt =
       where kp =
               fmap keyPairFromSecKey $
               maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
-    --Post -> [Producer $ event model]
-    Post -> []
+    Post -> [Task $ handleNewPost env model]
 
-connectRelay :: Relay -> (AppEvent -> IO ()) -> IO ()
-connectRelay r sendMsg = do
-  conn <- createConnection r
-  putStrLn $ "Connected to " ++ (host r) ++ ":" ++ (show (port r))
-  sendMsg $ RelayConnected r
+handleNewPost :: AppEnv -> AppModel -> IO AppEvent
+handleNewPost env model = do
+    now <- getCurrentTime
+    let x = fromJust (model ^. myXOnlyPubKey)
+    let raw = textNote (model ^. newPostInput) x now
+    atomically $ writeTChan (env ^. channel) $ signEvent raw (fromJust $ model ^. myKeyPair) x
+    return NoOp
+
+connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
+connectRelay env r sendMsg = do
+  runSecureClient h p path $ \conn -> do
+  --WS.runClient h p path $ \conn -> do
+    putStrLn $ "Connected to " ++ (host r) ++ ":" ++ (show (port r))
+    receiveWs conn sendMsg
+    sendWs (env ^. channel) conn
+  where
+    h = host r
+    p = fromIntegral $ port r
+    path = "/"
+
+receiveWs :: WS.Connection -> (AppEvent -> IO ()) -> IO ()
+receiveWs conn sendMsg = void . forkIO . forever $ do
+    msg <- WS.receiveData conn
+    case decode msg of
+        Just m -> sendMsg $ EventAppeared m
+        Nothing -> sendMsg $ NoOp
+
+sendWs :: TChan Event -> WS.Connection -> IO ()
+sendWs channel conn = forever $ do
+    msg <- atomically $ readTChan channel
+    WS.sendTextData conn $ encode $ SendEvent msg
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do
   k <- generateKeyPair
   sendMsg $ KeyPairGenerated k
-
-app :: Relay -> ClientApp ()
-app r conn = do
-  putStrLn $ "Connected to " ++ (host r) ++ ":" ++ (show (port r))
-    -- Fork a thread that writes WS data to stdout
-  _ <-
-    forkIO $
-    forever $ do
-      msg <- receiveData conn
-      liftIO $ T.putStrLn msg
-    -- Read from stdin and write to WS
-  let loop = do
-        line <- T.getLine
-        unless (T.null line) $ sendTextData conn line >> loop
-  loop
-  sendClose conn ("Bye!" :: Text)
-  putStrLn $ "Disconnected from " ++ (host r) ++ ":" ++ (show (port r))
-    --return (RelayDisconnected r)
-
-createConnection :: Relay -> IO Connection.Connection
-createConnection relay = do
-  let config = defaultConfig
-        --h = host relay
-        --p = port relay
-    --runSecureClientWithConfig (host relay) (port relay) "/" config options headers app
-    {-
-    context <- Connection.initConnectionContext
-      Exception.bracket
-        (Connection.connectTo context (connectionParams h p))
-        Connection.connectionClose
-        (\connection -> do
-          stream <- Stream.makeStream
-            (reader config connection)
-            (writer connection)
-          newClientConnection stream h "/" opts customHeaders
-        )
-        -}
-  context <- Connection.initConnectionContext
-  connection <- Connection.connectTo context $ connectionParams relay
-  stream <-
-    Stream.makeStream
-      (fmap Just (Connection.connectionGetChunk connection))
-      (maybe
-         (return ())
-         (Connection.connectionPut connection . LazyBytes.toStrict))
-  return connection
-
-tlsSettings :: Connection.TLSSettings
-tlsSettings =
-  Connection.TLSSettingsSimple
-    { Connection.settingDisableCertificateValidation = False
-    , Connection.settingDisableSession = False
-    , Connection.settingUseServerName = False
-    }
-
-connectionParams :: Relay -> Connection.ConnectionParams
-connectionParams relay =
-  Connection.ConnectionParams
-    { Connection.connectionHostname = host relay
-    , Connection.connectionPort = port relay
-    , Connection.connectionUseSecure = Just tlsSettings
-    , Connection.connectionUseSocks = Nothing
-    }
 
 main :: IO ()
 main = do

@@ -46,6 +46,7 @@ extra-deps:
 - DRBG-0.5.5@sha256:3b8040bed356e2b63927a27fb6d5adbd19d70c9e1d1bb66111bbeb33e56900eb,2259
 - cipher-aes128-0.7.0.6@sha256:6efdf4af08772b6c99e47ec7586bdc26deb33d8ca797c64affcb4bd7aaae9884,3413
 - cryptohash-sha256-0.11.102.1@sha256:188d0b5a0491e8b686b32d9b144c9287760ba333d2509bf3f17e3d846fbc2332,5629
+- datetime-0.3.1@sha256:7e275bd0ce7a2f66445bedfa0006abaf4d41af4c2204c3f8004c17eab5480e74,1534
 - git: https://github.com/prolic/secp256k1-schnorr.git
   commit: bdfb38a9cf170e95c373ceb564f7c5e5232b6542
 

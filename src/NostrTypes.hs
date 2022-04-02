@@ -23,6 +23,7 @@ import           Data.ByteString.Lazy   (toStrict)
 import           Data.Default
 import           Data.Maybe             (fromJust)
 import           Data.Text              (Text, pack, unpack)
+import           Data.DateTime
 import qualified Data.Vector            as V
 import           Foreign.C.Types        (CTime (..))
 import           GHC.Exts               (fromList)
@@ -41,12 +42,10 @@ data Relay =
     }
   deriving (Eq, Show)
 
-type Pool = [Relay]
-
-instance Default Pool where
-  def =
+defaultPool :: [Relay]
+defaultPool =
     [ Relay
-        { host = "relayer.fiatjaf.com"
+        { host = "nostr.rocks"
         , port = 443
         , readable = True
         , writable = True
@@ -60,6 +59,16 @@ instance Default Pool where
         , connected = False
         }
     ]
+{-
+    [ Relay
+        { host = "localhost"
+        , port = 2700
+        , readable = True
+        , writable = True
+        , connected = False
+        }
+    ]
+-}
 
 type RelayURL = Text
 
@@ -69,11 +78,33 @@ newtype EventId =
     }
   deriving (Eq)
 
+data ServerRequest
+    = SendEvent Event
+--    | Request Text [Filter]
+    | Close Text
+
+instance ToJSON ServerRequest where
+    toJSON sr = case sr of
+        (SendEvent e) -> Array $ fromList
+             [ String $ pack "EVENT"
+             , toJSON e
+             ]
+        (Close subid) -> Array $ fromList
+             [ String $ pack "CLOSE"
+             , String subid
+             ]
+
 instance Show EventId where
   showsPrec _ = shows . B16.encodeBase16 . getEventId
 
 instance ToJSON EventId where
-  toJSON e = AesonTypes.String $ pack $ exportEventId e
+  toJSON e = String $ pack $ exportEventId e
+
+instance ToJSON SchnorrSig where
+    toJSON s = String $ pack $ Schnorr.exportSchnorrSig s
+
+instance ToJSON XOnlyPubKey where
+    toJSON x = String $ pack $ Schnorr.exportXOnlyPubKey x
 
 instance FromJSON EventId where
   parseJSON =
@@ -81,6 +112,19 @@ instance FromJSON EventId where
       case eventId' i of
         Just e -> return e
         _      -> fail "invalid event id"
+
+instance FromJSON SchnorrSig where
+    parseJSON =
+        withText "SchnorrSig" $ \s -> do
+            case (textToByteStringType s Schnorr.schnorrSig) of
+                Just s' -> return s'
+                _       -> fail "invalid schnorr sig"
+
+textToByteStringType :: Text -> (ByteString -> Maybe a) -> Maybe a
+textToByteStringType t f =
+    case Schnorr.decodeHex t of
+        Just bs -> f bs
+        Nothing -> Nothing
 
 eventId' :: Text -> Maybe EventId
 eventId' t = do
@@ -92,16 +136,9 @@ eventId' t = do
 instance FromJSON XOnlyPubKey where
   parseJSON =
     withText "XOnlyPubKey" $ \p -> do
-      case xOnlyPubKey' p of
+      case (textToByteStringType p Schnorr.xOnlyPubKey) of
         Just e -> return e
         _      -> fail "invalid XOnlyPubKey"
-
-xOnlyPubKey' :: Text -> Maybe XOnlyPubKey
-xOnlyPubKey' t = do
-  bs <- Schnorr.decodeHex t
-  case BS.length bs of
-    32 -> Schnorr.xOnlyPubKey bs
-    _  -> Nothing
 
 exportEventId :: EventId -> String
 exportEventId i = unpack . B16.encodeBase16 $ getEventId i
@@ -110,7 +147,7 @@ data Event =
   Event
     { eventId    :: EventId
     , pubKey     :: XOnlyPubKey
-    , created_at :: EpochTime
+    , created_at :: DateTime
     , kind       :: Int
     , tags       :: [Tag]
     , content    :: Text
@@ -118,10 +155,31 @@ data Event =
     }
   deriving (Eq, Show)
 
+instance ToJSON Event where
+    toJSON Event {..} = object
+         [ "id"         .= exportEventId eventId
+         , "pubKey"     .= Schnorr.exportXOnlyPubKey pubKey
+         , "created_at" .= toSeconds created_at
+         , "kind"       .= kind
+         , "tags"       .= tags
+         , "content"    .= content
+         , "sig"        .= Schnorr.exportSchnorrSig sig
+         ]
+
+instance FromJSON Event where
+    parseJSON = withObject "event data" $ \e -> Event
+        <$> e .: "id"
+        <*> e .: "pubKey"
+        <*> (fromSeconds <$> e .: "created_at")
+        <*> e .: "kind"
+        <*> e .: "tags"
+        <*> e .: "content"
+        <*> e .: "sig"
+
 data RawEvent =
   RawEvent
     { pubKey'     :: XOnlyPubKey
-    , created_at' :: EpochTime
+    , created_at' :: DateTime
     , kind'       :: Int
     , tags'       :: [Tag]
     , content'    :: Text
@@ -133,92 +191,69 @@ data Tag
   | PTag (XOnlyPubKey, RelayURL)
   deriving (Eq, Show)
 
-newtype TagList =
-  TagList [Tag]
-  deriving (Show)
-
-instance FromJSON TagList where
-  parseJSON (AesonTypes.Object o) = TagList <$> (o .: "tags")
-  parseJSON _                     = mzero
-
 instance FromJSON Tag where
-  parseJSON (AesonTypes.Array v)
+  parseJSON (Array v)
     | V.length v == 3 =
       case v V.! 0 of
-        AesonTypes.String "p" ->
+        String "p" ->
           ETag <$> ((,) <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2))
-        AesonTypes.String "e" ->
+        String "e" ->
           PTag <$> ((,) <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2))
         _ -> mzero
     | otherwise = mzero
   parseJSON _ = mzero
 
---data RawEvent = RawEvent String EpochTime Int [[String]] String deriving (Eq, Show)
-{-
-instance ToJSON Event where
-    toJSON (Event kind pubKey content tags created_at) =
-        object ["kind" .= 0, "pubKey" .= pubKey, "content" .= content, "tags" .= tags, "created_at" .= created_at]
-    toEncoding (Event eventId pubKey created_at kind tags content) =
-        pairs ("kind" .= 0 <> "pubKey" .= pubKey <> "content" .= content <> "tags" .= tags <> "created_at" .= utSeconds created_at)
+instance ToJSON Tag where
+    toJSON (ETag (eventId, relayURL)) =
+        Array $ fromList [String "e", String $ pack $ exportEventId eventId, String $ relayURL]
+    toJSON (PTag (xOnlyPubKey, relayURL)) =
+        Array $ fromList [String "p", String $ pack $ Schnorr.exportXOnlyPubKey xOnlyPubKey, String $ relayURL]
 
-instance FromJSON Event where
-    parseJSON = withObject "event" $ \e -> do
-        eid   <- e .: "id"
-        pk    <- e .: "pubKey"
-        cr    <- e .: "created_at" -- @todo parse extra
-        ki    <- e .: "kind"
-        ta    <- e .: "tags"       -- @todo does this work??
-        co    <- e .: "content"
-        return Event{..}
--}
 serializeEvent :: Event -> ByteString
 serializeEvent e =
   toStrict $
   encode $
-  AesonTypes.Array $
+  Array $
   fromList $
-  [ AesonTypes.Number 0
-  , AesonTypes.String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey e
-  , AesonTypes.Number $ fromIntegral $ epochTimeToSec $ created_at e
-  , AesonTypes.Number $ fromIntegral $ kind e
+  [ Number 0
+  , String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey e
+  , Number $ fromIntegral $ toSeconds $ created_at e
+  , Number $ fromIntegral $ kind e
   , serializeTags $ tags e
-  , AesonTypes.String $ content e
+  , String $ content e
   ]
 
 serializeRawEvent :: RawEvent -> ByteString
 serializeRawEvent e =
   toStrict $
   encode $
-  AesonTypes.Array $
+  Array $
   fromList $
-  [ AesonTypes.Number 0
-  , AesonTypes.String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey' e
-  , AesonTypes.Number $ fromIntegral $ epochTimeToSec $ created_at' e
-  , AesonTypes.Number $ fromIntegral $ kind' e
+  [ Number 0
+  , String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey' e
+  , Number $ fromIntegral $ toSeconds $ created_at' e
+  , Number $ fromIntegral $ kind' e
   , serializeTags $ tags' e
-  , AesonTypes.String $ content' e
+  , String $ content' e
   ]
 
-epochTimeToSec :: EpochTime -> Int
-epochTimeToSec (CTime i) = fromIntegral i
-
-serializeTags :: [Tag] -> AesonTypes.Value
+serializeTags :: [Tag] -> Value
 serializeTags ts = Array $ fromList $ map serializeTag ts
 
-serializeTag :: Tag -> AesonTypes.Value
+serializeTag :: Tag -> Value
 serializeTag (ETag (i, r)) =
-  AesonTypes.Array $
+  Array $
   fromList
-    [ AesonTypes.String $ pack "e"
-    , AesonTypes.String $ pack $ exportEventId i
-    , AesonTypes.String r
+    [ String $ pack "e"
+    , String $ pack $ exportEventId i
+    , String r
     ]
 serializeTag (PTag (p, r)) =
-  AesonTypes.Array $
+  Array $
   fromList
-    [ AesonTypes.String $ pack "p"
-    , AesonTypes.String $ pack $ Schnorr.exportXOnlyPubKey p
-    , AesonTypes.String r
+    [ String $ pack "p"
+    , String $ pack $ Schnorr.exportXOnlyPubKey p
+    , String r
     ]
 
 validateEvent :: Event -> Bool
@@ -233,7 +268,7 @@ verifySignature e =
     p = pubKey e
     s = sig e
 
-setMetadata :: Text -> Text -> Text -> XOnlyPubKey -> EpochTime -> RawEvent
+setMetadata :: Text -> Text -> Text -> XOnlyPubKey -> DateTime -> RawEvent
 setMetadata name about picture xo t =
   RawEvent
     { pubKey' = xo
@@ -247,12 +282,12 @@ setMetadata name about picture xo t =
         ",about:" ++ unpack about ++ ",picture:" ++ unpack picture ++ "}"
     }
 
-textNote :: Text -> XOnlyPubKey -> EpochTime -> RawEvent
+textNote :: Text -> XOnlyPubKey -> DateTime -> RawEvent
 textNote note xo t =
   RawEvent
     {pubKey' = xo, created_at' = t, kind' = 1, tags' = [], content' = note}
 
-recommendServer :: RelayURL -> XOnlyPubKey -> EpochTime -> RawEvent
+recommendServer :: RelayURL -> XOnlyPubKey -> DateTime -> RawEvent
 recommendServer url xo t =
   RawEvent
     {pubKey' = xo, created_at' = t, kind' = 3, tags' = [], content' = url}
