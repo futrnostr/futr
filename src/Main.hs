@@ -38,17 +38,55 @@ import           TextShow
 import           Wuss
 
 import           AppTypes
+import           NostrFunctions
 import           NostrTypes
 
 type AppWenv = WidgetEnv AppModel AppEvent
 
 type AppNode = WidgetNode AppModel AppEvent
 
+postRow :: AppWenv -> Int -> Event -> AppNode
+postRow wenv idx e = row where
+  sectionBg = wenv ^. L.theme . L.sectionColor
+  dragColor = rgbaHex "#D3D3D3" 0.5
+  rowSep = rgbaHex "#A9A9A9" 0.5
+  rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
+
+  trashBg = wenv ^. L.theme . L.userColorMap . at "trashBg" . non def
+  trashFg = wenv ^. L.theme . L.userColorMap . at "trashFg" . non def
+  replyIcon action = button remixReplyLine action
+    `styleBasic` [textFont "Remix", textMiddle, textColor trashFg, bgColor transparent, border 0 transparent]
+    `styleHover` [bgColor trashBg]
+    `styleFocus` [bgColor (sectionBg & L.a .~ 0.5)]
+    `styleFocusHover` [bgColor trashBg]
+
+  postInfo = hstack [
+      label (T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey e) `styleBasic` [width 100],
+      spacer,
+      label $ content e
+    ] `styleBasic` [cursorHand]
+
+  row = hstack [
+      replyIcon (ReplyToPost e)
+    ] `styleBasic` [padding 10, borderB 1 rowSep]
+      `styleHover` [bgColor rowBg]
+
 buildUI :: AppWenv -> AppModel -> AppNode
 buildUI wenv model =
   case view myKeyPair model of
-    Just k ->
-      vstack
+    Just k -> widgetTree where
+      sectionBg = wenv ^. L.theme . L.sectionColor
+
+      posts = vstack postRows where
+        orderedPosts = (\e -> model ^? receivedEvents . ix e)
+        postFade idx e = animRow where
+          action = ReplyToPost e
+          item = postRow wenv idx e
+          animRow = animFadeOut_ [onFinished action] item `nodeKey` (content e)
+
+        postRows = zipWith postFade [0..] (model ^. receivedEvents)
+
+      widgetTree = vstack
         [ label "Hello, nostr"
         , spacer
         , hstack
@@ -62,8 +100,10 @@ buildUI wenv model =
             , spacer
             , textField newPostInput `nodeKey` "newPost"
             , spacer
-            , button "Post" Post
+            , button "Post" SendPost
             ]
+        , spacer
+        , scroll_ [scrollOverlay] $ posts `styleBasic` [padding 10]
         , spacer
         , label "KeyPair"
         , spacer
@@ -72,8 +112,8 @@ buildUI wenv model =
         , label "XOnlyPubKey"
         , spacer
         , label $ T.pack $ exportXOnlyPubKey $ deriveXOnlyPubKey k
-        ] `styleBasic`
-      [padding 10]
+        ] `styleBasic` [padding 10]
+
     Nothing -> generateOrImportKeyPairStack model
 
 generateOrImportKeyPairStack :: AppModel -> AppNode
@@ -131,7 +171,8 @@ handleEvent env wenv node model evt =
       where kp =
               fmap keyPairFromSecKey $
               maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
-    Post -> [Task $ handleNewPost env model]
+    SendPost -> [Task $ handleNewPost env model]
+    ReplyToPost e -> []
 
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do

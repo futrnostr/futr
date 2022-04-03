@@ -9,19 +9,15 @@
 module NostrTypes where
 
 import           Control.Monad          (mzero, (<=<))
-import qualified Crypto.Hash.SHA256     as SHA256
 import           Crypto.Schnorr         (KeyPair, Msg, SchnorrSig, XOnlyPubKey,
                                          verifyMsgSchnorr)
 import qualified Crypto.Schnorr         as Schnorr
 import           Data.Aeson
-import           Data.Aeson.Encoding    as AE
-import           Data.Aeson.Types       as AesonTypes
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import           Data.ByteString.Lazy   (toStrict)
 import           Data.Default
-import           Data.Maybe             (fromJust)
 import           Data.Text              (Text, pack, unpack)
 import           Data.DateTime
 import qualified Data.Vector            as V
@@ -29,8 +25,6 @@ import           Foreign.C.Types        (CTime (..))
 import           GHC.Exts               (fromList)
 import           GHC.Generics           (Generic)
 import           Network.Socket         (PortNumber)
-import           System.IO.Unsafe       (unsafePerformIO)
-import           System.Posix.Types     (EpochTime)
 
 data Relay =
   Relay
@@ -82,6 +76,15 @@ data ServerRequest
     = SendEvent Event
 --    | Request Text [Filter]
     | Close Text
+
+data Post =
+    Post
+      { postId :: EventId
+      , author :: Text
+      , postContent :: Text
+      , posted :: DateTime
+      }
+    deriving (Eq, Show)
 
 instance ToJSON ServerRequest where
     toJSON sr = case sr of
@@ -208,101 +211,3 @@ instance ToJSON Tag where
         Array $ fromList [String "e", String $ pack $ exportEventId eventId, String $ relayURL]
     toJSON (PTag (xOnlyPubKey, relayURL)) =
         Array $ fromList [String "p", String $ pack $ Schnorr.exportXOnlyPubKey xOnlyPubKey, String $ relayURL]
-
-serializeEvent :: Event -> ByteString
-serializeEvent e =
-  toStrict $
-  encode $
-  Array $
-  fromList $
-  [ Number 0
-  , String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey e
-  , Number $ fromIntegral $ toSeconds $ created_at e
-  , Number $ fromIntegral $ kind e
-  , serializeTags $ tags e
-  , String $ content e
-  ]
-
-serializeRawEvent :: RawEvent -> ByteString
-serializeRawEvent e =
-  toStrict $
-  encode $
-  Array $
-  fromList $
-  [ Number 0
-  , String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey' e
-  , Number $ fromIntegral $ toSeconds $ created_at' e
-  , Number $ fromIntegral $ kind' e
-  , serializeTags $ tags' e
-  , String $ content' e
-  ]
-
-serializeTags :: [Tag] -> Value
-serializeTags ts = Array $ fromList $ map serializeTag ts
-
-serializeTag :: Tag -> Value
-serializeTag (ETag (i, r)) =
-  Array $
-  fromList
-    [ String $ pack "e"
-    , String $ pack $ exportEventId i
-    , String r
-    ]
-serializeTag (PTag (p, r)) =
-  Array $
-  fromList
-    [ String $ pack "p"
-    , String $ pack $ Schnorr.exportXOnlyPubKey p
-    , String r
-    ]
-
-validateEvent :: Event -> Bool
-validateEvent e = (getEventId $ eventId e) == (SHA256.hash $ serializeEvent e)
-
-verifySignature :: Event -> Bool
-verifySignature e =
-  case Schnorr.msg $ serializeEvent e of
-    Just m  -> Schnorr.verifyMsgSchnorr p s m
-    Nothing -> False
-  where
-    p = pubKey e
-    s = sig e
-
-setMetadata :: Text -> Text -> Text -> XOnlyPubKey -> DateTime -> RawEvent
-setMetadata name about picture xo t =
-  RawEvent
-    { pubKey' = xo
-    , created_at' = t
-    , kind' = 0
-    , tags' = []
-    , content' =
-        pack $
-        "{name:" ++
-        unpack name ++
-        ",about:" ++ unpack about ++ ",picture:" ++ unpack picture ++ "}"
-    }
-
-textNote :: Text -> XOnlyPubKey -> DateTime -> RawEvent
-textNote note xo t =
-  RawEvent
-    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [], content' = note}
-
-recommendServer :: RelayURL -> XOnlyPubKey -> DateTime -> RawEvent
-recommendServer url xo t =
-  RawEvent
-    {pubKey' = xo, created_at' = t, kind' = 3, tags' = [], content' = url}
-
-signEvent :: RawEvent -> KeyPair -> XOnlyPubKey -> Event
-signEvent r kp xo =
-  Event
-    { eventId = eid
-    , pubKey = xo
-    , created_at = created_at' r
-    , kind = kind' r
-    , tags = tags' r
-    , content = content' r
-    , sig = s
-    }
-  where
-    eid = EventId {getEventId = SHA256.hash $ serializeRawEvent r}
-    s = Schnorr.signMsgSchnorr kp $ fromJust $ Schnorr.msg $ getEventId eid

@@ -20,17 +20,18 @@ newtype AppEnv =
 
 data AppModel =
   AppModel
-    { _clickCount    :: Int
-    , _myKeyPair     :: Maybe KeyPair
-    , _myXOnlyPubKey :: Maybe XOnlyPubKey
-    , _pool          :: [Relay]
-    , _mySecKeyInput :: Text
-    , _newPostInput  :: Text
+    { _clickCount     :: Int
+    , _myKeyPair      :: Maybe KeyPair
+    , _myXOnlyPubKey  :: Maybe XOnlyPubKey
+    , _pool           :: [Relay]
+    , _mySecKeyInput  :: Text
+    , _newPostInput   :: Text
+    , _receivedEvents :: [Event]
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel 0 Nothing Nothing [] "" ""
+  def = AppModel 0 Nothing Nothing [] "" "" []
 
 data AppEvent
   = AppInit
@@ -41,7 +42,8 @@ data AppEvent
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
   | ImportSecKey
-  | Post
+  | SendPost
+  | ReplyToPost Event
   | EventAppeared Event
   | NoOp
   deriving (Eq, Show)

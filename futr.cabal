@@ -20,6 +20,7 @@ executable futr
   main-is: Main.hs
   other-modules:
       AppTypes
+      NostrFunctions
       NostrTypes
       Paths_futr
   hs-source-dirs:
