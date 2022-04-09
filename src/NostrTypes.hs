@@ -26,6 +26,8 @@ import           GHC.Exts               (fromList)
 import           GHC.Generics           (Generic)
 import           Network.Socket         (PortNumber)
 
+import           Debug.Trace            (trace)
+
 data Relay =
   Relay
     { host      :: String
@@ -38,6 +40,7 @@ data Relay =
 
 defaultPool :: [Relay]
 defaultPool =
+{-
     [ Relay
         { host = "nostr.rocks"
         , port = 443
@@ -53,7 +56,7 @@ defaultPool =
         , connected = False
         }
     ]
-{-
+-}
     [ Relay
         { host = "localhost"
         , port = 2700
@@ -62,7 +65,7 @@ defaultPool =
         , connected = False
         }
     ]
--}
+
 
 type RelayURL = Text
 
@@ -74,8 +77,12 @@ newtype EventId =
 
 data ServerRequest
     = SendEvent Event
---    | Request Text [Filter]
+    | RequestRelay Text EventFilter
     | Close Text
+    deriving (Eq, Show)
+
+data ServerResponse = ServerResponse Text Event
+    deriving (Eq, Show)
 
 data Post =
     Post
@@ -92,6 +99,11 @@ instance ToJSON ServerRequest where
              [ String $ pack "EVENT"
              , toJSON e
              ]
+        (RequestRelay s ef) -> Array $ fromList
+            [ String $ pack "REQ"
+            , String $ s
+            , toJSON ef
+            ]
         (Close subid) -> Array $ fromList
              [ String $ pack "CLOSE"
              , String subid
@@ -122,6 +134,15 @@ instance FromJSON SchnorrSig where
             case (textToByteStringType s Schnorr.schnorrSig) of
                 Just s' -> return s'
                 _       -> fail "invalid schnorr sig"
+
+instance FromJSON ServerResponse where
+    parseJSON = withArray "ServerResponse Event" $ \arr -> do
+        t <- parseJSON $ arr V.! 0
+        s <- parseJSON $ arr V.! 1
+        e <- parseJSON $ arr V.! 2
+        case t of
+            String "EVENT" -> return $ ServerResponse s e
+            _ -> fail "Invalid ServerResponse did not have EVENT"
 
 textToByteStringType :: Text -> (ByteString -> Maybe a) -> Maybe a
 textToByteStringType t f =
@@ -161,7 +182,7 @@ data Event =
 instance ToJSON Event where
     toJSON Event {..} = object
          [ "id"         .= exportEventId eventId
-         , "pubKey"     .= Schnorr.exportXOnlyPubKey pubKey
+         , "pubkey"     .= Schnorr.exportXOnlyPubKey pubKey
          , "created_at" .= toSeconds created_at
          , "kind"       .= kind
          , "tags"       .= tags
@@ -172,7 +193,7 @@ instance ToJSON Event where
 instance FromJSON Event where
     parseJSON = withObject "event data" $ \e -> Event
         <$> e .: "id"
-        <*> e .: "pubKey"
+        <*> e .: "pubkey"
         <*> (fromSeconds <$> e .: "created_at")
         <*> e .: "kind"
         <*> e .: "tags"
@@ -194,6 +215,14 @@ data Tag
   | PTag (XOnlyPubKey, RelayURL)
   deriving (Eq, Show)
 
+data EventFilter
+    = EventFilter
+        { filterPubKey :: XOnlyPubKey
+        , followers    :: [XOnlyPubKey]
+--        , from         :: DateTime
+        }
+    deriving (Eq, Show)
+
 instance FromJSON Tag where
   parseJSON (Array v)
     | V.length v == 3 =
@@ -202,12 +231,32 @@ instance FromJSON Tag where
           ETag <$> ((,) <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2))
         String "e" ->
           PTag <$> ((,) <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2))
-        _ -> mzero
-    | otherwise = mzero
-  parseJSON _ = mzero
+        _ -> fail "Unknown tag seen"
+    | otherwise = fail "Invalid tag length"
+  parseJSON _ = fail "Cannot parse tag"
 
 instance ToJSON Tag where
     toJSON (ETag (eventId, relayURL)) =
         Array $ fromList [String "e", String $ pack $ exportEventId eventId, String $ relayURL]
     toJSON (PTag (xOnlyPubKey, relayURL)) =
         Array $ fromList [String "p", String $ pack $ Schnorr.exportXOnlyPubKey xOnlyPubKey, String $ relayURL]
+
+instance ToJSON EventFilter where
+    toJSON ef =
+        --Array $ fromList
+        --    [ object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
+             object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
+                [ ( "kinds"   , Array $ fromList $ [Number 0, Number 1, Number 2, Number 3])
+                -- , ( "authors"  , Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) $ followers ef)
+                ]
+                {-
+            , object $ fromList  -- posts mentioning us and direct messages to us
+                [ ( "kinds"   , Array $ fromList [Number 1, Number 4])
+                , ( "#p"       , Array $ fromList [String $ pack $ Schnorr.exportXOnlyPubKey $ filterPubKey ef])
+                ]
+            , object $ fromList -- our own direct messages to other people
+                [ ( "kinds"   , Array $ fromList [Number 4])
+                , ("authors"  , Array $ fromList [String $ pack $ Schnorr.exportXOnlyPubKey $ filterPubKey ef])
+                ]
+                -}
+--            ]

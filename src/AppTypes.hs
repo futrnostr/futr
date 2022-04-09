@@ -15,34 +15,34 @@ import           NostrTypes
 
 newtype AppEnv =
   AppEnv
-    { _channel :: TChan Event
+    { _channel :: TChan ServerRequest
     }
 
 data AppModel =
   AppModel
-    { _clickCount     :: Int
-    , _myKeyPair      :: Maybe KeyPair
+    { _myKeyPair      :: Maybe KeyPair
     , _myXOnlyPubKey  :: Maybe XOnlyPubKey
     , _pool           :: [Relay]
     , _mySecKeyInput  :: Text
     , _newPostInput   :: Text
     , _receivedEvents :: [Event]
+    , _eventFilter    :: Maybe EventFilter
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel 0 Nothing Nothing [] "" "" []
+  def = AppModel Nothing Nothing [] "" "" [] Nothing
 
 data AppEvent
   = AppInit
   | RelayConnected Relay
   | AddRelay Relay
-  | AppIncrease
   | RelayDisconnected Relay
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
   | ImportSecKey
   | SendPost
+  | PostSent
   | ReplyToPost Event
   | EventAppeared Event
   | NoOp

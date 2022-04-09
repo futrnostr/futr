@@ -3,12 +3,14 @@
 module NostrFunctions where
 
 import qualified Crypto.Hash.SHA256     as SHA256
+import           Crypto.Random.DRBG      (CtrDRBG, genBytes, newGen, newGenIO)
 import           Crypto.Schnorr         (KeyPair, Msg, SchnorrSig, XOnlyPubKey,
                                          verifyMsgSchnorr)
 import qualified Crypto.Schnorr as Schnorr
 import           Data.Aeson
 import           Data.Aeson.Types
 import           Data.ByteString        (ByteString)
+import qualified Data.ByteString.Base16  as B16
 import           Data.ByteString.Lazy   (toStrict)
 import           Data.Maybe             (fromJust)
 import           Data.Text              (Text, pack, unpack)
@@ -131,19 +133,11 @@ eventToPost e =
         _ ->
             Nothing
 
-eventFilter :: XOnlyPubKey -> [XOnlyPubKey] -> Value
-eventFilter p followers =
-    Array $ fromList
-        [ object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
-            [ ( "kinds"   , Array $ fromList $ [Number 0, Number 1, Number 2, Number 3])
-            , ("authors"  , Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) followers)
-            ]
-        , object $ fromList  -- posts mentioning us and direct messages to us
-            [ ( "kinds"   , Array $ fromList [Number 1, Number 4])
-            , ("#p"       , Array $ fromList [String $ pack $ Schnorr.exportXOnlyPubKey p])
-            ]
-        , object $ fromList -- our own direct messages to other people
-            [ ( "kinds"   , Array $ fromList [Number 4])
-            , ("authors"  , Array $ fromList [String $ pack $ Schnorr.exportXOnlyPubKey p])
-            ]
-        ]
+genSubscriptionId :: IO Text
+genSubscriptionId = do
+    gen <- newGenIO :: IO CtrDRBG
+    let Right (randomBytes, newGen) = genBytes 32 gen
+    return $ B16.encodeBase16 randomBytes
+
+extractEventFromServerResponse :: ServerResponse -> Event
+extractEventFromServerResponse (ServerResponse subId event) = event

@@ -48,17 +48,16 @@ type AppNode = WidgetNode AppModel AppEvent
 postRow :: AppWenv -> Int -> Event -> AppNode
 postRow wenv idx e = row where
   sectionBg = wenv ^. L.theme . L.sectionColor
-  dragColor = rgbaHex "#D3D3D3" 0.5
   rowSep = rgbaHex "#A9A9A9" 0.5
   rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
 
-  trashBg = wenv ^. L.theme . L.userColorMap . at "trashBg" . non def
-  trashFg = wenv ^. L.theme . L.userColorMap . at "trashFg" . non def
+  replyBg = wenv ^. L.theme . L.userColorMap . at "replyBg" . non def
+  replyFg = wenv ^. L.theme . L.userColorMap . at "replyFg" . non def
   replyIcon action = button remixReplyLine action
-    `styleBasic` [textFont "Remix", textMiddle, textColor trashFg, bgColor transparent, border 0 transparent]
-    `styleHover` [bgColor trashBg]
+    `styleBasic` [textFont "Remix", textMiddle, textColor replyFg, bgColor transparent, border 0 transparent]
+    `styleHover` [bgColor replyBg]
     `styleFocus` [bgColor (sectionBg & L.a .~ 0.5)]
-    `styleFocusHover` [bgColor trashBg]
+    `styleFocusHover` [bgColor replyBg]
 
   postInfo = hstack [
       label (T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey e) `styleBasic` [width 100],
@@ -67,6 +66,7 @@ postRow wenv idx e = row where
     ] `styleBasic` [cursorHand]
 
   row = hstack [
+      postInfo,
       replyIcon (ReplyToPost e)
     ] `styleBasic` [padding 10, borderB 1 rowSep]
       `styleHover` [bgColor rowBg]
@@ -90,12 +90,6 @@ buildUI wenv model =
         [ label "Hello, nostr"
         , spacer
         , hstack
-            [ label $ "Click count: " <> showt (model ^. clickCount)
-            , spacer
-            , button "Increase count" AppIncrease
-            ]
-        , spacer
-        , hstack
             [ label $ "New Post"
             , spacer
             , textField newPostInput `nodeKey` "newPost"
@@ -104,10 +98,6 @@ buildUI wenv model =
             ]
         , spacer
         , scroll_ [scrollOverlay] $ posts `styleBasic` [padding 10]
-        , spacer
-        , label "KeyPair"
-        , spacer
-        , label $ T.pack $ exportKeyPair k
         , spacer
         , label "XOnlyPubKey"
         , spacer
@@ -153,39 +143,63 @@ handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
     AppInit -> map (\r -> Producer $ connectRelay env r) defaultPool
-    RelayConnected r -> [Model $ model & pool %~ (r <|)]
-    RelayDisconnected r -> []
+    RelayConnected r ->
+        [ Model $ model & pool %~ (r {connected = True} <|)
+        , Task $ subscribe env (model ^. eventFilter)
+        ]
+    RelayDisconnected r -> [ Model $ model & pool %~ (r {connected = False} <|)]
     AddRelay r -> [Producer $ connectRelay env r]
-    AppIncrease -> [Model (model & clickCount +~ 1)]
     GenerateKeyPair -> [Producer generateNewKeyPair]
     KeyPairGenerated k ->
-      [ Model $
-        model & myKeyPair .~ (Just k) &
-        myXOnlyPubKey .~ (Just $ deriveXOnlyPubKey k)
-      ]
+      [ Model $ model
+        & myKeyPair .~ (Just k)
+        & myXOnlyPubKey .~ (Just pk)
+        & eventFilter .~ ef
+      , Task $ subscribe env ef
+      ] where
+      pk = deriveXOnlyPubKey k
+      ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
     ImportSecKey ->
-      [ Model $
-        model & myKeyPair .~ kp & myXOnlyPubKey .~ (fmap deriveXOnlyPubKey kp) &
-        mySecKeyInput .~ ""
+      [ Model $ model
+        & myKeyPair .~ kp
+        & myXOnlyPubKey .~ (fmap deriveXOnlyPubKey kp)
+        & mySecKeyInput .~ ""
+        & eventFilter .~ ef
+      , Task $ subscribe env ef
       ]
       where kp =
               fmap keyPairFromSecKey $
               maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
+            pk = deriveXOnlyPubKey $ fromJust kp
+            ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
     SendPost -> [Task $ handleNewPost env model]
+    PostSent -> [Model $ model & newPostInput .~ ""]
     ReplyToPost e -> []
+    EventAppeared e -> [Model $ model & receivedEvents %~ (e <|)]
+
+subscribe :: AppEnv -> Maybe EventFilter -> IO AppEvent
+subscribe env mfilter = do
+    putStrLn $ show mfilter
+    case mfilter of
+        Just f -> do
+            subId <- genSubscriptionId
+            atomically $ writeTChan (env ^. channel) $ RequestRelay subId f
+            return NoOp
+        _      ->
+            return NoOp
 
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
     now <- getCurrentTime
     let x = fromJust (model ^. myXOnlyPubKey)
     let raw = textNote (model ^. newPostInput) x now
-    atomically $ writeTChan (env ^. channel) $ signEvent raw (fromJust $ model ^. myKeyPair) x
-    return NoOp
+    atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fromJust $ model ^. myKeyPair) x
+    return PostSent
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = do
-  runSecureClient h p path $ \conn -> do
-  --WS.runClient h p path $ \conn -> do
+  --runSecureClient h p path $ \conn -> do
+  WS.runClient h p path $ \conn -> do
     putStrLn $ "Connected to " ++ (host r) ++ ":" ++ (show (port r))
     receiveWs conn sendMsg
     sendWs (env ^. channel) conn
@@ -198,13 +212,18 @@ receiveWs :: WS.Connection -> (AppEvent -> IO ()) -> IO ()
 receiveWs conn sendMsg = void . forkIO . forever $ do
     msg <- WS.receiveData conn
     case decode msg of
-        Just m -> sendMsg $ EventAppeared m
-        Nothing -> sendMsg $ NoOp
+        Just m -> do
+            sendMsg $ EventAppeared $ extractEventFromServerResponse m
+        Nothing -> do
+            putStrLn $ "Could not decode server response: " ++ show msg
+            sendMsg $ NoOp
 
-sendWs :: TChan Event -> WS.Connection -> IO ()
+sendWs :: TChan ServerRequest -> WS.Connection -> IO ()
 sendWs channel conn = forever $ do
     msg <- atomically $ readTChan channel
-    WS.sendTextData conn $ encode $ SendEvent msg
+    putStrLn $ show msg
+    putStrLn $ show $ encode msg
+    WS.sendTextData conn $ encode $ msg
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do
