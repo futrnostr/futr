@@ -227,9 +227,9 @@ instance FromJSON Tag where
   parseJSON (Array v)
     | V.length v == 3 =
       case v V.! 0 of
-        String "p" ->
-          ETag <$> ((,) <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2))
         String "e" ->
+          ETag <$> ((,) <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2))
+        String "p" ->
           PTag <$> ((,) <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2))
         _ -> fail "Unknown tag seen"
     | otherwise = fail "Invalid tag length"
@@ -247,7 +247,7 @@ instance ToJSON EventFilter where
         --    [ object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
              object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
                 [ ( "kinds"   , Array $ fromList $ [Number 0, Number 1, Number 2, Number 3])
-                -- , ( "authors"  , Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) $ followers ef)
+                 , ( "authors"  , Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) $ followers ef)
                 ]
                 {-
             , object $ fromList  -- posts mentioning us and direct messages to us

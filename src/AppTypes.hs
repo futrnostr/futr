@@ -27,11 +27,12 @@ data AppModel =
     , _newPostInput   :: Text
     , _receivedEvents :: [Event]
     , _eventFilter    :: Maybe EventFilter
+    , _viewPost       :: Maybe Event
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel Nothing Nothing [] "" "" [] Nothing
+  def = AppModel Nothing Nothing [] "" "" [] Nothing Nothing
 
 data AppEvent
   = AppInit
@@ -42,6 +43,8 @@ data AppEvent
   | KeyPairGenerated KeyPair
   | ImportSecKey
   | SendPost
+  | ViewPost Event
+  | Back
   | PostSent
   | ReplyToPost Event
   | EventAppeared Event

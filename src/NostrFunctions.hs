@@ -97,6 +97,11 @@ textNote note xo t =
   RawEvent
     {pubKey' = xo, created_at' = t, kind' = 1, tags' = [], content' = note}
 
+replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> RawEvent
+replyNote event note xo t =
+  RawEvent
+    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event, "")], content' = note}
+
 recommendServer :: RelayURL -> XOnlyPubKey -> DateTime -> RawEvent
 recommendServer url xo t =
   RawEvent
