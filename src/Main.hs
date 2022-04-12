@@ -103,7 +103,7 @@ viewPosts wenv model k = widgetTree where
 viewPostUI :: AppWenv -> AppModel -> KeyPair -> Event -> AppNode
 viewPostUI wenv model k event = widgetTree where
     postInfo = hstack [
-        button "Back" Back `styleBasic` [height 20],
+        button "Back" Back,
         spacer,
         label (T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey event) `styleBasic` [width 100],
         spacer,
