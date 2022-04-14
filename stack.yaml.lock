@@ -12,13 +12,6 @@ packages:
   original:
     hackage: nanovg-0.8.0.0
 - completed:
-    hackage: monomer-1.3.0.0@sha256:82bb1ab764d0ff621073ddcea4d9b4fe56410977c819ffcec4a00d823817e1cb,16184
-    pantry-tree:
-      size: 13936
-      sha256: 6972485b1da425a7af7be4407217748fc83fbef272d9c7174ca65cd7faf201bb
-  original:
-    hackage: monomer-1.3.0.0
-- completed:
     hackage: parallel-io-0.3.5@sha256:97db32eb84b3141f4957f6d208c0ef8adce647cbf68099417e93c7d9a45f9b35,3482
     pantry-tree:
       size: 706
@@ -64,6 +57,17 @@ packages:
   original:
     git: https://github.com/prolic/secp256k1-schnorr.git
     commit: bdfb38a9cf170e95c373ceb564f7c5e5232b6542
+- completed:
+    name: monomer
+    version: 1.3.0.0
+    git: https://github.com/fjvallarino/monomer.git
+    pantry-tree:
+      size: 17322
+      sha256: 7be8f8681d72e254f77e3e1528a6735222d105bae7091b4fcf78067a0b8b75ba
+    commit: 0e464c5bb67c11070410463fa184ca67f84d68db
+  original:
+    git: https://github.com/fjvallarino/monomer.git
+    commit: 0e464c5bb67c11070410463fa184ca67f84d68db
 snapshots:
 - completed:
     size: 586292

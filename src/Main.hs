@@ -95,20 +95,25 @@ viewPosts wenv model k = widgetTree where
         , spacer
         , scroll_ [scrollOverlay] $ posts `styleBasic` [padding 10]
         , spacer
-        , label "XOnlyPubKey"
-        , spacer
-        , label $ T.pack $ exportXOnlyPubKey $ deriveXOnlyPubKey k
+        , xOnlyPubKeyElem k
         ] `styleBasic` [padding 10]
 
 viewPostUI :: AppWenv -> AppModel -> KeyPair -> Event -> AppNode
 viewPostUI wenv model k event = widgetTree where
-    postInfo = hstack [
-        button "Back" Back,
-        spacer,
-        label (T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey event) `styleBasic` [width 100],
-        spacer,
-        label $ content event
-      ] `styleBasic` [cursorHand, textTop]
+    postInfo = vstack
+        [ button "Back" Back
+        , spacer
+        , hstack
+            [ label (T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey event) `styleBasic` [width 100, textTop]
+            , spacer
+            , textFieldD_ (WidgetValue $ content event) [readOnly]
+                `styleBasic`
+                    [ border 0 (Color 255 255 255 1.0)
+                    , radius 0
+                    , bgColor $ rgbHex "#515151"
+                    ]
+            ]
+        ]
 
     widgetTree = vstack
         [ scroll_ [scrollOverlay] $ postInfo `styleBasic` [padding 10, textTop]
@@ -121,10 +126,15 @@ viewPostUI wenv model k event = widgetTree where
             , button "Reply" (ReplyToPost event)
             ]
         , spacer
-        , label "XOnlyPubKey"
-        , spacer
-        , label $ T.pack $ exportXOnlyPubKey $ deriveXOnlyPubKey k
+        , xOnlyPubKeyElem k
         ] `styleBasic` [padding 10]
+
+xOnlyPubKeyElem :: KeyPair -> WidgetNode AppModel AppEvent
+xOnlyPubKeyElem k = hstack
+    [ label "XOnlyPubKey"
+    , spacer
+    , textFieldD_ (WidgetValue $ T.pack $ exportXOnlyPubKey $ deriveXOnlyPubKey k) [readOnly]
+    ]
 
 generateOrImportKeyPairStack :: AppModel -> AppNode
 generateOrImportKeyPairStack model =

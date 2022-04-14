@@ -41,7 +41,6 @@ packages:
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 extra-deps:
 - nanovg-0.8.0.0
-- monomer-1.3.0.0
 - parallel-io-0.3.5
 - DRBG-0.5.5@sha256:3b8040bed356e2b63927a27fb6d5adbd19d70c9e1d1bb66111bbeb33e56900eb,2259
 - cipher-aes128-0.7.0.6@sha256:6efdf4af08772b6c99e47ec7586bdc26deb33d8ca797c64affcb4bd7aaae9884,3413
@@ -49,6 +48,8 @@ extra-deps:
 - datetime-0.3.1@sha256:7e275bd0ce7a2f66445bedfa0006abaf4d41af4c2204c3f8004c17eab5480e74,1534
 - git: https://github.com/prolic/secp256k1-schnorr.git
   commit: bdfb38a9cf170e95c373ceb564f7c5e5232b6542
+- git: https://github.com/fjvallarino/monomer.git
+  commit: 0e464c5bb67c11070410463fa184ca67f84d68db
 
 # Override default flag values for local packages and extra-deps
 flags:
