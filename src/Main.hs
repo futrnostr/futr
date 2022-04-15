@@ -50,18 +50,17 @@ postRow wenv idx e = row where
   rowSep = rgbaHex "#A9A9A9" 0.5
   rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
 
-  postInfo = hstack [
-      label (T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey e) `styleBasic` [width 100],
-      spacer,
-      label $ content e
-    ] `styleBasic` [cursorHand]
+  postInfo = hstack
+    [ selectableText $ T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey e
+    , spacer
+    , selectableText $ content e
+    ]
 
-  row = hstack [
-      postInfo,
-      spacer,
-      button "View" (ViewPost e)
+  row = hstack
+    [ postInfo
+    , spacer
+    , button "View" (ViewPost e)
     ] `styleBasic` [padding 10, borderB 1 rowSep]
-      --`styleHover` [bgColor rowBg]
 
 buildUI :: AppWenv -> AppModel -> AppNode
 buildUI wenv model =
@@ -86,32 +85,33 @@ viewPosts wenv model k = widgetTree where
     widgetTree = vstack
         [ label "New Post"
         , spacer
-        , hstack
-            [ textArea newPostInput `nodeKey` "newPost"
-                `styleBasic` [height 100]
-            , filler
-            , button "Post" SendPost
+        , vstack
+            [ hstack
+                [ textArea newPostInput `nodeKey` "newPost"
+                    `styleBasic` [height 100]
+                , filler
+                , button "Post" SendPost
+                    `styleBasic` [height 100]
+                ]
             ]
         , spacer
         , scroll_ [scrollOverlay] $ posts `styleBasic` [padding 10]
         , spacer
-        , xOnlyPubKeyElem k
+        , xOnlyPubKeyElem $ deriveXOnlyPubKey k
         ] `styleBasic` [padding 10]
 
 viewPostUI :: AppWenv -> AppModel -> KeyPair -> Event -> AppNode
 viewPostUI wenv model k event = widgetTree where
     postInfo = vstack
-        [ button "Back" Back
+        [ hstack
+            [ button "Back" Back
+            , filler
+            ]
         , spacer
         , hstack
-            [ label (T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey event) `styleBasic` [width 100, textTop]
+            [ selectableText $ T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey event
             , spacer
-            , textFieldD_ (WidgetValue $ content event) [readOnly]
-                `styleBasic`
-                    [ border 0 (Color 255 255 255 1.0)
-                    , radius 0
-                    , bgColor $ rgbHex "#515151"
-                    ]
+            , selectableText $ content event
             ]
         ]
 
@@ -126,14 +126,22 @@ viewPostUI wenv model k event = widgetTree where
             , button "Reply" (ReplyToPost event)
             ]
         , spacer
-        , xOnlyPubKeyElem k
+        , xOnlyPubKeyElem $ deriveXOnlyPubKey k
         ] `styleBasic` [padding 10]
 
-xOnlyPubKeyElem :: KeyPair -> WidgetNode AppModel AppEvent
-xOnlyPubKeyElem k = hstack
+selectableText :: Text -> WidgetNode AppModel AppEvent
+selectableText t = textFieldD_ (WidgetValue t) [readOnly]
+    `styleBasic`
+       [ border 0 transparent
+       , radius 0
+       , bgColor $ rgbHex "#515151"
+       ]
+
+xOnlyPubKeyElem :: XOnlyPubKey -> WidgetNode AppModel AppEvent
+xOnlyPubKeyElem x = hstack
     [ label "XOnlyPubKey"
     , spacer
-    , textFieldD_ (WidgetValue $ T.pack $ exportXOnlyPubKey $ deriveXOnlyPubKey k) [readOnly]
+    , textFieldD_ (WidgetValue $ T.pack $ exportXOnlyPubKey x) [readOnly]
     ]
 
 generateOrImportKeyPairStack :: AppModel -> AppNode
