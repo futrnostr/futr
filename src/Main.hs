@@ -64,11 +64,11 @@ postRow wenv idx e = row where
 
 buildUI :: AppWenv -> AppModel -> AppNode
 buildUI wenv model =
-  case view myKeyPair model of
-    Just k ->
+  case view currentKeys model of
+    Just ks ->
         case model ^. viewPost of
-            Just p -> viewPostUI wenv model k p
-            Nothing -> viewPosts wenv model k
+            Just p -> viewPostUI wenv model (fst ks) p
+            Nothing -> viewPosts wenv model (fst ks)
     Nothing -> generateOrImportKeyPairStack model
 
 viewPosts :: AppWenv -> AppModel -> KeyPair -> AppNode
@@ -190,17 +190,18 @@ handleEvent env wenv node model evt =
     GenerateKeyPair -> [Producer generateNewKeyPair]
     KeyPairGenerated k ->
       [ Model $ model
-        & myKeyPair .~ (Just k)
-        & myXOnlyPubKey .~ (Just pk)
+        & keys .~ [ks]
+        & currentKeys .~ Just ks
         & eventFilter .~ ef
       , Task $ subscribe env ef
       ] where
       pk = deriveXOnlyPubKey k
+      ks = (k, pk)
       ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
     ImportSecKey ->
       [ Model $ model
-        & myKeyPair .~ kp
-        & myXOnlyPubKey .~ (fmap deriveXOnlyPubKey kp)
+        & keys .~ [ks]
+        & currentKeys .~ Just ks
         & mySecKeyInput .~ ""
         & eventFilter .~ ef
       , Task $ subscribe env ef
@@ -210,6 +211,7 @@ handleEvent env wenv node model evt =
               maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
             pk = deriveXOnlyPubKey $ fromJust kp
             ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
+            ks = (fromJust kp, pk)
     SendPost ->
       [ Model $ model
           & newPostInput .~ ""
@@ -239,25 +241,30 @@ subscribe env mfilter = do
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
     now <- getCurrentTime
-    let x = fromJust (model ^. myXOnlyPubKey)
+    let x = snd $ fromJust (model ^. currentKeys)
     let raw = case model ^. viewPost of {
         Just p  -> replyNote p (strip $ model ^. newPostInput) x now;
         Nothing -> textNote (strip $ model ^. newPostInput) x now;
     }
-    atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fromJust $ model ^. myKeyPair) x
+    atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fst $ fromJust $ model ^. currentKeys) x
     return PostSent
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = do
-  --runSecureClient h p path $ \conn -> do
-  WS.runClient h p path $ \conn -> do
-    putStrLn $ "Connected to " ++ (host r) ++ ":" ++ (show (port r))
+  start $ \conn -> do
+    putStrLn $ "Connected to " ++ (host r) ++ ":" ++ (show (port r)) ++ isSecure
     receiveWs conn sendMsg
     sendWs (env ^. channel) conn
+    sendMsg $ RelayConnected r
   where
     h = host r
-    p = fromIntegral $ port r
     path = "/"
+    start = case secure r of
+        True  ->  runSecureClient h (port r) path
+        False -> WS.runClient h (fromIntegral $ port r) path
+    isSecure = case secure r of
+        True  -> " (secure connection)"
+        False -> " (insecure connection)"
 
 receiveWs :: WS.Connection -> (AppEvent -> IO ()) -> IO ()
 receiveWs conn sendMsg = void . forkIO . forever $ do

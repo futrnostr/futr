@@ -32,6 +32,7 @@ data Relay =
   Relay
     { host      :: String
     , port      :: PortNumber
+    , secure    :: Bool
     , readable  :: Bool
     , writable  :: Bool
     , connected :: Bool
@@ -44,6 +45,7 @@ defaultPool =
     [ Relay
         { host = "nostr.rocks"
         , port = 443
+        , secure = True
         , readable = True
         , writable = True
         , connected = False
@@ -51,6 +53,7 @@ defaultPool =
     , Relay
         { host = "nostr-pub.wellorder.net"
         , port = 443
+        , secure = True
         , readable = True
         , writable = True
         , connected = False
@@ -60,6 +63,7 @@ defaultPool =
     [ Relay
         { host = "localhost"
         , port = 2700
+        , secure = False
         , readable = True
         , writable = True
         , connected = False

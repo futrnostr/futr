@@ -18,10 +18,12 @@ newtype AppEnv =
     { _channel :: TChan ServerRequest
     }
 
+type Keys = (KeyPair, XOnlyPubKey)
+
 data AppModel =
   AppModel
-    { _myKeyPair      :: Maybe KeyPair
-    , _myXOnlyPubKey  :: Maybe XOnlyPubKey
+    { _keys           :: [Keys]
+    , _currentKeys    :: Maybe Keys
     , _pool           :: [Relay]
     , _mySecKeyInput  :: Text
     , _newPostInput   :: Text
@@ -32,7 +34,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel Nothing Nothing [] "" "" [] Nothing Nothing
+  def = AppModel [] Nothing [] "" "" [] Nothing Nothing
 
 data AppEvent
   = AppInit
