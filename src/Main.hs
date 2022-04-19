@@ -104,12 +104,8 @@ viewPosts wenv model = widgetTree where
 
       postRows = zipWith postFade [0..] (model ^. receivedEvents)
 
-    footer = case model ^. currentKeys of
-        Just ks  -> [spacer, xOnlyPubKeyElem $ deriveXOnlyPubKey $ fst ks]
-        Nothing  -> []
-
-    widgetTree = vstack
-        ([ label "New Post"
+    postTree = vstack
+        [ label "New Post"
         , spacer
         , vstack
             [ hstack
@@ -122,7 +118,20 @@ viewPosts wenv model = widgetTree where
             ]
         , spacer
         , scroll_ [scrollOverlay] $ posts `styleBasic` [padding 10]
-        ] ++ footer) `styleBasic` [padding 10]
+        ] `styleBasic` [padding 10]
+
+    identitiesTree = vstack
+        [ label "Identities"
+        , spacer
+        , vstack
+            (map (\k -> xOnlyPubKeyElem $ snd k) (model ^. keys))
+        ]
+
+    widgetTree = hstack
+        [ identitiesTree
+        , spacer
+        , postTree
+        ]
 
 viewPostUI :: AppWenv -> AppModel -> AppNode
 viewPostUI wenv model = widgetTree where
@@ -206,15 +215,7 @@ handleEvent ::
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
-    AppInit ->
-        {-
-        (map (\r -> Producer $ connectRelay env r) defaultPool) ++ (case model ^. currentKeys of
-            Just k -> []
-            Nothing -> [Model $ model & dialog .~ GenerateKeyPairDialog]
-        )
-        -}
-        [Producer tryLoadKeysFromDisk] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
-        --[Model $ model & dialog .~ GenerateKeyPairDialog] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
+    AppInit -> [ Producer tryLoadKeysFromDisk ] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
     RelayConnected r ->
         [ Model $ model & pool %~ (r {connected = True} <|)
         , Task $ subscribe env (model ^. eventFilter)
