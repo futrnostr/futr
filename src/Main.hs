@@ -63,16 +63,37 @@ postRow wenv idx e = row where
     ] `styleBasic` [padding 10, borderB 1 rowSep]
 
 buildUI :: AppWenv -> AppModel -> AppNode
-buildUI wenv model =
-  case view currentKeys model of
-    Just ks ->
-        case model ^. viewPost of
-            Just p -> viewPostUI wenv model (fst ks) p
-            Nothing -> viewPosts wenv model (fst ks)
-    Nothing -> generateOrImportKeyPairStack model
+buildUI wenv model = widgetTree where
+    baseLayer = viewPosts wenv model
 
-viewPosts :: AppWenv -> AppModel -> KeyPair -> AppNode
-viewPosts wenv model k = widgetTree where
+    closeIcon = icon IconClose
+        `styleBasic` [width 16, height 16, fgColor black, cursorHand]
+
+    dialogContent = case model ^. dialog of
+        NoAppDialog           -> vstack [ label "if you see this text, something went really wrong"] -- we never show this anyway
+        GenerateKeyPairDialog -> generateOrImportKeyPairStack model
+        ViewPostDialog        -> viewPostUI wenv model
+
+    dialogLayer = vstack
+        [ hstack
+            [ filler
+            , box_ [alignTop, onClick CloseDialog] closeIcon
+                `nodeEnabled` (model ^. dialog /= GenerateKeyPairDialog)
+            ]
+        , spacer
+        , dialogContent
+        --, compWidget model
+        ] `styleBasic` [width 500, height 400, padding 10, radius 10, bgColor darkGray]
+
+    widgetTree = zstack
+        [ baseLayer
+        , box_ [alignCenter, alignMiddle] dialogLayer
+            `nodeVisible` (model ^. dialog /= NoAppDialog)
+            `styleBasic` [bgColor (gray & L.a .~ 0.8)]
+        ]
+
+viewPosts :: AppWenv -> AppModel -> AppNode
+viewPosts wenv model = widgetTree where
     posts = vstack postRows where
       orderedPosts = (\e -> model ^? receivedEvents . ix e)
       postFade idx e = animRow where
@@ -82,8 +103,12 @@ viewPosts wenv model k = widgetTree where
 
       postRows = zipWith postFade [0..] (model ^. receivedEvents)
 
+    footer = case model ^. currentKeys of
+        Just ks  -> [spacer, xOnlyPubKeyElem $ deriveXOnlyPubKey $ fst ks]
+        Nothing  -> []
+
     widgetTree = vstack
-        [ label "New Post"
+        ([ label "New Post"
         , spacer
         , vstack
             [ hstack
@@ -96,12 +121,12 @@ viewPosts wenv model k = widgetTree where
             ]
         , spacer
         , scroll_ [scrollOverlay] $ posts `styleBasic` [padding 10]
-        , spacer
-        , xOnlyPubKeyElem $ deriveXOnlyPubKey k
-        ] `styleBasic` [padding 10]
+        ] ++ footer) `styleBasic` [padding 10]
 
-viewPostUI :: AppWenv -> AppModel -> KeyPair -> Event -> AppNode
-viewPostUI wenv model k event = widgetTree where
+viewPostUI :: AppWenv -> AppModel -> AppNode
+viewPostUI wenv model = widgetTree where
+    k = fst $ fromJust $ model ^. currentKeys
+    event = fromJust $ model ^. viewPost
     postInfo = vstack
         [ hstack
             [ button "Back" Back
@@ -180,19 +205,25 @@ handleEvent ::
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
-    AppInit -> map (\r -> Producer $ connectRelay env r) defaultPool
+    AppInit ->{- (map (\r -> Producer $ connectRelay env r) defaultPool) ++ case model ^. currentKeys of
+        Just k -> []
+        Nothing -> [Model $ model & dialog .~ GenerateKeyPairDialog]
+        -}
+        [Model $ model & dialog .~ GenerateKeyPairDialog] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
     RelayConnected r ->
         [ Model $ model & pool %~ (r {connected = True} <|)
         , Task $ subscribe env (model ^. eventFilter)
         ]
     RelayDisconnected r -> [ Model $ model & pool %~ (r {connected = False} <|)]
     AddRelay r -> [Producer $ connectRelay env r]
+    ShowGenerateKeyPairDialog -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
     GenerateKeyPair -> [Producer generateNewKeyPair]
     KeyPairGenerated k ->
       [ Model $ model
         & keys .~ [ks]
         & currentKeys .~ Just ks
         & eventFilter .~ ef
+        & dialog .~ NoAppDialog
       , Task $ subscribe env ef
       ] where
       pk = deriveXOnlyPubKey k
@@ -204,6 +235,7 @@ handleEvent env wenv node model evt =
         & currentKeys .~ Just ks
         & mySecKeyInput .~ ""
         & eventFilter .~ ef
+        & dialog .~ NoAppDialog
       , Task $ subscribe env ef
       ]
       where kp =
@@ -217,7 +249,11 @@ handleEvent env wenv node model evt =
           & newPostInput .~ ""
       , Task $ handleNewPost env model
       ]
-    ViewPost e -> [Model $ model & viewPost .~ (Just e)]
+    ViewPost e ->
+        [ Model $ model
+            & viewPost .~ (Just e)
+            & dialog .~ ViewPostDialog
+        ]
     Back -> [Model $ model & viewPost .~ Nothing]
     PostSent -> [Model $ model & newPostInput .~ ""]
     ReplyToPost e ->
@@ -226,6 +262,7 @@ handleEvent env wenv node model evt =
       , Task $ handleNewPost env model
       ]
     EventAppeared e -> [Model $ model & receivedEvents %~ (e <|)]
+    CloseDialog -> [Model $ model & dialog .~ NoAppDialog]
 
 subscribe :: AppEnv -> Maybe EventFilter -> IO AppEvent
 subscribe env mfilter = do
