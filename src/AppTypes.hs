@@ -51,6 +51,7 @@ data AppEvent
   | ShowGenerateKeyPairDialog
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
+  | NoKeysFound
   | ImportSecKey
   | SendPost
   | ViewPost Event

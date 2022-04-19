@@ -46,6 +46,7 @@ executable futr
     , network
     , parallel-io
     , secp256k1-schnorr
+    , serialise
     , stm
     , text
     , text-show

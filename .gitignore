@@ -11,3 +11,4 @@ dist-docs.*/
 *.ps
 *.ser
 cabal.project.local*
+*.ft

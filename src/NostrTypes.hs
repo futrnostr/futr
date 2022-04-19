@@ -116,6 +116,9 @@ instance ToJSON ServerRequest where
 instance Show EventId where
   showsPrec _ = shows . B16.encodeBase16 . getEventId
 
+instance ToJSON KeyPair where
+  toJSON e = String $ pack $ Schnorr.exportKeyPair e
+
 instance ToJSON EventId where
   toJSON e = String $ pack $ exportEventId e
 
@@ -124,6 +127,13 @@ instance ToJSON SchnorrSig where
 
 instance ToJSON XOnlyPubKey where
     toJSON x = String $ pack $ Schnorr.exportXOnlyPubKey x
+
+instance FromJSON KeyPair where
+  parseJSON =
+    withText "KeyPair" $ \k -> do
+      case (textToByteStringType k Schnorr.keypair) of
+        Just k' -> return k'
+        _       -> fail "invalid key pair"
 
 instance FromJSON EventId where
   parseJSON =

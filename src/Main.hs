@@ -5,6 +5,7 @@
 
 module Main where
 
+import qualified Codec.Serialise                      as S
 import           Control.Concurrent                   (forkIO)
 import           Control.Concurrent.STM.TChan
 import qualified Control.Exception                    as Exception
@@ -205,11 +206,15 @@ handleEvent ::
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
-    AppInit ->{- (map (\r -> Producer $ connectRelay env r) defaultPool) ++ case model ^. currentKeys of
-        Just k -> []
-        Nothing -> [Model $ model & dialog .~ GenerateKeyPairDialog]
+    AppInit ->
+        {-
+        (map (\r -> Producer $ connectRelay env r) defaultPool) ++ (case model ^. currentKeys of
+            Just k -> []
+            Nothing -> [Model $ model & dialog .~ GenerateKeyPairDialog]
+        )
         -}
-        [Model $ model & dialog .~ GenerateKeyPairDialog] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
+        [Producer tryLoadKeysFromDisk] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
+        --[Model $ model & dialog .~ GenerateKeyPairDialog] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
     RelayConnected r ->
         [ Model $ model & pool %~ (r {connected = True} <|)
         , Task $ subscribe env (model ^. eventFilter)
@@ -244,6 +249,7 @@ handleEvent env wenv node model evt =
             pk = deriveXOnlyPubKey $ fromJust kp
             ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
             ks = (fromJust kp, pk)
+    NoKeysFound -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
     SendPost ->
       [ Model $ model
           & newPostInput .~ ""
@@ -285,6 +291,13 @@ handleNewPost env model = do
     }
     atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fst $ fromJust $ model ^. currentKeys) x
     return PostSent
+
+tryLoadKeysFromDisk :: (AppEvent -> IO ()) -> IO ()
+tryLoadKeysFromDisk sendMsg = do
+    kp <- decode <$> LazyBytes.readFile "keys.ft" :: IO (Maybe KeyPair)
+    case kp of
+        Just k -> sendMsg $ KeyPairGenerated k
+        _      -> sendMsg $ NoKeysFound
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = do
