@@ -333,7 +333,7 @@ tryLoadKeysFromDisk sendMsg = do
     case fe of
         False -> sendMsg $ NoKeysFound
         True  -> do
-            content <- LazyBytes.readFile fp :: IO LazyBytes.ByteString
+            content <- LazyBytes.readFile fp
             let ks = decode content :: Maybe [Keys]
             case ks of
                 Just k -> do
