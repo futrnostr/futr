@@ -5,7 +5,6 @@
 
 module Main where
 
-import qualified Codec.Serialise                      as S
 import           Control.Concurrent                   (forkIO)
 import           Control.Concurrent.STM.TChan
 import qualified Control.Exception                    as Exception
@@ -75,12 +74,13 @@ buildUI wenv model = widgetTree where
         NoAppDialog           -> vstack [ label "if you see this text, something went really wrong"] -- we never show this anyway
         GenerateKeyPairDialog -> generateOrImportKeyPairStack model
         ViewPostDialog        -> viewPostUI wenv model
+        ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
 
     dialogLayer = vstack
         [ hstack
             [ filler
             , box_ [alignTop, onClick CloseDialog] closeIcon
-                `nodeEnabled` (model ^. dialog /= GenerateKeyPairDialog)
+                `nodeEnabled` (not $ elem (model ^. dialog) [GenerateKeyPairDialog, ErrorReadingKeysFileDialog])
             ]
         , spacer
         , dialogContent
@@ -131,7 +131,7 @@ viewPosts wenv model = widgetTree where
         [ label "Identities"
         , spacer
         , vstack
-            (map (\k -> xOnlyPubKeyElem $ snd k) (model ^. keys))
+            (map (\k -> xOnlyPubKeyElem $ snd' k) (model ^. keys))
         ] `styleBasic` [padding 10]
 
     widgetTree = vstack
@@ -147,7 +147,7 @@ viewPosts wenv model = widgetTree where
 
 viewPostUI :: AppWenv -> AppModel -> AppNode
 viewPostUI wenv model = widgetTree where
-    k = fst $ fromJust $ model ^. currentKeys
+    k = fst' $ mainKey $ model ^. keys
     event = fromJust $ model ^. viewPost
     postInfo = vstack
         [ hstack
@@ -190,6 +190,10 @@ xOnlyPubKeyElem x = hstack
     , spacer
     , textFieldD_ (WidgetValue $ T.pack $ exportXOnlyPubKey x) [readOnly]
     ]
+
+errorReadingKeysFileStack :: AppNode
+errorReadingKeysFileStack =
+    vstack [ label "ERROR: Keys file could not be read." ]
 
 generateOrImportKeyPairStack :: AppModel -> AppNode
 generateOrImportKeyPairStack model =
@@ -235,23 +239,31 @@ handleEvent env wenv node model evt =
     RelayDisconnected r -> [ Model $ model & pool %~ (r {connected = False} <|)]
     AddRelay r -> [Producer $ connectRelay env r]
     ShowGenerateKeyPairDialog -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
+    KeyPairsLoaded ks ->
+        [ Model $ model
+            & keys .~ ks
+            & eventFilter .~ ef
+            & dialog .~ NoAppDialog
+        , Task $ subscribe env ef
+        ] where
+        pk = deriveXOnlyPubKey $ fst' $ mainKey ks
+        ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
     GenerateKeyPair -> [Producer generateNewKeyPair]
     KeyPairGenerated k ->
       [ Model $ model
-        & keys .~ [ks]
-        & currentKeys .~ Just ks
+        & keys .~ ks : dk
         & eventFilter .~ ef
         & dialog .~ NoAppDialog
       , Task $ subscribe env ef
-      , Task $ saveKeyPair k
+      , Task $ saveKeyPairs $ ks : dk
       ] where
       pk = deriveXOnlyPubKey k
-      ks = (k, pk)
+      ks = (k, pk, True)
       ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
+      dk = disableKeys $ model ^. keys
     ImportSecKey ->
       [ Model $ model
         & keys .~ [ks]
-        & currentKeys .~ Just ks
         & mySecKeyInput .~ ""
         & eventFilter .~ ef
         & dialog .~ NoAppDialog
@@ -262,8 +274,9 @@ handleEvent env wenv node model evt =
               maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
             pk = deriveXOnlyPubKey $ fromJust kp
             ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
-            ks = (fromJust kp, pk)
+            ks = (fromJust kp, pk, True)
     NoKeysFound -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
+    ErrorReadingKeysFile -> [ Model $ model & dialog .~ ErrorReadingKeysFileDialog ]
     SendPost ->
       [ Model $ model
           & newPostInput .~ ""
@@ -298,18 +311,19 @@ subscribe env mfilter = do
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
     now <- getCurrentTime
-    let x = snd $ fromJust (model ^. currentKeys)
+    let ks = mainKey $ model ^. keys
+    let x = snd' ks
     let raw = case model ^. viewPost of {
         Just p  -> replyNote p (strip $ model ^. newPostInput) x now;
         Nothing -> textNote (strip $ model ^. newPostInput) x now;
     }
-    atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fst $ fromJust $ model ^. currentKeys) x
+    atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fst' ks) x
     return PostSent
 
-saveKeyPair :: KeyPair -> IO AppEvent
-saveKeyPair k = do
-    BS.writeFile "keys.ft" $ getKeyPair k
-    putStrLn "KeyPair saved to disk"
+saveKeyPairs :: [Keys] -> IO AppEvent
+saveKeyPairs ks = do
+    LazyBytes.writeFile "keys.ft" $ encode ks
+    putStrLn "KeyPairs saved to disk"
     return NoOp
 
 tryLoadKeysFromDisk :: (AppEvent -> IO ()) -> IO ()
@@ -319,13 +333,13 @@ tryLoadKeysFromDisk sendMsg = do
     case fe of
         False -> sendMsg $ NoKeysFound
         True  -> do
-            content <- BS.readFile fp :: IO BS.ByteString
-            let kp = keypair $ content :: Maybe KeyPair
-            case kp of
+            content <- LazyBytes.readFile fp :: IO LazyBytes.ByteString
+            let ks = decode content :: Maybe [Keys]
+            case ks of
                 Just k -> do
-                    sendMsg $ KeyPairGenerated k
+                    sendMsg $ KeyPairsLoaded k
                 _      -> do
-                    sendMsg $ NoKeysFound
+                    sendMsg $ ErrorReadingKeysFile
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = do
@@ -393,3 +407,21 @@ customDarkTheme = darkTheme
   & L.userColorMap . at "rowBg" ?~ rgbHex "#656565"
   & L.userColorMap . at "replyBg" ?~ rgbHex "#555555"
   & L.userColorMap . at "replyFg" ?~ rgbHex "#909090"
+
+fst' :: (a, b, c) -> a
+fst' (a, _, _) = a
+
+snd' :: (a, b, c) -> b
+snd' (_, b, _) = b
+
+third :: (a, b, c) -> c
+third (_, _, c) = c
+
+mainKey :: [Keys] -> Keys
+mainKey ks = head $ filter (\k -> third k == True) ks
+
+disableKeys :: [Keys] -> [Keys]
+disableKeys ks = map disableKey ks
+
+disableKey :: Keys -> Keys
+disableKey k = (fst' k, snd' k, False)

@@ -28,7 +28,6 @@ dependencies:
   - DRBG >=0.5.5 && <0.6
   - parallel-io
   - secp256k1-schnorr
-  - serialise
   - stm
   - text
   - text-show

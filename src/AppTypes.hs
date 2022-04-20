@@ -18,18 +18,18 @@ newtype AppEnv =
     { _channel :: TChan ServerRequest
     }
 
-type Keys = (KeyPair, XOnlyPubKey)
+type Keys = (KeyPair, XOnlyPubKey, Bool)
 
 data AppDialog
     = NoAppDialog
     | GenerateKeyPairDialog
     | ViewPostDialog
+    | ErrorReadingKeysFileDialog
     deriving (Eq, Show)
 
 data AppModel =
   AppModel
     { _keys           :: [Keys]
-    , _currentKeys    :: Maybe Keys
     , _pool           :: [Relay]
     , _mySecKeyInput  :: Text
     , _newPostInput   :: Text
@@ -41,7 +41,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing [] "" "" [] Nothing Nothing NoAppDialog
+  def = AppModel [] [] "" "" [] Nothing Nothing NoAppDialog
 
 data AppEvent
   = AppInit
@@ -49,9 +49,11 @@ data AppEvent
   | AddRelay Relay
   | RelayDisconnected Relay
   | ShowGenerateKeyPairDialog
+  | KeyPairsLoaded [Keys]
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
   | NoKeysFound
+  | ErrorReadingKeysFile
   | ImportSecKey
   | SendPost
   | ViewPost Event
