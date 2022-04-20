@@ -35,6 +35,7 @@ import           Network.WebSockets                   (ClientApp, Connection,
                                                        sendTextData)
 import qualified Network.WebSockets                   as WS
 import qualified Network.WebSockets.Stream            as Stream
+import           System.Directory
 import           TextShow
 import           Wuss
 
@@ -104,6 +105,12 @@ viewPosts wenv model = widgetTree where
 
       postRows = zipWith postFade [0..] (model ^. receivedEvents)
 
+    footerTree = vstack
+        [ hstack
+            [ label "Lets put here"
+            ]
+        ] `styleBasic` [border 1 $ rgbHex "#FFFFFF"]
+
     postTree = vstack
         [ label "New Post"
         , spacer
@@ -113,7 +120,7 @@ viewPosts wenv model = widgetTree where
                     `styleBasic` [height 100]
                 , filler
                 , button "Post" SendPost
-                    `styleBasic` [height 100]
+                    `styleBasic` [height 50]
                 ]
             ]
         , spacer
@@ -125,12 +132,17 @@ viewPosts wenv model = widgetTree where
         , spacer
         , vstack
             (map (\k -> xOnlyPubKeyElem $ snd k) (model ^. keys))
-        ]
+        ] `styleBasic` [padding 10]
 
-    widgetTree = hstack
-        [ identitiesTree
+    widgetTree = vstack
+        [ hstack
+            [ identitiesTree
+            , spacer
+            , postTree
+            ]
         , spacer
-        , postTree
+        , filler
+        , footerTree
         ]
 
 viewPostUI :: AppWenv -> AppModel -> AppNode
@@ -231,6 +243,7 @@ handleEvent env wenv node model evt =
         & eventFilter .~ ef
         & dialog .~ NoAppDialog
       , Task $ subscribe env ef
+      , Task $ saveKeyPair k
       ] where
       pk = deriveXOnlyPubKey k
       ks = (k, pk)
@@ -293,12 +306,26 @@ handleNewPost env model = do
     atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fst $ fromJust $ model ^. currentKeys) x
     return PostSent
 
+saveKeyPair :: KeyPair -> IO AppEvent
+saveKeyPair k = do
+    BS.writeFile "keys.ft" $ getKeyPair k
+    putStrLn "KeyPair saved to disk"
+    return NoOp
+
 tryLoadKeysFromDisk :: (AppEvent -> IO ()) -> IO ()
 tryLoadKeysFromDisk sendMsg = do
-    kp <- decode <$> LazyBytes.readFile "keys.ft" :: IO (Maybe KeyPair)
-    case kp of
-        Just k -> sendMsg $ KeyPairGenerated k
-        _      -> sendMsg $ NoKeysFound
+    let fp = "keys.ft"
+    fe <- doesFileExist fp
+    case fe of
+        False -> sendMsg $ NoKeysFound
+        True  -> do
+            content <- BS.readFile fp :: IO BS.ByteString
+            let kp = keypair $ content :: Maybe KeyPair
+            case kp of
+                Just k -> do
+                    sendMsg $ KeyPairGenerated k
+                _      -> do
+                    sendMsg $ NoKeysFound
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = do
