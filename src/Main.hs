@@ -107,7 +107,10 @@ viewPosts wenv model = widgetTree where
 
     footerTree = vstack
         [ hstack
-            ([filler] ++ map (\r -> box_ [onClick ErrorReadingKeysFile] (viewCircle r `styleBasic` [cursorIcon CursorHand])) (model ^. pool))
+            ([filler] ++ map (\r ->
+                box_ [onClick ErrorReadingKeysFile] (tooltip (T.pack $ relayName r) (viewCircle r)
+                    `styleBasic` [cursorIcon CursorHand])
+            ) (model ^. pool))
         ] `styleBasic` [padding 10]
 
     postTree = vstack
@@ -348,7 +351,7 @@ tryLoadKeysFromDisk sendMsg = do
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = do
   start $ \conn -> do
-    putStrLn $ "Connected to " ++ (host r) ++ ":" ++ (show (port r)) ++ isSecure
+    putStrLn $ "Connected to " ++ relayName r
     sendMsg $ RelayConnected r
     receiveWs conn sendMsg
     sendWs (env ^. channel) conn

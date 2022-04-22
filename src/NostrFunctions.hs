@@ -146,3 +146,9 @@ genSubscriptionId = do
 
 extractEventFromServerResponse :: ServerResponse -> Event
 extractEventFromServerResponse (ServerResponse subId event) = event
+
+relayName :: Relay -> String
+relayName r = pr ++ h ++ ":" ++ p where
+    pr = if secure r then "wss://" else "ws://"
+    h = host r
+    p = show $ port r
