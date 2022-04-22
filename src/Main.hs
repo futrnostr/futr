@@ -27,6 +27,7 @@ import qualified Data.Text                            as T
 import qualified Data.Text.IO                         as T
 import           Monomer
 import qualified Monomer.Lens                         as L
+import           Monomer.Widgets.Single
 import qualified Network.Connection                   as Connection
 import           Network.Socket
 import           Network.WebSockets                   (ClientApp, Connection,
@@ -71,7 +72,7 @@ buildUI wenv model = widgetTree where
         `styleBasic` [width 16, height 16, fgColor black, cursorHand]
 
     dialogContent = case model ^. dialog of
-        NoAppDialog           -> vstack [ label "if you see this text, something went really wrong"] -- we never show this anyway
+        NoAppDialog           -> vstack [ label "if you see this text, something went really wrong" ] -- we never show this anyway
         GenerateKeyPairDialog -> generateOrImportKeyPairStack model
         ViewPostDialog        -> viewPostUI wenv model
         ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
@@ -84,7 +85,6 @@ buildUI wenv model = widgetTree where
             ]
         , spacer
         , dialogContent
-        --, compWidget model
         ] `styleBasic` [width 500, height 400, padding 10, radius 10, bgColor darkGray]
 
     widgetTree = zstack
@@ -107,9 +107,8 @@ viewPosts wenv model = widgetTree where
 
     footerTree = vstack
         [ hstack
-            [ label "Lets put here"
-            ]
-        ] `styleBasic` [border 1 $ rgbHex "#FFFFFF"]
+            ([filler] ++ map (\r -> box_ [onClick ErrorReadingKeysFile] (viewCircle r `styleBasic` [cursorIcon CursorHand])) (model ^. pool))
+        ] `styleBasic` [padding 10]
 
     postTree = vstack
         [ label "New Post"
@@ -231,7 +230,9 @@ handleEvent ::
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
-    AppInit -> [ Producer tryLoadKeysFromDisk ] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
+    AppInit ->
+        [ Producer tryLoadKeysFromDisk
+        ] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
     RelayConnected r ->
         [ Model $ model & pool %~ (r {connected = True} <|)
         , Task $ subscribe env (model ^. eventFilter)
@@ -310,6 +311,7 @@ subscribe env mfilter = do
 
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
+    putStrLn $ show $ model ^. pool
     now <- getCurrentTime
     let ks = mainKey $ model ^. keys
     let x = snd' ks
@@ -336,6 +338,8 @@ tryLoadKeysFromDisk sendMsg = do
             content <- LazyBytes.readFile fp
             let ks = decode content :: Maybe [Keys]
             case ks of
+                Just [] -> do
+                    sendMsg $ NoKeysFound
                 Just k -> do
                     sendMsg $ KeyPairsLoaded k
                 _      -> do
@@ -345,9 +349,9 @@ connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = do
   start $ \conn -> do
     putStrLn $ "Connected to " ++ (host r) ++ ":" ++ (show (port r)) ++ isSecure
+    sendMsg $ RelayConnected r
     receiveWs conn sendMsg
     sendWs (env ^. channel) conn
-    sendMsg $ RelayConnected r
   where
     h = host r
     path = "/"
@@ -369,11 +373,10 @@ receiveWs conn sendMsg = void . forkIO . forever $ do
             sendMsg $ NoOp
 
 sendWs :: TChan ServerRequest -> WS.Connection -> IO ()
-sendWs channel conn = forever $ do
-    msg <- atomically $ readTChan channel
+sendWs channel conn =forever $ do
+    msg <- liftIO . atomically $ readTChan channel
     putStrLn $ show msg
-    putStrLn $ show $ encode msg
-    WS.sendTextData conn $ encode $ msg
+    WS.sendTextData conn $ encode msg
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do
@@ -421,7 +424,39 @@ mainKey :: [Keys] -> Keys
 mainKey ks = head $ filter (\k -> third k == True) ks
 
 disableKeys :: [Keys] -> [Keys]
-disableKeys ks = map disableKey ks
+disableKeys ks = map (\k -> (fst' k, snd' k, False)) ks
 
-disableKey :: Keys -> Keys
-disableKey k = (fst' k, snd' k, False)
+viewCircle :: Relay -> WidgetNode AppModel AppEvent
+viewCircle r = defaultWidgetNode "circlesGrid" widget where
+    widget = createSingle () def {
+        singleGetSizeReq = getSizeReq,
+        singleRender = render
+    }
+
+    getSizeReq wenv node = (fixedSize 20, fixedSize 20)
+
+    render wenv node renderer = do
+        drawCircle renderer vp r
+        where
+          style = currentStyle wenv node
+          vp = getContentArea node style
+
+drawCircle
+  :: Renderer -> Rect -> Relay -> IO ()
+drawCircle renderer vp r = do
+  let offsetX = -3
+  let offsetY = 3
+  let color = if connected r then paleGreen else orange
+  let colorFill = color & L.a .~ 0.3
+  beginPath renderer
+  setStrokeWidth renderer 2
+  setStrokeColor renderer color
+  setFillColor renderer colorFill
+  renderEllipse renderer (rect offsetX offsetY)
+  fill renderer
+  stroke renderer
+  where
+    size = 15
+    rect ox oy = Rect rx ry size size where
+        rx = vp ^. L.x + vp ^. L.w + ox - size
+        ry = vp ^. L.y + oy
