@@ -368,7 +368,6 @@ handleEvent env wenv node model evt =
 
 subscribe :: AppEnv -> Maybe EventFilter -> IO AppEvent
 subscribe env mfilter = do
-    putStrLn $ show mfilter
     case mfilter of
         Just f -> do
             subId <- genSubscriptionId
@@ -449,17 +448,18 @@ receiveWs r conn sendMsg = void . forkIO . forever $ do
                 sendMsg $ NoOp
 
 sendWs :: TChan ServerRequest -> Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
-sendWs channel r conn sendMsg = forever $ do
-    msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest)
-    case msg of
-        Left ex -> do
-            sendMsg $ RelayDisconnected r
-            putStrLn "relay disconnected with exception"
-        Right msg' -> do
-            putStrLn $ show msg
-            case msg' of
-                Disconnect r -> WS.sendClose conn $ T.pack "Bye!"
-                _            -> WS.sendTextData conn $ encode msg'
+sendWs broadcastChannel r conn sendMsg = do
+    channel <- atomically $ dupTChan broadcastChannel
+    forever $ do
+        msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest)
+        case msg of
+            Left ex -> do
+                sendMsg $ RelayDisconnected r
+                Exit.exitSuccess -- @todo I don't know better
+            Right msg' -> do
+                case msg' of
+                    Disconnect r -> WS.sendClose conn $ T.pack "Bye!"
+                    _            -> WS.sendTextData conn $ encode msg'
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do
@@ -468,7 +468,7 @@ generateNewKeyPair sendMsg = do
 
 main :: IO ()
 main = do
-  channel <- newTChanIO
+  channel <- atomically newBroadcastTChan
   startApp def (handleEvent $ AppEnv channel) buildUI config
   where
     config =
