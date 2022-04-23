@@ -83,6 +83,7 @@ data ServerRequest
     = SendEvent Event
     | RequestRelay Text EventFilter
     | Close Text
+    | Disconnect Relay
     deriving (Eq, Show)
 
 data ServerResponse = ServerResponse Text Event
@@ -99,19 +100,20 @@ data Post =
 
 instance ToJSON ServerRequest where
     toJSON sr = case sr of
-        (SendEvent e) -> Array $ fromList
+        SendEvent e -> Array $ fromList
              [ String $ pack "EVENT"
              , toJSON e
              ]
-        (RequestRelay s ef) -> Array $ fromList
+        RequestRelay s ef -> Array $ fromList
             [ String $ pack "REQ"
             , String $ s
             , toJSON ef
             ]
-        (Close subid) -> Array $ fromList
+        Close subid -> Array $ fromList
              [ String $ pack "CLOSE"
              , String subid
              ]
+        Disconnect r -> String $ pack "Bye!"
 
 instance Show EventId where
   showsPrec _ = shows . B16.encodeBase16 . getEventId

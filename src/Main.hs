@@ -35,7 +35,8 @@ import           Network.WebSockets                   (ClientApp, Connection,
                                                        sendTextData)
 import qualified Network.WebSockets                   as WS
 import qualified Network.WebSockets.Stream            as Stream
-import           System.Directory
+import           System.Directory                     (doesFileExist)
+import qualified System.Exit                          as Exit
 import           TextShow
 import           Wuss
 
@@ -76,6 +77,7 @@ buildUI wenv model = widgetTree where
         GenerateKeyPairDialog -> generateOrImportKeyPairStack model
         ViewPostDialog        -> viewPostUI wenv model
         ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
+        RelayDialog r         -> viewRelayDialog r wenv model
 
     dialogLayer = vstack
         [ hstack
@@ -108,7 +110,7 @@ viewPosts wenv model = widgetTree where
     footerTree = vstack
         [ hstack
             ([filler] ++ map (\r ->
-                box_ [onClick ErrorReadingKeysFile] (tooltip (T.pack $ relayName r) (viewCircle r)
+                box_ [onClick $ ShowRelayDialog r] (tooltip (T.pack $ relayName r) (viewCircle r)
                     `styleBasic` [cursorIcon CursorHand])
             ) (model ^. pool))
         ] `styleBasic` [padding 10]
@@ -178,6 +180,52 @@ viewPostUI wenv model = widgetTree where
         , xOnlyPubKeyElem $ deriveXOnlyPubKey k
         ] `styleBasic` [padding 10]
 
+viewRelayDialog :: Relay -> AppWenv -> AppModel -> AppNode
+viewRelayDialog r wenv model =
+    vstack
+        [ hstack
+            [ label "Host"
+            , spacer
+            , textField relayHostInput `nodeKey` "relayHostInput"
+            ]
+        , spacer
+        , hstack
+            [ label "Port"
+            , spacer
+            , numericField relayPortInput `nodeKey` "relayPortInput"
+            ]
+        , spacer
+        , hstack
+            [ label "Secure connection"
+            , spacer
+            , checkbox relaySecureInput `nodeKey` "relaySecureCheckbox"
+            ]
+        , spacer
+        , hstack
+            [ label "Readable"
+            , spacer
+            , checkbox relayReadableInput `nodeKey` "relayReadableCheckbox"
+            ]
+        , spacer
+        , hstack
+            [ label "Writable"
+            , spacer
+            , checkbox relayWritableInput `nodeKey` "relayWriteableCheckbox"
+            ]
+        , filler
+        , hstack
+            [ filler
+            , label "Connection Status"
+            , spacer
+            , button connStatus connButton
+            ]
+        , spacer
+        , button "Save" (UpdateRelay r)
+        ] `styleBasic`
+            [padding 10] where
+                connStatus = if connected r then "Disconnect" else "Connect"
+                connButton = if connected r then (DisconnectRelay r) else (ConnectRelay r)
+
 selectableText :: Text -> WidgetNode AppModel AppEvent
 selectableText t = textFieldD_ (WidgetValue t) [readOnly]
     `styleBasic`
@@ -233,15 +281,27 @@ handleEvent ::
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
+    ConnectRelay r -> [ Producer $ connectRelay env r ]
+    DisconnectRelay r -> [ Task $ disconnectRelay env r ]
+    UpdateRelay r -> []
     AppInit ->
         [ Producer tryLoadKeysFromDisk
-        ] ++ (map (\r -> Producer $ connectRelay env r) defaultPool)
+        ] ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
     RelayConnected r ->
-        [ Model $ model & pool %~ (r {connected = True} <|)
+        [ Model $ model & pool .~ ((r {connected = True}) : (poolWithoutRelay (model ^. pool) r))
         , Task $ subscribe env (model ^. eventFilter)
         ]
-    RelayDisconnected r -> [ Model $ model & pool %~ (r {connected = False} <|)]
+    RelayDisconnected r -> [ Model $ model & pool .~ ((r {connected = False}) : (poolWithoutRelay (model ^. pool) r))]
     AddRelay r -> [Producer $ connectRelay env r]
+    ShowRelayDialog r ->
+        [ Model $ model
+            & dialog .~ RelayDialog r
+            & relayHostInput .~ (T.pack $ host r)
+            & relayPortInput .~ (fromIntegral $ port r)
+            & relaySecureInput  .~ secure r
+            & relayReadableInput .~ readable r
+            & relayWritableInput .~ writable r
+        ]
     ShowGenerateKeyPairDialog -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
     KeyPairsLoaded ks ->
         [ Model $ model
@@ -349,12 +409,12 @@ tryLoadKeysFromDisk sendMsg = do
                     sendMsg $ ErrorReadingKeysFile
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
-connectRelay env r sendMsg = do
+connectRelay env r sendMsg = if connected r then sendMsg NoOp else do
   start $ \conn -> do
     putStrLn $ "Connected to " ++ relayName r
     sendMsg $ RelayConnected r
-    receiveWs conn sendMsg
-    sendWs (env ^. channel) conn
+    receiveWs r conn sendMsg
+    sendWs (env ^. channel) r conn sendMsg
   where
     h = host r
     path = "/"
@@ -365,21 +425,37 @@ connectRelay env r sendMsg = do
         True  -> " (secure connection)"
         False -> " (insecure connection)"
 
-receiveWs :: WS.Connection -> (AppEvent -> IO ()) -> IO ()
-receiveWs conn sendMsg = void . forkIO . forever $ do
-    msg <- WS.receiveData conn
-    case decode msg of
-        Just m -> do
-            sendMsg $ EventAppeared $ extractEventFromServerResponse m
-        Nothing -> do
-            putStrLn $ "Could not decode server response: " ++ show msg
-            sendMsg $ NoOp
+disconnectRelay :: AppEnv -> Relay -> IO AppEvent
+disconnectRelay env r = if not $ connected r then return NoOp else do
+    atomically $ writeTChan (env ^. channel) $ Disconnect r
+    return NoOp
 
-sendWs :: TChan ServerRequest -> WS.Connection -> IO ()
-sendWs channel conn =forever $ do
-    msg <- liftIO . atomically $ readTChan channel
-    putStrLn $ show msg
-    WS.sendTextData conn $ encode msg
+receiveWs :: Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
+receiveWs r conn sendMsg = void . forkIO . forever $ do
+    msg <- Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString)
+    case msg of
+        Left ex    -> do
+            sendMsg $ RelayDisconnected r
+            Exit.exitSuccess -- @todo I don't know better
+        Right msg' -> case decode msg' of
+            Just m -> do
+                sendMsg $ EventAppeared $ extractEventFromServerResponse m
+            Nothing -> do
+                putStrLn $ "Could not decode server response: " ++ show msg'
+                sendMsg $ NoOp
+
+sendWs :: TChan ServerRequest -> Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
+sendWs channel r conn sendMsg = forever $ do
+    msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest)
+    case msg of
+        Left ex -> do
+            sendMsg $ RelayDisconnected r
+            putStrLn "relay disconnected with exception"
+        Right msg' -> do
+            putStrLn $ show msg
+            case msg' of
+                Disconnect r -> WS.sendClose conn $ T.pack "Bye!"
+                _            -> WS.sendTextData conn $ encode msg'
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do
@@ -428,6 +504,10 @@ mainKey ks = head $ filter (\k -> third k == True) ks
 
 disableKeys :: [Keys] -> [Keys]
 disableKeys ks = map (\k -> (fst' k, snd' k, False)) ks
+
+poolWithoutRelay :: [Relay] -> Relay -> [Relay]
+poolWithoutRelay p r = r : p' where
+    p' = filter (\p'' -> p'' /= r) p
 
 viewCircle :: Relay -> WidgetNode AppModel AppEvent
 viewCircle r = defaultWidgetNode "circlesGrid" widget where

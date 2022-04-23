@@ -25,6 +25,7 @@ data AppDialog
     | GenerateKeyPairDialog
     | ViewPostDialog
     | ErrorReadingKeysFileDialog
+    | RelayDialog Relay
     deriving (Eq, Show)
 
 data AppModel =
@@ -37,17 +38,26 @@ data AppModel =
     , _eventFilter    :: Maybe EventFilter
     , _viewPost       :: Maybe Event
     , _dialog         :: AppDialog
+    , _relayHostInput :: Text
+    , _relayPortInput :: Integer
+    , _relaySecureInput   :: Bool
+    , _relayReadableInput :: Bool
+    , _relayWritableInput :: Bool
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] [] "" "" [] Nothing Nothing NoAppDialog
+  def = AppModel [] defaultPool "" "" [] Nothing Nothing NoAppDialog "" 0 False False False
 
 data AppEvent
   = AppInit
+  | ConnectRelay Relay
+  | DisconnectRelay Relay
+  | UpdateRelay Relay
   | RelayConnected Relay
   | AddRelay Relay
   | RelayDisconnected Relay
+  | ShowRelayDialog Relay
   | ShowGenerateKeyPairDialog
   | KeyPairsLoaded [Keys]
   | GenerateKeyPair
