@@ -281,17 +281,25 @@ handleEvent ::
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
-    ConnectRelay r -> [ Producer $ connectRelay env r ]
-    DisconnectRelay r -> [ Task $ disconnectRelay env r ]
+    ConnectRelay r ->
+        [ Producer $ connectRelay env r
+        , Model $ model & dialog .~ NoAppDialog
+        ]
+    DisconnectRelay r ->
+        [ Task $ disconnectRelay env r
+        , Model $ model & dialog .~ NoAppDialog
+        ]
     UpdateRelay r -> []
     AppInit ->
         [ Producer tryLoadKeysFromDisk
         ] ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
     RelayConnected r ->
-        [ Model $ model & pool .~ ((r {connected = True}) : (poolWithoutRelay (model ^. pool) r))
+        [ Model $ model & pool .~ newPool
         , Task $ subscribe env (model ^. eventFilter)
-        ]
-    RelayDisconnected r -> [ Model $ model & pool .~ ((r {connected = False}) : (poolWithoutRelay (model ^. pool) r))]
+        ] where
+            newPool = (r {connected = True}) : (poolWithoutRelay (model ^. pool) r)
+    RelayDisconnected r -> [ Model $ model & pool .~ newPool ] where
+        newPool = (r {connected = False}) : (poolWithoutRelay (model ^. pool) r)
     AddRelay r -> [Producer $ connectRelay env r]
     ShowRelayDialog r ->
         [ Model $ model
@@ -308,7 +316,6 @@ handleEvent env wenv node model evt =
             & keys .~ ks
             & eventFilter .~ ef
             & dialog .~ NoAppDialog
-        , Task $ subscribe env ef
         ] where
         pk = deriveXOnlyPubKey $ fst' $ mainKey ks
         ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
@@ -318,7 +325,6 @@ handleEvent env wenv node model evt =
         & keys .~ ks : dk
         & eventFilter .~ ef
         & dialog .~ NoAppDialog
-      , Task $ subscribe env ef
       , Task $ saveKeyPairs $ ks : dk
       ] where
       pk = deriveXOnlyPubKey k
@@ -331,7 +337,6 @@ handleEvent env wenv node model evt =
         & mySecKeyInput .~ ""
         & eventFilter .~ ef
         & dialog .~ NoAppDialog
-      , Task $ subscribe env ef
       ]
       where kp =
               fmap keyPairFromSecKey $
@@ -374,7 +379,6 @@ subscribe env mfilter = do
 
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
-    putStrLn $ show $ model ^. pool
     now <- getCurrentTime
     let ks = mainKey $ model ^. keys
     let x = snd' ks
@@ -506,8 +510,10 @@ disableKeys :: [Keys] -> [Keys]
 disableKeys ks = map (\k -> (fst' k, snd' k, False)) ks
 
 poolWithoutRelay :: [Relay] -> Relay -> [Relay]
-poolWithoutRelay p r = r : p' where
-    p' = filter (\p'' -> p'' /= r) p
+poolWithoutRelay p r = p' where
+    p' = filter (\r' -> r `notSameRelay` r') p where
+        notSameRelay:: Relay -> Relay -> Bool
+        notSameRelay a b = host a /= host b && port a /= port b
 
 viewCircle :: Relay -> WidgetNode AppModel AppEvent
 viewCircle r = defaultWidgetNode "circlesGrid" widget where
