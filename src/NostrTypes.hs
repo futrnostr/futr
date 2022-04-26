@@ -26,8 +26,6 @@ import           GHC.Exts               (fromList)
 import           GHC.Generics           (Generic)
 import           Network.Socket         (PortNumber)
 
-import           Debug.Trace            (trace)
-
 data Relay =
   Relay
     { host      :: String
@@ -41,7 +39,6 @@ data Relay =
 
 defaultPool :: [Relay]
 defaultPool =
-{-
     [ Relay
         { host = "nostr.rocks"
         , port = 443
@@ -58,16 +55,14 @@ defaultPool =
         , writable = True
         , connected = False
         }
-    ]
--}
-    [ Relay
-        { host = "localhost"
-        , port = 2700
-        , secure = False
-        , readable = True
-        , writable = True
-        , connected = False
-        }
+--    , Relay
+--        { host = "localhost"
+--        , port = 2700
+--        , secure = False
+--        , readable = True
+--        , writable = True
+--        , connected = False
+--        }
     ]
 
 

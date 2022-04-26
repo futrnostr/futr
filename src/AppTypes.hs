@@ -25,6 +25,7 @@ data AppDialog
     | GenerateKeyPairDialog
     | ViewPostDialog
     | ErrorReadingKeysFileDialog
+    | NewRelayDialog
     | RelayDialog Relay
     deriving (Eq, Show)
 
@@ -47,7 +48,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] defaultPool "" "" [] Nothing Nothing NoAppDialog "" 0 False False False
+  def = AppModel [] defaultPool "" "" [] Nothing Nothing NoAppDialog "" 433 True True True
 
 data AppEvent
   = AppInit
@@ -55,9 +56,10 @@ data AppEvent
   | DisconnectRelay Relay
   | UpdateRelay Relay
   | RelayConnected Relay
-  | AddRelay Relay
+  | AddRelay
   | RelayDisconnected Relay
   | ShowRelayDialog Relay
+  | AddNewRelayDialog
   | ShowGenerateKeyPairDialog
   | KeyPairsLoaded [Keys]
   | GenerateKeyPair

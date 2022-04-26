@@ -78,6 +78,7 @@ buildUI wenv model = widgetTree where
         ViewPostDialog        -> viewPostUI wenv model
         ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
         RelayDialog r         -> viewRelayDialog r wenv model
+        NewRelayDialog        -> viewNewRelayDialog wenv model
 
     dialogLayer = vstack
         [ hstack
@@ -109,11 +110,12 @@ viewPosts wenv model = widgetTree where
 
     footerTree = vstack
         [ hstack
-            ([filler] ++ map (\r ->
-                box_ [onClick $ ShowRelayDialog r] (tooltip (T.pack $ relayName r) (viewCircle r)
-                    `styleBasic` [cursorIcon CursorHand])
-            ) (model ^. pool))
-        ] `styleBasic` [padding 10]
+            ([filler] ++ connections ++ [spacer, addRelay])
+        ] `styleBasic` [padding 10] where
+            connections = map (\r -> box_ [onClick $ ShowRelayDialog r] (tooltip (T.pack $ relayName r) (viewCircle r)
+                `styleBasic` [cursorIcon CursorHand])) (model ^. pool)
+            addRelay = box_ [alignTop, onClick AddNewRelayDialog] $ tooltip (T.pack $ "Add new relayy") $ addIcon
+            addIcon = icon IconPlus `styleBasic` [width 16, height 16, fgColor black, cursorHand]
 
     postTree = vstack
         [ label "New Post"
@@ -221,10 +223,45 @@ viewRelayDialog r wenv model =
             ]
         , spacer
         , button "Save" (UpdateRelay r)
-        ] `styleBasic`
-            [padding 10] where
-                connStatus = if connected r then "Disconnect" else "Connect"
-                connButton = if connected r then (DisconnectRelay r) else (ConnectRelay r)
+        ] `styleBasic` [padding 10] where
+            connStatus = if connected r then "Disconnect" else "Connect"
+            connButton = if connected r then (DisconnectRelay r) else (ConnectRelay r)
+
+viewNewRelayDialog :: AppWenv -> AppModel -> AppNode
+viewNewRelayDialog wenv model =
+    vstack
+        [ hstack
+            [ label "Host"
+            , spacer
+            , textField relayHostInput `nodeKey` "relayHostInput"
+            ]
+        , spacer
+        , hstack
+            [ label "Port"
+            , spacer
+            , numericField relayPortInput `nodeKey` "relayPortInput"
+            ]
+        , spacer
+        , hstack
+            [ label "Secure connection"
+            , spacer
+            , checkbox relaySecureInput `nodeKey` "relaySecureCheckbox"
+            ]
+        , spacer
+        , hstack
+            [ label "Readable"
+            , spacer
+            , checkbox relayReadableInput `nodeKey` "relayReadableCheckbox"
+            ]
+        , spacer
+        , hstack
+            [ label "Writable"
+            , spacer
+            , checkbox relayWritableInput `nodeKey` "relayWriteableCheckbox"
+            ]
+        , spacer
+        , button "Add relay" AddRelay
+        ] `styleBasic` [padding 10]
 
 selectableText :: Text -> WidgetNode AppModel AppEvent
 selectableText t = textFieldD_ (WidgetValue t) [readOnly]
@@ -297,10 +334,27 @@ handleEvent env wenv node model evt =
         [ Model $ model & pool .~ newPool
         , Task $ subscribe env (model ^. eventFilter)
         ] where
-            newPool = (r {connected = True}) : (poolWithoutRelay (model ^. pool) r)
+            newPool = r : (poolWithoutRelay (model ^. pool) r)
     RelayDisconnected r -> [ Model $ model & pool .~ newPool ] where
         newPool = (r {connected = False}) : (poolWithoutRelay (model ^. pool) r)
-    AddRelay r -> [Producer $ connectRelay env r]
+    AddRelay ->
+        [ Producer $ connectRelay env r
+        , Model $ model
+            & dialog .~ NoAppDialog
+            & relayHostInput .~ ""
+            & relayPortInput .~ 433
+            & relaySecureInput .~ True
+            & relayReadableInput .~ True
+            & relayWritableInput .~ True
+        ] where
+            r = Relay
+                { host = T.unpack $ model ^. relayHostInput
+                , port = fromIntegral $ model ^. relayPortInput
+                , secure = model ^. relaySecureInput
+                , readable = model ^. relayReadableInput
+                , writable = model ^. relayWritableInput
+                , connected = False
+                }
     ShowRelayDialog r ->
         [ Model $ model
             & dialog .~ RelayDialog r
@@ -309,6 +363,10 @@ handleEvent env wenv node model evt =
             & relaySecureInput  .~ secure r
             & relayReadableInput .~ readable r
             & relayWritableInput .~ writable r
+        ]
+    AddNewRelayDialog ->
+        [ Model $ model
+            & dialog .~ NewRelayDialog
         ]
     ShowGenerateKeyPairDialog -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
     KeyPairsLoaded ks ->
@@ -412,12 +470,14 @@ tryLoadKeysFromDisk sendMsg = do
                     sendMsg $ ErrorReadingKeysFile
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
-connectRelay env r sendMsg = if connected r then sendMsg NoOp else do
+connectRelay env r sendMsg = do
+  putStrLn $ "trying.... to connect to " ++ relayName r
   start $ \conn -> do
+    let r' = r { connected = True }
     putStrLn $ "Connected to " ++ relayName r
-    sendMsg $ RelayConnected r
-    receiveWs r conn sendMsg
-    sendWs (env ^. channel) r conn sendMsg
+    sendMsg $ RelayConnected r'
+    if readable r then receiveWs r' conn sendMsg else sendMsg NoOp
+    if writable r then sendWs (env ^. channel) r' conn sendMsg else sendMsg NoOp
   where
     h = host r
     path = "/"
@@ -458,8 +518,12 @@ sendWs broadcastChannel r conn sendMsg = do
                 Exit.exitSuccess -- @todo I don't know better
             Right msg' -> do
                 case msg' of
-                    Disconnect r -> WS.sendClose conn $ T.pack "Bye!"
-                    _            -> WS.sendTextData conn $ encode msg'
+                    Disconnect r' ->
+                        if r' == r then
+                            WS.sendClose conn $ T.pack "Bye!"
+                        else return ()
+                    _            ->
+                        WS.sendTextData conn $ encode msg'
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do
@@ -511,9 +575,8 @@ disableKeys ks = map (\k -> (fst' k, snd' k, False)) ks
 
 poolWithoutRelay :: [Relay] -> Relay -> [Relay]
 poolWithoutRelay p r = p' where
-    p' = filter (\r' -> r `notSameRelay` r') p where
-        notSameRelay:: Relay -> Relay -> Bool
-        notSameRelay a b = host a /= host b && port a /= port b
+    p' = filter (\r' -> not $ r `sameRelay` r') p where
+        sameRelay a b = host a == host b && port a == port b
 
 viewCircle :: Relay -> WidgetNode AppModel AppEvent
 viewCircle r = defaultWidgetNode "circlesGrid" widget where
@@ -534,7 +597,7 @@ drawCircle
   :: Renderer -> Rect -> Relay -> IO ()
 drawCircle renderer vp r = do
   let offsetX = -3
-  let offsetY = 3
+  let offsetY = 0
   let color = if connected r then paleGreen else orange
   let colorFill = color & L.a .~ 0.3
   beginPath renderer
