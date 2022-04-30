@@ -22,6 +22,7 @@ import qualified Data.ByteString.Lazy                 as LazyBytes
 import           Data.DateTime
 import           Data.Default
 import           Data.Either                          (fromRight)
+import           Data.List                            (find)
 import           Data.Maybe
 import           Data.Text                            (Text, strip)
 import qualified Data.Text                            as T
@@ -44,12 +45,16 @@ import           AppTypes
 import           NostrFunctions
 import           NostrTypes
 
+import           Debug.Trace as Trace
+import           Debug.Trace as Trace
+
 type AppWenv = WidgetEnv AppModel AppEvent
 
 type AppNode = WidgetNode AppModel AppEvent
 
-postRow :: AppWenv -> Int -> Event -> AppNode
-postRow wenv idx e = row where
+postRow :: AppWenv -> Int -> ReceivedEvent -> AppNode
+postRow wenv idx re = row where
+  e = fst re
   rowSep = rgbaHex "#A9A9A9" 0.5
   rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
 
@@ -62,7 +67,7 @@ postRow wenv idx e = row where
   row = hstack
     [ postInfo
     , spacer
-    , button "View" (ViewPost e)
+    , button "View" (ViewPost re)
     ] `styleBasic` [padding 10, borderB 1 rowSep]
 
 buildUI :: AppWenv -> AppModel -> AppNode
@@ -104,7 +109,7 @@ viewPosts wenv model = widgetTree where
       postFade idx e = animRow where
         action = ViewPost e
         item = postRow wenv idx e
-        animRow = animFadeOut_ [onFinished action] item `nodeKey` (content e)
+        animRow = animFadeOut_ [onFinished action] item `nodeKey` (content $ fst e)
 
       postRows = zipWith postFade [0..] (model ^. receivedEvents)
 
@@ -154,7 +159,8 @@ viewPosts wenv model = widgetTree where
 viewPostUI :: AppWenv -> AppModel -> AppNode
 viewPostUI wenv model = widgetTree where
     k = fst' $ mainKey $ model ^. keys
-    event = fromJust $ model ^. viewPost
+    event = fst $ fromJust $ model ^. viewPost
+    rs = snd $ fromJust $ model ^. viewPost
     postInfo = vstack
         [ hstack
             [ button "Back" Back
@@ -169,7 +175,7 @@ viewPostUI wenv model = widgetTree where
         ]
 
     widgetTree = vstack
-        [ scroll_ [scrollOverlay] $ postInfo `styleBasic` [padding 10, textTop]
+        ([ scroll_ [scrollOverlay] $ postInfo `styleBasic` [padding 10, textTop]
         , filler
         , hstack
             [ textArea newPostInput
@@ -179,8 +185,13 @@ viewPostUI wenv model = widgetTree where
             , button "Reply" (ReplyToPost event)
             ]
         , spacer
+        , label "Seen on"
+        , spacer
+        ]
+        ++ map (\r -> label $ T.pack $ Trace.trace ("mapped " ++ relayName r) (relayName r)) rs ++
+        [ spacer
         , xOnlyPubKeyElem $ deriveXOnlyPubKey k
-        ] `styleBasic` [padding 10]
+        ]) `styleBasic` [padding 10]
 
 viewRelayDialog :: Relay -> AppWenv -> AppModel -> AppNode
 viewRelayDialog r wenv model =
@@ -369,6 +380,7 @@ handleEvent env wenv node model evt =
         & eventFilter .~ ef
         & dialog .~ NoAppDialog
       , Task $ saveKeyPairs $ ks : dk
+      , Task $ subscribe env (model ^. eventFilter)
       ] where
       pk = deriveXOnlyPubKey k
       ks = (k, pk, True)
@@ -394,9 +406,9 @@ handleEvent env wenv node model evt =
           & newPostInput .~ ""
       , Task $ handleNewPost env model
       ]
-    ViewPost e ->
+    ViewPost re ->
         [ Model $ model
-            & viewPost .~ (Just e)
+            & viewPost .~ (Just re)
             & dialog .~ ViewPostDialog
         ]
     Back -> [Model $ model & viewPost .~ Nothing]
@@ -406,8 +418,18 @@ handleEvent env wenv node model evt =
           & newPostInput .~ ""
       , Task $ handleNewPost env model
       ]
-    EventAppeared e -> [Model $ model & receivedEvents %~ (e <|)]
+    EventAppeared e r -> [Model $ model & receivedEvents .~ addReceivedEvent (model ^. receivedEvents) e r]
     CloseDialog -> [Model $ model & dialog .~ NoAppDialog]
+
+addReceivedEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
+addReceivedEvent re e r = (Trace.trace ("added event " ++ show addedEvent) addedEvent) : (Trace.trace ("new list " ++ show newList) newList)
+    where
+        addedEvent = case find (pred e) re of
+            Just (e', rs) -> (e', r : rs)
+            _             -> (e, [r])
+        newList = filter (not . pred e) re
+        pred :: Event -> ReceivedEvent -> Bool
+        pred e' re' = Trace.trace ("in list? " ++ show (e' == fst re')) (e' == fst re')
 
 subscribe :: AppEnv -> Maybe EventFilter -> IO AppEvent
 subscribe env mfilter = do
@@ -425,7 +447,7 @@ handleNewPost env model = do
     let ks = mainKey $ model ^. keys
     let x = snd' ks
     let raw = case model ^. viewPost of {
-        Just p  -> replyNote p (strip $ model ^. newPostInput) x now;
+        Just p  -> replyNote (fst p) (strip $ model ^. newPostInput) x now;
         Nothing -> textNote (strip $ model ^. newPostInput) x now;
     }
     atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fst' ks) x
@@ -484,7 +506,7 @@ receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
             mzero
         Right msg' -> case decode msg' of
             Just m -> do
-                lift $ sendMsg $ EventAppeared $ extractEventFromServerResponse m
+                lift $ sendMsg $ EventAppeared (extractEventFromServerResponse m) r
             Nothing -> do
                 lift $ putStrLn $ "Could not decode server response: " ++ show msg'
                 lift $ sendMsg $ NoOp
@@ -501,7 +523,7 @@ sendWs broadcastChannel r conn sendMsg = do
             Right msg' -> do
                 case msg' of
                     Disconnect r' ->
-                        if r' == r then do
+                        if r' `sameRelay` r then do
                             lift $ WS.sendClose conn $ T.pack "Bye!"
                             lift $ putStrLn $ "Connection to " ++ relayName r ++ " closed"
                         else mzero
@@ -558,8 +580,10 @@ disableKeys ks = map (\k -> (fst' k, snd' k, False)) ks
 
 poolWithoutRelay :: [Relay] -> Relay -> [Relay]
 poolWithoutRelay p r = p' where
-    p' = filter (\r' -> not $ r `sameRelay` r') p where
-        sameRelay a b = host a == host b && port a == port b
+    p' = filter (\r' -> not $ r `sameRelay` r') p
+
+sameRelay :: Relay -> Relay -> Bool
+sameRelay a b = host a == host b && port a == port b
 
 viewCircle :: Relay -> WidgetNode AppModel AppEvent
 viewCircle r = defaultWidgetNode "circlesGrid" widget where

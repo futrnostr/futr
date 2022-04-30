@@ -50,6 +50,7 @@ executable futr
     , stm
     , text
     , text-show
+    , transformers
     , vector
     , websockets
     , wuss

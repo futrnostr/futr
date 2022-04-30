@@ -29,15 +29,17 @@ data AppDialog
     | RelayDialog Relay
     deriving (Eq, Show)
 
+type ReceivedEvent = (Event, [Relay])
+
 data AppModel =
   AppModel
     { _keys           :: [Keys]
     , _pool           :: [Relay]
     , _mySecKeyInput  :: Text
     , _newPostInput   :: Text
-    , _receivedEvents :: [Event]
+    , _receivedEvents :: [ReceivedEvent]
     , _eventFilter    :: Maybe EventFilter
-    , _viewPost       :: Maybe Event
+    , _viewPost       :: Maybe ReceivedEvent
     , _dialog         :: AppDialog
     , _relayHostInput :: Text
     , _relayPortInput :: Integer
@@ -68,11 +70,11 @@ data AppEvent
   | ErrorReadingKeysFile
   | ImportSecKey
   | SendPost
-  | ViewPost Event
+  | ViewPost ReceivedEvent
   | Back
   | PostSent
   | ReplyToPost Event
-  | EventAppeared Event
+  | EventAppeared Event Relay
   | CloseDialog
   | NoOp
   deriving (Eq, Show)
