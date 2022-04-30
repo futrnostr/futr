@@ -185,39 +185,22 @@ viewPostUI wenv model = widgetTree where
 viewRelayDialog :: Relay -> AppWenv -> AppModel -> AppNode
 viewRelayDialog r wenv model =
     vstack
-        [ hstack
-            [ label "Host"
-            , spacer
-            , textField relayHostInput `nodeKey` "relayHostInput"
-            ]
-        , spacer
-        , hstack
-            [ label "Port"
-            , spacer
-            , numericField relayPortInput `nodeKey` "relayPortInput"
-            ]
-        , spacer
-        , hstack
-            [ label "Secure connection"
-            , spacer
-            , checkbox relaySecureInput `nodeKey` "relaySecureCheckbox"
-            ]
-        , spacer
-        , hstack
+        [ label (T.pack $ relayName r) `styleBasic` [textSize 22]
+          , filler
+          , hstack
             [ label "Readable"
             , spacer
             , checkbox relayReadableInput `nodeKey` "relayReadableCheckbox"
             ]
-        , spacer
-        , hstack
+          , spacer
+          , hstack
             [ label "Writable"
             , spacer
             , checkbox relayWritableInput `nodeKey` "relayWriteableCheckbox"
             ]
-        , filler
+        , spacer
         , hstack
-            [ filler
-            , label "Connection Status"
+            [ label "Connection"
             , spacer
             , button connStatus connButton
             ]
@@ -358,15 +341,17 @@ handleEvent env wenv node model evt =
     ShowRelayDialog r ->
         [ Model $ model
             & dialog .~ RelayDialog r
-            & relayHostInput .~ (T.pack $ host r)
-            & relayPortInput .~ (fromIntegral $ port r)
-            & relaySecureInput  .~ secure r
             & relayReadableInput .~ readable r
             & relayWritableInput .~ writable r
         ]
     AddNewRelayDialog ->
         [ Model $ model
             & dialog .~ NewRelayDialog
+            & relayHostInput .~ ""
+            & relayPortInput .~ 433
+            & relaySecureInput  .~ True
+            & relayReadableInput .~ True
+            & relayWritableInput .~ True
         ]
     ShowGenerateKeyPairDialog -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
     KeyPairsLoaded ks ->
@@ -470,8 +455,8 @@ tryLoadKeysFromDisk sendMsg = do
                     sendMsg $ ErrorReadingKeysFile
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
-connectRelay env r sendMsg = do
-  putStrLn $ "trying.... to connect to " ++ relayName r
+connectRelay env r sendMsg = if connected r then return () else do
+  putStrLn $ "trying to connect to " ++ relayName r ++ " ..."
   start $ \conn -> do
     let r' = r { connected = True }
     putStrLn $ "Connected to " ++ relayName r
@@ -484,9 +469,6 @@ connectRelay env r sendMsg = do
     start = case secure r of
         True  ->  runSecureClient h (port r) path
         False -> WS.runClient h (fromIntegral $ port r) path
-    isSecure = case secure r of
-        True  -> " (secure connection)"
-        False -> " (insecure connection)"
 
 disconnectRelay :: AppEnv -> Relay -> IO AppEvent
 disconnectRelay env r = if not $ connected r then return NoOp else do
