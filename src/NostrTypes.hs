@@ -39,7 +39,7 @@ data Relay =
 
 defaultPool :: [Relay]
 defaultPool =
-    [ Relay
+    [ {-Relay
         { host = "nostr.rocks"
         , port = 443
         , secure = True
@@ -55,14 +55,14 @@ defaultPool =
         , writable = True
         , connected = False
         }
---    , Relay
---        { host = "localhost"
---        , port = 2700
---        , secure = False
---        , readable = True
---        , writable = True
---        , connected = False
---        }
+--    ,-} Relay
+        { host = "localhost"
+        , port = 2700
+        , secure = False
+        , readable = True
+        , writable = True
+        , connected = False
+        }
     ]
 
 

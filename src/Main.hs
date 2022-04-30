@@ -9,9 +9,10 @@ import           Control.Concurrent                   (forkIO)
 import           Control.Concurrent.STM.TChan
 import qualified Control.Exception                    as Exception
 import           Control.Lens
-import           Control.Monad                        (forever, unless, void)
+import           Control.Monad                        (forever, mzero, unless, void)
 import           Control.Monad.STM                    (atomically)
-import           Control.Monad.Trans                  (liftIO)
+import           Control.Monad.Trans                  (lift, liftIO)
+import           Control.Monad.Trans.Maybe            (runMaybeT)
 import           Crypto.Schnorr
 import           Data.Aeson
 import qualified Data.ByteString                      as BS
@@ -36,7 +37,6 @@ import           Network.WebSockets                   (ClientApp, Connection,
 import qualified Network.WebSockets                   as WS
 import qualified Network.WebSockets.Stream            as Stream
 import           System.Directory                     (doesFileExist)
-import qualified System.Exit                          as Exit
 import           TextShow
 import           Wuss
 
@@ -476,36 +476,37 @@ disconnectRelay env r = if not $ connected r then return NoOp else do
     return NoOp
 
 receiveWs :: Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
-receiveWs r conn sendMsg = void . forkIO . forever $ do
-    msg <- Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString)
+receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
+    msg <- lift (Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString))
     case msg of
         Left ex    -> do
-            sendMsg $ RelayDisconnected r
-            Exit.exitSuccess -- @todo I don't know better
+            lift $ sendMsg $ RelayDisconnected r
+            mzero
         Right msg' -> case decode msg' of
             Just m -> do
-                sendMsg $ EventAppeared $ extractEventFromServerResponse m
+                lift $ sendMsg $ EventAppeared $ extractEventFromServerResponse m
             Nothing -> do
-                putStrLn $ "Could not decode server response: " ++ show msg'
-                sendMsg $ NoOp
+                lift $ putStrLn $ "Could not decode server response: " ++ show msg'
+                lift $ sendMsg $ NoOp
 
 sendWs :: TChan ServerRequest -> Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
 sendWs broadcastChannel r conn sendMsg = do
     channel <- atomically $ dupTChan broadcastChannel
-    forever $ do
-        msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest)
+    void . runMaybeT $ forever $ do
+        msg <- lift (Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest))
         case msg of
             Left ex -> do
-                sendMsg $ RelayDisconnected r
-                Exit.exitSuccess -- @todo I don't know better
+                lift $ sendMsg $ RelayDisconnected r
+                mzero
             Right msg' -> do
                 case msg' of
                     Disconnect r' ->
-                        if r' == r then
-                            WS.sendClose conn $ T.pack "Bye!"
-                        else return ()
+                        if r' == r then do
+                            lift $ WS.sendClose conn $ T.pack "Bye!"
+                            lift $ putStrLn $ "Connection to " ++ relayName r ++ " closed"
+                        else mzero
                     _            ->
-                        WS.sendTextData conn $ encode msg'
+                        lift $ WS.sendTextData conn $ encode msg'
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do
