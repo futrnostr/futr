@@ -38,6 +38,7 @@ import           Network.WebSockets                   (ClientApp, Connection,
 import qualified Network.WebSockets                   as WS
 import qualified Network.WebSockets.Stream            as Stream
 import           System.Directory                     (doesFileExist)
+
 import           TextShow
 import           Wuss
 
@@ -500,6 +501,7 @@ receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
     msg <- lift (Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString))
     case msg of
         Left ex    -> do
+            liftIO $ putStrLn $ "Connection to " ++ relayName r ++ " closed"
             lift $ sendMsg $ RelayDisconnected r
             mzero
         Right msg' -> case decode msg' of
@@ -512,21 +514,18 @@ receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
 sendWs :: TChan ServerRequest -> Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
 sendWs broadcastChannel r conn sendMsg = do
     channel <- atomically $ dupTChan broadcastChannel
-    void . runMaybeT $ forever $ do
-        msg <- lift (Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest))
+    forever $ do
+        msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest)
         case msg of
-            Left ex -> do
-                lift $ sendMsg $ RelayDisconnected r
-                mzero
+            Left ex -> sendMsg $ RelayDisconnected r
             Right msg' -> do
                 case msg' of
                     Disconnect r' ->
                         if r' `sameRelay` r then do
-                            lift $ WS.sendClose conn $ T.pack "Bye!"
-                            lift $ putStrLn $ "Connection to " ++ relayName r ++ " closed"
-                        else mzero
+                            WS.sendClose conn $ T.pack "Bye!"
+                        else return ()
                     _            ->
-                        lift $ WS.sendTextData conn $ encode msg'
+                        WS.sendTextData conn $ encode msg'
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do
