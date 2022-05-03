@@ -344,6 +344,7 @@ handleEvent env wenv node model evt =
             & relaySecureInput .~ True
             & relayReadableInput .~ True
             & relayWritableInput .~ True
+            & pool .~ newPool
         ] where
             r = Relay
                 { host = T.unpack $ model ^. relayHostInput
@@ -353,6 +354,7 @@ handleEvent env wenv node model evt =
                 , writable = model ^. relayWritableInput
                 , connected = False
                 }
+            newPool = r : (poolWithoutRelay (model ^. pool) r)
     ShowRelayDialog r ->
         [ Model $ model
             & dialog .~ RelayDialog r
