@@ -46,7 +46,6 @@ import           NostrFunctions
 import           NostrTypes
 
 import           Debug.Trace as Trace
-import           Debug.Trace as Trace
 
 type AppWenv = WidgetEnv AppModel AppEvent
 
@@ -188,7 +187,7 @@ viewPostUI wenv model = widgetTree where
         , label "Seen on"
         , spacer
         ]
-        ++ map (\r -> label $ T.pack $ Trace.trace ("mapped " ++ relayName r) (relayName r)) rs ++
+        ++ map (\r -> label $ T.pack $ relayName r) rs ++
         [ spacer
         , xOnlyPubKeyElem $ deriveXOnlyPubKey k
         ]) `styleBasic` [padding 10]
@@ -422,14 +421,13 @@ handleEvent env wenv node model evt =
     CloseDialog -> [Model $ model & dialog .~ NoAppDialog]
 
 addReceivedEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
-addReceivedEvent re e r = (Trace.trace ("added event " ++ show addedEvent) addedEvent) : (Trace.trace ("new list " ++ show newList) newList)
+addReceivedEvent re e r = addedEvent : newList
     where
         addedEvent = case find (pred e) re of
-            Just (e', rs) -> (e', r : rs)
+            Just (e', rs) -> (e', r : filter (\r' -> not $ r' `sameRelay` r) rs)
             _             -> (e, [r])
         newList = filter (not . pred e) re
-        pred :: Event -> ReceivedEvent -> Bool
-        pred e' re' = Trace.trace ("in list? " ++ show (e' == fst re')) (e' == fst re')
+        pred e' re' = e' == fst re'
 
 subscribe :: AppEnv -> Maybe EventFilter -> IO AppEvent
 subscribe env mfilter = do
