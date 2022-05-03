@@ -22,8 +22,9 @@ import qualified Data.ByteString.Lazy                 as LazyBytes
 import           Data.DateTime
 import           Data.Default
 import           Data.Either                          (fromRight)
-import           Data.List                            (find)
+import           Data.List                            (find, sortBy)
 import           Data.Maybe
+import           Data.Monoid                          (mconcat)
 import           Data.Text                            (Text, strip)
 import qualified Data.Text                            as T
 import qualified Data.Text.IO                         as T
@@ -102,6 +103,9 @@ buildUI wenv model = widgetTree where
             `styleBasic` [bgColor (gray & L.a .~ 0.8)]
         ]
 
+sortPool :: Relay -> Relay -> Ordering
+sortPool a b = mconcat [compare (host a) (host b), compare (port a) (port b) ]
+
 viewPosts :: AppWenv -> AppModel -> AppNode
 viewPosts wenv model = widgetTree where
     posts = vstack postRows where
@@ -118,7 +122,7 @@ viewPosts wenv model = widgetTree where
             ([filler] ++ connections ++ [spacer, addRelay])
         ] `styleBasic` [padding 10] where
             connections = map (\r -> box_ [onClick $ ShowRelayDialog r] (tooltip (T.pack $ relayName r) (viewCircle r)
-                `styleBasic` [cursorIcon CursorHand])) (model ^. pool)
+                `styleBasic` [cursorIcon CursorHand])) (sortBy sortPool (model ^. pool))
             addRelay = box_ [alignTop, onClick AddNewRelayDialog] $ tooltip (T.pack $ "Add new relayy") $ addIcon
             addIcon = icon IconPlus `styleBasic` [width 16, height 16, fgColor black, cursorHand]
 
@@ -188,7 +192,7 @@ viewPostUI wenv model = widgetTree where
         , label "Seen on"
         , spacer
         ]
-        ++ map (\r -> label $ T.pack $ relayName r) rs ++
+        ++ map (\r -> label $ T.pack $ relayName r) (sortBy sortPool rs) ++
         [ spacer
         , xOnlyPubKeyElem $ deriveXOnlyPubKey k
         ]) `styleBasic` [padding 10]
