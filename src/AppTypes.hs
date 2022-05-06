@@ -8,10 +8,15 @@ import           Control.Lens
 import           Crypto.Schnorr
 import           Data.Default
 import           Data.Text
+import           Monomer                              (WidgetEnv, WidgetNode)
 import qualified Network.WebSockets                   as WS
 import           Network.Socket
 
 import           NostrTypes
+
+type AppWenv = WidgetEnv AppModel AppEvent
+
+type AppNode = WidgetNode AppModel AppEvent
 
 newtype AppEnv =
   AppEnv
