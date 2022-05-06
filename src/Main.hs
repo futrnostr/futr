@@ -210,18 +210,16 @@ tryLoadKeysFromDisk :: (AppEvent -> IO ()) -> IO ()
 tryLoadKeysFromDisk sendMsg = do
     let fp = "keys.ft"
     fe <- doesFileExist fp
-    case fe of
-        False -> sendMsg $ NoKeysFound
-        True  -> do
-            content <- LazyBytes.readFile fp
-            let ks = decode content :: Maybe [Keys]
-            case ks of
-                Just [] -> do
-                    sendMsg $ NoKeysFound
-                Just k -> do
-                    sendMsg $ KeyPairsLoaded k
-                _      -> do
-                    sendMsg $ ErrorReadingKeysFile
+    if not fe then sendMsg $ NoKeysFound
+    else do
+        content <- LazyBytes.readFile fp
+        case decode content :: Maybe [Keys] of
+            Just [] -> do
+                sendMsg $ NoKeysFound
+            Just k -> do
+                sendMsg $ KeyPairsLoaded k
+            _      -> do
+                sendMsg $ ErrorReadingKeysFile
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = if connected r then return () else do
