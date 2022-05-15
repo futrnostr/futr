@@ -139,18 +139,16 @@ handleEvent env wenv node model evt =
       [ Model $ model & currentSub .~ subId ]
     KeyPairsLoaded ks ->
         [ Model $ model
-            & keys .~ ks : dk
-            & selectedKeys .~ Just mk
-            & eventFilter .~ ef
-            & dialog .~ NoAppDialog
-            & receivedEvents .~ []
-        , Task $ unsubscribe env (model ^. currentSub)
+          & keys .~ ks
+          & selectedKeys .~ Just mk
+          & eventFilter .~ ef
+          & dialog .~ NoAppDialog
+          & receivedEvents .~ []
         , Task $ subscribe env ef
         ] where
         mk = mainKeys ks
-        pk = snd' $ mk -- @todo map all pub keys from list
+        pk = snd' $ mk
         ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
-        dk = disableKeys $ model ^. keys
     GenerateKeyPair -> [ Producer generateNewKeyPair ]
     KeyPairGenerated k ->
       [ Model $ model
