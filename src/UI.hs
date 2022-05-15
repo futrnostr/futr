@@ -2,6 +2,7 @@
 
 module UI where
 
+import           Control.Concurrent.STM.TChan
 import           Control.Lens
 import           Crypto.Schnorr
 import           Data.Default
@@ -17,11 +18,17 @@ import           AppTypes
 import           Helpers
 import           NostrFunctions
 import           NostrTypes
+import           Widgets.Profile
 
-buildUI :: AppWenv -> AppModel -> AppNode
-buildUI wenv model = widgetTree
+buildUI :: TChan ServerRequest -> AppWenv -> AppModel -> AppNode
+buildUI channel wenv model = widgetTree
   where
-    baseLayer = viewPosts wenv model
+    baseLayer = case model ^. currentView of
+      PostsView ->
+        viewPosts wenv model
+      ProfileView ->
+        profileWidget channel (fromJust $ model ^. selectedKeys) profileModel
+
     closeIcon =
       icon IconClose `styleBasic`
       [width 16, height 16, fgColor black, cursorHand]
@@ -48,19 +55,69 @@ buildUI wenv model = widgetTree
         , dialogContent
         ] `styleBasic`
       [width 500, height 400, padding 10, radius 10, bgColor darkGray]
+
+    headerTree =
+      hstack
+        [ spacer, button "Back" Back `nodeVisible` (model ^. currentView /= PostsView)
+        , filler
+        , dropdown_
+            selectedKeys
+            (map (\k -> Just k) (model ^. keys))
+            currentKeysTree
+            currentKeysTree
+            [ onChange KeysSelected ]
+            `styleBasic` [ width 400 ]
+        , spacer
+        , button "Edit" ViewProfile
+        , spacer
+        , button "Add" $ ShowDialog GenerateKeyPairDialog
+        ] `styleBasic` [ paddingL 10, paddingR 10 ]
+    footerTree =
+      vstack [hstack ([filler] ++ connections ++ [spacer, addRelay])] `styleBasic`
+      [padding 10]
+      where
+        connections =
+          map
+            (\r ->
+               box_
+                 [onClick $ ShowDialog $ RelayDialog r]
+                 (tooltip (T.pack $ relayName r) (viewCircle r) `styleBasic`
+                  [cursorIcon CursorHand]))
+            (sortBy sortPool (model ^. pool))
+        addRelay =
+          box_ [ alignTop, onClick $ ShowDialog NewRelayDialog ] $
+          tooltip (T.pack $ "Add new relayy") $
+          addIcon
+        addIcon =
+          icon IconPlus `styleBasic`
+          [width 16, height 16, fgColor black, cursorHand]
     widgetTree =
       zstack
-        [ baseLayer
+        [ vstack
+            [ spacer
+            , headerTree
+            , spacer
+            , baseLayer
+            , filler
+            , footerTree
+            ]
         , box_ [alignCenter, alignMiddle] dialogLayer `nodeVisible`
           (model ^. dialog /= NoAppDialog) `styleBasic`
           [bgColor (gray & L.a .~ 0.8)]
         ]
 
+currentKeysTree :: Maybe Keys -> AppNode
+currentKeysTree mks = case mks of
+    Just ks ->
+      label $ T.pack $ exportXOnlyPubKey $ snd' ks
+    Nothing ->
+      label ""
+
 postRow :: AppWenv -> Int -> ReceivedEvent -> AppNode
 postRow wenv idx re = row
   where
     e = fst re
-    rowSep = rgbaHex "#A9A9A9" 0.5
+    rowSep = rgbaHex "#A9A9A9" 0.75
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
     postInfo =
       hstack
@@ -69,8 +126,11 @@ postRow wenv idx re = row
         , selectableText $ content e
         ]
     row =
-      hstack [postInfo, spacer, button "View" (ViewPost re)] `styleBasic`
-      [padding 10, borderB 1 rowSep]
+      hstack
+        [ postInfo
+        , spacer
+        , button "View" (ViewPost re)
+        ] `styleBasic` [ paddingT 10, paddingB 10, borderB 1 rowSep ]
 
 viewPosts :: AppWenv -> AppModel -> AppNode
 viewPosts wenv model = widgetTree
@@ -85,56 +145,27 @@ viewPosts wenv model = widgetTree
             animRow =
               animFadeOut_ [onFinished action] item `nodeKey` (content $ fst e)
         postRows = zipWith postFade [0 ..] (model ^. receivedEvents)
-    footerTree =
-      vstack [hstack ([filler] ++ connections ++ [spacer, addRelay])] `styleBasic`
-      [padding 10]
-      where
-        connections =
-          map
-            (\r ->
-               box_
-                 [onClick $ ShowRelayDialog r]
-                 (tooltip (T.pack $ relayName r) (viewCircle r) `styleBasic`
-                  [cursorIcon CursorHand]))
-            (sortBy sortPool (model ^. pool))
-        addRelay =
-          box_ [alignTop, onClick AddNewRelayDialog] $
-          tooltip (T.pack $ "Add new relayy") $
-          addIcon
-        addIcon =
-          icon IconPlus `styleBasic`
-          [width 16, height 16, fgColor black, cursorHand]
-    postTree =
+    widgetTree =
       vstack
         [ label "New Post"
         , spacer
         , vstack
             [ hstack
-                [ textArea newPostInput `nodeKey` "newPost" `styleBasic`
-                  [height 100]
+                [ textArea newPostInput
+                  `nodeKey` "newPost"
+                  `styleBasic` [ height 50 ]
                 , filler
-                , button "Post" SendPost `styleBasic` [height 50]
+                , button "Post" SendPost `styleBasic` [  ]
                 ]
             ]
         , spacer
-        , scroll_ [scrollOverlay] $ posts `styleBasic` [padding 10]
-        ] `styleBasic`
-      [padding 10]
-    identitiesTree =
-      vstack
-        [ label "Identities"
-        , spacer
-        , vstack (map (\k -> xOnlyPubKeyElem $ snd' k) (model ^. keys))
-        ] `styleBasic`
-      [padding 10]
-    widgetTree =
-      vstack
-        [hstack [identitiesTree, spacer, postTree], spacer, filler, footerTree]
+        , scroll_ [scrollOverlay] $ posts
+        ] `styleBasic` [ padding 10 ]
 
 viewPostUI :: AppWenv -> AppModel -> AppNode
 viewPostUI wenv model = widgetTree
   where
-    k = fst' $ mainKey $ model ^. keys
+    k = fst' $ fromJust $ model ^. selectedKeys
     event = fst $ fromJust $ model ^. viewPost
     rs = snd $ fromJust $ model ^. viewPost
     postInfo =

@@ -1,7 +1,6 @@
 module Helpers where
 
-import           AppTypes   (Keys)
-import           NostrTypes (Relay (..))
+import           NostrTypes (Keys, Relay (..))
 
 fst' :: (a, b, c) -> a
 fst' (a, _, _) = a
@@ -12,11 +11,8 @@ snd' (_, b, _) = b
 third :: (a, b, c) -> c
 third (_, _, c) = c
 
-mainKey :: [Keys] -> Keys
-mainKey ks = head $ filter (\k -> third k == True) ks
-
-disableKeys :: [Keys] -> [Keys]
-disableKeys ks = map (\k -> (fst' k, snd' k, False)) ks
+mainKeys :: [Keys] -> Keys
+mainKeys ks = head $ filter (\k -> third k == True) ks
 
 poolWithoutRelay :: [Relay] -> Relay -> [Relay]
 poolWithoutRelay p r = filter (\r' -> not $ r `sameRelay` r') p

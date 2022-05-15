@@ -78,18 +78,18 @@ verifySignature e =
     p = pubKey e
     s = sig e
 
-setMetadata :: Text -> Text -> Text -> XOnlyPubKey -> DateTime -> RawEvent
-setMetadata name about picture xo t =
+setMetadata :: Text -> Text -> Text -> Text -> XOnlyPubKey -> DateTime -> RawEvent
+setMetadata name about picture nip05 xo t =
   RawEvent
     { pubKey' = xo
     , created_at' = t
     , kind' = 0
     , tags' = []
-    , content' =
-        pack $
-        "{name:" ++
-        unpack name ++
-        ",about:" ++ unpack about ++ ",picture:" ++ unpack picture ++ "}"
+    , content' = pack $
+      "name:\"" ++ unpack name ++
+      "\",about:\"" ++ unpack about ++
+      "\",picture:\"" ++ unpack picture ++
+      "\",nip05:\"" ++ unpack nip05 ++ "\"}"
     }
 
 textNote :: Text -> XOnlyPubKey -> DateTime -> RawEvent

@@ -79,6 +79,8 @@ data ServerRequest
 data ServerResponse = ServerResponse Text Event
     deriving (Eq, Show)
 
+type Keys = (KeyPair, XOnlyPubKey, Bool) -- True marks the currently selected keys
+
 data Post =
     Post
       { postId :: EventId
@@ -99,9 +101,9 @@ instance ToJSON ServerRequest where
             , String $ s
             , toJSON ef
             ]
-        Close subid -> Array $ fromList
+        Close subId -> Array $ fromList
              [ String $ pack "CLOSE"
-             , String subid
+             , String subId
              ]
         Disconnect r -> String $ pack "Bye!"
 

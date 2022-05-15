@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -37,7 +38,6 @@ import           Network.WebSockets                   (ClientApp, Connection,
 import qualified Network.WebSockets                   as WS
 import qualified Network.WebSockets.Stream            as Stream
 import           System.Directory                     (doesFileExist)
-
 import           Wuss
 
 import           AppTypes
@@ -45,6 +45,7 @@ import           Helpers
 import           NostrFunctions
 import           NostrTypes
 import           UI
+import           Widgets.Profile
 
 import           Debug.Trace as Trace
 
@@ -58,6 +59,22 @@ handleEvent ::
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
+    KeysSelected mks ->
+      case mks of
+        Just ks ->
+          [ Model $ model
+            & selectedKeys .~ mks
+            & keys .~ keys'
+            & eventFilter .~ ef
+            & receivedEvents .~ []
+          , Task $ saveKeyPairs keys'
+          , Task $ unsubscribe env (model ^. currentSub)
+          , Task $ subscribe env ef
+          ] where
+            keys' = switchEnabledKeys ks (model ^. keys)
+            pk = snd' $ ks
+            ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
+        Nothing -> []
     ConnectRelay r ->
         [ Producer $ connectRelay env r
         , Model $ model & dialog .~ NoAppDialog
@@ -97,37 +114,53 @@ handleEvent env wenv node model evt =
                 , connected = False
                 }
             newPool = r : (poolWithoutRelay (model ^. pool) r)
-    ShowRelayDialog r ->
-        [ Model $ model
-            & dialog .~ RelayDialog r
-            & relayReadableInput .~ readable r
-            & relayWritableInput .~ writable r
-        ]
-    AddNewRelayDialog ->
-        [ Model $ model
-            & dialog .~ NewRelayDialog
-            & relayHostInput .~ ""
-            & relayPortInput .~ 433
-            & relaySecureInput  .~ True
-            & relayReadableInput .~ True
-            & relayWritableInput .~ True
-        ]
-    ShowGenerateKeyPairDialog -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
+    ShowDialog d ->
+      case d of
+        RelayDialog r ->
+          [ Model $ model
+              & dialog .~ RelayDialog r
+              & relayReadableInput .~ readable r
+              & relayWritableInput .~ writable r
+          ]
+        NewRelayDialog ->
+          [ Model $ model
+              & dialog .~ NewRelayDialog
+              & relayHostInput .~ ""
+              & relayPortInput .~ 433
+              & relaySecureInput  .~ True
+              & relayReadableInput .~ True
+              & relayWritableInput .~ True
+          ]
+        GenerateKeyPairDialog ->
+          [ Model $ model & dialog .~ GenerateKeyPairDialog ]
+        _ ->
+          []
+    Subscribed subId ->
+      [ Model $ model & currentSub .~ subId ]
     KeyPairsLoaded ks ->
         [ Model $ model
-            & keys .~ ks
+            & keys .~ ks : dk
+            & selectedKeys .~ Just mk
             & eventFilter .~ ef
             & dialog .~ NoAppDialog
+            & receivedEvents .~ []
+        , Task $ unsubscribe env (model ^. currentSub)
+        , Task $ subscribe env ef
         ] where
-        pk = deriveXOnlyPubKey $ fst' $ mainKey ks
+        mk = mainKeys ks
+        pk = snd' $ mk -- @todo map all pub keys from list
         ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
-    GenerateKeyPair -> [Producer generateNewKeyPair]
+        dk = disableKeys $ model ^. keys
+    GenerateKeyPair -> [ Producer generateNewKeyPair ]
     KeyPairGenerated k ->
       [ Model $ model
         & keys .~ ks : dk
+        & selectedKeys .~ Just ks
         & eventFilter .~ ef
         & dialog .~ NoAppDialog
+        & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
+      , Task $ unsubscribe env (model ^. currentSub)
       , Task $ subscribe env (model ^. eventFilter)
       ] where
       pk = deriveXOnlyPubKey k
@@ -136,17 +169,24 @@ handleEvent env wenv node model evt =
       dk = disableKeys $ model ^. keys
     ImportSecKey ->
       [ Model $ model
-        & keys .~ [ks]
+        & keys .~ ks : dk
+        & selectedKeys .~ Just ks
         & mySecKeyInput .~ ""
         & eventFilter .~ ef
         & dialog .~ NoAppDialog
+        & receivedEvents .~ []
+      , Task $ saveKeyPairs $ ks : dk
+      , Task $ unsubscribe env (model ^. currentSub)
+      , Task $ subscribe env (model ^. eventFilter)
       ]
       where kp =
+              fromJust $
               fmap keyPairFromSecKey $
               maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
-            pk = deriveXOnlyPubKey $ fromJust kp
+            pk = deriveXOnlyPubKey $ kp
             ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
-            ks = (fromJust kp, pk, True)
+            ks = (kp, pk, True)
+            dk = disableKeys $ model ^. keys
     NoKeysFound -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
     ErrorReadingKeysFile -> [ Model $ model & dialog .~ ErrorReadingKeysFileDialog ]
     SendPost ->
@@ -155,19 +195,27 @@ handleEvent env wenv node model evt =
       , Task $ handleNewPost env model
       ]
     ViewPost re ->
-        [ Model $ model
-            & viewPost .~ (Just re)
-            & dialog .~ ViewPostDialog
-        ]
-    Back -> [Model $ model & viewPost .~ Nothing]
-    PostSent -> [Model $ model & newPostInput .~ ""]
+      [ Model $ model
+          & viewPost .~ (Just re)
+          & dialog .~ ViewPostDialog
+      ]
+    ViewProfile ->
+      [ Model $ model & currentView .~ ProfileView ]
+    Back ->
+      [ Model $ model
+        & viewPost .~ Nothing
+        & currentView .~ PostsView
+        & dialog .~ NoAppDialog
+      ]
+    PostSent -> [ Model $ model & newPostInput .~ "" ]
     ReplyToPost e ->
       [ Model $ model
           & newPostInput .~ ""
       , Task $ handleNewPost env model
       ]
-    EventAppeared e r -> [Model $ model & receivedEvents .~ addReceivedEvent (model ^. receivedEvents) e r]
-    CloseDialog -> [Model $ model & dialog .~ NoAppDialog]
+    EventAppeared e r ->
+      [ Model $ model & receivedEvents .~ addReceivedEvent (model ^. receivedEvents) e r ]
+    CloseDialog -> [ Model $ model & dialog .~ NoAppDialog ]
 
 addReceivedEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
 addReceivedEvent re e r = addedEvent : newList
@@ -184,14 +232,19 @@ subscribe env mfilter = do
         Just f -> do
             subId <- genSubscriptionId
             atomically $ writeTChan (env ^. channel) $ RequestRelay subId f
-            return NoOp
+            return $ Subscribed subId
         _      ->
             return NoOp
+
+unsubscribe :: AppEnv -> Text -> IO AppEvent
+unsubscribe env subId = do
+  atomically $ writeTChan (env ^. channel) $ Close subId
+  return NoOp
 
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
     now <- getCurrentTime
-    let ks = mainKey $ model ^. keys
+    let ks = fromJust $ model ^. selectedKeys
     let x = snd' ks
     let raw = case model ^. viewPost of {
         Just p  -> replyNote (fst p) (strip $ model ^. newPostInput) x now;
@@ -278,10 +331,19 @@ generateNewKeyPair sendMsg = do
   k <- generateKeyPair
   sendMsg $ KeyPairGenerated k
 
+disableKeys :: [Keys] -> [Keys]
+disableKeys ks = map (\k -> (fst' k, snd' k, False)) ks
+
+switchEnabledKeys :: Keys -> [Keys] -> [Keys]
+switchEnabledKeys k ks = map (\k' -> if k' == k
+    then (fst' k', snd' k', True)
+    else (fst' k', snd' k', False)
+  ) ks
+
 main :: IO ()
 main = do
   channel <- atomically newBroadcastTChan
-  startApp def (handleEvent $ AppEnv channel) buildUI config
+  startApp def (handleEvent $ AppEnv channel) (buildUI channel) config
   where
     config =
       [ appWindowTitle "FuTr"

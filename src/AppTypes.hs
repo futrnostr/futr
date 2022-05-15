@@ -13,6 +13,7 @@ import qualified Network.WebSockets                   as WS
 import           Network.Socket
 
 import           NostrTypes
+import           Widgets.Profile
 
 type AppWenv = WidgetEnv AppModel AppEvent
 
@@ -23,8 +24,6 @@ newtype AppEnv =
     { _channel :: TChan ServerRequest
     }
 
-type Keys = (KeyPair, XOnlyPubKey, Bool)
-
 data AppDialog
     = NoAppDialog
     | GenerateKeyPairDialog
@@ -34,11 +33,18 @@ data AppDialog
     | RelayDialog Relay
     deriving (Eq, Show)
 
+data AppView
+    = PostsView
+    | ProfileView
+    deriving (Eq, Show)
+
 type ReceivedEvent = (Event, [Relay])
 
 data AppModel =
   AppModel
     { _keys           :: [Keys]
+    , _selectedKeys   :: Maybe Keys
+    , _currentSub     :: Text
     , _pool           :: [Relay]
     , _mySecKeyInput  :: Text
     , _newPostInput   :: Text
@@ -46,6 +52,8 @@ data AppModel =
     , _eventFilter    :: Maybe EventFilter
     , _viewPost       :: Maybe ReceivedEvent
     , _dialog         :: AppDialog
+    , _currentView    :: AppView
+    , _profileModel   :: ProfileModel
     , _relayHostInput :: Text
     , _relayPortInput :: Integer
     , _relaySecureInput   :: Bool
@@ -55,7 +63,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] defaultPool "" "" [] Nothing Nothing NoAppDialog "" 433 True True True
+  def = AppModel [] Nothing "" defaultPool "" "" [] Nothing Nothing NoAppDialog PostsView def "" 433 True True True
 
 data AppEvent
   = AppInit
@@ -65,17 +73,18 @@ data AppEvent
   | RelayConnected Relay
   | AddRelay
   | RelayDisconnected Relay
-  | ShowRelayDialog Relay
-  | AddNewRelayDialog
-  | ShowGenerateKeyPairDialog
+  | ShowDialog AppDialog
+  | Subscribed Text
   | KeyPairsLoaded [Keys]
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
+  | KeysSelected (Maybe Keys)
   | NoKeysFound
   | ErrorReadingKeysFile
   | ImportSecKey
   | SendPost
   | ViewPost ReceivedEvent
+  | ViewProfile
   | Back
   | PostSent
   | ReplyToPost Event
