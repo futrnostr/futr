@@ -159,7 +159,7 @@ handleEvent env wenv node model evt =
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
-      , Task $ subscribe env (model ^. eventFilter)
+      , Task $ subscribe env ef
       ] where
       pk = deriveXOnlyPubKey k
       ks = (k, pk, True)
