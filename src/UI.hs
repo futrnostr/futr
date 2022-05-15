@@ -46,10 +46,7 @@ buildUI channel wenv model = widgetTree
         [ hstack
             [ filler
             , box_ [alignTop, onClick CloseDialog] closeIcon `nodeEnabled`
-              (not $
-               elem
-                 (model ^. dialog)
-                 [GenerateKeyPairDialog, ErrorReadingKeysFileDialog])
+              ((model ^. dialog) /= ErrorReadingKeysFileDialog && model ^. selectedKeys /= Nothing)
             ]
         , spacer
         , dialogContent
@@ -285,11 +282,8 @@ errorReadingKeysFileStack = vstack [label "ERROR: Keys file could not be read."]
 generateOrImportKeyPairStack :: AppModel -> AppNode
 generateOrImportKeyPairStack model =
   vstack
-    [ label "Welcome to nostr"
-    , spacer
-    , label "To get started, you need a valid key pair first"
-    , spacer
-    , hstack
+    (title ++
+    [ hstack
         [ label "Generate new key pair"
         , spacer
         , button "Generate" GenerateKeyPair
@@ -302,11 +296,20 @@ generateOrImportKeyPairStack model =
         , spacer
         , button "Import" ImportSecKey `nodeEnabled` isValidPrivateKey
         ]
-    ] `styleBasic`
+    ]) `styleBasic`
   [padding 10]
   where
     isValidPrivateKey =
       isJust $ maybe Nothing secKey $ decodeHex $ view mySecKeyInput model
+    title = case model ^. selectedKeys of
+      Nothing ->
+        [ label "Welcome to nostr"
+        , spacer
+        , label "To get started, you need a valid key pair first"
+        , spacer
+        ]
+      _ ->
+        []
 
 viewCircle :: Relay -> WidgetNode AppModel AppEvent
 viewCircle r = defaultWidgetNode "circlesGrid" widget
