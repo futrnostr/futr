@@ -36,8 +36,7 @@ buildUI channel wenv model = widgetTree
       [width 16, height 16, fgColor black, cursorHand]
     dialogContent =
       case model ^. dialog of
-        NoAppDialog ->
-          vstack [label "if you see this text, something went really wrong"] -- we never show this anyway
+        NoAppDialog -> error "NoAppDialog cannot be displayed"
         GenerateKeyPairDialog -> generateOrImportKeyPairStack model
         ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
         RelayDialog r -> viewRelayDialog r wenv model
@@ -46,13 +45,14 @@ buildUI channel wenv model = widgetTree
       vstack
         [ hstack
             [ filler
-            , box_ [alignTop, onClick CloseDialog] closeIcon `nodeEnabled`
-              ((model ^. dialog) /= ErrorReadingKeysFileDialog && model ^. selectedKeys /= Nothing)
+            , box_ [alignTop, onClick CloseDialog] closeIcon
+              `nodeEnabled` ((model ^. dialog) /= ErrorReadingKeysFileDialog
+                && model ^. selectedKeys /= Nothing)
             ]
         , spacer
         , dialogContent
         ] `styleBasic`
-      [width 500, height 400, padding 10, radius 10, bgColor darkGray]
+      [ width 500, height 400, padding 10, radius 10, bgColor darkGray ]
 
     headerTree =
       hstack
@@ -71,16 +71,17 @@ buildUI channel wenv model = widgetTree
         , button "Add" $ ShowDialog GenerateKeyPairDialog
         ] `styleBasic` [ paddingL 10, paddingR 10 ]
     footerTree =
-      vstack [hstack ([filler] ++ connections ++ [spacer, addRelay])] `styleBasic`
-      [padding 10]
+      vstack [hstack ([ filler ] ++ connections ++ [ spacer, addRelay ])]
+        `styleBasic` [ padding 10 ]
       where
         connections =
           map
             (\r ->
-               box_
-                 [onClick $ ShowDialog $ RelayDialog r]
-                 (tooltip (T.pack $ relayName r) (viewCircle r) `styleBasic`
-                  [cursorIcon CursorHand]))
+              box_
+                [ onClick $ ShowDialog $ RelayDialog r ]
+                (tooltip (T.pack $ relayName r) (viewCircle r) `styleBasic`
+                [ cursorIcon CursorHand ])
+            )
             (sortBy sortPool (model ^. pool))
         addRelay =
           box_ [ alignTop, onClick $ ShowDialog NewRelayDialog ] $
@@ -99,9 +100,9 @@ buildUI channel wenv model = widgetTree
             , filler
             , footerTree
             ]
-        , box_ [alignCenter, alignMiddle] dialogLayer `nodeVisible`
-          (model ^. dialog /= NoAppDialog) `styleBasic`
-          [bgColor (gray & L.a .~ 0.8)]
+        , box_ [ alignCenter, alignMiddle ] dialogLayer
+          `nodeVisible` (model ^. dialog /= NoAppDialog)
+          `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
         ]
 
 currentKeysNode :: [ReceivedEvent] -> Maybe Keys -> AppNode
@@ -204,7 +205,7 @@ viewPostUI wenv model re = widgetTree
                 `nodeEnabled` (strip (model ^. newPostInput) /= "")
             ]
         , spacer
-        , scroll_ [scrollOverlay] $ postInfo `styleBasic` [ textTop ]
+        , scroll_ [ scrollOverlay ] $ postInfo `styleBasic` [ textTop ]
         , filler
         , spacer
         , label "Seen on"
