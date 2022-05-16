@@ -107,7 +107,7 @@ buildUI channel wenv model = widgetTree
 currentKeysNode :: [ReceivedEvent] -> Maybe Keys -> AppNode
 currentKeysNode res mks = case mks of
     Just ks ->
-      label $ profileName res (snd' ks)
+      label $ profileName res $ snd' ks
     Nothing ->
       label ""
 
@@ -204,7 +204,8 @@ viewPostUI wenv model re = widgetTree
 viewRelayDialog :: Relay -> AppWenv -> AppModel -> AppNode
 viewRelayDialog r wenv model =
   vstack
-    [ label (T.pack $ relayName r) `styleBasic` [textSize 22]
+    [ label (T.pack $ relayName r)
+        `styleBasic` [ textSize 22 ]
     , filler
     , hstack
         [ label "Readable"
@@ -218,9 +219,10 @@ viewRelayDialog r wenv model =
         , checkbox relayWritableInput `nodeKey` "relayWriteableCheckbox"
         ]
     , spacer
-    , hstack [label "Connection", spacer, button connStatus connButton]
+    , hstack
+        [ label "Connection", spacer, button connStatus connButton ]
     , spacer
-    , button "Save" (UpdateRelay r)
+    , button "Save" $ UpdateRelay r
     ] `styleBasic`
   [padding 10]
   where
@@ -230,8 +232,8 @@ viewRelayDialog r wenv model =
         else "Connect"
     connButton =
       if connected r
-        then (DisconnectRelay r)
-        else (ConnectRelay r)
+        then DisconnectRelay r
+        else ConnectRelay r
 
 viewNewRelayDialog :: AppWenv -> AppModel -> AppNode
 viewNewRelayDialog wenv model =
@@ -272,19 +274,21 @@ viewNewRelayDialog wenv model =
 
 selectableText :: Text -> WidgetNode AppModel AppEvent
 selectableText t =
-  textFieldD_ (WidgetValue t) [readOnly] `styleBasic`
-  [border 0 transparent, radius 0, bgColor $ rgbHex "#515151"]
+  textFieldD_ (WidgetValue t) [ readOnly ]
+    `styleBasic` [ border 0 transparent, radius 0, bgColor $ rgbHex "#515151" ]
 
 xOnlyPubKeyElem :: XOnlyPubKey -> WidgetNode AppModel AppEvent
 xOnlyPubKeyElem x =
   hstack
     [ label "XOnlyPubKey"
     , spacer
-    , textFieldD_ (WidgetValue $ T.pack $ exportXOnlyPubKey x) [readOnly]
+    , textFieldD_ (WidgetValue $ T.pack $ exportXOnlyPubKey x) [ readOnly ]
     ]
 
 errorReadingKeysFileStack :: AppNode
-errorReadingKeysFileStack = vstack [label "ERROR: Keys file could not be read."]
+errorReadingKeysFileStack =
+  vstack
+    [ label "ERROR: Keys file could not be read." ]
 
 generateOrImportKeyPairStack :: AppModel -> AppNode
 generateOrImportKeyPairStack model =
@@ -303,8 +307,7 @@ generateOrImportKeyPairStack model =
         , spacer
         , button "Import" ImportSecKey `nodeEnabled` isValidPrivateKey
         ]
-    ]) `styleBasic`
-  [padding 10]
+    ]) `styleBasic` [ padding 10 ]
   where
     isValidPrivateKey =
       isJust $ maybe Nothing secKey $ decodeHex $ view mySecKeyInput model
