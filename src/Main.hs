@@ -48,8 +48,8 @@ import           Widgets.Profile
 
 import           Debug.Trace as Trace
 
-handleEvent ::
-     AppEnv
+handleEvent
+  :: AppEnv
   -> AppWenv
   -> AppNode
   -> AppModel
@@ -75,80 +75,84 @@ handleEvent env wenv node model evt =
             ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
         Nothing -> []
     ConnectRelay r ->
-        [ Producer $ connectRelay env r
-        , Model $ model & dialog .~ NoAppDialog
-        ]
+      [ Producer $ connectRelay env r
+      , Model $ model & dialog .~ NoAppDialog
+      ]
     DisconnectRelay r ->
-        [ Task $ disconnectRelay env r
-        , Model $ model & dialog .~ NoAppDialog
-        ]
+      [ Task $ disconnectRelay env r
+      , Model $ model & dialog .~ NoAppDialog
+      ]
     UpdateRelay r -> []
     AppInit ->
-        [ Producer tryLoadKeysFromDisk
-        ] ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
+      [ Producer tryLoadKeysFromDisk
+      ] ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
     RelayConnected r ->
-        [ Model $ model & pool .~ newPool
-        , Task $ subscribe env (model ^. eventFilter)
-        ] where
-            newPool = r : (poolWithoutRelay (model ^. pool) r)
-    RelayDisconnected r -> [ Model $ model & pool .~ newPool ] where
+      [ Model $ model & pool .~ newPool
+      , Task $ subscribe env (model ^. eventFilter)
+      ] where
+          newPool = r : (poolWithoutRelay (model ^. pool) r)
+    RelayDisconnected r ->
+      [ Model $ model & pool .~ newPool ]
+      where
         newPool = (r {connected = False}) : (poolWithoutRelay (model ^. pool) r)
     AddRelay ->
-        [ Producer $ connectRelay env r
-        , Model $ model
-            & dialog .~ NoAppDialog
-            & relayHostInput .~ ""
-            & relayPortInput .~ 433
-            & relaySecureInput .~ True
-            & relayReadableInput .~ True
-            & relayWritableInput .~ True
-            & pool .~ newPool
-        ] where
-            r = Relay
-                { host = T.unpack $ model ^. relayHostInput
-                , port = fromIntegral $ model ^. relayPortInput
-                , secure = model ^. relaySecureInput
-                , readable = model ^. relayReadableInput
-                , writable = model ^. relayWritableInput
-                , connected = False
-                }
-            newPool = r : (poolWithoutRelay (model ^. pool) r)
+      [ Producer $ connectRelay env r
+      , Model $ model
+          & dialog .~ NoAppDialog
+          & relayHostInput .~ ""
+          & relayPortInput .~ 433
+          & relaySecureInput .~ True
+          & relayReadableInput .~ True
+          & relayWritableInput .~ True
+          & pool .~ newPool
+      ]
+      where
+        r = Relay
+            { host = T.unpack $ model ^. relayHostInput
+            , port = fromIntegral $ model ^. relayPortInput
+            , secure = model ^. relaySecureInput
+            , readable = model ^. relayReadableInput
+            , writable = model ^. relayWritableInput
+            , connected = False
+            }
+        newPool = r : (poolWithoutRelay (model ^. pool) r)
     ShowDialog d ->
       case d of
         RelayDialog r ->
           [ Model $ model
-              & dialog .~ RelayDialog r
-              & relayReadableInput .~ readable r
-              & relayWritableInput .~ writable r
+            & dialog .~ RelayDialog r
+            & relayReadableInput .~ readable r
+            & relayWritableInput .~ writable r
           ]
         NewRelayDialog ->
           [ Model $ model
-              & dialog .~ NewRelayDialog
-              & relayHostInput .~ ""
-              & relayPortInput .~ 433
-              & relaySecureInput  .~ True
-              & relayReadableInput .~ True
-              & relayWritableInput .~ True
+            & dialog .~ NewRelayDialog
+            & relayHostInput .~ ""
+            & relayPortInput .~ 433
+            & relaySecureInput  .~ True
+            & relayReadableInput .~ True
+            & relayWritableInput .~ True
           ]
         GenerateKeyPairDialog ->
           [ Model $ model & dialog .~ GenerateKeyPairDialog ]
-        _ ->
-          []
+        _ -> []
     Subscribed subId ->
       [ Model $ model & currentSub .~ subId ]
     KeyPairsLoaded ks ->
-        [ Model $ model
-          & keys .~ ks
-          & selectedKeys .~ Just mk
-          & eventFilter .~ ef
-          & dialog .~ NoAppDialog
-          & receivedEvents .~ []
-        , Task $ subscribe env ef
-        ] where
+      [ Model $ model
+        & keys .~ ks
+        & selectedKeys .~ Just mk
+        & eventFilter .~ ef
+        & dialog .~ NoAppDialog
+        & receivedEvents .~ []
+      , Task $ subscribe env ef
+      ]
+      where
         mk = mainKeys ks
         pk = snd' $ mk
         ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
-    GenerateKeyPair -> [ Producer generateNewKeyPair ]
+    GenerateKeyPair ->
+      [ Producer generateNewKeyPair ]
     KeyPairGenerated k ->
       [ Model $ model
         & keys .~ ks : dk
@@ -159,11 +163,12 @@ handleEvent env wenv node model evt =
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
       , Task $ subscribe env ef
-      ] where
-      pk = deriveXOnlyPubKey k
-      ks = (k, pk, True)
-      ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
-      dk = disableKeys $ model ^. keys
+      ]
+      where
+        pk = deriveXOnlyPubKey k
+        ks = (k, pk, True)
+        ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
+        dk = disableKeys $ model ^. keys
     ImportSecKey ->
       [ Model $ model
         & keys .~ ks : dk
@@ -176,26 +181,26 @@ handleEvent env wenv node model evt =
       , Task $ unsubscribe env (model ^. currentSub)
       , Task $ subscribe env (model ^. eventFilter)
       ]
-      where kp =
-              fromJust $
-              fmap keyPairFromSecKey $
-              maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
-            pk = deriveXOnlyPubKey $ kp
-            ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
-            ks = (kp, pk, True)
-            dk = disableKeys $ model ^. keys
-    NoKeysFound -> [ Model $ model & dialog .~ GenerateKeyPairDialog ]
-    ErrorReadingKeysFile -> [ Model $ model & dialog .~ ErrorReadingKeysFileDialog ]
+      where
+        kp =
+          fromJust $
+          fmap keyPairFromSecKey $
+          maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
+        pk = deriveXOnlyPubKey $ kp
+        ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
+        ks = (kp, pk, True)
+        dk = disableKeys $ model ^. keys
+    NoKeysFound ->
+      [ Model $ model & dialog .~ GenerateKeyPairDialog ]
+    ErrorReadingKeysFile ->
+      [ Model $ model & dialog .~ ErrorReadingKeysFileDialog ]
     SendPost ->
       [ Model $ model
           & newPostInput .~ ""
       , Task $ handleNewPost env model
       ]
     ViewPostDetails re ->
-      [ Model $ model
-          & viewPost .~ (Just re)
-          & dialog .~ ViewPostDialog
-      ]
+      [ Model $ model & currentView .~ PostDetailsView re ]
     ViewProfile ->
       [ Model $ model
         & currentView .~ ProfileView
@@ -213,7 +218,6 @@ handleEvent env wenv node model evt =
         nip05Identifier = maybe "" pdNip05 profileData
     Back ->
       [ Model $ model
-        & viewPost .~ Nothing
         & currentView .~ PostsView
         & dialog .~ NoAppDialog
       ]
@@ -225,26 +229,27 @@ handleEvent env wenv node model evt =
       ]
     EventAppeared e r ->
       [ Model $ model & receivedEvents .~ addReceivedEvent (model ^. receivedEvents) e r ]
-    CloseDialog -> [ Model $ model & dialog .~ NoAppDialog ]
+    CloseDialog ->
+      [ Model $ model & dialog .~ NoAppDialog ]
 
 addReceivedEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
 addReceivedEvent re e r = addedEvent : newList
-    where
-        addedEvent = case find (pred e) re of
-            Just (e', rs) -> (e', r : filter (\r' -> not $ r' `sameRelay` r) rs)
-            _             -> (e, [r])
-        newList = filter (not . pred e) re
-        pred e' re' = e' == fst re'
+  where
+    addedEvent = case find (pred e) re of
+      Just (e', rs) -> (e', r : filter (\r' -> not $ r' `sameRelay` r) rs)
+      _             -> (e, [r])
+    newList = filter (not . pred e) re
+    pred e' re' = e' == fst re'
 
 subscribe :: AppEnv -> Maybe EventFilter -> IO AppEvent
 subscribe env mfilter = do
-    case mfilter of
-        Just f -> do
-            subId <- genSubscriptionId
-            atomically $ writeTChan (env ^. channel) $ RequestRelay subId f
-            return $ Subscribed subId
-        _      ->
-            return NoOp
+  case mfilter of
+    Just f -> do
+      subId <- genSubscriptionId
+      atomically $ writeTChan (env ^. channel) $ RequestRelay subId f
+      return $ Subscribed subId
+    _ ->
+      return NoOp
 
 unsubscribe :: AppEnv -> Text -> IO AppEvent
 unsubscribe env subId = do
@@ -253,36 +258,38 @@ unsubscribe env subId = do
 
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
-    now <- getCurrentTime
-    let ks = fromJust $ model ^. selectedKeys
-    let x = snd' ks
-    let raw = case model ^. viewPost of {
-        Just p  -> replyNote (fst p) (strip $ model ^. newPostInput) x now;
-        Nothing -> textNote (strip $ model ^. newPostInput) x now;
-    }
-    atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fst' ks) x
-    return PostSent
+  now <- getCurrentTime
+  let ks = fromJust $ model ^. selectedKeys
+  let x = snd' ks
+  let raw = case model ^. currentView of {
+    PostDetailsView re ->
+      replyNote (fst re) (strip $ model ^. newPostInput) x now;
+    _ ->
+      textNote (strip $ model ^. newPostInput) x now;
+  }
+  atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fst' ks) x
+  return PostSent
 
 saveKeyPairs :: [Keys] -> IO AppEvent
 saveKeyPairs ks = do
-    LazyBytes.writeFile "keys.ft" $ encode ks
-    putStrLn "KeyPairs saved to disk"
-    return NoOp
+  LazyBytes.writeFile "keys.ft" $ encode ks
+  putStrLn "KeyPairs saved to disk"
+  return NoOp
 
 tryLoadKeysFromDisk :: (AppEvent -> IO ()) -> IO ()
 tryLoadKeysFromDisk sendMsg = do
-    let fp = "keys.ft"
-    fe <- doesFileExist fp
-    if not fe then sendMsg $ NoKeysFound
-    else do
-        content <- LazyBytes.readFile fp
-        case decode content :: Maybe [Keys] of
-            Just [] -> do
-                sendMsg $ NoKeysFound
-            Just k -> do
-                sendMsg $ KeyPairsLoaded k
-            _      -> do
-                sendMsg $ ErrorReadingKeysFile
+  let fp = "keys.ft"
+  fe <- doesFileExist fp
+  if not fe then sendMsg $ NoKeysFound
+  else do
+    content <- LazyBytes.readFile fp
+    case decode content :: Maybe [Keys] of
+      Just [] -> do
+        sendMsg $ NoKeysFound
+      Just k  -> do
+        sendMsg $ KeyPairsLoaded k
+      _       -> do
+        sendMsg $ ErrorReadingKeysFile
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = if connected r then return () else do
@@ -297,44 +304,44 @@ connectRelay env r sendMsg = if connected r then return () else do
     h = host r
     path = "/"
     start = case secure r of
-        True  ->  runSecureClient h (port r) path
-        False -> WS.runClient h (fromIntegral $ port r) path
+      True  ->  runSecureClient h (port r) path
+      False -> WS.runClient h (fromIntegral $ port r) path
 
 disconnectRelay :: AppEnv -> Relay -> IO AppEvent
 disconnectRelay env r = if not $ connected r then return NoOp else do
-    atomically $ writeTChan (env ^. channel) $ Disconnect r
-    return NoOp
+  atomically $ writeTChan (env ^. channel) $ Disconnect r
+  return NoOp
 
 receiveWs :: Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
 receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
-    msg <- lift (Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString))
-    case msg of
-        Left ex    -> do
-            liftIO $ putStrLn $ "Connection to " ++ relayName r ++ " closed"
-            lift $ sendMsg $ RelayDisconnected r
-            mzero
-        Right msg' -> case decode msg' of
-            Just m -> do
-                lift $ sendMsg $ EventAppeared (extractEventFromServerResponse m) r
-            Nothing -> do
-                lift $ putStrLn $ "Could not decode server response: " ++ show msg'
-                lift $ sendMsg $ NoOp
+  msg <- lift (Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString))
+  case msg of
+    Left ex    -> do
+      liftIO $ putStrLn $ "Connection to " ++ relayName r ++ " closed"
+      lift $ sendMsg $ RelayDisconnected r
+      mzero
+    Right msg' -> case decode msg' of
+      Just m -> do
+        lift $ sendMsg $ EventAppeared (extractEventFromServerResponse m) r
+      Nothing -> do
+        lift $ putStrLn $ "Could not decode server response: " ++ show msg'
+        lift $ sendMsg $ NoOp
 
 sendWs :: TChan ServerRequest -> Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
 sendWs broadcastChannel r conn sendMsg = do
-    channel <- atomically $ dupTChan broadcastChannel
-    forever $ do
-        msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest)
-        case msg of
-            Left ex -> sendMsg $ RelayDisconnected r
-            Right msg' -> do
-                case msg' of
-                    Disconnect r' ->
-                        if r' `sameRelay` r then do
-                            WS.sendClose conn $ T.pack "Bye!"
-                        else return ()
-                    _            ->
-                        WS.sendTextData conn $ encode msg'
+  channel <- atomically $ dupTChan broadcastChannel
+  forever $ do
+    msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest)
+    case msg of
+      Left ex -> sendMsg $ RelayDisconnected r
+      Right msg' -> do
+        case msg' of
+          Disconnect r' ->
+            if r' `sameRelay` r then do
+                WS.sendClose conn $ T.pack "Bye!"
+            else return ()
+          _ ->
+            WS.sendTextData conn $ encode msg'
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do

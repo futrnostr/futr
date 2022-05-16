@@ -28,6 +28,8 @@ buildUI channel wenv model = widgetTree
         viewPosts wenv model
       ProfileView ->
         profileWidget channel (fromJust $ model ^. selectedKeys) profileModel
+      PostDetailsView re ->
+        viewPostUI wenv model re
 
     closeIcon =
       icon IconClose `styleBasic`
@@ -37,7 +39,6 @@ buildUI channel wenv model = widgetTree
         NoAppDialog ->
           vstack [label "if you see this text, something went really wrong"] -- we never show this anyway
         GenerateKeyPairDialog -> generateOrImportKeyPairStack model
-        ViewPostDialog -> viewPostUI wenv model
         ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
         RelayDialog r -> viewRelayDialog r wenv model
         NewRelayDialog -> viewNewRelayDialog wenv model
@@ -153,47 +154,52 @@ viewPosts wenv model = widgetTree
                   `nodeKey` "newPost"
                   `styleBasic` [ height 50 ]
                 , filler
-                , button "Post" SendPost `styleBasic` [  ]
+                , button "Post" SendPost
                 ]
             ]
         , spacer
         , scroll_ [scrollOverlay] $ posts
         ] `styleBasic` [ padding 10 ]
 
-viewPostUI :: AppWenv -> AppModel -> AppNode
-viewPostUI wenv model = widgetTree
+viewPostUI :: AppWenv -> AppModel -> ReceivedEvent -> AppNode
+viewPostUI wenv model re = widgetTree
   where
     k = fst' $ fromJust $ model ^. selectedKeys
-    event = fst $ fromJust $ model ^. viewPost
-    rs = snd $ fromJust $ model ^. viewPost
+    event = fst re
+    rs = snd re
     postInfo =
       vstack
-        [ hstack [button "Back" Back, filler]
-        , spacer
-        , hstack
-            [ selectableText $ T.pack $ exportXOnlyPubKey $
-              NostrTypes.pubKey event
+        [ hstack
+            [ selectableText
+              $ profileName (model ^. receivedEvents)
+              $ NostrTypes.pubKey event
             , spacer
             , selectableText $ content event
             ]
         ]
+    seenOnTree =
+      vstack $
+        map (\r -> label $ T.pack $ relayName r) (sortBy sortPool rs)
     widgetTree =
       vstack
-        ([ scroll_ [scrollOverlay] $ postInfo `styleBasic` [padding 10, textTop]
-         , filler
-         , hstack
-             [ textArea newPostInput `nodeKey` "replyPost" `styleBasic`
-               [height 100]
-             , filler
-             , button "Reply" (ReplyToPost event)
-             ]
-         , spacer
-         , label "Seen on"
-         , spacer
-         ] ++
-         map (\r -> label $ T.pack $ relayName r) (sortBy sortPool rs) ++
-         [spacer, xOnlyPubKeyElem $ deriveXOnlyPubKey k]) `styleBasic`
-      [padding 10]
+        [ label "Post Details"
+        , spacer
+        , hstack
+            [ textArea newPostInput
+                `nodeKey` "replyPost"
+                `styleBasic` [ height 50 ]
+            , filler
+            , button "Reply" $ ReplyToPost event
+            ]
+        , spacer
+        , scroll_ [scrollOverlay] $ postInfo `styleBasic` [ textTop ]
+        , filler
+        , spacer
+        , label "Seen on"
+        , spacer
+        , seenOnTree
+        ]
+          `styleBasic` [ padding 10 ]
 
 viewRelayDialog :: Relay -> AppWenv -> AppModel -> AppNode
 viewRelayDialog r wenv model =

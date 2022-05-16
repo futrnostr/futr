@@ -27,7 +27,6 @@ newtype AppEnv =
 data AppDialog
     = NoAppDialog
     | GenerateKeyPairDialog
-    | ViewPostDialog
     | ErrorReadingKeysFileDialog
     | NewRelayDialog
     | RelayDialog Relay
@@ -35,6 +34,7 @@ data AppDialog
 
 data AppView
     = PostsView
+    | PostDetailsView ReceivedEvent
     | ProfileView
     deriving (Eq, Show)
 
@@ -48,7 +48,6 @@ data AppModel =
     , _newPostInput   :: Text
     , _receivedEvents :: [ReceivedEvent]
     , _eventFilter    :: Maybe EventFilter
-    , _viewPost       :: Maybe ReceivedEvent
     , _dialog         :: AppDialog
     , _currentView    :: AppView
     , _profileModel   :: ProfileModel
@@ -61,7 +60,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing "" defaultPool "" "" [] Nothing Nothing NoAppDialog PostsView def "" 433 True True True
+  def = AppModel [] Nothing "" defaultPool "" "" [] Nothing NoAppDialog PostsView def "" 433 True True True
 
 data AppEvent
   = AppInit
