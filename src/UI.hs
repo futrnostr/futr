@@ -60,8 +60,8 @@ buildUI channel wenv model = widgetTree
         , dropdown_
             selectedKeys
             (map (\k -> Just k) (model ^. keys))
-            (currentKeysTree (model ^. receivedEvents))
-            (currentKeysTree (model ^. receivedEvents))
+            (currentKeysNode (model ^. receivedEvents))
+            (currentKeysNode (model ^. receivedEvents))
             [ onChange KeysSelected ]
             `styleBasic` [ width 400 ]
         , spacer
@@ -103,8 +103,8 @@ buildUI channel wenv model = widgetTree
           [bgColor (gray & L.a .~ 0.8)]
         ]
 
-currentKeysTree :: [ReceivedEvent] -> Maybe Keys -> AppNode
-currentKeysTree res mks = case mks of
+currentKeysNode :: [ReceivedEvent] -> Maybe Keys -> AppNode
+currentKeysNode res mks = case mks of
     Just ks ->
       label $ profileName res (snd' ks)
     Nothing ->
