@@ -119,7 +119,12 @@ postRow wenv res idx re = row
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
     postInfo =
       hstack
-        [ selectableText $ profileName res $ NostrTypes.pubKey e
+        [ vstack
+            [ selectableText $ profileName res $ NostrTypes.pubKey e
+            , selectableText
+              $ shortXOnlyPubKey
+              $ NostrTypes.pubKey e
+            ]
         , spacer
         , selectableText $ content e
         ]
@@ -171,13 +176,18 @@ viewPostUI wenv model re = widgetTree
     postInfo =
       vstack
         [ hstack
-            [ selectableText
-              $ profileName (model ^. receivedEvents)
-              $ NostrTypes.pubKey event
+            [ vstack
+                [ selectableText
+                  $ profileName (model ^. receivedEvents)
+                  $ NostrTypes.pubKey event
+                , selectableText
+                  $ shortXOnlyPubKey
+                  $ NostrTypes.pubKey event
+                ]
             , spacer
             , selectableText $ content event
             ]
-        ]
+        ] `styleBasic` [ paddingT 10 ]
     seenOnTree =
       vstack $
         map (\r -> label $ T.pack $ relayName r) (sortBy sortPool rs)

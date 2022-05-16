@@ -50,6 +50,14 @@ profileName :: [ReceivedEvent] -> XOnlyPubKey -> Text
 profileName res xo =
   maybe (pack $ exportXOnlyPubKey xo) pdName (profileDataFromReceivedEvents res xo)
 
+shortXOnlyPubKey :: XOnlyPubKey -> Text
+shortXOnlyPubKey xo = pack
+  $ part1 ++ ".." ++ part2
+  where
+    str = exportXOnlyPubKey xo
+    part1 = take 3 str
+    part2 = take 3 $ reverse str
+
 
 latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering
 latestEvent a b = compare (created_at $ fst b) (created_at $ fst a)
