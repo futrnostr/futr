@@ -155,6 +155,7 @@ viewPosts wenv model = widgetTree
                   `styleBasic` [ height 50 ]
                 , filler
                 , button "Post" SendPost
+                    `nodeEnabled` (strip (model ^. newPostInput) /= "")
                 ]
             ]
         , spacer
@@ -189,7 +190,8 @@ viewPostUI wenv model re = widgetTree
                 `nodeKey` "replyPost"
                 `styleBasic` [ height 50 ]
             , filler
-            , button "Reply" $ ReplyToPost event
+            , button "Reply" (ReplyToPost event)
+                `nodeEnabled` (strip (model ^. newPostInput) /= "")
             ]
         , spacer
         , scroll_ [scrollOverlay] $ postInfo `styleBasic` [ textTop ]
