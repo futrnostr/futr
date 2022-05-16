@@ -110,15 +110,15 @@ currentKeysNode res mks = case mks of
     Nothing ->
       label ""
 
-postRow :: AppWenv -> Int -> ReceivedEvent -> AppNode
-postRow wenv idx re = row
+postRow :: AppWenv -> [ReceivedEvent] -> Int -> ReceivedEvent -> AppNode
+postRow wenv res idx re = row
   where
     e = fst re
     rowSep = rgbaHex "#A9A9A9" 0.75
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
     postInfo =
       hstack
-        [ selectableText $ T.pack $ exportXOnlyPubKey $ NostrTypes.pubKey e
+        [ selectableText $ profileName res $ NostrTypes.pubKey e
         , spacer
         , selectableText $ content e
         ]
@@ -139,7 +139,7 @@ viewPosts wenv model = widgetTree
         postFade idx e = animRow
           where
             action = ViewPostDetails e
-            item = postRow wenv idx e
+            item = postRow wenv (model ^. receivedEvents) idx e
             animRow =
               animFadeOut_ [onFinished action] item `nodeKey` (content $ fst e)
         postRows = zipWith postFade [0 ..] orderedPosts
