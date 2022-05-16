@@ -126,7 +126,7 @@ postRow wenv idx re = row
       hstack
         [ postInfo
         , spacer
-        , button "View" (ViewPost re)
+        , button "Details" (ViewPostDetails re)
         ] `styleBasic` [ paddingT 10, paddingB 10, borderB 1 rowSep ]
 
 viewPosts :: AppWenv -> AppModel -> AppNode
@@ -138,7 +138,7 @@ viewPosts wenv model = widgetTree
         orderedPosts = filter (\re -> kind (fst re) == 1) (model ^. receivedEvents)
         postFade idx e = animRow
           where
-            action = ViewPost e
+            action = ViewPostDetails e
             item = postRow wenv idx e
             animRow =
               animFadeOut_ [onFinished action] item `nodeKey` (content $ fst e)

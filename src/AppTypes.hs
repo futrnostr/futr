@@ -81,7 +81,7 @@ data AppEvent
   | ErrorReadingKeysFile
   | ImportSecKey
   | SendPost
-  | ViewPost ReceivedEvent
+  | ViewPostDetails ReceivedEvent
   | ViewProfile
   | Back
   | PostSent

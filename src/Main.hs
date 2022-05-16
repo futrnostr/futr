@@ -191,7 +191,7 @@ handleEvent env wenv node model evt =
           & newPostInput .~ ""
       , Task $ handleNewPost env model
       ]
-    ViewPost re ->
+    ViewPostDetails re ->
       [ Model $ model
           & viewPost .~ (Just re)
           & dialog .~ ViewPostDialog
