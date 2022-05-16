@@ -33,23 +33,25 @@ data Relay =
 
 defaultPool :: [Relay]
 defaultPool =
-  [ Relay
-    { host = "nostr.rocks"
-    , port = 443
-    , secure = True
-    , readable = True
-    , writable = True
-    , connected = False
-    }
-  ,  Relay
-    { host = "nostr-pub.wellorder.net"
-    , port = 443
-    , secure = True
-    , readable = True
-    , writable = True
-    , connected = False
-    }
-  , Relay
+  [
+  --   Relay
+  --   { host = "nostr.rocks"
+  --   , port = 443
+  --   , secure = True
+  --   , readable = True
+  --   , writable = True
+  --   , connected = False
+  --   }
+  -- ,  Relay
+  --   { host = "nostr-pub.wellorder.net"
+  --   , port = 443
+  --   , secure = True
+  --   , readable = True
+  --   , writable = True
+  --   , connected = False
+  --   }
+  -- ,
+    Relay
     { host = "localhost"
     , port = 2700
     , secure = False
@@ -173,25 +175,25 @@ exportEventId i = unpack . B16.encodeBase16 $ getEventId i
 
 data Event =
   Event
-  { eventId  :: EventId
-  , pubKey   :: XOnlyPubKey
+  { eventId    :: EventId
+  , pubKey     :: XOnlyPubKey
   , created_at :: DateTime
-  , kind     :: Int
-  , tags     :: [Tag]
-  , content  :: Text
-  , sig    :: SchnorrSig
+  , kind       :: Int
+  , tags       :: [Tag]
+  , content    :: Text
+  , sig        :: SchnorrSig
   }
   deriving (Eq, Show)
 
 instance ToJSON Event where
   toJSON Event {..} = object
-     [ "id"     .= exportEventId eventId
-     , "pubkey"   .= Schnorr.exportXOnlyPubKey pubKey
+     [ "id"         .= exportEventId eventId
+     , "pubkey"     .= Schnorr.exportXOnlyPubKey pubKey
      , "created_at" .= toSeconds created_at
-     , "kind"     .= kind
-     , "tags"     .= tags
-     , "content"  .= content
-     , "sig"    .= Schnorr.exportSchnorrSig sig
+     , "kind"       .= kind
+     , "tags"       .= tags
+     , "content"    .= content
+     , "sig"        .= Schnorr.exportSchnorrSig sig
      ]
 
 instance FromJSON Event where
@@ -206,13 +208,31 @@ instance FromJSON Event where
 
 data RawEvent =
   RawEvent
-  { pubKey'   :: XOnlyPubKey
+  { pubKey'     :: XOnlyPubKey
   , created_at' :: DateTime
-  , kind'     :: Int
-  , tags'     :: [Tag]
-  , content'  :: Text
+  , kind'       :: Int
+  , tags'       :: [Tag]
+  , content'    :: Text
   }
   deriving (Eq, Show)
+
+type ReceivedEvent = (Event, [Relay])
+
+data ProfileData =
+  ProfileData
+  { pdName       :: Text
+  , pdAbout      :: Text
+  , pdPictureUrl :: Text
+  , pdNip05      :: Text
+  }
+  deriving (Eq, Show)
+
+instance FromJSON ProfileData where
+  parseJSON = withObject "profile data" $ \e -> ProfileData
+    <$> e .: "name"
+    <*> e .: "about"
+    <*> e .: "picture"
+    <*> e .: "nip05"
 
 data Tag
   = ETag (EventId, RelayURL)

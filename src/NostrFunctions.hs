@@ -86,10 +86,10 @@ setMetadata name about picture nip05 xo t =
     , kind' = 0
     , tags' = []
     , content' = pack $
-      "name:\"" ++ unpack name ++
-      "\",about:\"" ++ unpack about ++
-      "\",picture:\"" ++ unpack picture ++
-      "\",nip05:\"" ++ unpack nip05 ++ "\"}"
+      "{\"name\":\"" ++ unpack name ++
+      "\",\"about\":\"" ++ unpack about ++
+      "\",\"picture\":\"" ++ unpack picture ++
+      "\",\"nip05\":\"" ++ unpack nip05 ++ "\"}"
     }
 
 textNote :: Text -> XOnlyPubKey -> DateTime -> RawEvent

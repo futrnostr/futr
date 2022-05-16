@@ -82,37 +82,33 @@ saveProfile chan ks model sendMsg = do
 viewProfile :: WidgetEnv ProfileModel ProfileEvent -> ProfileModel -> WidgetNode ProfileModel ProfileEvent
 viewProfile wenv model =
   vstack
-    [ hstack
-      [ vstack
-        [ label "Profile"
-        , spacer
-        , vstack
-          [ hstack
-              [ label "Name"
-              , spacer
-              , textField (inputs . nameInput) `nodeKey` "nameInput"
-              ]
-          , spacer
-          , hstack
-              [ label "About"
-              , spacer
-              , textField (inputs . aboutInput) `nodeKey` "aboutInput"
-              ]
-          , spacer
-          , hstack
-              [ label "Picture URL"
-              , spacer
-              , textField (inputs . pictureUrlInput) `nodeKey` "pictureUrlInput"
-              ]
-          , spacer
-          , hstack
-              [ label "NIP-05 Identifier"
-              , spacer
-              , textField (inputs . nip05IdentifierInput) `nodeKey` "nip05IdentifierInput"
-              ]
-          , spacer
-          , button "Save" SaveProfile
-          ] `styleBasic` [padding 10]
+    [ label "Profile"
+    , spacer
+    , hstack
+        [ label "Name"
+        , filler
+        , tf (inputs . nameInput) "nameInput"
         ]
-      ]
-    ]
+    , spacer
+    , hstack
+        [ label "About"
+        , filler
+        , tf (inputs . aboutInput) "aboutInput"
+        ]
+    , spacer
+    , hstack
+        [ label "Picture URL"
+        , filler
+        , tf (inputs . pictureUrlInput) "pictureUrlInput"
+        ]
+    , spacer
+    , hstack
+        [ label "NIP-05 Identifier"
+        , filler
+        , tf (inputs . nip05IdentifierInput) "nip05IdentifierInput"
+        ]
+    , spacer
+    , button "Save" SaveProfile
+    ] `styleBasic` [padding 10]
+    where
+      tf input id' = textField input `nodeKey` id' `styleBasic` [ width 400 ]

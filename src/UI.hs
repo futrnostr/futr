@@ -7,7 +7,7 @@ import           Control.Lens
 import           Crypto.Schnorr
 import           Data.Default
 import           Data.List              (sortBy)
-import           Data.Maybe
+import           Data.Maybe             as Maybe
 import           Data.Text              (Text, strip)
 import qualified Data.Text              as T
 import           Monomer
@@ -60,8 +60,8 @@ buildUI channel wenv model = widgetTree
         , dropdown_
             selectedKeys
             (map (\k -> Just k) (model ^. keys))
-            currentKeysTree
-            currentKeysTree
+            (currentKeysTree (model ^. receivedEvents))
+            (currentKeysTree (model ^. receivedEvents))
             [ onChange KeysSelected ]
             `styleBasic` [ width 400 ]
         , spacer
@@ -103,10 +103,10 @@ buildUI channel wenv model = widgetTree
           [bgColor (gray & L.a .~ 0.8)]
         ]
 
-currentKeysTree :: Maybe Keys -> AppNode
-currentKeysTree mks = case mks of
+currentKeysTree :: [ReceivedEvent] -> Maybe Keys -> AppNode
+currentKeysTree res mks = case mks of
     Just ks ->
-      label $ T.pack $ exportXOnlyPubKey $ snd' ks
+      label $ profileName res (snd' ks)
     Nothing ->
       label ""
 
@@ -134,14 +134,15 @@ viewPosts wenv model = widgetTree
   where
     posts = vstack postRows
       where
-        orderedPosts = (\e -> model ^? receivedEvents . ix e)
+        -- display only kind 1 events
+        orderedPosts = filter (\re -> kind (fst re) == 1) (model ^. receivedEvents)
         postFade idx e = animRow
           where
             action = ViewPost e
             item = postRow wenv idx e
             animRow =
               animFadeOut_ [onFinished action] item `nodeKey` (content $ fst e)
-        postRows = zipWith postFade [0 ..] (model ^. receivedEvents)
+        postRows = zipWith postFade [0 ..] orderedPosts
     widgetTree =
       vstack
         [ label "New Post"

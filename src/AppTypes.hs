@@ -38,8 +38,6 @@ data AppView
     | ProfileView
     deriving (Eq, Show)
 
-type ReceivedEvent = (Event, [Relay])
-
 data AppModel =
   AppModel
     { _keys           :: [Keys]

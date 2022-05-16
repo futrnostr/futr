@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -198,7 +197,20 @@ handleEvent env wenv node model evt =
           & dialog .~ ViewPostDialog
       ]
     ViewProfile ->
-      [ Model $ model & currentView .~ ProfileView ]
+      [ Model $ model
+        & currentView .~ ProfileView
+        & profileModel . inputs . nameInput .~ name
+        & profileModel . inputs . aboutInput .~ about
+        & profileModel . inputs . pictureUrlInput .~ pictureUrl
+        & profileModel . inputs . nip05IdentifierInput .~ nip05Identifier
+      ] where
+        profileData = profileDataFromReceivedEvents
+          (model ^. receivedEvents)
+          (snd' $ fromJust (model ^. selectedKeys))
+        name = maybe "" pdName profileData
+        about = maybe "" pdAbout profileData
+        pictureUrl = maybe "" pdPictureUrl profileData
+        nip05Identifier = maybe "" pdNip05 profileData
     Back ->
       [ Model $ model
         & viewPost .~ Nothing
@@ -348,12 +360,25 @@ main = do
       , appTheme customDarkTheme
       , appFontDef "Regular" "./assets/fonts/Roboto-Regular.ttf"
       , appInitEvent AppInit
-      , appRenderOnMainThread
       ]
+
+
+-- main = do
+--     -- let e = "[\"EVENT\",\"044039d07ff47f100e29debaec66a3cd35e02b0cb849a3bce2cfd8bc0a1629f1\",{\"id\":\"763500a66f5ed2cc3bf77879082dc406a119ad177d12c2727e671a397a60fcfb\",\"pubkey\":\"1702e3b17de25d9fd63d80fb1a2394a26239cb2a747b893e82f776704d888c4b\",\"created_at\":1649731192,\"kind\":1,\"tags\":[[\"e\",\"d87c30cd198635dad4e6981b907fa4ea2608a6e675844ec798f85ca6bafa2a34\",\"\"]],\"content\":\"ff\",\"sig\":\"54436b7cd3afbb5c9bb7e3da455725a27c8f064acc52febe9d031918d07135acbd001192751e19579ec7cdbe76ff36631e26f02f25da94a5c5a9cc6f2ffe97c8\"}]\n";
+--     -- let d = parseE e
+--     let d = parseE $ LazyBytes.fromStrict $ encodeUtf8 $ T.pack "{\"name\":\"sasa\",\"about\":\"king\",\"picture\":\"dfs\",\"nip05\":\"dfs\"}"
+--     putStrLn $ show d
+--
+-- parseE :: LazyBytes.ByteString -> Either String ProfileData
+-- parseE = eitherDecode
+
 
 {- for debugging json parsers
 main = do
-    let e = "[\"EVENT\",\"044039d07ff47f100e29debaec66a3cd35e02b0cb849a3bce2cfd8bc0a1629f1\",{\"id\":\"763500a66f5ed2cc3bf77879082dc406a119ad177d12c2727e671a397a60fcfb\",\"pubkey\":\"1702e3b17de25d9fd63d80fb1a2394a26239cb2a747b893e82f776704d888c4b\",\"created_at\":1649731192,\"kind\":1,\"tags\":[[\"e\",\"d87c30cd198635dad4e6981b907fa4ea2608a6e675844ec798f85ca6bafa2a34\",\"\"]],\"content\":\"ff\",\"sig\":\"54436b7cd3afbb5c9bb7e3da455725a27c8f064acc52febe9d031918d07135acbd001192751e19579ec7cdbe76ff36631e26f02f25da94a5c5a9cc6f2ffe97c8\"}]\n";
+    let e = "[\"EVENT\",\"044039d07ff47f100e29debaec66a3cd35e02b0cb849a3bce2cfd8bc0a1629f1\",{\"id\":\"763500a66f5ed2cc3bf77879082dc406a119ad177d12c2727e671a397a60fcfb\"
+,\"pubkey\":\"1702e3b17de25d9fd63d80fb1a2394a26239cb2a747b893e82f776704d888c4b\",\"created_at\":1649731192,\"kind\":1,\"tags\":[[\"e\",\"d87c30cd198635dad4e6981b907fa4ea2
+608a6e675844ec798f85ca6bafa2a34\",\"\"]],\"content\":\"ff\",\"sig\":\"54436b7cd3afbb5c9bb7e3da455725a27c8f064acc52febe9d031918d07135acbd001192751e19579ec7cdbe76ff36631e26
+f02f25da94a5c5a9cc6f2ffe97c8\"}]\n";
     let d = parseE e
     putStrLn $ show d
 
