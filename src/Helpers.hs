@@ -13,15 +13,6 @@ import           Data.Text.Encoding                   (encodeUtf8)
 
 import           NostrTypes
 
-fst' :: (a, b, c) -> a
-fst' (a, _, _) = a
-
-snd' :: (a, b, c) -> b
-snd' (_, b, _) = b
-
-third :: (a, b, c) -> c
-third (_, _, c) = c
-
 mainKeys :: [Keys] -> Keys
 mainKeys ks = head $ filter (\(Keys a b c) -> c == True) ks
 
