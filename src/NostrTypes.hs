@@ -152,26 +152,11 @@ instance FromJSON ServerResponse where
       String "EVENT" -> return $ ServerResponse s e
       _ -> fail "Invalid ServerResponse did not have EVENT"
 
-textToByteStringType :: Text -> (ByteString -> Maybe a) -> Maybe a
-textToByteStringType t f = case Schnorr.decodeHex t of
-  Just bs -> f bs
-  Nothing -> Nothing
-
-eventId' :: Text -> Maybe EventId
-eventId' t = do
-  bs <- Schnorr.decodeHex t
-  case BS.length bs of
-    32 -> Just $ EventId bs
-    _  -> Nothing
-
 instance FromJSON XOnlyPubKey where
   parseJSON = withText "XOnlyPubKey" $ \p -> do
     case (textToByteStringType p Schnorr.xOnlyPubKey) of
       Just e -> return e
       _    -> fail "invalid XOnlyPubKey"
-
-exportEventId :: EventId -> String
-exportEventId i = unpack . B16.encodeBase16 $ getEventId i
 
 data Event =
   Event
@@ -216,6 +201,30 @@ data RawEvent =
   }
   deriving (Eq, Show)
 
+data Profile = Profile XOnlyPubKey RelayURL Text
+  deriving (Eq, Show)
+
+instance FromJSON Profile where
+  parseJSON (Array v)
+    | V.length v == 3 =
+      case v V.! 0 of
+        String "p" ->
+          Profile <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON ""
+        _ -> fail "Unknown profile"
+    | V.length v == 4 && v V.! 0 == String "p" =
+        Profile <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON (v V.! 3)
+    | otherwise = fail "Invalid profile"
+  parseJSON _ = fail "Cannot parse profile"
+
+instance ToJSON Profile where
+  toJSON (Profile xOnlyPubKey relayURL name) =
+    Array $ fromList
+      [ String "p"
+      , String $ pack $ Schnorr.exportXOnlyPubKey xOnlyPubKey
+      , String relayURL
+      , String name
+      ]
+
 type ReceivedEvent = (Event, [Relay])
 
 data ProfileData =
@@ -235,8 +244,8 @@ instance FromJSON ProfileData where
     <*> e .: "nip05"
 
 data Tag
-  = ETag (EventId, RelayURL)
-  | PTag (XOnlyPubKey, RelayURL)
+  = ETag EventId RelayURL
+  | PTag Profile
   deriving (Eq, Show)
 
 data EventFilter
@@ -251,26 +260,29 @@ instance FromJSON Tag where
   parseJSON (Array v)
     | V.length v == 3 =
       case v V.! 0 of
-      String "e" ->
-        ETag <$> ((,) <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2))
-      String "p" ->
-        PTag <$> ((,) <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2))
-      _ -> fail "Unknown tag seen"
+        String "e" ->
+          ETag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2)
+        String "p" ->
+          PTag <$> (Profile <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON "")
+        _ -> fail "Unknown tag seen"
+    | V.length v == 4 && v V.! 0 == String "p" =
+        PTag <$> (Profile <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON (v V.! 3))
     | otherwise = fail "Invalid tag length"
   parseJSON _ = fail "Cannot parse tag"
 
 instance ToJSON Tag where
-  toJSON (ETag (eventId, relayURL)) =
+  toJSON (ETag eventId relayURL) =
     Array $ fromList
       [ String "e"
       , String $ pack $ exportEventId eventId
-      , String $ relayURL
+      , String relayURL
       ]
-  toJSON (PTag (xOnlyPubKey, relayURL)) =
+  toJSON (PTag (Profile xOnlyPubKey relayURL name)) =
     Array $ fromList
       [ String "p"
       , String $ pack $ Schnorr.exportXOnlyPubKey xOnlyPubKey
-      , String $ relayURL
+      , String relayURL
+      , String name
       ]
 
 instance ToJSON EventFilter where
@@ -292,3 +304,18 @@ instance ToJSON EventFilter where
         ]
         -}
 --      ]
+
+textToByteStringType :: Text -> (ByteString -> Maybe a) -> Maybe a
+textToByteStringType t f = case Schnorr.decodeHex t of
+  Just bs -> f bs
+  Nothing -> Nothing
+
+eventId' :: Text -> Maybe EventId
+eventId' t = do
+  bs <- Schnorr.decodeHex t
+  case BS.length bs of
+    32 -> Just $ EventId bs
+    _  -> Nothing
+
+exportEventId :: EventId -> String
+exportEventId i = unpack . B16.encodeBase16 $ getEventId i

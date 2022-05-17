@@ -51,19 +51,20 @@ serializeTags :: [Tag] -> Value
 serializeTags ts = Array $ fromList $ map serializeTag ts
 
 serializeTag :: Tag -> Value
-serializeTag (ETag (i, r)) =
+serializeTag (ETag i r) =
   Array $
   fromList
     [ String $ pack "e"
     , String $ pack $ exportEventId i
     , String r
     ]
-serializeTag (PTag (p, r)) =
+serializeTag (PTag (Profile p r n)) =
   Array $
   fromList
     [ String $ pack "p"
     , String $ pack $ Schnorr.exportXOnlyPubKey p
     , String r
+    , String n
     ]
 
 validateEvent :: Event -> Bool
@@ -100,12 +101,15 @@ textNote note xo t =
 replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> RawEvent
 replyNote event note xo t =
   RawEvent
-    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event, "")], content' = note}
+    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event) ""], content' = note}
 
-recommendServer :: RelayURL -> XOnlyPubKey -> DateTime -> RawEvent
-recommendServer url xo t =
+setFollowers :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> RawEvent
+setFollowers ps r xo t =
   RawEvent
-    {pubKey' = xo, created_at' = t, kind' = 3, tags' = [], content' = url}
+    {pubKey' = xo, created_at' = t, kind' = 3, tags' = profilesToTags ps, content' = ""}
+
+profilesToTags :: [Profile] -> [Tag]
+profilesToTags ps = map (\p -> PTag p) ps
 
 signEvent :: RawEvent -> KeyPair -> XOnlyPubKey -> Event
 signEvent r kp xo =
