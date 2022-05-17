@@ -14,7 +14,7 @@ import           Data.Text.Encoding                   (encodeUtf8)
 import           NostrTypes
 
 mainKeys :: [Keys] -> Keys
-mainKeys ks = head $ filter (\(Keys a b c) -> c == True) ks
+mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
 
 poolWithoutRelay :: [Relay] -> Relay -> [Relay]
 poolWithoutRelay p r = filter (\r' -> not $ r `sameRelay` r') p
@@ -58,7 +58,7 @@ eventFilterFromKeys :: Keys -> Map.Map Keys [Profile] -> Maybe EventFilter
 eventFilterFromKeys ks ps =
   Just $ EventFilter { filterPubKey = xo, followers = xo : fs'' }
   where
-    (Keys _ xo _) = ks
+    (Keys _ xo _ _) = ks
     fs = case Map.lookup ks ps of
       Just fs' -> fs'
       Nothing  -> []

@@ -77,13 +77,14 @@ data ServerRequest
 data ServerResponse = ServerResponse Text Event
   deriving (Eq, Show)
 
--- | Tuple consistint KeyPair, XOnlyPubKey and Bool
+-- | Keys
 -- | The bool value declares if the keys are active
-data Keys = Keys KeyPair XOnlyPubKey Bool
+-- | The text value gives the profile name
+data Keys = Keys KeyPair XOnlyPubKey Bool Text
   deriving (Eq, Show)
 
 instance Ord Keys where
-  compare (Keys a _ _) (Keys b _ _) =
+  compare (Keys a _ _ _) (Keys b _ _ _) =
     compare (Schnorr.getKeyPair a) (Schnorr.getKeyPair b)
 
 instance FromJSON Keys where
@@ -91,14 +92,16 @@ instance FromJSON Keys where
     kp <- parseJSON $ arr V.! 0
     xo <- parseJSON $ arr V.! 1
     a  <- parseJSON $ arr V.! 2
-    return $ Keys kp xo a
+    n  <- parseJSON $ arr V.! 3
+    return $ Keys kp xo a n
 
 instance ToJSON Keys where
-  toJSON (Keys kp xo a) =
+  toJSON (Keys kp xo a n) =
     Array $ fromList
       [ toJSON kp
       , toJSON xo
       , toJSON a
+      , toJSON n
       ]
 
 data Post =

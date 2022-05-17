@@ -109,7 +109,7 @@ dialogLayer model =
 
 currentKeysNode :: [ReceivedEvent] -> Maybe Keys -> AppNode
 currentKeysNode res mks = case mks of
-    Just (Keys _ xo _) ->
+    Just (Keys _ xo _ _) ->
       label $ profileName res $ xo
     Nothing ->
       label ""
@@ -173,7 +173,6 @@ viewPosts wenv model = widgetTree
 viewPostUI :: AppWenv -> AppModel -> ReceivedEvent -> AppNode
 viewPostUI wenv model re = widgetTree
   where
-    (Keys k xo a) = fromJust $ model ^. selectedKeys
     event = fst re
     rs = snd re
     postInfo =

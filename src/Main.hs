@@ -71,7 +71,6 @@ handleEvent env wenv node model evt =
           , Task $ unsubscribe env (model ^. currentSub)
           , Task $ subscribe env ef
           ] where
-            (Keys kp xo a) = ks
             keys' = switchEnabledKeys ks (model ^. keys)
             ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
         Nothing -> []
@@ -150,7 +149,6 @@ handleEvent env wenv node model evt =
       ]
       where
         mk = mainKeys ks
-        (Keys kp xo a) = mk
         ef = eventFilterFromKeys mk (model ^. AppTypes.followers)
     GenerateKeyPair ->
       [ Producer generateNewKeyPair ]
@@ -167,7 +165,7 @@ handleEvent env wenv node model evt =
       ]
       where
         pk = deriveXOnlyPubKey k
-        ks = Keys k pk True
+        ks = Keys k pk True ""
         ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
         dk = disableKeys $ model ^. keys
     ImportSecKey ->
@@ -188,7 +186,7 @@ handleEvent env wenv node model evt =
           fmap keyPairFromSecKey $
           maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
         pk = deriveXOnlyPubKey $ kp
-        ks = Keys kp pk True
+        ks = Keys kp pk True ""
         ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
         dk = disableKeys $ model ^. keys
     NoKeysFound ->
@@ -210,7 +208,7 @@ handleEvent env wenv node model evt =
         & profileModel . inputs . pictureUrlInput .~ pictureUrl
         & profileModel . inputs . nip05IdentifierInput .~ nip05Identifier
       ] where
-        (Keys kp xo a) = fromJust (model ^. selectedKeys)
+        (Keys _ xo _ _) = fromJust (model ^. selectedKeys)
         profileData = profileDataFromReceivedEvents
           (model ^. receivedEvents)
           xo
@@ -261,7 +259,7 @@ unsubscribe env subId = do
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
   now <- getCurrentTime
-  let (Keys kp xo a) = fromJust $ model ^. selectedKeys
+  let (Keys kp xo _ _) = fromJust $ model ^. selectedKeys
   let raw = case model ^. currentView of {
     PostDetailsView re ->
       replyNote (fst re) (strip $ model ^. newPostInput) xo now;
@@ -350,12 +348,12 @@ generateNewKeyPair sendMsg = do
   sendMsg $ KeyPairGenerated k
 
 disableKeys :: [Keys] -> [Keys]
-disableKeys ks = map (\(Keys kp xo _) -> Keys kp xo False) ks
+disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
 
 switchEnabledKeys :: Keys -> [Keys] -> [Keys]
-switchEnabledKeys (Keys kp xo a) ks = map (\(Keys kp' xo' a') -> if kp == kp'
-    then Keys kp' xo' True
-    else Keys kp' xo' False
+switchEnabledKeys (Keys kp _ _ _) ks = map (\(Keys kp' xo' a' n') -> if kp == kp'
+    then Keys kp' xo' True n'
+    else Keys kp' xo' False n'
   ) ks
 
 main :: IO ()

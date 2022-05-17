@@ -67,7 +67,7 @@ profileWidget
 profileWidget chan keys field = composite "profileWidget" field viewProfile (handleProfileEvent chan keys)
 
 saveProfile :: TChan ServerRequest -> Keys -> ProfileModel -> (ProfileEvent -> IO ()) -> IO ()
-saveProfile chan (Keys kp xo a) model sendMsg = do
+saveProfile chan (Keys kp xo _ _) model sendMsg = do
   now <- getCurrentTime
   let raw = setMetadata name about picture nip05 xo now
   atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo
