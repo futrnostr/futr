@@ -55,6 +55,7 @@ data AppModel =
   AppModel
     { _keys           :: [Keys]
     , _selectedKeys   :: Maybe Keys
+    , _followers      :: [Profile]
     , _currentSub     :: Text
     , _pool           :: [Relay]
     , _mySecKeyInput  :: Text
@@ -69,7 +70,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing "" defaultPool "" "" [] Nothing NoAppDialog PostsView def def
+  def = AppModel [] Nothing [] "" defaultPool "" "" [] Nothing NoAppDialog PostsView def def
 
 data AppEvent
   = AppInit

@@ -42,7 +42,7 @@ import           Wuss
 import           AppTypes
 import           Helpers
 import           NostrFunctions
-import           NostrTypes
+import           NostrTypes                           as NT
 import           UI
 import           Widgets.Profile
 
@@ -72,7 +72,7 @@ handleEvent env wenv node model evt =
           ] where
             keys' = switchEnabledKeys ks (model ^. keys)
             pk = snd' $ ks
-            ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
+            ef = Just $ EventFilter {filterPubKey = pk, NT.followers = [pk]}
         Nothing -> []
     ConnectRelay r ->
       [ Producer $ connectRelay env r
@@ -150,7 +150,7 @@ handleEvent env wenv node model evt =
       where
         mk = mainKeys ks
         pk = snd' $ mk
-        ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
+        ef = Just $ EventFilter {filterPubKey = pk, NT.followers = [pk]}
     GenerateKeyPair ->
       [ Producer generateNewKeyPair ]
     KeyPairGenerated k ->
@@ -167,7 +167,7 @@ handleEvent env wenv node model evt =
       where
         pk = deriveXOnlyPubKey k
         ks = (k, pk, True)
-        ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
+        ef = Just $ EventFilter {filterPubKey = pk, NT.followers = [pk]}
         dk = disableKeys $ model ^. keys
     ImportSecKey ->
       [ Model $ model
@@ -187,7 +187,7 @@ handleEvent env wenv node model evt =
           fmap keyPairFromSecKey $
           maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
         pk = deriveXOnlyPubKey $ kp
-        ef = Just $ EventFilter {filterPubKey = pk, followers = [pk]}
+        ef = Just $ EventFilter {filterPubKey = pk, NT.followers = [pk]}
         ks = (kp, pk, True)
         dk = disableKeys $ model ^. keys
     NoKeysFound ->
