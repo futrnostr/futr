@@ -6,6 +6,7 @@ import           Crypto.Schnorr
 import           Data.Aeson
 import qualified Data.ByteString.Lazy                 as LazyBytes
 import           Data.List                            (sortBy)
+import qualified Data.Map                             as Map
 import           Data.Maybe                           (fromMaybe)
 import           Data.Text                            (Text, pack)
 import           Data.Text.Encoding                   (encodeUtf8)
@@ -22,7 +23,7 @@ third :: (a, b, c) -> c
 third (_, _, c) = c
 
 mainKeys :: [Keys] -> Keys
-mainKeys ks = head $ filter (\k -> third k == True) ks
+mainKeys ks = head $ filter (\(Keys a b c) -> c == True) ks
 
 poolWithoutRelay :: [Relay] -> Relay -> [Relay]
 poolWithoutRelay p r = filter (\r' -> not $ r `sameRelay` r') p
@@ -61,3 +62,13 @@ shortXOnlyPubKey xo = pack
 
 latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering
 latestEvent a b = compare (created_at $ fst b) (created_at $ fst a)
+
+eventFilterFromKeys :: Keys -> Map.Map Keys [Profile] -> Maybe EventFilter
+eventFilterFromKeys ks ps =
+  Just $ EventFilter { filterPubKey = xo, followers = xo : fs'' }
+  where
+    (Keys _ xo _) = ks
+    fs = case Map.lookup ks ps of
+      Just fs' -> fs'
+      Nothing  -> []
+    fs'' = map (\(Profile xo' _ _) -> xo') fs

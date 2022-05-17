@@ -23,6 +23,7 @@ import           Data.DateTime
 import           Data.Default
 import           Data.Either                          (fromRight)
 import           Data.List                            (find)
+import qualified Data.Map                             as Map
 import           Data.Maybe
 import           Data.Monoid                          (mconcat)
 import           Data.Text                            (Text, strip)
@@ -70,9 +71,9 @@ handleEvent env wenv node model evt =
           , Task $ unsubscribe env (model ^. currentSub)
           , Task $ subscribe env ef
           ] where
+            (Keys kp xo a) = ks
             keys' = switchEnabledKeys ks (model ^. keys)
-            pk = snd' $ ks
-            ef = Just $ EventFilter {filterPubKey = pk, NT.followers = [pk]}
+            ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
         Nothing -> []
     ConnectRelay r ->
       [ Producer $ connectRelay env r
@@ -149,8 +150,8 @@ handleEvent env wenv node model evt =
       ]
       where
         mk = mainKeys ks
-        pk = snd' $ mk
-        ef = Just $ EventFilter {filterPubKey = pk, NT.followers = [pk]}
+        (Keys kp xo a) = mk
+        ef = eventFilterFromKeys mk (model ^. AppTypes.followers)
     GenerateKeyPair ->
       [ Producer generateNewKeyPair ]
     KeyPairGenerated k ->
@@ -166,8 +167,8 @@ handleEvent env wenv node model evt =
       ]
       where
         pk = deriveXOnlyPubKey k
-        ks = (k, pk, True)
-        ef = Just $ EventFilter {filterPubKey = pk, NT.followers = [pk]}
+        ks = Keys k pk True
+        ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
         dk = disableKeys $ model ^. keys
     ImportSecKey ->
       [ Model $ model
@@ -187,8 +188,8 @@ handleEvent env wenv node model evt =
           fmap keyPairFromSecKey $
           maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
         pk = deriveXOnlyPubKey $ kp
-        ef = Just $ EventFilter {filterPubKey = pk, NT.followers = [pk]}
-        ks = (kp, pk, True)
+        ks = Keys kp pk True
+        ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
         dk = disableKeys $ model ^. keys
     NoKeysFound ->
       [ Model $ model & dialog .~ GenerateKeyPairDialog ]
@@ -209,9 +210,10 @@ handleEvent env wenv node model evt =
         & profileModel . inputs . pictureUrlInput .~ pictureUrl
         & profileModel . inputs . nip05IdentifierInput .~ nip05Identifier
       ] where
+        (Keys kp xo a) = fromJust (model ^. selectedKeys)
         profileData = profileDataFromReceivedEvents
           (model ^. receivedEvents)
-          (snd' $ fromJust (model ^. selectedKeys))
+          xo
         name = maybe "" pdName profileData
         about = maybe "" pdAbout profileData
         pictureUrl = maybe "" pdPictureUrl profileData
@@ -259,15 +261,14 @@ unsubscribe env subId = do
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
   now <- getCurrentTime
-  let ks = fromJust $ model ^. selectedKeys
-  let x = snd' ks
+  let (Keys kp xo a) = fromJust $ model ^. selectedKeys
   let raw = case model ^. currentView of {
     PostDetailsView re ->
-      replyNote (fst re) (strip $ model ^. newPostInput) x now;
+      replyNote (fst re) (strip $ model ^. newPostInput) xo now;
     _ ->
-      textNote (strip $ model ^. newPostInput) x now;
+      textNote (strip $ model ^. newPostInput) xo now;
   }
-  atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw (fst' ks) x
+  atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw kp xo
   return PostSent
 
 saveKeyPairs :: [Keys] -> IO AppEvent
@@ -349,12 +350,12 @@ generateNewKeyPair sendMsg = do
   sendMsg $ KeyPairGenerated k
 
 disableKeys :: [Keys] -> [Keys]
-disableKeys ks = map (\k -> (fst' k, snd' k, False)) ks
+disableKeys ks = map (\(Keys kp xo _) -> Keys kp xo False) ks
 
 switchEnabledKeys :: Keys -> [Keys] -> [Keys]
-switchEnabledKeys k ks = map (\k' -> if k' == k
-    then (fst' k', snd' k', True)
-    else (fst' k', snd' k', False)
+switchEnabledKeys (Keys kp xo a) ks = map (\(Keys kp' xo' a') -> if kp == kp'
+    then Keys kp' xo' True
+    else Keys kp' xo' False
   ) ks
 
 main :: IO ()
@@ -367,6 +368,7 @@ main = do
       , appTheme customDarkTheme
       , appFontDef "Regular" "./assets/fonts/Roboto-Regular.ttf"
       , appInitEvent AppInit
+      -- , appDisableAutoScale True
       ]
 
 

@@ -80,7 +80,27 @@ data ServerResponse = ServerResponse Text Event
 
 -- | Tuple consistint KeyPair, XOnlyPubKey and Bool
 -- | The bool value declares if the keys are active
-type Keys = (KeyPair, XOnlyPubKey, Bool)
+data Keys = Keys KeyPair XOnlyPubKey Bool
+  deriving (Eq, Show)
+
+instance Ord Keys where
+  compare (Keys a _ _) (Keys b _ _) =
+    compare (Schnorr.getKeyPair a) (Schnorr.getKeyPair b)
+
+instance FromJSON Keys where
+  parseJSON = withArray "Keys" $ \arr -> do
+    kp <- parseJSON $ arr V.! 0
+    xo <- parseJSON $ arr V.! 1
+    a  <- parseJSON $ arr V.! 2
+    return $ Keys kp xo a
+
+instance ToJSON Keys where
+  toJSON (Keys kp xo a) =
+    Array $ fromList
+      [ toJSON kp
+      , toJSON xo
+      , toJSON a
+      ]
 
 data Post =
   Post

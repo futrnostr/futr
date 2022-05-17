@@ -106,8 +106,8 @@ buildUI channel wenv model = widgetTree
 
 currentKeysNode :: [ReceivedEvent] -> Maybe Keys -> AppNode
 currentKeysNode res mks = case mks of
-    Just ks ->
-      label $ profileName res $ snd' ks
+    Just (Keys _ xo _) ->
+      label $ profileName res $ xo
     Nothing ->
       label ""
 
@@ -170,7 +170,7 @@ viewPosts wenv model = widgetTree
 viewPostUI :: AppWenv -> AppModel -> ReceivedEvent -> AppNode
 viewPostUI wenv model re = widgetTree
   where
-    k = fst' $ fromJust $ model ^. selectedKeys
+    (Keys k xo a) = fromJust $ model ^. selectedKeys
     event = fst re
     rs = snd re
     postInfo =
