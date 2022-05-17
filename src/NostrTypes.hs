@@ -33,25 +33,23 @@ data Relay =
 
 defaultPool :: [Relay]
 defaultPool =
-  [
-  --   Relay
-  --   { host = "nostr.rocks"
-  --   , port = 443
-  --   , secure = True
-  --   , readable = True
-  --   , writable = True
-  --   , connected = False
-  --   }
-  -- ,  Relay
-  --   { host = "nostr-pub.wellorder.net"
-  --   , port = 443
-  --   , secure = True
-  --   , readable = True
-  --   , writable = True
-  --   , connected = False
-  --   }
-  -- ,
-    Relay
+  [ Relay
+    { host = "nostr.rocks"
+    , port = 443
+    , secure = True
+    , readable = True
+    , writable = True
+    , connected = False
+    }
+  , Relay
+    { host = "nostr-pub.wellorder.net"
+    , port = 443
+    , secure = True
+    , readable = True
+    , writable = True
+    , connected = False
+    }
+  , Relay
     { host = "localhost"
     , port = 2700
     , secure = False
