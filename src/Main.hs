@@ -77,11 +77,11 @@ handleEvent env wenv node model evt =
         Nothing -> []
     ConnectRelay r ->
       [ Producer $ connectRelay env r
-      , Model $ model & dialog .~ NoAppDialog
+      , Model $ model & dialog .~ Nothing
       ]
     DisconnectRelay r ->
       [ Task $ disconnectRelay env r
-      , Model $ model & dialog .~ NoAppDialog
+      , Model $ model & dialog .~ Nothing
       ]
     UpdateRelay r -> []
     AppInit ->
@@ -99,7 +99,7 @@ handleEvent env wenv node model evt =
     AddRelay ->
       [ Producer $ connectRelay env r
       , Model $ model
-          & dialog .~ NoAppDialog
+          & dialog .~ Nothing
           & relayModel . relayHostInput .~ ""
           & relayModel . relayPortInput .~ 433
           & relayModel . relaySecureInput .~ True
@@ -121,13 +121,13 @@ handleEvent env wenv node model evt =
       case d of
         RelayDialog r ->
           [ Model $ model
-            & dialog .~ RelayDialog r
+            & dialog .~ Just (RelayDialog r)
             & relayModel . relayReadableInput .~ readable r
             & relayModel . relayWritableInput .~ writable r
           ]
         NewRelayDialog ->
           [ Model $ model
-            & dialog .~ NewRelayDialog
+            & dialog .~ Just NewRelayDialog
             & relayModel . relayHostInput .~ ""
             & relayModel . relayPortInput .~ 433
             & relayModel . relaySecureInput  .~ True
@@ -135,7 +135,7 @@ handleEvent env wenv node model evt =
             & relayModel . relayWritableInput .~ True
           ]
         GenerateKeyPairDialog ->
-          [ Model $ model & dialog .~ GenerateKeyPairDialog ]
+          [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
         _ -> []
     Subscribed subId ->
       [ Model $ model & currentSub .~ subId ]
@@ -144,7 +144,7 @@ handleEvent env wenv node model evt =
         & keys .~ ks
         & selectedKeys .~ Just mk
         & eventFilter .~ ef
-        & dialog .~ NoAppDialog
+        & dialog .~ Nothing
         & receivedEvents .~ []
       , Task $ subscribe env ef
       ]
@@ -159,7 +159,7 @@ handleEvent env wenv node model evt =
         & keys .~ ks : dk
         & selectedKeys .~ Just ks
         & eventFilter .~ ef
-        & dialog .~ NoAppDialog
+        & dialog .~ Nothing
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
@@ -176,7 +176,7 @@ handleEvent env wenv node model evt =
         & selectedKeys .~ Just ks
         & mySecKeyInput .~ ""
         & eventFilter .~ ef
-        & dialog .~ NoAppDialog
+        & dialog .~ Nothing
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
@@ -192,9 +192,9 @@ handleEvent env wenv node model evt =
         ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
         dk = disableKeys $ model ^. keys
     NoKeysFound ->
-      [ Model $ model & dialog .~ GenerateKeyPairDialog ]
+      [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
     ErrorReadingKeysFile ->
-      [ Model $ model & dialog .~ ErrorReadingKeysFileDialog ]
+      [ Model $ model & dialog .~ Just ErrorReadingKeysFileDialog ]
     SendPost ->
       [ Model $ model
           & newPostInput .~ ""
@@ -221,7 +221,7 @@ handleEvent env wenv node model evt =
     Back ->
       [ Model $ model
         & currentView .~ PostsView
-        & dialog .~ NoAppDialog
+        & dialog .~ Nothing
       ]
     PostSent -> [ Model $ model & newPostInput .~ "" ]
     ReplyToPost e ->
@@ -232,7 +232,7 @@ handleEvent env wenv node model evt =
     EventAppeared e r ->
       [ Model $ model & receivedEvents .~ addReceivedEvent (model ^. receivedEvents) e r ]
     CloseDialog ->
-      [ Model $ model & dialog .~ NoAppDialog ]
+      [ Model $ model & dialog .~ Nothing ]
 
 addReceivedEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
 addReceivedEvent re e r = addedEvent : newList

@@ -59,7 +59,6 @@ defaultPool =
     }
   ]
 
-
 type RelayURL = Text
 
 newtype EventId =

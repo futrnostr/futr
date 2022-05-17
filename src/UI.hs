@@ -30,29 +30,6 @@ buildUI channel wenv model = widgetTree
         profileWidget channel (fromJust $ model ^. selectedKeys) profileModel
       PostDetailsView re ->
         viewPostUI wenv model re
-
-    closeIcon = icon IconClose
-      `styleBasic` [ width 16, height 16, fgColor black, cursorHand ]
-    dialogContent =
-      case model ^. dialog of
-        NoAppDialog -> label "NoAppDialog cannot be displayed"
-        GenerateKeyPairDialog -> generateOrImportKeyPairStack model
-        ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
-        RelayDialog r -> viewRelayDialog r wenv model
-        NewRelayDialog -> viewNewRelayDialog wenv model
-    dialogLayer =
-      vstack
-        [ hstack
-            [ filler
-            , box_ [alignTop, onClick CloseDialog] closeIcon
-              `nodeEnabled` ((model ^. dialog) /= ErrorReadingKeysFileDialog
-                && model ^. selectedKeys /= Nothing)
-            ]
-        , spacer
-        , dialogContent
-        ] `styleBasic`
-      [ width 500, height 400, padding 10, radius 10, bgColor darkGray ]
-
     headerTree =
       hstack
         [ spacer, button "Back" Back `nodeVisible` (model ^. currentView /= PostsView)
@@ -99,10 +76,36 @@ buildUI channel wenv model = widgetTree
             , filler
             , footerTree
             ]
-        , box_ [ alignCenter, alignMiddle ] dialogLayer
-          `nodeVisible` (model ^. dialog /= NoAppDialog)
+        , box_ [ alignCenter, alignMiddle ] (dialogLayer model)
+          `nodeVisible` (model ^. dialog /= Nothing)
           `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
         ]
+
+dialogLayer :: AppModel -> AppNode
+dialogLayer model =
+  case md of
+    Nothing ->
+      vstack []
+    Just d ->
+      vstack
+        [ hstack
+            [ filler
+            , box_ [alignTop, onClick CloseDialog] closeIcon
+              `nodeEnabled` (d /= ErrorReadingKeysFileDialog && ks /= Nothing)
+            ]
+        , spacer
+        , case d of
+            GenerateKeyPairDialog -> generateOrImportKeyPairStack model
+            ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
+            RelayDialog r -> viewRelayDialog r model
+            NewRelayDialog -> viewNewRelayDialog model
+        ] `styleBasic`
+      [ width 500, height 400, padding 10, radius 10, bgColor darkGray ]
+  where
+    ks = model ^. selectedKeys
+    md = model ^. dialog
+    closeIcon = icon IconClose
+      `styleBasic` [ width 16, height 16, fgColor black, cursorHand ]
 
 currentKeysNode :: [ReceivedEvent] -> Maybe Keys -> AppNode
 currentKeysNode res mks = case mks of
@@ -213,8 +216,8 @@ viewPostUI wenv model re = widgetTree
         ]
           `styleBasic` [ padding 10 ]
 
-viewRelayDialog :: Relay -> AppWenv -> AppModel -> AppNode
-viewRelayDialog r wenv model =
+viewRelayDialog :: Relay -> AppModel -> AppNode
+viewRelayDialog r model =
   vstack
     [ label (T.pack $ relayName r)
         `styleBasic` [ textSize 22 ]
@@ -247,8 +250,8 @@ viewRelayDialog r wenv model =
         then DisconnectRelay r
         else ConnectRelay r
 
-viewNewRelayDialog :: AppWenv -> AppModel -> AppNode
-viewNewRelayDialog wenv model =
+viewNewRelayDialog :: AppModel -> AppNode
+viewNewRelayDialog model =
   vstack
     [ hstack
         [ label "Host"
