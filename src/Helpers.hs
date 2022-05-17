@@ -55,8 +55,8 @@ shortXOnlyPubKey xo = pack
   $ part1 ++ ".." ++ part2
   where
     str = exportXOnlyPubKey xo
-    part1 = take 3 str
-    part2 = take 3 $ reverse str
+    part1 = take 4 str
+    part2 = take 4 $ reverse str
 
 
 latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering

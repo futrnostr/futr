@@ -99,20 +99,20 @@ handleEvent env wenv node model evt =
       [ Producer $ connectRelay env r
       , Model $ model
           & dialog .~ NoAppDialog
-          & relayHostInput .~ ""
-          & relayPortInput .~ 433
-          & relaySecureInput .~ True
-          & relayReadableInput .~ True
-          & relayWritableInput .~ True
+          & relayModel . relayHostInput .~ ""
+          & relayModel . relayPortInput .~ 433
+          & relayModel . relaySecureInput .~ True
+          & relayModel . relayReadableInput .~ True
+          & relayModel . relayWritableInput .~ True
           & pool .~ newPool
       ]
       where
         r = Relay
-            { host = T.unpack $ model ^. relayHostInput
-            , port = fromIntegral $ model ^. relayPortInput
-            , secure = model ^. relaySecureInput
-            , readable = model ^. relayReadableInput
-            , writable = model ^. relayWritableInput
+            { host = T.unpack $ model ^. relayModel . relayHostInput
+            , port = fromIntegral $ model ^. relayModel . relayPortInput
+            , secure = model ^. relayModel . relaySecureInput
+            , readable = model ^. relayModel . relayReadableInput
+            , writable = model ^. relayModel . relayWritableInput
             , connected = False
             }
         newPool = r : (poolWithoutRelay (model ^. pool) r)
@@ -121,17 +121,17 @@ handleEvent env wenv node model evt =
         RelayDialog r ->
           [ Model $ model
             & dialog .~ RelayDialog r
-            & relayReadableInput .~ readable r
-            & relayWritableInput .~ writable r
+            & relayModel . relayReadableInput .~ readable r
+            & relayModel . relayWritableInput .~ writable r
           ]
         NewRelayDialog ->
           [ Model $ model
             & dialog .~ NewRelayDialog
-            & relayHostInput .~ ""
-            & relayPortInput .~ 433
-            & relaySecureInput  .~ True
-            & relayReadableInput .~ True
-            & relayWritableInput .~ True
+            & relayModel . relayHostInput .~ ""
+            & relayModel . relayPortInput .~ 433
+            & relayModel . relaySecureInput  .~ True
+            & relayModel . relayReadableInput .~ True
+            & relayModel . relayWritableInput .~ True
           ]
         GenerateKeyPairDialog ->
           [ Model $ model & dialog .~ GenerateKeyPairDialog ]

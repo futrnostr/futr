@@ -31,12 +31,11 @@ buildUI channel wenv model = widgetTree
       PostDetailsView re ->
         viewPostUI wenv model re
 
-    closeIcon =
-      icon IconClose `styleBasic`
-      [width 16, height 16, fgColor black, cursorHand]
+    closeIcon = icon IconClose
+      `styleBasic` [ width 16, height 16, fgColor black, cursorHand ]
     dialogContent =
       case model ^. dialog of
-        NoAppDialog -> error "NoAppDialog cannot be displayed"
+        NoAppDialog -> label "NoAppDialog cannot be displayed"
         GenerateKeyPairDialog -> generateOrImportKeyPairStack model
         ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
         RelayDialog r -> viewRelayDialog r wenv model
@@ -223,13 +222,13 @@ viewRelayDialog r wenv model =
     , hstack
         [ label "Readable"
         , spacer
-        , checkbox relayReadableInput `nodeKey` "relayReadableCheckbox"
+        , checkbox (relayModel . relayReadableInput) `nodeKey` "relayReadableCheckbox"
         ]
     , spacer
     , hstack
         [ label "Writable"
         , spacer
-        , checkbox relayWritableInput `nodeKey` "relayWriteableCheckbox"
+        , checkbox (relayModel . relayWritableInput) `nodeKey` "relayWriteableCheckbox"
         ]
     , spacer
     , hstack
@@ -254,36 +253,36 @@ viewNewRelayDialog wenv model =
     [ hstack
         [ label "Host"
         , spacer
-        , textField relayHostInput `nodeKey` "relayHostInput"
+        , textField (relayModel . relayHostInput) `nodeKey` "relayHostInput"
         ]
     , spacer
     , hstack
         [ label "Port"
         , spacer
-        , numericField relayPortInput `nodeKey` "relayPortInput"
+        , numericField (relayModel . relayPortInput) `nodeKey` "relayPortInput"
         ]
     , spacer
     , hstack
         [ label "Secure connection"
         , spacer
-        , checkbox relaySecureInput `nodeKey` "relaySecureCheckbox"
+        , checkbox (relayModel . relaySecureInput) `nodeKey` "relaySecureCheckbox"
         ]
     , spacer
     , hstack
         [ label "Readable"
         , spacer
-        , checkbox relayReadableInput `nodeKey` "relayReadableCheckbox"
+        , checkbox (relayModel . relayReadableInput) `nodeKey` "relayReadableCheckbox"
         ]
     , spacer
     , hstack
         [ label "Writable"
         , spacer
-        , checkbox relayWritableInput `nodeKey` "relayWriteableCheckbox"
+        , checkbox (relayModel . relayWritableInput) `nodeKey` "relayWriteableCheckbox"
         ]
     , spacer
     , button "Add relay" AddRelay
-    ] `styleBasic`
-  [padding 10]
+    ]
+      `styleBasic` [ padding 10 ]
 
 selectableText :: Text -> WidgetNode AppModel AppEvent
 selectableText t =

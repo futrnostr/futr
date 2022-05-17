@@ -38,6 +38,19 @@ data AppView
     | ProfileView
     deriving (Eq, Show)
 
+data RelayModel =
+  RelayModel
+    { _relayHostInput     :: Text
+    , _relayPortInput     :: Integer
+    , _relaySecureInput   :: Bool
+    , _relayReadableInput :: Bool
+    , _relayWritableInput :: Bool
+    }
+  deriving (Eq, Show)
+
+instance Default RelayModel where
+  def = RelayModel "" 433 True True True
+
 data AppModel =
   AppModel
     { _keys           :: [Keys]
@@ -51,16 +64,12 @@ data AppModel =
     , _dialog         :: AppDialog
     , _currentView    :: AppView
     , _profileModel   :: ProfileModel
-    , _relayHostInput :: Text
-    , _relayPortInput :: Integer
-    , _relaySecureInput   :: Bool
-    , _relayReadableInput :: Bool
-    , _relayWritableInput :: Bool
+    , _relayModel     :: RelayModel
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing "" defaultPool "" "" [] Nothing NoAppDialog PostsView def "" 433 True True True
+  def = AppModel [] Nothing "" defaultPool "" "" [] Nothing NoAppDialog PostsView def def
 
 data AppEvent
   = AppInit
@@ -91,4 +100,5 @@ data AppEvent
   deriving (Eq, Show)
 
 makeLenses 'AppEnv
+makeLenses 'RelayModel
 makeLenses 'AppModel
