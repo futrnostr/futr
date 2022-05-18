@@ -66,6 +66,8 @@ serializeTag (PTag (Profile p r n)) =
     , String r
     , String n
     ]
+serializeTag NonceTag = Array $ fromList []
+serializeTag UnknownTag = Array $ fromList []
 
 validateEvent :: Event -> Bool
 validateEvent e = (getEventId $ eventId e) == (SHA256.hash $ serializeEvent e)

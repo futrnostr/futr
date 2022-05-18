@@ -33,15 +33,8 @@ data Relay =
 
 defaultPool :: [Relay]
 defaultPool =
-  [ Relay
-    { host = "nostr.rocks"
-    , port = 443
-    , secure = True
-    , readable = True
-    , writable = True
-    , connected = False
-    }
-  , Relay
+  [
+    Relay
     { host = "nostr-pub.wellorder.net"
     , port = 443
     , secure = True
@@ -49,7 +42,8 @@ defaultPool =
     , writable = True
     , connected = False
     }
-  , Relay
+  ,
+    Relay
     { host = "localhost"
     , port = 2700
     , secure = False
@@ -266,6 +260,8 @@ instance FromJSON ProfileData where
 data Tag
   = ETag EventId RelayURL
   | PTag Profile
+  | NonceTag
+  | UnknownTag
   deriving (Eq, Show)
 
 data EventFilter
@@ -278,16 +274,23 @@ data EventFilter
 
 instance FromJSON Tag where
   parseJSON (Array v)
+    | V.length v == 2 =
+        case v V.! 0 of
+          String "e" ->
+            ETag <$> parseJSON (v V.! 1) <*> parseJSON ""
+          String "p" ->
+            PTag <$> (Profile <$> parseJSON (v V.! 1) <*> parseJSON "" <*> parseJSON "")
+          _ -> return UnknownTag
     | V.length v == 3 =
-      case v V.! 0 of
-        String "e" ->
-          ETag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2)
-        String "p" ->
-          PTag <$> (Profile <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON "")
-        _ -> fail "Unknown tag seen"
+        case v V.! 0 of
+          String "e" ->
+            ETag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2)
+          String "p" ->
+            PTag <$> (Profile <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON "")
+          _ -> return UnknownTag
     | V.length v == 4 && v V.! 0 == String "p" =
         PTag <$> (Profile <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON (v V.! 3))
-    | otherwise = fail "Invalid tag length"
+    | otherwise = return UnknownTag
   parseJSON _ = fail "Cannot parse tag"
 
 instance ToJSON Tag where
@@ -304,15 +307,20 @@ instance ToJSON Tag where
       , String relayURL
       , String name
       ]
+  toJSON _ = -- @todo implement nonce tag
+    Array $ fromList []
 
 instance ToJSON EventFilter where
   toJSON ef =
-    --Array $ fromList
+    -- Array $ fromList
     --  [ object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
        object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
-        [ ( "kinds"   , Array $ fromList $ [Number 0, Number 1, Number 2, Number 3])
-         , ( "authors"  , Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) $ followers ef)
+        [ ( "kinds"   , Array $ fromList $ [Number 0, Number 1, Number 3])
+        , ( "since", Number 1652791967 )
+                            -- 1652805400
+        -- , ( "authors"  , Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) $ followers ef)
         ]
+
         {-
       , object $ fromList  -- posts mentioning us and direct messages to us
         [ ( "kinds"   , Array $ fromList [Number 1, Number 4])
