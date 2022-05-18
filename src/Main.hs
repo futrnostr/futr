@@ -65,14 +65,14 @@ handleEvent env wenv node model evt =
           [ Model $ model
             & selectedKeys .~ mks
             & keys .~ keys'
-            & eventFilter .~ ef
+            & eventFilters .~ fs
             & receivedEvents .~ []
           , Task $ saveKeyPairs keys'
           , Task $ unsubscribe env (model ^. currentSub)
-          , Task $ subscribe env ef
+          , Task $ subscribe env fs
           ] where
             keys' = switchEnabledKeys ks (model ^. keys)
-            ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
+            fs = eventFiltersFromKeys ks (model ^. AppTypes.followers)
         Nothing -> []
     ConnectRelay r ->
       [ Producer $ connectRelay env r
@@ -88,7 +88,7 @@ handleEvent env wenv node model evt =
       ] ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
     RelayConnected r ->
       [ Model $ model & pool .~ newPool
-      , Task $ subscribe env (model ^. eventFilter)
+      , Task $ subscribe env (model ^. eventFilters)
       ] where
           newPool = r : (poolWithoutRelay (model ^. pool) r)
     RelayDisconnected r ->
@@ -142,43 +142,43 @@ handleEvent env wenv node model evt =
       [ Model $ model
         & keys .~ ks
         & selectedKeys .~ Just mk
-        & eventFilter .~ ef
+        & eventFilters .~ fs
         & dialog .~ Nothing
         & receivedEvents .~ []
-      , Task $ subscribe env ef
+      , Task $ subscribe env fs
       ]
       where
         mk = mainKeys ks
-        ef = eventFilterFromKeys mk (model ^. AppTypes.followers)
+        fs = eventFiltersFromKeys mk (model ^. AppTypes.followers)
     GenerateKeyPair ->
       [ Producer generateNewKeyPair ]
     KeyPairGenerated k ->
       [ Model $ model
         & keys .~ ks : dk
         & selectedKeys .~ Just ks
-        & eventFilter .~ ef
+        & eventFilters .~ fs
         & dialog .~ Nothing
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
-      , Task $ subscribe env ef
+      , Task $ subscribe env fs
       ]
       where
         pk = deriveXOnlyPubKey k
         ks = Keys k pk True ""
-        ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
+        fs = eventFiltersFromKeys ks (model ^. AppTypes.followers)
         dk = disableKeys $ model ^. keys
     ImportSecKey ->
       [ Model $ model
         & keys .~ ks : dk
         & selectedKeys .~ Just ks
         & mySecKeyInput .~ ""
-        & eventFilter .~ ef
+        & eventFilters .~ fs
         & dialog .~ Nothing
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
-      , Task $ subscribe env (model ^. eventFilter)
+      , Task $ subscribe env fs
       ]
       where
         kp =
@@ -187,7 +187,7 @@ handleEvent env wenv node model evt =
           maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
         pk = deriveXOnlyPubKey $ kp
         ks = Keys kp pk True ""
-        ef = eventFilterFromKeys ks (model ^. AppTypes.followers)
+        fs = eventFiltersFromKeys ks (model ^. AppTypes.followers)
         dk = disableKeys $ model ^. keys
     NoKeysFound ->
       [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
@@ -242,15 +242,12 @@ addReceivedEvent re e r = sortBy sortByDate $ addedEvent : newList
     dupEvent e' re' = e' == fst re'
     sortByDate a b = compare (created_at $ fst a) (created_at $ fst b)
 
-subscribe :: AppEnv -> Maybe EventFilter -> IO AppEvent
-subscribe env mfilter = do
-  case mfilter of
-    Just f -> do
-      subId <- genSubscriptionId
-      atomically $ writeTChan (env ^. channel) $ RequestRelay subId f
-      return $ Subscribed subId
-    _ ->
-      return NoOp
+subscribe :: AppEnv -> [EventFilter] -> IO AppEvent
+subscribe env [] = return NoOp
+subscribe env fs = do
+  subId <- genSubscriptionId
+  atomically $ writeTChan (env ^. channel) $ RequestRelay subId fs
+  return $ Subscribed subId
 
 unsubscribe :: AppEnv -> Text -> IO AppEvent
 unsubscribe env subId = do

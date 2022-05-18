@@ -63,7 +63,7 @@ newtype EventId =
 
 data ServerRequest
   = SendEvent Event
-  | RequestRelay Text EventFilter
+  | RequestRelay Text [EventFilter]
   | Close Text
   | Disconnect Relay
   deriving (Eq, Show)
@@ -113,11 +113,10 @@ instance ToJSON ServerRequest where
        [ String $ pack "EVENT"
        , toJSON e
        ]
-    RequestRelay s ef -> Array $ fromList
-      [ String $ pack "REQ"
+    RequestRelay s efs -> Array $ fromList
+      ([ String $ pack "REQ"
       , String $ s
-      , toJSON ef
-      ]
+       ] ++ map (\ef -> toJSON ef) efs)
     Close subId -> Array $ fromList
        [ String $ pack "CLOSE"
        , String subId

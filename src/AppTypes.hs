@@ -61,7 +61,7 @@ data AppModel =
     , _mySecKeyInput  :: Text
     , _newPostInput   :: Text
     , _receivedEvents :: [ReceivedEvent]
-    , _eventFilter    :: Maybe EventFilter
+    , _eventFilters   :: [EventFilter]
     , _dialog         :: Maybe AppDialog
     , _currentView    :: AppView
     , _profileModel   :: ProfileModel
@@ -70,7 +70,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing Map.empty "" defaultPool "" "" [] Nothing Nothing PostsView def def
+  def = AppModel [] Nothing Map.empty "" defaultPool "" "" [] [] Nothing PostsView def def
 
 data AppEvent
   = AppInit
