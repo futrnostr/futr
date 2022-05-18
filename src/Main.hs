@@ -22,7 +22,7 @@ import qualified Data.ByteString.Lazy                 as LazyBytes
 import           Data.DateTime
 import           Data.Default
 import           Data.Either                          (fromRight)
-import           Data.List                            (find)
+import           Data.List                            (find, sortBy)
 import qualified Data.Map                             as Map
 import           Data.Maybe
 import           Data.Monoid                          (mconcat)
@@ -233,13 +233,14 @@ handleEvent env wenv node model evt =
       [ Model $ model & dialog .~ Nothing ]
 
 addReceivedEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
-addReceivedEvent re e r = addedEvent : newList
+addReceivedEvent re e r = sortBy sortByDate $ addedEvent : newList
   where
-    addedEvent = case find (pred e) re of
+    addedEvent = case find (dupEvent e) re of
       Just (e', rs) -> (e', r : filter (\r' -> not $ r' `sameRelay` r) rs)
       _             -> (e, [r])
-    newList = filter (not . pred e) re
-    pred e' re' = e' == fst re'
+    newList = filter (not . dupEvent e) re
+    dupEvent e' re' = e' == fst re'
+    sortByDate a b = compare (created_at $ fst a) (created_at $ fst b)
 
 subscribe :: AppEnv -> Maybe EventFilter -> IO AppEvent
 subscribe env mfilter = do
