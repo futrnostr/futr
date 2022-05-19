@@ -28,6 +28,7 @@ import           Data.Maybe
 import           Data.Monoid                          (mconcat)
 import           Data.Text                            (Text, strip)
 import qualified Data.Text                            as T
+import           Data.Text.Encoding                   (encodeUtf8)
 import           Monomer
 import           Monomer.Widgets.Single
 import qualified Network.Connection                   as Connection
@@ -165,7 +166,7 @@ handleEvent env wenv node model evt =
       ]
       where
         pk = deriveXOnlyPubKey k
-        ks = Keys k pk True ""
+        ks = Keys k pk True Nothing
         fs = eventFiltersFromKeys ks (model ^. AppTypes.followers)
         dk = disableKeys $ model ^. keys
     ImportSecKey ->
@@ -186,7 +187,7 @@ handleEvent env wenv node model evt =
           fmap keyPairFromSecKey $
           maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
         pk = deriveXOnlyPubKey $ kp
-        ks = Keys kp pk True ""
+        ks = Keys kp pk True Nothing
         fs = eventFiltersFromKeys ks (model ^. AppTypes.followers)
         dk = disableKeys $ model ^. keys
     NoKeysFound ->
@@ -228,9 +229,29 @@ handleEvent env wenv node model evt =
       , Task $ handleNewPost env model
       ]
     EventAppeared e r ->
-      [ Model $ model & receivedEvents .~ addReceivedEvent (model ^. receivedEvents) e r ]
+      [ Model $ handleReceivedEvent model e r ]
     CloseDialog ->
       [ Model $ model & dialog .~ Nothing ]
+
+handleReceivedEvent :: AppModel -> Event -> Relay -> AppModel
+handleReceivedEvent model e r =
+  case kind e of
+    1 ->
+      model { _receivedEvents = addReceivedEvent (model ^. receivedEvents) e r }
+    0 -> model
+      { _keys =
+          map (\ks -> updateName ks) (model ^. keys)
+      , _selectedKeys =
+          fmap (\ks -> updateName ks) (model ^. selectedKeys)
+      }
+      where
+        name = maybe "" pdName $ decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e
+        xo' = NT.pubKey e
+        updateName (Keys kp xo a n) = if xo == xo'
+          then Keys kp xo a (Just name)
+          else Keys kp xo a n
+    _ ->
+      model
 
 addReceivedEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
 addReceivedEvent re e r = sortBy sortByDate $ addedEvent : newList
@@ -349,7 +370,8 @@ disableKeys :: [Keys] -> [Keys]
 disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
 
 switchEnabledKeys :: Keys -> [Keys] -> [Keys]
-switchEnabledKeys (Keys kp _ _ _) ks = map (\(Keys kp' xo' a' n') -> if kp == kp'
+switchEnabledKeys (Keys kp _ _ _) ks =
+  map (\(Keys kp' xo' a' n') -> if kp == kp'
     then Keys kp' xo' True n'
     else Keys kp' xo' False n'
   ) ks

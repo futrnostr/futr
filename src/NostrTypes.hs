@@ -34,15 +34,15 @@ data Relay =
 defaultPool :: [Relay]
 defaultPool =
   [
-    Relay
-    { host = "nostr-pub.wellorder.net"
-    , port = 443
-    , secure = True
-    , readable = True
-    , writable = True
-    , connected = False
-    }
-  ,
+  --   Relay
+  --   { host = "nostr-pub.wellorder.net"
+  --   , port = 443
+  --   , secure = True
+  --   , readable = True
+  --   , writable = True
+  --   , connected = False
+  --   }
+  -- ,
     Relay
     { host = "localhost"
     , port = 2700
@@ -74,7 +74,7 @@ data ServerResponse = ServerResponse Text Event
 -- | Keys
 -- | The bool value declares if the keys are active
 -- | The text value gives the profile name
-data Keys = Keys KeyPair XOnlyPubKey Bool Text
+data Keys = Keys KeyPair XOnlyPubKey Bool (Maybe Text)
   deriving (Eq, Show)
 
 instance Ord Keys where
@@ -314,8 +314,9 @@ instance ToJSON EventFilter where
     -- Array $ fromList
     --  [ object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
        object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
-        [ ( "kinds"   , Array $ fromList $ [Number 0, Number 1, Number 3])
-        , ( "since", Number 1652791967 )
+        --[ ( "kinds"   , Array $ fromList $ [Number 0, Number 1, Number 3])
+        [ ( "kinds"   , Array $ fromList $ [Number 0])
+        -- , ( "since", Number 1652791967 )
                             -- 1652805400
         -- , ( "authors"  , Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) $ followers ef)
         ]

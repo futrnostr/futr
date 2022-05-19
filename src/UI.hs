@@ -109,9 +109,13 @@ dialogLayer model =
 
 currentKeysNode :: [ReceivedEvent] -> Maybe Keys -> AppNode
 currentKeysNode res mks = case mks of
-    Just (Keys _ xo _ _) ->
-      label $ profileName res $ xo
-    Nothing ->
+    Just (Keys _ xo _ n) ->
+      case n of
+        Just n' ->
+          label n'
+        Nothing ->
+          label $ T.pack $ exportXOnlyPubKey xo
+    _ ->
       label ""
 
 postRow :: AppWenv -> [ReceivedEvent] -> Int -> ReceivedEvent -> AppNode
