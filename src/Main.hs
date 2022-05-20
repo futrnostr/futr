@@ -247,6 +247,8 @@ handleReceivedEvent model e r =
           map (\ks -> updateName ks) (model ^. keys)
       , _selectedKeys =
           fmap (\ks -> updateName ks) (model ^. selectedKeys)
+      , _profiles =
+          addProfile (model ^. profiles) e r
       }
       where
         name = maybe "" pdName $ decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e
@@ -266,6 +268,16 @@ addReceivedEvent re e r = sortBy sortByDate $ addedEvent : newList
     newList = filter (not . dupEvent e) re
     dupEvent e' re' = e' == fst re'
     sortByDate a b = compare (created_at $ fst a) (created_at $ fst b)
+
+addProfile :: Map.Map XOnlyPubKey Profile -> Event -> Relay -> Map.Map XOnlyPubKey Profile
+addProfile profiles e r =
+  case decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e of
+    Just p ->
+      Map.insert xo p profiles
+    Nothing ->
+      profiles
+  where
+    xo = NT.pubKey e
 
 subscribe :: AppEnv -> [EventFilter] -> IO AppEvent
 subscribe env [] = return NoOp

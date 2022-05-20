@@ -34,15 +34,15 @@ data Relay =
 defaultPool :: [Relay]
 defaultPool =
   [
-  --   Relay
-  --   { host = "nostr-pub.wellorder.net"
-  --   , port = 443
-  --   , secure = True
-  --   , readable = True
-  --   , writable = True
-  --   , connected = False
-  --   }
-  -- ,
+    Relay
+    { host = "nostr-pub.wellorder.net"
+    , port = 443
+    , secure = True
+    , readable = True
+    , writable = True
+    , connected = False
+    }
+  ,
     Relay
     { host = "localhost"
     , port = 2700
@@ -80,6 +80,10 @@ data Keys = Keys KeyPair XOnlyPubKey Bool (Maybe Text)
 instance Ord Keys where
   compare (Keys a _ _ _) (Keys b _ _ _) =
     compare (Schnorr.getKeyPair a) (Schnorr.getKeyPair b)
+
+instance Ord XOnlyPubKey where
+  compare a b =
+    compare (Schnorr.getXOnlyPubKey a) (Schnorr.getXOnlyPubKey b)
 
 instance FromJSON Keys where
   parseJSON = withArray "Keys" $ \arr -> do
@@ -315,7 +319,7 @@ instance ToJSON EventFilter where
     --  [ object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
        object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
         --[ ( "kinds"   , Array $ fromList $ [Number 0, Number 1, Number 3])
-        [ ( "kinds"   , Array $ fromList $ [Number 0])
+        [ ( "kinds"   , Array $ fromList $ [Number 0]) -- we load all profiles for now
         -- , ( "since", Number 1652791967 )
                             -- 1652805400
         -- , ( "authors"  , Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) $ followers ef)

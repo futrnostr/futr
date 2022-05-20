@@ -56,6 +56,7 @@ data AppModel =
     { _keys           :: [Keys]
     , _selectedKeys   :: Maybe Keys
     , _followers      :: Map.Map Keys [Profile]
+    , _profiles       :: Map.Map XOnlyPubKey Profile
     , _currentSub     :: Text
     , _pool           :: [Relay]
     , _mySecKeyInput  :: Text
@@ -70,7 +71,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing Map.empty "" defaultPool "" "" [] [] Nothing PostsView def def
+  def = AppModel [] Nothing Map.empty Map.empty "" defaultPool "" "" [] [] Nothing PostsView def def
 
 data AppEvent
   = AppInit
