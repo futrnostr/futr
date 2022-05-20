@@ -229,7 +229,11 @@ handleEvent env wenv node model evt =
       , Task $ handleNewPost env model
       ]
     EventAppeared e r ->
-      [ Model $ handleReceivedEvent model e r ]
+      [ Model $ newModel
+      , Task $ maybeSaveKeyPairs model newModel
+      ]
+      where
+        newModel = handleReceivedEvent model e r
     CloseDialog ->
       [ Model $ model & dialog .~ Nothing ]
 
@@ -287,6 +291,12 @@ handleNewPost env model = do
   }
   atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw kp xo
   return PostSent
+
+maybeSaveKeyPairs :: AppModel -> AppModel -> IO AppEvent
+maybeSaveKeyPairs old new =
+  if (old ^. keys) /= (new ^. keys)
+    then saveKeyPairs $ new ^. keys
+    else return NoOp
 
 saveKeyPairs :: [Keys] -> IO AppEvent
 saveKeyPairs ks = do
