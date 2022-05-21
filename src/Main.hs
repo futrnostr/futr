@@ -69,7 +69,7 @@ handleEvent env wenv node model evt =
             & receivedEvents .~ []
           , Task $ saveKeyPairs keys'
           , Task $ unsubscribe env (model ^. currentSub)
-          , Task $ buildEventFilters ks (model ^. AppTypes.followers)
+          , Task $ buildEventFilters ks (model ^. following)
           ] where
             keys' = switchEnabledKeys ks (model ^. keys)
         Nothing -> []
@@ -147,7 +147,7 @@ handleEvent env wenv node model evt =
         & selectedKeys .~ Just mk
         & dialog .~ Nothing
         & receivedEvents .~ []
-      , Task $ buildEventFilters mk (model ^. AppTypes.followers)
+      , Task $ buildEventFilters mk (model ^. following)
       ]
       where
         mk = mainKeys ks
@@ -161,7 +161,7 @@ handleEvent env wenv node model evt =
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
-      , Task $ buildEventFilters ks (model ^. AppTypes.followers)
+      , Task $ buildEventFilters ks (model ^. following)
       ]
       where
         xo = deriveXOnlyPubKey k
@@ -176,7 +176,7 @@ handleEvent env wenv node model evt =
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
-      , Task $ buildEventFilters ks (model ^. AppTypes.followers)
+      , Task $ buildEventFilters ks (model ^. following)
       ]
       where
         kp =

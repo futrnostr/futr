@@ -105,8 +105,8 @@ replyNote event note xo t =
   RawEvent
     {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event) ""], content' = note}
 
-setFollowers :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> RawEvent
-setFollowers ps r xo t =
+setFollowing :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> RawEvent
+setFollowing ps r xo t =
   RawEvent
     {pubKey' = xo, created_at' = t, kind' = 3, tags' = profilesToTags ps, content' = ""}
 

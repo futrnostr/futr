@@ -55,7 +55,7 @@ data AppModel =
   AppModel
     { _keys           :: [Keys]
     , _selectedKeys   :: Maybe Keys
-    , _followers      :: Map.Map Keys [Profile]
+    , _following      :: Map.Map Keys [Profile]
     , _profiles       :: Map.Map XOnlyPubKey Profile
     , _currentSub     :: Text
     , _pool           :: [Relay]

@@ -7,6 +7,7 @@ import           Control.Lens
 import           Crypto.Schnorr
 import           Data.Default
 import           Data.List              (sortBy)
+import qualified Data.Map               as Map
 import           Data.Maybe             as Maybe
 import           Data.Text              (Text, strip)
 import qualified Data.Text              as T
@@ -66,13 +67,35 @@ buildUI channel wenv model = widgetTree
         addIcon =
           icon IconPlus `styleBasic`
           [width 16, height 16, fgColor black, cursorHand]
+    followingLayer = case model ^. selectedKeys of
+      Nothing ->
+        vstack []
+      Just k  ->
+        vstack $
+          case Map.lookup keys $ model ^. following of
+            Just ps ->
+              map (\(Profile xo r n) ->
+                vstack [ label n, label $ T.pack $ exportXOnlyPubKey xo ]
+              )
+              ps
+            Nothing ->
+              [ label "You don't follow anyone" ]
+      where
+        keys = fromJust $ model ^. selectedKeys
     widgetTree =
       zstack
         [ vstack
             [ spacer
             , headerTree
             , spacer
-            , baseLayer
+            , hstack
+                [ baseLayer
+                , vstack
+                    [ label "Following" `styleBasic` [ paddingB 10 ]
+                    , followingLayer
+                    ]
+                    `styleBasic` [ padding 10, width 200 ]
+                ]
             , filler
             , footerTree
             ]
