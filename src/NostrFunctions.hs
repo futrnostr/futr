@@ -58,13 +58,13 @@ serializeTag (ETag i r) =
     , String $ pack $ exportEventId i
     , String r
     ]
-serializeTag (PTag (Profile p r n)) =
+serializeTag (PTag (Profile p r pd)) =
   Array $
   fromList
     [ String $ pack "p"
     , String $ pack $ Schnorr.exportXOnlyPubKey p
     , String r
-    , String n
+    , String $ pdName pd
     ]
 serializeTag NonceTag = Array $ fromList []
 serializeTag UnknownTag = Array $ fromList []

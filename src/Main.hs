@@ -244,10 +244,11 @@ handleReceivedEvent model e r =
       , _selectedKeys =
           fmap (\ks -> updateName ks) (model ^. selectedKeys)
       , _profiles =
-          addProfile (model ^. profiles) e r
+          addProfile (model ^. profiles) (trace (show e) e) r
       }
       where
-        name = maybe "" pdName $ decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e
+        mp = decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e
+        name = maybe "" pdName mp
         xo' = NT.pubKey e
         updateName (Keys kp xo a n) = if xo == xo'
           then Keys kp xo a (Just name)
@@ -263,17 +264,18 @@ addReceivedEvent re e r = sortBy sortByDate $ addedEvent : newList
       _             -> (e, [r])
     newList = filter (not . dupEvent e) re
     dupEvent e' re' = e' == fst re'
-    sortByDate a b = compare (created_at $ fst a) (created_at $ fst b)
+    sortByDate a b = compare (created_at $ fst b) (created_at $ fst a)
 
 addProfile :: Map.Map XOnlyPubKey Profile -> Event -> Relay -> Map.Map XOnlyPubKey Profile
 addProfile profiles e r =
   case decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e of
-    Just p ->
-      Map.insert xo p profiles
+    Just pd ->
+      Map.insert xo (Profile xo u pd) profiles
     Nothing ->
       profiles
   where
     xo = NT.pubKey e
+    u = T.pack $ relayName r
 
 buildEventFilters :: Keys -> Map.Map Keys [Profile] -> IO AppEvent
 buildEventFilters ks pm = do
@@ -371,6 +373,7 @@ receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
       mzero
     Right msg' -> case decode msg' of
       Just m -> do
+        -- lift $ putStrLn $ show $ extractEventFromServerResponse m
         lift $ sendMsg $ EventAppeared (extractEventFromServerResponse m) r
       Nothing -> do
         lift $ putStrLn $ "Could not decode server response: " ++ show msg'

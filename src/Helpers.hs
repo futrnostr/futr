@@ -38,9 +38,13 @@ profileDataFromReceivedEvents res xo = profileData
       False -> decode $ LazyBytes.fromStrict $ encodeUtf8 $ content $ fst $ head $ sortBy latestEvent relatedEvents
 
 
-profileName :: [ReceivedEvent] -> XOnlyPubKey -> Text
-profileName res xo =
-  maybe (pack $ exportXOnlyPubKey xo) pdName (profileDataFromReceivedEvents res xo)
+profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
+profileName m xo =
+  case Map.lookup xo m of
+    Nothing ->
+      pack $ exportXOnlyPubKey xo
+    Just (Profile xo' r pd) ->
+      pdName pd
 
 shortXOnlyPubKey :: XOnlyPubKey -> Text
 shortXOnlyPubKey xo = pack

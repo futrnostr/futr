@@ -74,8 +74,8 @@ buildUI channel wenv model = widgetTree
         vstack $
           case Map.lookup keys $ model ^. following of
             Just ps ->
-              map (\(Profile xo r n) ->
-                vstack [ label n, label $ T.pack $ exportXOnlyPubKey xo ]
+              map (\(Profile xo r pd) ->
+                vstack [ label $ pdName pd, label $ T.pack $ exportXOnlyPubKey xo ]
               )
               ps
             Nothing ->
@@ -141,8 +141,8 @@ currentKeysNode res mks = case mks of
     _ ->
       label ""
 
-postRow :: AppWenv -> [ReceivedEvent] -> Int -> ReceivedEvent -> AppNode
-postRow wenv res idx re = row
+postRow :: AppWenv -> Map.Map XOnlyPubKey Profile -> Int -> ReceivedEvent -> AppNode
+postRow wenv m idx re = row
   where
     e = fst re
     rowSep = rgbaHex "#A9A9A9" 0.75
@@ -150,7 +150,7 @@ postRow wenv res idx re = row
     postInfo =
       hstack
         [ vstack
-            [ selectableText $ profileName res $ NostrTypes.pubKey e
+            [ selectableText $ profileName m $ NostrTypes.pubKey e
             , selectableText
               $ shortXOnlyPubKey
               $ NostrTypes.pubKey e
@@ -163,7 +163,7 @@ postRow wenv res idx re = row
         [ postInfo
         , spacer
         , button "Details" (ViewPostDetails re)
-        ] `styleBasic` [ paddingT 10, paddingB 10, borderB 1 rowSep ]
+        ] `styleBasic` [ paddingT 10, paddingB 10, paddingR 20, borderB 1 rowSep ]
 
 viewPosts :: AppWenv -> AppModel -> AppNode
 viewPosts wenv model = widgetTree
@@ -175,7 +175,7 @@ viewPosts wenv model = widgetTree
         postFade idx e = animRow
           where
             action = ViewPostDetails e
-            item = postRow wenv (model ^. receivedEvents) idx e
+            item = postRow wenv (model ^. profiles) idx e
             animRow =
               animFadeOut_ [onFinished action] item `nodeKey` (content $ fst e)
         postRows = zipWith postFade [0 ..] orderedPosts
@@ -207,7 +207,7 @@ viewPostUI wenv model re = widgetTree
         [ hstack
             [ vstack
                 [ selectableText
-                  $ profileName (model ^. receivedEvents)
+                  $ profileName (model ^. profiles)
                   $ NostrTypes.pubKey event
                 , selectableText
                   $ shortXOnlyPubKey

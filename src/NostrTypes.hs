@@ -218,7 +218,7 @@ data RawEvent =
   }
   deriving (Eq, Show)
 
-data Profile = Profile XOnlyPubKey RelayURL Text
+data Profile = Profile XOnlyPubKey RelayURL ProfileData
   deriving (Eq, Show)
 
 instance FromJSON Profile where
@@ -234,12 +234,12 @@ instance FromJSON Profile where
   parseJSON _ = fail "Cannot parse profile"
 
 instance ToJSON Profile where
-  toJSON (Profile xOnlyPubKey relayURL name) =
+  toJSON (Profile xOnlyPubKey relayURL pd) =
     Array $ fromList
       [ String "p"
       , String $ pack $ Schnorr.exportXOnlyPubKey xOnlyPubKey
       , String relayURL
-      , String name
+      , String $ pdName pd
       ]
 
 type ReceivedEvent = (Event, [Relay])
@@ -302,12 +302,12 @@ instance ToJSON Tag where
       , String $ pack $ exportEventId eventId
       , String relayURL
       ]
-  toJSON (PTag (Profile xOnlyPubKey relayURL name)) =
+  toJSON (PTag (Profile xOnlyPubKey relayURL pd)) =
     Array $ fromList
       [ String "p"
       , String $ pack $ Schnorr.exportXOnlyPubKey xOnlyPubKey
       , String relayURL
-      , String name
+      , String $ pdName pd
       ]
   toJSON _ = -- @todo implement nonce tag
     Array $ fromList []
