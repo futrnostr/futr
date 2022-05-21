@@ -41,10 +41,10 @@ profileDataFromReceivedEvents res xo = profileData
 profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
 profileName m xo =
   case Map.lookup xo m of
-    Nothing ->
-      pack $ exportXOnlyPubKey xo
     Just (Profile xo' r pd) ->
       pdName pd
+    Nothing ->
+      ""
 
 shortXOnlyPubKey :: XOnlyPubKey -> Text
 shortXOnlyPubKey xo = pack
