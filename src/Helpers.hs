@@ -53,13 +53,3 @@ shortXOnlyPubKey xo = pack
 
 latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering
 latestEvent a b = compare (created_at $ fst b) (created_at $ fst a)
-
-eventFiltersFromKeys :: Keys -> Map.Map Keys [Profile] -> [EventFilter]
-eventFiltersFromKeys ks ps =
-  [EventFilter { filterPubKey = xo, followers = xo : fs'' }] -- @todo add other filters
-  where
-    (Keys _ xo _ _) = ks
-    fs = case Map.lookup ks ps of
-      Just fs' -> fs'
-      Nothing  -> []
-    fs'' = map (\(Profile xo' _ _) -> xo') fs

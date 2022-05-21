@@ -66,14 +66,12 @@ handleEvent env wenv node model evt =
           [ Model $ model
             & selectedKeys .~ mks
             & keys .~ keys'
-            & eventFilters .~ fs
             & receivedEvents .~ []
           , Task $ saveKeyPairs keys'
           , Task $ unsubscribe env (model ^. currentSub)
-          , Task $ subscribe env fs
+          , Task $ buildEventFilters ks (model ^. AppTypes.followers)
           ] where
             keys' = switchEnabledKeys ks (model ^. keys)
-            fs = eventFiltersFromKeys ks (model ^. AppTypes.followers)
         Nothing -> []
     ConnectRelay r ->
       [ Producer $ connectRelay env r
@@ -137,58 +135,56 @@ handleEvent env wenv node model evt =
         GenerateKeyPairDialog ->
           [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
         _ -> []
+    Subscribe fs ->
+      [ Model $ model & eventFilters .~ fs
+      , Task $ subscribe env fs
+      ]
     Subscribed subId ->
       [ Model $ model & currentSub .~ subId ]
     KeyPairsLoaded ks ->
       [ Model $ model
         & keys .~ ks
         & selectedKeys .~ Just mk
-        & eventFilters .~ fs
         & dialog .~ Nothing
         & receivedEvents .~ []
-      , Task $ subscribe env fs
+      , Task $ buildEventFilters mk (model ^. AppTypes.followers)
       ]
       where
         mk = mainKeys ks
-        fs = eventFiltersFromKeys mk (model ^. AppTypes.followers)
     GenerateKeyPair ->
       [ Producer generateNewKeyPair ]
     KeyPairGenerated k ->
       [ Model $ model
         & keys .~ ks : dk
         & selectedKeys .~ Just ks
-        & eventFilters .~ fs
         & dialog .~ Nothing
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
-      , Task $ subscribe env fs
+      , Task $ buildEventFilters ks (model ^. AppTypes.followers)
       ]
       where
-        pk = deriveXOnlyPubKey k
-        ks = Keys k pk True Nothing
-        fs = eventFiltersFromKeys ks (model ^. AppTypes.followers)
+        xo = deriveXOnlyPubKey k
+        ks = Keys k xo True Nothing
         dk = disableKeys $ model ^. keys
     ImportSecKey ->
       [ Model $ model
         & keys .~ ks : dk
         & selectedKeys .~ Just ks
         & mySecKeyInput .~ ""
-        & eventFilters .~ fs
         & dialog .~ Nothing
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
-      , Task $ subscribe env fs
+      , Task $ buildEventFilters ks (model ^. AppTypes.followers)
       ]
       where
         kp =
           fromJust $
           fmap keyPairFromSecKey $
           maybe Nothing secKey $ decodeHex $ model ^. mySecKeyInput
-        pk = deriveXOnlyPubKey $ kp
-        ks = Keys kp pk True Nothing
-        fs = eventFiltersFromKeys ks (model ^. AppTypes.followers)
+        xo = deriveXOnlyPubKey $ kp
+        ks = Keys kp xo True Nothing
         dk = disableKeys $ model ^. keys
     NoKeysFound ->
       [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
@@ -278,6 +274,19 @@ addProfile profiles e r =
       profiles
   where
     xo = NT.pubKey e
+
+buildEventFilters :: Keys -> Map.Map Keys [Profile] -> IO AppEvent
+buildEventFilters ks pm = do
+  now <- getCurrentTime
+  let (Keys _ xo _ _) = ks
+  let recent = fromSeconds $ toSeconds now - 86400
+  let ps = Map.findWithDefault [] ks pm
+  return $ Subscribe
+    [ AllProfilesFilter
+    , OwnEventsFilter xo recent
+    , MentionsFilter xo recent
+    , FollowersFilter ps recent
+    ]
 
 subscribe :: AppEnv -> [EventFilter] -> IO AppEvent
 subscribe env [] = return NoOp

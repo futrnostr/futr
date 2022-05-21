@@ -82,6 +82,7 @@ data AppEvent
   | AddRelay
   | RelayDisconnected Relay
   | ShowDialog AppDialog
+  | Subscribe [EventFilter]
   | Subscribed Text
   | KeyPairsLoaded [Keys]
   | GenerateKeyPair

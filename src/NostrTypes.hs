@@ -268,11 +268,10 @@ data Tag
   deriving (Eq, Show)
 
 data EventFilter
-  = EventFilter
-    { filterPubKey :: XOnlyPubKey
-    , followers  :: [XOnlyPubKey]
---    , from     :: DateTime
-    }
+  = AllProfilesFilter
+  | OwnEventsFilter XOnlyPubKey DateTime
+  | MentionsFilter XOnlyPubKey DateTime
+  | FollowersFilter [Profile] DateTime
   deriving (Eq, Show)
 
 instance FromJSON Tag where
@@ -314,28 +313,30 @@ instance ToJSON Tag where
     Array $ fromList []
 
 instance ToJSON EventFilter where
-  toJSON ef =
-    -- Array $ fromList
-    --  [ object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
-       object $ fromList -- notes, profiles and contact lists of people we follow (and ourselves)
-        --[ ( "kinds"   , Array $ fromList $ [Number 0, Number 1, Number 3])
-        [ ( "kinds"   , Array $ fromList $ [Number 0]) -- we load all profiles for now
-        -- , ( "since", Number 1652791967 )
-                            -- 1652805400
-        -- , ( "authors"  , Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) $ followers ef)
-        ]
+  toJSON (AllProfilesFilter) =
+    object $ fromList
+      [ ( "kinds", Array $ fromList $ [ Number 0 ]) ]
+  toJSON (OwnEventsFilter xo d) =
+    object $ fromList
+      [ ( "kinds", Array $ fromList $ [ Number 1, Number 3, Number 4 ] )
+      , ( "authors", Array $ fromList $ [ String $ pack $ Schnorr.exportXOnlyPubKey xo ])
+      , ( "since", Number $ fromIntegral $ toSeconds d)
+      ]
+  toJSON (MentionsFilter xo  d) =
+    object $ fromList
+      [ ( "kinds", Array $ fromList $ [ Number 1, Number 4 ])
+      , ( "#p", Array $ fromList $ [ String $ pack $ Schnorr.exportXOnlyPubKey xo ])
+      , ( "since", Number $ fromIntegral $ toSeconds d)
+      ]
+  toJSON (FollowersFilter ps d) =
+    object $ fromList
+      [ ( "kinds", Array $ fromList $ [ Number 1, Number 3 ] )
+      , ( "authors", Array $ fromList $ map String $ map (pack . Schnorr.exportXOnlyPubKey) keys)
+      , ( "since", Number $ fromIntegral $ toSeconds d)
+      ]
+      where
+        keys = map (\(Profile xo _ _) -> xo) ps
 
-        {-
-      , object $ fromList  -- posts mentioning us and direct messages to us
-        [ ( "kinds"   , Array $ fromList [Number 1, Number 4])
-        , ( "#p"     , Array $ fromList [String $ pack $ Schnorr.exportXOnlyPubKey $ filterPubKey ef])
-        ]
-      , object $ fromList -- our own direct messages to other people
-        [ ( "kinds"   , Array $ fromList [Number 4])
-        , ("authors"  , Array $ fromList [String $ pack $ Schnorr.exportXOnlyPubKey $ filterPubKey ef])
-        ]
-        -}
---      ]
 
 textToByteStringType :: Text -> (ByteString -> Maybe a) -> Maybe a
 textToByteStringType t f = case Schnorr.decodeHex t of
