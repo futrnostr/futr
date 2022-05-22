@@ -46,7 +46,8 @@ import           Helpers
 import           NostrFunctions
 import           NostrTypes                           as NT
 import           UI
-import           Widgets.Profile
+import           Widgets.EditProfile
+import           Widgets.ViewProfile                  as ViewProfile
 
 import           Debug.Trace as Trace
 
@@ -69,7 +70,7 @@ handleEvent env wenv node model evt =
             & receivedEvents .~ []
           , Task $ saveKeyPairs keys'
           , Task $ unsubscribe env (model ^. currentSub)
-          , Task $ buildEventFilters ks (model ^. following)
+          , Task $ buildEventFilters ks (model ^. AppTypes.following)
           ] where
             keys' = switchEnabledKeys ks (model ^. keys)
         Nothing -> []
@@ -148,7 +149,7 @@ handleEvent env wenv node model evt =
         & selectedKeys .~ Just mk
         & dialog .~ Nothing
         & receivedEvents .~ []
-      , Task $ buildEventFilters mk (model ^. following)
+      , Task $ buildEventFilters mk (model ^. AppTypes.following)
       ]
       where
         mk = mainKeys ks
@@ -162,7 +163,7 @@ handleEvent env wenv node model evt =
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
-      , Task $ buildEventFilters ks (model ^. following)
+      , Task $ buildEventFilters ks (model ^. AppTypes.following)
       ]
       where
         xo = deriveXOnlyPubKey k
@@ -177,7 +178,7 @@ handleEvent env wenv node model evt =
         & receivedEvents .~ []
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
-      , Task $ buildEventFilters ks (model ^. following)
+      , Task $ buildEventFilters ks (model ^. AppTypes.following)
       ]
       where
         kp =
@@ -198,18 +199,33 @@ handleEvent env wenv node model evt =
       ]
     ViewPostDetails re ->
       [ Model $ model & currentView .~ PostDetailsView re ]
-    ViewProfile ->
+    EditProfile ->
       [ Model $ model
         & currentView .~ EditProfileView
-        & profileModel . inputs . nameInput .~ name
-        & profileModel . inputs . aboutInput .~ about
-        & profileModel . inputs . pictureUrlInput .~ pictureUrl
-        & profileModel . inputs . nip05IdentifierInput .~ nip05Identifier
+        & editProfileModel . inputs . nameInput .~ name
+        & editProfileModel . inputs . aboutInput .~ about
+        & editProfileModel . inputs . pictureUrlInput .~ pictureUrl
+        & editProfileModel . inputs . nip05IdentifierInput .~ nip05Identifier
       ] where
         (Keys _ xo _ _) = fromJust (model ^. selectedKeys)
         (ProfileData name about pictureUrl nip05Identifier) = case Map.lookup xo (model ^. profiles) of
           Just (Profile _ _ pd) -> pd
           Nothing -> def
+    ViewProfile xo ->
+      [ Model $ model
+        & currentView .~ ProfileView xo
+        & viewProfileModel .~ vpm
+      ] where
+        (ProfileData name about pictureUrl nip05Identifier) = case Map.lookup xo (model ^. profiles) of
+          Just (Profile _ _ pd) -> pd
+          Nothing -> def
+        vpm = (model ^. viewProfileModel)
+          { ViewProfile._name = name
+          , ViewProfile._about = about
+          , ViewProfile._pictureUrl = pictureUrl
+          , ViewProfile._nip05Identifier = nip05Identifier
+          , _xo = T.pack $ exportXOnlyPubKey xo
+          }
     Back ->
       [ Model $ model
         & currentView .~ PostsView

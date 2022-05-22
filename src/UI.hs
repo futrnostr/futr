@@ -20,7 +20,8 @@ import           AppTypes
 import           Helpers
 import           NostrFunctions
 import           NostrTypes
-import           Widgets.Profile
+import           Widgets.EditProfile
+import           Widgets.ViewProfile
 
 buildUI :: TChan ServerRequest -> AppWenv -> AppModel -> AppNode
 buildUI channel wenv model = widgetTree
@@ -28,10 +29,12 @@ buildUI channel wenv model = widgetTree
     baseLayer = case model ^. currentView of
       PostsView ->
         viewPosts wenv model
-      EditProfileView ->
-        profileWidget channel (fromJust $ model ^. selectedKeys) profileModel
       PostDetailsView re ->
         viewPostUI wenv model re
+      ProfileView xo ->
+        viewProfileWidget channel (fromJust $ model ^. selectedKeys) viewProfileModel
+      EditProfileView ->
+        editProfileWidget channel (fromJust $ model ^. selectedKeys) editProfileModel
     headerTree =
       hstack
         [ spacer, button "Back" Back `nodeVisible` (model ^. currentView /= PostsView)
@@ -44,7 +47,7 @@ buildUI channel wenv model = widgetTree
             [ onChange KeysSelected ]
             `styleBasic` [ width 400 ]
         , spacer
-        , button "Edit" ViewProfile
+        , button "Edit" EditProfile
         , spacer
         , button "Add" $ ShowDialog GenerateKeyPairDialog
         ] `styleBasic` [ paddingL 10, paddingR 10 ]
@@ -73,7 +76,7 @@ buildUI channel wenv model = widgetTree
         vstack []
       Just k  ->
         vstack $
-          case Map.lookup keys $ model ^. following of
+          case Map.lookup keys $ model ^. AppTypes.following of
             Just ps ->
               map (\(Profile xo r pd) ->
                 vstack [ label $ pdName pd, label $ T.pack $ exportXOnlyPubKey xo ]
@@ -148,6 +151,7 @@ postRow wenv m idx re t = row
     e = fst re
     rowSep = rgbaHex "#A9A9A9" 0.75
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
+    xo = NostrTypes.pubKey e
     row =
       vstack
         [ hstack
@@ -159,12 +163,12 @@ postRow wenv m idx re t = row
               --button (T.pack $ (T.unpack $ profileName m $ NostrTypes.pubKey e) ++ "\n" ++ (T.unpack $ shortXOnlyPubKey $ NostrTypes.pubKey e)) NoOp
               widgetButton
                 (vstack
-                  [ label $ profileName m $ NostrTypes.pubKey e
+                  [ label $ profileName m xo
                   , spacer
-                  , (label $ shortXOnlyPubKey $ NostrTypes.pubKey e) `styleBasic` [textSize 10]
+                  , (label $ shortXOnlyPubKey xo) `styleBasic` [textSize 10]
                   ]
                 )
-                NoOp
+                (ViewProfile xo)
             , spacer
             , selectableText $ content e
             , spacer

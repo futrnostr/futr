@@ -24,7 +24,8 @@ executable futr
       NostrFunctions
       NostrTypes
       UI
-      Widgets.Profile
+      Widgets.EditProfile
+      Widgets.ViewProfile
       Paths_futr
   hs-source-dirs:
       src

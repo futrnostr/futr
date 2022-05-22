@@ -15,7 +15,8 @@ import qualified Network.WebSockets                   as WS
 import           Network.Socket
 
 import           NostrTypes
-import           Widgets.Profile
+import           Widgets.EditProfile
+import           Widgets.ViewProfile
 
 type AppWenv = WidgetEnv AppModel AppEvent
 
@@ -36,6 +37,7 @@ data AppDialog
 data AppView
     = PostsView
     | PostDetailsView ReceivedEvent
+    | ProfileView XOnlyPubKey
     | EditProfileView
     deriving (Eq, Show)
 
@@ -54,26 +56,27 @@ instance Default RelayModel where
 
 data AppModel =
   AppModel
-    { _time           :: DateTime
-    , _keys           :: [Keys]
-    , _selectedKeys   :: Maybe Keys
-    , _following      :: Map.Map Keys [Profile]
-    , _profiles       :: Map.Map XOnlyPubKey Profile
-    , _currentSub     :: Text
-    , _pool           :: [Relay]
-    , _mySecKeyInput  :: Text
-    , _newPostInput   :: Text
-    , _receivedEvents :: [ReceivedEvent]
-    , _eventFilters   :: [EventFilter]
-    , _dialog         :: Maybe AppDialog
-    , _currentView    :: AppView
-    , _profileModel   :: ProfileModel
-    , _relayModel     :: RelayModel
+    { _time             :: DateTime
+    , _keys             :: [Keys]
+    , _selectedKeys     :: Maybe Keys
+    , _following        :: Map.Map Keys [Profile]
+    , _profiles         :: Map.Map XOnlyPubKey Profile
+    , _currentSub       :: Text
+    , _pool             :: [Relay]
+    , _mySecKeyInput    :: Text
+    , _newPostInput     :: Text
+    , _receivedEvents   :: [ReceivedEvent]
+    , _eventFilters     :: [EventFilter]
+    , _dialog           :: Maybe AppDialog
+    , _currentView      :: AppView
+    , _editProfileModel :: EditProfileModel
+    , _viewProfileModel :: ViewProfileModel
+    , _relayModel       :: RelayModel
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty "" defaultPool "" "" [] [] Nothing PostsView def def
+  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty "" defaultPool "" "" [] [] Nothing PostsView def def def
 
 data AppEvent
   = AppInit
@@ -95,7 +98,8 @@ data AppEvent
   | ImportSecKey
   | SendPost
   | ViewPostDetails ReceivedEvent
-  | ViewProfile
+  | EditProfile
+  | ViewProfile XOnlyPubKey
   | Back
   | PostSent
   | ReplyToPost Event

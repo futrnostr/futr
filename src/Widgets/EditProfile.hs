@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
-module Widgets.Profile where
+module Widgets.EditProfile where
 
 import           Control.Concurrent.STM.TChan
 import           Control.Lens
@@ -27,7 +27,7 @@ data ProfileModelInputs = ProfileModelInputs
 instance Default ProfileModelInputs where
   def = ProfileModelInputs "" "" "" "" []
 
-data ProfileModel =  ProfileModel
+data EditProfileModel =  EditProfileModel
   { _name            :: Text
   , _about           :: Text
   , _pictureUrl      :: Text
@@ -35,8 +35,8 @@ data ProfileModel =  ProfileModel
   , _inputs          :: ProfileModelInputs
   } deriving (Eq, Show)
 
-instance Default ProfileModel where
-  def = ProfileModel "" "" "" "" def
+instance Default EditProfileModel where
+  def = EditProfileModel "" "" "" "" def
 
 
 data ProfileEvent
@@ -44,29 +44,29 @@ data ProfileEvent
   deriving (Eq, Show)
 
 makeLenses 'ProfileModelInputs
-makeLenses 'ProfileModel
+makeLenses 'EditProfileModel
 
 handleProfileEvent
   :: TChan ServerRequest
   -> Keys
-  -> WidgetEnv ProfileModel ProfileEvent
-  -> WidgetNode ProfileModel ProfileEvent
-  -> ProfileModel
+  -> WidgetEnv EditProfileModel ProfileEvent
+  -> WidgetNode EditProfileModel ProfileEvent
+  -> EditProfileModel
   -> ProfileEvent
-  -> [EventResponse ProfileModel ProfileEvent sp ep]
+  -> [EventResponse EditProfileModel ProfileEvent sp ep]
 handleProfileEvent chan ks env node model evt = case evt of
   SaveProfile ->
     [ Producer $ saveProfile chan ks model ]
 
-profileWidget
+editProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan ServerRequest
   -> Keys
-  -> ALens' sp ProfileModel
+  -> ALens' sp EditProfileModel
   -> WidgetNode sp ep
-profileWidget chan keys field = composite "profileWidget" field viewProfile (handleProfileEvent chan keys)
+editProfileWidget chan keys field = composite "editProfileWidget" field viewProfile (handleProfileEvent chan keys)
 
-saveProfile :: TChan ServerRequest -> Keys -> ProfileModel -> (ProfileEvent -> IO ()) -> IO ()
+saveProfile :: TChan ServerRequest -> Keys -> EditProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 saveProfile chan (Keys kp xo _ _) model sendMsg = do
   now <- getCurrentTime
   let raw = setMetadata name about picture nip05 xo now
@@ -78,7 +78,7 @@ saveProfile chan (Keys kp xo _ _) model sendMsg = do
     picture = strip $ is ^. pictureUrlInput
     nip05 = strip $ is ^. nip05IdentifierInput
 
-viewProfile :: WidgetEnv ProfileModel ProfileEvent -> ProfileModel -> WidgetNode ProfileModel ProfileEvent
+viewProfile :: WidgetEnv EditProfileModel ProfileEvent -> EditProfileModel -> WidgetNode EditProfileModel ProfileEvent
 viewProfile wenv model =
   vstack
     [ label "Profile"
