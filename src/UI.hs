@@ -147,22 +147,32 @@ postRow wenv m idx re = row
     e = fst re
     rowSep = rgbaHex "#A9A9A9" 0.75
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
-    postInfo =
-      hstack
-        [ vstack
-            [ selectableText $ profileName m $ NostrTypes.pubKey e
-            , selectableText
-              $ shortXOnlyPubKey
-              $ NostrTypes.pubKey e
-            ]
-        , spacer
-        , selectableText $ content e
-        ]
     row =
-      hstack
-        [ postInfo
-        , spacer
-        , button "Details" (ViewPostDetails re)
+      vstack
+        [ hstack
+            [ filler
+            , (label $ T.pack $ show $ created_at e) `styleBasic` [ textSize 10 ]
+            ]
+        , hstack
+            [
+              --button (T.pack $ (T.unpack $ profileName m $ NostrTypes.pubKey e) ++ "\n" ++ (T.unpack $ shortXOnlyPubKey $ NostrTypes.pubKey e)) NoOp
+              widgetButton
+                (vstack
+                  [ label $ profileName m $ NostrTypes.pubKey e
+                  , spacer
+                  , (label $ shortXOnlyPubKey $ NostrTypes.pubKey e) `styleBasic` [textSize 10]
+                  ]
+                )
+                NoOp
+            , spacer
+            , selectableText $ content e
+            , spacer
+            , vstack
+                [ spacer
+                , button "Details" (ViewPostDetails re)
+                , spacer
+                ]
+            ]
         ] `styleBasic` [ paddingT 10, paddingB 10, paddingR 20, borderB 1 rowSep ]
 
 viewPosts :: AppWenv -> AppModel -> AppNode

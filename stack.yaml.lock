@@ -60,14 +60,14 @@ packages:
 - completed:
     name: monomer
     version: 1.4.1.0
-    git: https://github.com/fjvallarino/monomer.git
+    git: https://github.com/prolic/monomer.git
     pantry-tree:
-      size: 17335
-      sha256: 29dee2b04b83de5472398cbce88408fe1cea9683904832c34d71c00d7a7f3127
-    commit: 6dff90b4ddf9f61bd8634c754378c99df0f246ac
+      size: 17336
+      sha256: f7d0691e4f6c000acecfaf9e362d4b1ed4479817f64c4721166fa1667a0d3c00
+    commit: d4fb0a5c4f377f9e4cdd5db124beae97c8e5c8dd
   original:
-    git: https://github.com/fjvallarino/monomer.git
-    commit: 6dff90b4ddf9f61bd8634c754378c99df0f246ac
+    git: https://github.com/prolic/monomer.git
+    commit: d4fb0a5c4f377f9e4cdd5db124beae97c8e5c8dd
 snapshots:
 - completed:
     size: 586292
