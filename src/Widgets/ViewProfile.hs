@@ -54,9 +54,28 @@ handleProfileEvent
   -> [EventResponse ViewProfileModel ProfileEvent sp ep]
 handleProfileEvent chan ks env node model evt = case evt of
   Follow ->
-    [ Producer $ follow chan ks model ]
+    [ Producer $ follow chan ks model
+    , Model $ model
+      & following .~ (np : model ^. following)
+    ]
+    where
+      np = Profile
+        (fromJust $ model ^. xo)
+        ""
+        (ProfileData
+          (model ^. name)
+          (model ^. about)
+          (model ^. pictureUrl)
+          (model ^. nip05Identifier)
+        )
   Unfollow ->
-    [ Producer $ unfollow chan ks model ]
+    [ Producer $ unfollow chan ks model
+    , Model $ model
+      & following .~ newFollowing
+    ]
+    where
+      oldFollow = model ^. xo
+      newFollowing = Prelude.filter (\(Profile xo'' _ _) -> xo'' /= fromJust oldFollow) (model ^. following)
 
 viewProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
@@ -83,17 +102,13 @@ follow chan (Keys kp xo' _ _) model sendMsg = do
       )
 
 unfollow :: TChan ServerRequest -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
-unfollow chan (Keys kp xo _ _) model sendMsg = do
+unfollow chan (Keys kp xo' _ _) model sendMsg = do
   now <- getCurrentTime
-  return ()
-  -- let raw = setMetadata name about picture nip05 xo now
-  -- atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo
-  -- where
-  --   is = model ^. inputs
-  --   name = strip $ is ^. nameInput
-  --   about = strip $ is ^. aboutInput
-  --   picture = strip $ is ^. pictureUrlInput
-  --   nip05 = strip $ is ^. nip05IdentifierInput
+  let raw = setFollowing newFollowing "" xo' now
+  atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo'
+  where
+    oldFollow = model ^. xo
+    newFollowing = Prelude.filter (\(Profile xo'' _ _) -> xo'' /= fromJust oldFollow) (model ^. following)
 
 viewProfile :: WidgetEnv ViewProfileModel ProfileEvent -> ViewProfileModel -> WidgetNode ViewProfileModel ProfileEvent
 viewProfile wenv model =
@@ -104,8 +119,6 @@ viewProfile wenv model =
         , (label $ pack $ exportXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
         , spacer
         , label $ model ^. about
-        , spacer
-        , button "Follow" Follow
         ]
     , filler
     , vstack

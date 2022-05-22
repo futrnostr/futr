@@ -34,15 +34,15 @@ data Relay =
 defaultPool :: [Relay]
 defaultPool =
   [
-    Relay
-    { host = "nostr-pub.wellorder.net"
-    , port = 443
-    , secure = True
-    , readable = True
-    , writable = True
-    , connected = False
-    }
-  ,
+  --   Relay
+  --   { host = "nostr-pub.wellorder.net"
+  --   , port = 443
+  --   , secure = True
+  --   , readable = True
+  --   , writable = True
+  --   , connected = False
+  --   }
+  -- ,
     Relay
     { host = "localhost"
     , port = 2700
@@ -263,9 +263,26 @@ instance FromJSON ProfileData where
     <*> e .: "picture"
     <*> e .: "nip05"
 
+data ForeignXOnlyPubKey
+  = ValidXOnlyPubKey XOnlyPubKey
+  | InvalidXOnlyPubKey
+  deriving (Eq, Show)
+
+instance FromJSON ForeignXOnlyPubKey where
+  parseJSON = withText "foreign XOnlyPubKey" $ \t -> do
+    case textToByteStringType t Schnorr.xOnlyPubKey of
+      Just xo ->
+        return $ ValidXOnlyPubKey xo
+      Nothing ->
+        return InvalidXOnlyPubKey
+
+instance ToJSON ForeignXOnlyPubKey where
+  toJSON (ValidXOnlyPubKey xo) = toJSON xo
+  toJSON _ = Null
+
 data Tag
-  = ETag EventId RelayURL
-  | PTag Profile
+  = ETag EventId (Maybe RelayURL)
+  | PTag ForeignXOnlyPubKey (Maybe RelayURL) (Maybe Text)
   | NonceTag
   | UnknownTag
   deriving (Eq, Show)
@@ -279,38 +296,38 @@ data EventFilter
 
 instance FromJSON Tag where
   parseJSON (Array v)
-    | V.length v == 2 =
-        case v V.! 0 of
-          String "e" ->
-            ETag <$> parseJSON (v V.! 1) <*> parseJSON ""
-          String "p" ->
-            PTag <$> (Profile <$> parseJSON (v V.! 1) <*> parseJSON "" <*> parseJSON "")
-          _ -> return UnknownTag
-    | V.length v == 3 =
+    | V.length v > 0 =
         case v V.! 0 of
           String "e" ->
             ETag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2)
           String "p" ->
-            PTag <$> (Profile <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON "")
-          _ -> return UnknownTag
-    | V.length v == 4 && v V.! 0 == String "p" =
-        PTag <$> (Profile <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON (v V.! 3))
+            PTag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON (v V.! 3)
+          _ ->
+            return UnknownTag
     | otherwise = return UnknownTag
-  parseJSON _ = fail "Cannot parse tag"
+  parseJSON _ = return UnknownTag
 
 instance ToJSON Tag where
   toJSON (ETag eventId relayURL) =
     Array $ fromList
       [ String "e"
       , String $ pack $ exportEventId eventId
-      , String relayURL
+      , case relayURL of
+          Just relayURL' ->
+            String relayURL'
+          Nothing ->
+            Null
       ]
-  toJSON (PTag (Profile xo relayURL pd)) =
+  toJSON (PTag xo relayURL name) =
     Array $ fromList
       [ String "p"
-      , String $ pack $ Schnorr.exportXOnlyPubKey xo
-      , String relayURL
-      , String $ pdName pd
+      , case xo of
+          ValidXOnlyPubKey xo' ->
+            toJSON xo'
+          InvalidXOnlyPubKey ->
+            Null
+      , toJSON relayURL
+      , toJSON name
       ]
   toJSON _ = -- @todo implement nonce tag
     Array $ fromList []

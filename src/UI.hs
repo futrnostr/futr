@@ -74,14 +74,16 @@ buildUI channel wenv model = widgetTree
     followingLayer = case model ^. selectedKeys of
       Nothing ->
         vstack []
-      Just k  ->
+      Just (Keys _ xo _ _)  ->
         vstack $
-          case Map.lookup keys $ model ^. AppTypes.following of
+          case Map.lookup xo $ model ^. AppTypes.following of
+            Just [] ->
+              [ label "You don't follow anyone" ]
             Just ps ->
               map (\(Profile xo r pd) ->
                 vstack
                   [ label $ pdName pd
-                  , label $ T.pack $ exportXOnlyPubKey xo
+                  , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
                   ]
               )
               ps

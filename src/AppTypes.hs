@@ -59,7 +59,7 @@ data AppModel =
     { _time             :: DateTime
     , _keys             :: [Keys]
     , _selectedKeys     :: Maybe Keys
-    , _following        :: Map.Map Keys [Profile]
+    , _following        :: Map.Map XOnlyPubKey [Profile]
     , _profiles         :: Map.Map XOnlyPubKey Profile
     , _currentSub       :: Text
     , _pool             :: [Relay]

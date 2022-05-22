@@ -12,7 +12,8 @@ import           Data.Aeson.Types
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString.Base16  as B16
 import           Data.ByteString.Lazy   (toStrict)
-import           Data.Maybe             (fromJust)
+import           Data.Default
+import           Data.Maybe             (fromJust, fromMaybe, maybe)
 import           Data.Text              (Text, pack, unpack)
 import           Data.DateTime
 import           GHC.Exts               (fromList)
@@ -56,15 +57,15 @@ serializeTag (ETag i r) =
   fromList
     [ String $ pack "e"
     , String $ pack $ exportEventId i
-    , String r
+    , toJSON r
     ]
-serializeTag (PTag (Profile p r pd)) =
+serializeTag (PTag xo r n) =
   Array $
   fromList
     [ String $ pack "p"
-    , String $ pack $ Schnorr.exportXOnlyPubKey p
-    , String r
-    , String $ pdName pd
+    , toJSON xo
+    , toJSON r
+    , toJSON n
     ]
 serializeTag NonceTag = Array $ fromList []
 serializeTag UnknownTag = Array $ fromList []
@@ -103,7 +104,7 @@ textNote note xo t =
 replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> RawEvent
 replyNote event note xo t =
   RawEvent
-    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event) ""], content' = note}
+    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event) Nothing], content' = note}
 
 setFollowing :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> RawEvent
 setFollowing ps r xo t =
@@ -111,7 +112,26 @@ setFollowing ps r xo t =
     {pubKey' = xo, created_at' = t, kind' = 3, tags' = profilesToTags ps, content' = ""}
 
 profilesToTags :: [Profile] -> [Tag]
-profilesToTags ps = map (\p -> PTag p) ps
+profilesToTags ps = map (\p -> pd p) ps
+  where
+    pd (Profile xo r d) = PTag (ValidXOnlyPubKey xo) (Just r) (Just $ pdName d)
+
+tagsToProfiles :: [Tag] -> [Profile]
+tagsToProfiles ts = map (\t ->
+    Profile (xo t) (fromMaybe "" $ r t) (pd t)
+  ) ts'
+  where
+    ts' = filter (\p -> isPTag p) ts
+    xo (PTag (ValidXOnlyPubKey xo) _ _) = xo
+    xo _ = error "error transforming tags to profiles, invalid XOnlyPubKey"
+    r (PTag _ r _) = r
+    r _ = Nothing
+    pd (PTag _ _ n) = ProfileData (fromMaybe "" n) "" "" ""
+    pd _ = def
+
+isPTag :: Tag -> Bool
+isPTag (PTag (ValidXOnlyPubKey xo) _ _) = True
+isPTag _ = False
 
 signEvent :: RawEvent -> KeyPair -> XOnlyPubKey -> Event
 signEvent r kp xo =
