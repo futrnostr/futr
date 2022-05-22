@@ -6,6 +6,7 @@ module AppTypes where
 import           Control.Concurrent.STM.TChan
 import           Control.Lens
 import           Crypto.Schnorr
+import           Data.DateTime
 import           Data.Default
 import qualified Data.Map                             as Map
 import           Data.Text
@@ -53,7 +54,8 @@ instance Default RelayModel where
 
 data AppModel =
   AppModel
-    { _keys           :: [Keys]
+    { _time           :: DateTime
+    , _keys           :: [Keys]
     , _selectedKeys   :: Maybe Keys
     , _following      :: Map.Map Keys [Profile]
     , _profiles       :: Map.Map XOnlyPubKey Profile
@@ -71,7 +73,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing Map.empty Map.empty "" defaultPool "" "" [] [] Nothing PostsView def def
+  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty "" defaultPool "" "" [] [] Nothing PostsView def def
 
 data AppEvent
   = AppInit
@@ -99,6 +101,7 @@ data AppEvent
   | ReplyToPost Event
   | EventAppeared Event Relay
   | CloseDialog
+  | TimerTick DateTime
   | NoOp
   deriving (Eq, Show)
 

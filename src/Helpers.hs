@@ -5,6 +5,7 @@ module Helpers where
 import           Crypto.Schnorr
 import           Data.Aeson
 import qualified Data.ByteString.Lazy                 as LazyBytes
+import           Data.DateTime
 import           Data.List                            (sortBy)
 import qualified Data.Map                             as Map
 import           Data.Maybe                           (fromMaybe)
@@ -55,3 +56,14 @@ shortXOnlyPubKey xo = pack
 
 latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering
 latestEvent a b = compare (created_at $ fst b) (created_at $ fst a)
+
+xTimeAgo :: DateTime -> DateTime -> Text
+xTimeAgo old new
+  | diff > (60*60*24) = pack $ (show $ diff `div` 60  `div` 60  `div` 24) ++ " days ago"
+  | diff > (60*60) = pack $ (show $ diff `div` 60 `div` 60) ++ " hours ago"
+  | diff > 60 = pack $ (show $ diff `div` 60) ++ " minutes ago"
+  | diff <= 0 = "just now"
+  | diff < 60 = pack $ (show diff) ++ " seconds ago"
+  | otherwise = pack $ show old
+  where
+    diff = toSeconds new - toSeconds old

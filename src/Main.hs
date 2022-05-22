@@ -5,7 +5,7 @@
 
 module Main where
 
-import           Control.Concurrent                   (forkIO)
+import           Control.Concurrent                   (forkIO, threadDelay)
 import           Control.Concurrent.STM.TChan
 import qualified Control.Exception                    as Exception
 import           Control.Lens
@@ -84,6 +84,7 @@ handleEvent env wenv node model evt =
     UpdateRelay r -> []
     AppInit ->
       [ Producer tryLoadKeysFromDisk
+      , Producer timerLoop
       ] ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
     RelayConnected r ->
       [ Model $ model & pool .~ newPool
@@ -232,6 +233,8 @@ handleEvent env wenv node model evt =
         newModel = handleReceivedEvent model e r
     CloseDialog ->
       [ Model $ model & dialog .~ Nothing ]
+    TimerTick now ->
+      [ Model $ model & time .~ now ]
 
 handleReceivedEvent :: AppModel -> Event -> Relay -> AppModel
 handleReceivedEvent model e r =
@@ -394,6 +397,12 @@ sendWs broadcastChannel r conn sendMsg = do
             else return ()
           _ ->
             WS.sendTextData conn $ encode msg'
+
+timerLoop :: (AppEvent -> IO ()) -> IO ()
+timerLoop sendMsg = void . forkIO $ void $ forever $ do
+  now <- getCurrentTime
+  sendMsg $ TimerTick now
+  threadDelay 5000000
 
 generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
 generateNewKeyPair sendMsg = do

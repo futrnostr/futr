@@ -5,6 +5,7 @@ module UI where
 import           Control.Concurrent.STM.TChan
 import           Control.Lens
 import           Crypto.Schnorr
+import           Data.DateTime
 import           Data.Default
 import           Data.List              (sortBy)
 import qualified Data.Map               as Map
@@ -141,8 +142,8 @@ currentKeysNode res mks = case mks of
     _ ->
       label ""
 
-postRow :: AppWenv -> Map.Map XOnlyPubKey Profile -> Int -> ReceivedEvent -> AppNode
-postRow wenv m idx re = row
+postRow :: AppWenv -> Map.Map XOnlyPubKey Profile -> Int -> ReceivedEvent -> DateTime -> AppNode
+postRow wenv m idx re t = row
   where
     e = fst re
     rowSep = rgbaHex "#A9A9A9" 0.75
@@ -151,7 +152,7 @@ postRow wenv m idx re = row
       vstack
         [ hstack
             [ filler
-            , (label $ T.pack $ show $ created_at e) `styleBasic` [ textSize 10 ]
+            , (label $ xTimeAgo (created_at e) t) `styleBasic` [ textSize 10 ]
             ]
         , hstack
             [
@@ -185,7 +186,7 @@ viewPosts wenv model = widgetTree
         postFade idx e = animRow
           where
             action = ViewPostDetails e
-            item = postRow wenv (model ^. profiles) idx e
+            item = postRow wenv (model ^. profiles) idx e (model ^. time)
             animRow =
               animFadeOut_ [onFinished action] item `nodeKey` (content $ fst e)
         postRows = zipWith postFade [0 ..] orderedPosts
