@@ -226,15 +226,18 @@ handleEvent env wenv node model evt =
           Just (Profile _ _ pd) -> pd
           Nothing -> def
         vpm = (model ^. viewProfileModel)
-          { _doFollow = elem xo currentlyFollowing'
+          { _myKeys = model ^. selectedKeys
           , ViewProfile._name = name
           , ViewProfile._about = about
           , ViewProfile._pictureUrl = pictureUrl
           , ViewProfile._nip05Identifier = nip05Identifier
-          , _xo = T.pack $ exportXOnlyPubKey xo
+          , ViewProfile._following = case model ^. selectedKeys of
+              Just ks ->
+                Map.findWithDefault [] ks (model ^. AppTypes.following)
+              Nothing ->
+                []
+          , _xo = Just xo
           }
-        currentlyFollowing = fromJust $ Map.lookup (fromJust $ model ^. selectedKeys) (model ^. AppTypes.following)
-        currentlyFollowing' = map (\(Profile xo' _ _) -> xo') currentlyFollowing
     Back ->
       [ Model $ model
         & currentView .~ PostsView

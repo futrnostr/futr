@@ -7,10 +7,15 @@ import           Control.Concurrent.STM.TChan
 import           Control.Lens
 import           Control.Monad.STM                    (atomically)
 import           Crypto.Schnorr
+import           Data.Aeson
+import qualified Data.ByteString.Lazy                 as LazyBytes
 import           Data.DateTime
 import           Data.Default
+import qualified Data.List                            as List
 import qualified Data.Map                             as Map
+import           Data.Maybe                           (fromJust)
 import           Data.Text
+import           Data.Text.Encoding                   (encodeUtf8)
 import           Monomer
 
 import           Helpers
@@ -18,18 +23,19 @@ import           NostrFunctions
 import           NostrTypes
 
 data ViewProfileModel =  ViewProfileModel
-  { _xo              :: Text
-  , _doFollow        :: Bool
-  , _name            :: Text
-  , _about           :: Text
-  , _pictureUrl      :: Text
-  , _nip05Identifier :: Text
-  , _following       :: Map.Map Keys [Profile]
-  , _posts           :: [ReceivedEvent]
+  { _myKeys           :: Maybe Keys
+  , _xo               :: Maybe XOnlyPubKey
+  , _name             :: Text
+  , _about            :: Text
+  , _pictureUrl       :: Text
+  , _nip05Identifier  :: Text
+  , _following        :: [Profile]
+  , _profileFollowing :: [Profile]
+  , _posts            :: [ReceivedEvent]
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel "" False "" "" "" "" Map.empty []
+  def = ViewProfileModel Nothing Nothing "" "" "" "" [] [] []
 
 data ProfileEvent
   = Follow
@@ -61,17 +67,20 @@ viewProfileWidget
 viewProfileWidget chan keys field = composite "ViewProfileWidget" field viewProfile (handleProfileEvent chan keys)
 
 follow :: TChan ServerRequest -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
-follow chan (Keys kp xo _ _) model sendMsg = do
+follow chan (Keys kp xo' _ _) model sendMsg = do
   now <- getCurrentTime
-  return ()
-  -- let raw = setMetadata name about picture nip05 xo now
-  -- atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo
-  -- where
-  --   is = model ^. inputs
-  --   name = strip $ is ^. nameInput
-  --   about = strip $ is ^. aboutInput
-  --   picture = strip $ is ^. pictureUrlInput
-  --   nip05 = strip $ is ^. nip05IdentifierInput
+  let raw = setFollowing (np : model ^. following) "" xo' now
+  atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo'
+  where
+    np = Profile
+      (fromJust $ model ^. xo)
+      ""
+      (ProfileData
+        (model ^. name)
+        (model ^. about)
+        (model ^. pictureUrl)
+        (model ^. nip05Identifier)
+      )
 
 unfollow :: TChan ServerRequest -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 unfollow chan (Keys kp xo _ _) model sendMsg = do
@@ -92,7 +101,7 @@ viewProfile wenv model =
     [ vstack
         [ (label $ model ^. name) `styleBasic` [ textSize 22 ]
         , spacer
-        , (label $ model ^. xo) `styleBasic` [ textSize 10 ]
+        , (label $ pack $ exportXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
         , spacer
         , label $ model ^. about
         , spacer
@@ -104,5 +113,7 @@ viewProfile wenv model =
         ]
     ]
     where
-      action = if (model ^. doFollow) then Unfollow else Follow
-      btnText = if (model ^. doFollow) then "Unfollow" else "Follow"
+      currentlyFollowing = List.map (\(Profile xo' _ _) -> xo') (model ^. following)
+      xo' = fromJust $ model ^. xo
+      action = if List.elem xo' currentlyFollowing then Unfollow else Follow
+      btnText = if List.elem xo' currentlyFollowing then "Unfollow" else "Follow"

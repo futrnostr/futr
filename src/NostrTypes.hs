@@ -234,10 +234,10 @@ instance FromJSON Profile where
   parseJSON _ = fail "Cannot parse profile"
 
 instance ToJSON Profile where
-  toJSON (Profile xOnlyPubKey relayURL pd) =
+  toJSON (Profile xo relayURL pd) =
     Array $ fromList
       [ String "p"
-      , String $ pack $ Schnorr.exportXOnlyPubKey xOnlyPubKey
+      , String $ pack $ Schnorr.exportXOnlyPubKey xo
       , String relayURL
       , String $ pdName pd
       ]
@@ -305,10 +305,10 @@ instance ToJSON Tag where
       , String $ pack $ exportEventId eventId
       , String relayURL
       ]
-  toJSON (PTag (Profile xOnlyPubKey relayURL pd)) =
+  toJSON (PTag (Profile xo relayURL pd)) =
     Array $ fromList
       [ String "p"
-      , String $ pack $ Schnorr.exportXOnlyPubKey xOnlyPubKey
+      , String $ pack $ Schnorr.exportXOnlyPubKey xo
       , String relayURL
       , String $ pdName pd
       ]
