@@ -19,6 +19,7 @@ import           NostrTypes
 
 data ViewProfileModel =  ViewProfileModel
   { _xo              :: Text
+  , _doFollow        :: Bool
   , _name            :: Text
   , _about           :: Text
   , _pictureUrl      :: Text
@@ -28,7 +29,7 @@ data ViewProfileModel =  ViewProfileModel
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel "" "" "" "" "" Map.empty []
+  def = ViewProfileModel "" False "" "" "" "" Map.empty []
 
 data ProfileEvent
   = Follow
@@ -87,33 +88,21 @@ unfollow chan (Keys kp xo _ _) model sendMsg = do
 
 viewProfile :: WidgetEnv ViewProfileModel ProfileEvent -> ViewProfileModel -> WidgetNode ViewProfileModel ProfileEvent
 viewProfile wenv model =
-  vstack
-    [ label $ model ^. name
-    , spacer
-    , (label $ model ^. xo) `styleBasic` [ textSize 10 ]
-    , spacer
-    , hstack
-        [ label "Name: "
-        , filler
-        ]
-    , spacer
-    , hstack
-        [ label "About"
-        , filler
+  hstack
+    [ vstack
+        [ (label $ model ^. name) `styleBasic` [ textSize 22 ]
+        , spacer
+        , (label $ model ^. xo) `styleBasic` [ textSize 10 ]
+        , spacer
         , label $ model ^. about
+        , spacer
+        , button "Follow" Follow
         ]
-    , spacer
-    , hstack
-        [ label "Picture URL"
-        , filler
-        , label $ model ^. pictureUrl
+    , filler
+    , vstack
+        [ button btnText action
         ]
-    , spacer
-    , hstack
-        [ label "NIP-05 Identifier"
-        , filler
-        , label $ model ^. nip05Identifier
-        ]
-    , spacer
-    , button "Follow" Follow
-    ] `styleBasic` [padding 10]
+    ]
+    where
+      action = if (model ^. doFollow) then Unfollow else Follow
+      btnText = if (model ^. doFollow) then "Unfollow" else "Follow"

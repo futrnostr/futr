@@ -108,6 +108,6 @@ viewProfile wenv model =
         ]
     , spacer
     , button "Save" SaveProfile
-    ] `styleBasic` [padding 10]
+    ]
     where
       tf input id' = textField input `nodeKey` id' `styleBasic` [ width 400 ]

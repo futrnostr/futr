@@ -50,7 +50,7 @@ buildUI channel wenv model = widgetTree
         , button "Edit" EditProfile
         , spacer
         , button "Add" $ ShowDialog GenerateKeyPairDialog
-        ] `styleBasic` [ paddingL 10, paddingR 10 ]
+        ] `styleBasic` [ paddingR 10 ]
     footerTree =
       vstack [hstack ([ filler ] ++ connections ++ [ spacer, addRelay ])]
         `styleBasic` [ padding 10 ]
@@ -79,7 +79,10 @@ buildUI channel wenv model = widgetTree
           case Map.lookup keys $ model ^. AppTypes.following of
             Just ps ->
               map (\(Profile xo r pd) ->
-                vstack [ label $ pdName pd, label $ T.pack $ exportXOnlyPubKey xo ]
+                vstack
+                  [ label $ pdName pd
+                  , label $ T.pack $ exportXOnlyPubKey xo
+                  ]
               )
               ps
             Nothing ->
@@ -93,12 +96,12 @@ buildUI channel wenv model = widgetTree
             , headerTree
             , spacer
             , hstack
-                [ baseLayer
+                [ baseLayer `styleBasic` [ padding 10 ]
                 , vstack
                     [ label "Following" `styleBasic` [ paddingB 10 ]
-                    , followingLayer
+                    , scroll_ [ scrollOverlay ] followingLayer
                     ]
-                    `styleBasic` [ padding 10, width 200 ]
+                    `styleBasic` [ padding 10, width 200, borderL 1 sep ]
                 ]
             , filler
             , footerTree
@@ -107,6 +110,8 @@ buildUI channel wenv model = widgetTree
           `nodeVisible` (model ^. dialog /= Nothing)
           `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
         ]
+      where
+        sep = rgbaHex "#A9A9A9" 0.75
 
 dialogLayer :: AppModel -> AppNode
 dialogLayer model =
@@ -193,7 +198,7 @@ viewPosts wenv model = widgetTree
             item = postRow wenv (model ^. profiles) idx e (model ^. time)
             animRow =
               animFadeOut_ [onFinished action] item `nodeKey` (content $ fst e)
-        postRows = zipWith postFade [0 ..] orderedPosts
+        postRows = zipWith postFade [ 0 .. ] orderedPosts
     widgetTree =
       vstack
         [ label "New Post"
@@ -209,8 +214,8 @@ viewPosts wenv model = widgetTree
                 ]
             ]
         , spacer
-        , scroll_ [scrollOverlay] $ posts
-        ] `styleBasic` [ padding 10 ]
+        , scroll_ [ scrollOverlay ] posts
+        ]
 
 viewPostUI :: AppWenv -> AppModel -> ReceivedEvent -> AppNode
 viewPostUI wenv model re = widgetTree
@@ -255,7 +260,6 @@ viewPostUI wenv model re = widgetTree
         , spacer
         , seenOnTree
         ]
-          `styleBasic` [ padding 10 ]
 
 viewRelayDialog :: Relay -> AppModel -> AppNode
 viewRelayDialog r model =

@@ -149,10 +149,12 @@ handleEvent env wenv node model evt =
         & selectedKeys .~ Just mk
         & dialog .~ Nothing
         & receivedEvents .~ []
+        & AppTypes.following .~ newFollowing
       , Task $ buildEventFilters mk (model ^. AppTypes.following)
       ]
       where
         mk = mainKeys ks
+        newFollowing = Map.insert mk [] (model ^. AppTypes.following)
     GenerateKeyPair ->
       [ Producer generateNewKeyPair ]
     KeyPairGenerated k ->
@@ -161,6 +163,7 @@ handleEvent env wenv node model evt =
         & selectedKeys .~ Just ks
         & dialog .~ Nothing
         & receivedEvents .~ []
+        & AppTypes.following .~ newFollowing
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
       , Task $ buildEventFilters ks (model ^. AppTypes.following)
@@ -169,6 +172,7 @@ handleEvent env wenv node model evt =
         xo = deriveXOnlyPubKey k
         ks = Keys k xo True Nothing
         dk = disableKeys $ model ^. keys
+        newFollowing = Map.insert ks [] (model ^. AppTypes.following)
     ImportSecKey ->
       [ Model $ model
         & keys .~ ks : dk
@@ -176,6 +180,7 @@ handleEvent env wenv node model evt =
         & mySecKeyInput .~ ""
         & dialog .~ Nothing
         & receivedEvents .~ []
+        & AppTypes.following .~ newFollowing
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env (model ^. currentSub)
       , Task $ buildEventFilters ks (model ^. AppTypes.following)
@@ -188,6 +193,7 @@ handleEvent env wenv node model evt =
         xo = deriveXOnlyPubKey $ kp
         ks = Keys kp xo True Nothing
         dk = disableKeys $ model ^. keys
+        newFollowing = Map.insert ks [] (model ^. AppTypes.following)
     NoKeysFound ->
       [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
     ErrorReadingKeysFile ->
@@ -220,12 +226,15 @@ handleEvent env wenv node model evt =
           Just (Profile _ _ pd) -> pd
           Nothing -> def
         vpm = (model ^. viewProfileModel)
-          { ViewProfile._name = name
+          { _doFollow = elem xo currentlyFollowing'
+          , ViewProfile._name = name
           , ViewProfile._about = about
           , ViewProfile._pictureUrl = pictureUrl
           , ViewProfile._nip05Identifier = nip05Identifier
           , _xo = T.pack $ exportXOnlyPubKey xo
           }
+        currentlyFollowing = fromJust $ Map.lookup (fromJust $ model ^. selectedKeys) (model ^. AppTypes.following)
+        currentlyFollowing' = map (\(Profile xo' _ _) -> xo') currentlyFollowing
     Back ->
       [ Model $ model
         & currentView .~ PostsView
@@ -259,7 +268,7 @@ handleReceivedEvent model e r =
       , _selectedKeys =
           fmap (\ks -> updateName ks) (model ^. selectedKeys)
       , _profiles =
-          addProfile (model ^. profiles) (trace (show e) e) r
+          addProfile (model ^. profiles) e r
       }
       where
         mp = decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e
