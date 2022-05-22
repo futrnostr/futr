@@ -36,7 +36,7 @@ data AppDialog
 data AppView
     = PostsView
     | PostDetailsView ReceivedEvent
-    | ProfileView
+    | EditProfileView
     deriving (Eq, Show)
 
 data RelayModel =

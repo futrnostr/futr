@@ -200,20 +200,16 @@ handleEvent env wenv node model evt =
       [ Model $ model & currentView .~ PostDetailsView re ]
     ViewProfile ->
       [ Model $ model
-        & currentView .~ ProfileView
+        & currentView .~ EditProfileView
         & profileModel . inputs . nameInput .~ name
         & profileModel . inputs . aboutInput .~ about
         & profileModel . inputs . pictureUrlInput .~ pictureUrl
         & profileModel . inputs . nip05IdentifierInput .~ nip05Identifier
       ] where
         (Keys _ xo _ _) = fromJust (model ^. selectedKeys)
-        profileData = profileDataFromReceivedEvents
-          (model ^. receivedEvents)
-          xo
-        name = maybe "" pdName profileData
-        about = maybe "" pdAbout profileData
-        pictureUrl = maybe "" pdPictureUrl profileData
-        nip05Identifier = maybe "" pdNip05 profileData
+        (ProfileData name about pictureUrl nip05Identifier) = case Map.lookup xo (model ^. profiles) of
+          Just (Profile _ _ pd) -> pd
+          Nothing -> def
     Back ->
       [ Model $ model
         & currentView .~ PostsView

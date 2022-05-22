@@ -253,6 +253,9 @@ data ProfileData =
   }
   deriving (Eq, Show)
 
+instance Default ProfileData where
+  def = ProfileData "" "" "" ""
+
 instance FromJSON ProfileData where
   parseJSON = withObject "profile data" $ \e -> ProfileData
     <$> e .: "name"

@@ -28,7 +28,7 @@ buildUI channel wenv model = widgetTree
     baseLayer = case model ^. currentView of
       PostsView ->
         viewPosts wenv model
-      ProfileView ->
+      EditProfileView ->
         profileWidget channel (fromJust $ model ^. selectedKeys) profileModel
       PostDetailsView re ->
         viewPostUI wenv model re
