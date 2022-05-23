@@ -71,7 +71,7 @@ handleEvent env wenv node model evt =
             & currentView .~ PostsView
           , Task $ saveKeyPairs keys'
           , Task $ unsubscribe env subId
-          , Task $ buildEventFilters xo (model ^. AppTypes.following)
+          , Task $ buildEventFilters xo (model ^. AppTypes.following) Nothing
           ] where
             keys' = switchEnabledKeys ks (model ^. keys)
             (Keys _ xo _ _) = ks
@@ -153,7 +153,7 @@ handleEvent env wenv node model evt =
         & dialog .~ Nothing
         & receivedEvents .~ []
         & AppTypes.following .~ newFollowing
-      , Task $ buildEventFilters xo (model ^. AppTypes.following)
+      , Task $ buildEventFilters xo (model ^. AppTypes.following) Nothing
       ]
       where
         mk = mainKeys ks
@@ -170,7 +170,7 @@ handleEvent env wenv node model evt =
         & AppTypes.following .~ newFollowing
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env subId
-      , Task $ buildEventFilters xo (model ^. AppTypes.following)
+      , Task $ buildEventFilters xo (model ^. AppTypes.following) Nothing
       ]
       where
         xo = deriveXOnlyPubKey k
@@ -188,7 +188,7 @@ handleEvent env wenv node model evt =
         & AppTypes.following .~ newFollowing
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env subId
-      , Task $ buildEventFilters xo (model ^. AppTypes.following)
+      , Task $ buildEventFilters xo (model ^. AppTypes.following) Nothing
       ]
       where
         kp =
@@ -268,7 +268,7 @@ handleEvent env wenv node model evt =
         resubscribe = case kind e of
           3 ->
             [ Task $ unsubscribe env subId
-            , Task $ buildEventFilters xo (newModel ^. AppTypes.following)
+            , Task $ buildEventFilters xo (newModel ^. AppTypes.following) (Just $ created_at e)
             ]
           _ ->
             []
@@ -341,17 +341,21 @@ addFollowing pm e =
     tags' = tags e
     xo = NT.pubKey e
 
-buildEventFilters :: XOnlyPubKey -> Map.Map XOnlyPubKey [Profile] -> IO AppEvent
-buildEventFilters xo pm = do
+buildEventFilters :: XOnlyPubKey -> Map.Map XOnlyPubKey [Profile] -> Maybe DateTime -> IO AppEvent
+buildEventFilters xo pm latest = do
   now <- getCurrentTime
   let recent = fromSeconds $ toSeconds now - 86400
   let ps = Map.findWithDefault [] xo pm
   return $ Subscribe
-    [ AllProfilesFilter
-    , OwnEventsFilter xo recent
-    , MentionsFilter xo recent
-    , FollowersFilter ps recent
+    [ AllProfilesFilter latest
+    , OwnEventsFilter xo $ fromDate recent
+    , MentionsFilter xo $ fromDate recent
+    , FollowersFilter ps $ fromDate recent
     ]
+  where
+    fromDate recent = case latest of
+      Just t -> t
+      Nothing -> recent
 
 subscribe :: AppEnv -> [EventFilter] -> IO AppEvent
 subscribe env [] = return NoOp

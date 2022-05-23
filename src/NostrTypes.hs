@@ -288,7 +288,7 @@ data Tag
   deriving (Eq, Show)
 
 data EventFilter
-  = AllProfilesFilter
+  = AllProfilesFilter (Maybe DateTime)
   | OwnEventsFilter XOnlyPubKey DateTime
   | MentionsFilter XOnlyPubKey DateTime
   | FollowersFilter [Profile] DateTime
@@ -333,9 +333,14 @@ instance ToJSON Tag where
     Array $ fromList []
 
 instance ToJSON EventFilter where
-  toJSON (AllProfilesFilter) =
+  toJSON (AllProfilesFilter Nothing) =
     object $ fromList
       [ ( "kinds", Array $ fromList $ [ Number 0 ]) ]
+  toJSON (AllProfilesFilter (Just d)) =
+    object $ fromList
+      [ ( "kinds", Array $ fromList $ [ Number 0 ])
+      , ( "since", Number $ fromIntegral $ toSeconds d)
+      ]
   toJSON (OwnEventsFilter xo d) =
     object $ fromList
       [ ( "kinds", Array $ fromList $ [ Number 1, Number 3, Number 4 ] )
