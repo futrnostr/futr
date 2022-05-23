@@ -20,8 +20,8 @@ import           AppTypes
 import           Helpers
 import           NostrFunctions
 import           NostrTypes
-import           Widgets.EditProfile
-import           Widgets.ViewProfile
+import qualified Widgets.EditProfile    as EditProfile
+import qualified Widgets.ViewProfile    as ViewProfile
 
 buildUI :: TChan ServerRequest -> AppWenv -> AppModel -> AppNode
 buildUI channel wenv model = widgetTree
@@ -32,9 +32,9 @@ buildUI channel wenv model = widgetTree
       PostDetailsView re ->
         viewPostUI wenv model re
       ProfileView xo ->
-        viewProfileWidget channel (fromJust $ model ^. selectedKeys) viewProfileModel
+        ViewProfile.viewProfileWidget channel (fromJust $ model ^. selectedKeys) viewProfileModel
       EditProfileView ->
-        editProfileWidget channel (fromJust $ model ^. selectedKeys) editProfileModel
+        EditProfile.editProfileWidget channel (fromJust $ model ^. selectedKeys) editProfileModel
     headerTree =
       hstack
         [ spacer, button "Back" Back `nodeVisible` (model ^. currentView /= PostsView)

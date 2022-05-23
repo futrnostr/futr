@@ -21,6 +21,7 @@ import           Monomer
 import           Helpers
 import           NostrFunctions
 import           NostrTypes
+import           UIHelpers
 
 data ViewProfileModel =  ViewProfileModel
   { _myKeys           :: Maybe Keys
@@ -114,19 +115,22 @@ viewProfile :: WidgetEnv ViewProfileModel ProfileEvent -> ViewProfileModel -> Wi
 viewProfile wenv model =
   hstack
     [ vstack
-        [ (label $ model ^. name) `styleBasic` [ textSize 22 ]
+        [ (selectableText $ model ^. name) `styleBasic` [ textSize 22 ]
         , spacer
-        , (label $ pack $ exportXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
+        , (selectableText $ pack $ exportXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
         , spacer
-        , label $ model ^. about
+        , selectableText $ model ^. about
         ]
     , filler
-    , vstack
-        [ button btnText action
-        ]
+    , vstack [ button btnText action ]
     ]
     where
       currentlyFollowing = List.map (\(Profile xo' _ _) -> xo') (model ^. following)
       xo' = fromJust $ model ^. xo
       action = if List.elem xo' currentlyFollowing then Unfollow else Follow
       btnText = if List.elem xo' currentlyFollowing then "Unfollow" else "Follow"
+
+selectableText :: Text -> WidgetNode ViewProfileModel ProfileEvent
+selectableText t =
+  textFieldD_ (WidgetValue t) [ readOnly ]
+    `styleBasic` [ border 0 transparent, radius 0, bgColor $ rgbHex "#515151" ]
