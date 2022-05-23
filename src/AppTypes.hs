@@ -54,6 +54,12 @@ data RelayModel =
 instance Default RelayModel where
   def = RelayModel "" 433 True True True
 
+data Subscription = Subscription Text DateTime
+  deriving (Eq, Show)
+
+instance Default Subscription where
+  def = Subscription "" $ fromSeconds 0
+
 data AppModel =
   AppModel
     { _time             :: DateTime
@@ -61,7 +67,7 @@ data AppModel =
     , _selectedKeys     :: Maybe Keys
     , _following        :: Map.Map XOnlyPubKey [Profile]
     , _profiles         :: Map.Map XOnlyPubKey Profile
-    , _currentSub       :: Text
+    , _currentSub       :: Subscription
     , _pool             :: [Relay]
     , _mySecKeyInput    :: Text
     , _newPostInput     :: Text
@@ -76,7 +82,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty "" defaultPool "" "" [] [] Nothing PostsView def def def
+  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def defaultPool "" "" [] [] Nothing PostsView def def def
 
 data AppEvent
   = AppInit
@@ -88,7 +94,7 @@ data AppEvent
   | RelayDisconnected Relay
   | ShowDialog AppDialog
   | Subscribe [EventFilter]
-  | Subscribed Text
+  | Subscribed Text DateTime
   | KeyPairsLoaded [Keys]
   | GenerateKeyPair
   | KeyPairGenerated KeyPair

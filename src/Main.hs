@@ -70,11 +70,12 @@ handleEvent env wenv node model evt =
             & receivedEvents .~ []
             & currentView .~ PostsView
           , Task $ saveKeyPairs keys'
-          , Task $ unsubscribe env (model ^. currentSub)
+          , Task $ unsubscribe env subId
           , Task $ buildEventFilters xo (model ^. AppTypes.following)
           ] where
             keys' = switchEnabledKeys ks (model ^. keys)
             (Keys _ xo _ _) = ks
+            (Subscription subId _) = model ^. currentSub
         Nothing -> []
     ConnectRelay r ->
       [ Producer $ connectRelay env r
@@ -143,8 +144,8 @@ handleEvent env wenv node model evt =
       [ Model $ model & eventFilters .~ fs
       , Task $ subscribe env fs
       ]
-    Subscribed subId ->
-      [ Model $ model & currentSub .~ subId ]
+    Subscribed subId t ->
+      [ Model $ model & currentSub .~ Subscription subId t ]
     KeyPairsLoaded ks ->
       [ Model $ model
         & keys .~ ks
@@ -168,7 +169,7 @@ handleEvent env wenv node model evt =
         & receivedEvents .~ []
         & AppTypes.following .~ newFollowing
       , Task $ saveKeyPairs $ ks : dk
-      , Task $ unsubscribe env (model ^. currentSub)
+      , Task $ unsubscribe env subId
       , Task $ buildEventFilters xo (model ^. AppTypes.following)
       ]
       where
@@ -176,6 +177,7 @@ handleEvent env wenv node model evt =
         ks = Keys k xo True Nothing
         dk = disableKeys $ model ^. keys
         newFollowing = Map.insert xo [] (model ^. AppTypes.following)
+        (Subscription subId _) = model ^. currentSub
     ImportSecKey ->
       [ Model $ model
         & keys .~ ks : dk
@@ -185,7 +187,7 @@ handleEvent env wenv node model evt =
         & receivedEvents .~ []
         & AppTypes.following .~ newFollowing
       , Task $ saveKeyPairs $ ks : dk
-      , Task $ unsubscribe env (model ^. currentSub)
+      , Task $ unsubscribe env subId
       , Task $ buildEventFilters xo (model ^. AppTypes.following)
       ]
       where
@@ -197,6 +199,7 @@ handleEvent env wenv node model evt =
         ks = Keys kp xo True Nothing
         dk = disableKeys $ model ^. keys
         newFollowing = Map.insert xo [] (model ^. AppTypes.following)
+        (Subscription subId _) = model ^. currentSub
     NoKeysFound ->
       [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
     ErrorReadingKeysFile ->
@@ -257,13 +260,14 @@ handleEvent env wenv node model evt =
       where
         (Keys _ xo _ _) = fromJust $ model ^. selectedKeys
         newModel = handleReceivedEvent model e r
+        (Subscription subId _) = model ^. currentSub
         updateModel =
           [ Model $ newModel
           , Task $ maybeSaveKeyPairs model newModel
           ]
         resubscribe = case kind e of
           3 ->
-            [ Task $ unsubscribe env (newModel ^. currentSub)
+            [ Task $ unsubscribe env subId
             , Task $ buildEventFilters xo (newModel ^. AppTypes.following)
             ]
           _ ->
@@ -276,8 +280,12 @@ handleEvent env wenv node model evt =
 handleReceivedEvent :: AppModel -> Event -> Relay -> AppModel
 handleReceivedEvent model e r =
   case kind (trace (show e) e) of
-    1 ->
-      model { _receivedEvents = addReceivedEvent (model ^. receivedEvents) e r }
+    1 -> model
+      { _receivedEvents = addReceivedEvent (model ^. receivedEvents) e r
+      , _currentSub = Subscription subId $ created_at e
+      }
+      where
+        (Subscription subId _) = model ^. currentSub
     0 -> model
       { _keys =
           map (\ks -> updateName ks) (model ^. keys)
@@ -285,9 +293,11 @@ handleReceivedEvent model e r =
           fmap (\ks -> updateName ks) (model ^. selectedKeys)
       , _profiles =
           addProfile (model ^. profiles) e r
+      , _currentSub = Subscription subId $ created_at e
       }
       where
         mp = decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e
+        (Subscription subId _) = model ^. currentSub
         name = maybe "" pdName mp
         xo' = NT.pubKey e
         updateName (Keys kp xo a n) = if xo == xo'
@@ -296,7 +306,10 @@ handleReceivedEvent model e r =
     3 -> model
       { AppTypes._following =
           addFollowing (model ^. AppTypes.following) e
+      , _currentSub = Subscription subId $ created_at e
       }
+      where
+        (Subscription subId _) = model ^. currentSub
     _ ->
       model
 
@@ -343,9 +356,10 @@ buildEventFilters xo pm = do
 subscribe :: AppEnv -> [EventFilter] -> IO AppEvent
 subscribe env [] = return NoOp
 subscribe env fs = do
+  now <- getCurrentTime
   subId <- genSubscriptionId
   atomically $ writeTChan (env ^. channel) $ RequestRelay subId fs
-  return $ Subscribed subId
+  return $ Subscribed subId now
 
 unsubscribe :: AppEnv -> Text -> IO AppEvent
 unsubscribe env subId = do
