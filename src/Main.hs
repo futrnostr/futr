@@ -253,11 +253,21 @@ handleEvent env wenv node model evt =
       , Task $ handleNewPost env model
       ]
     EventAppeared e r ->
-      [ Model $ newModel
-      , Task $ maybeSaveKeyPairs model newModel
-      ]
+      updateModel ++ resubscribe
       where
+        (Keys _ xo _ _) = fromJust $ model ^. selectedKeys
         newModel = handleReceivedEvent model e r
+        updateModel =
+          [ Model $ newModel
+          , Task $ maybeSaveKeyPairs model newModel
+          ]
+        resubscribe = case kind e of
+          3 ->
+            [ Task $ unsubscribe env (newModel ^. currentSub)
+            , Task $ buildEventFilters xo (newModel ^. AppTypes.following)
+            ]
+          _ ->
+            []
     CloseDialog ->
       [ Model $ model & dialog .~ Nothing ]
     TimerTick now ->
