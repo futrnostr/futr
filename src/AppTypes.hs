@@ -68,11 +68,13 @@ data AppModel =
     , _following        :: Map.Map XOnlyPubKey [Profile]
     , _profiles         :: Map.Map XOnlyPubKey Profile
     , _currentSub       :: Subscription
+    , _extraSub         :: Text
     , _pool             :: [Relay]
     , _mySecKeyInput    :: Text
     , _newPostInput     :: Text
     , _receivedEvents   :: [ReceivedEvent]
     , _eventFilters     :: [EventFilter]
+    , _extraFilters     :: [EventFilter]
     , _dialog           :: Maybe AppDialog
     , _currentView      :: AppView
     , _editProfileModel :: EditProfileModel
@@ -82,7 +84,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def defaultPool "" "" [] [] Nothing PostsView def def def
+  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def "" defaultPool "" "" [] [] [] Nothing PostsView def def def
 
 data AppEvent
   = AppInit
@@ -95,6 +97,8 @@ data AppEvent
   | ShowDialog AppDialog
   | Subscribe [EventFilter]
   | Subscribed Text DateTime
+  | ExtraSubscribe [EventFilter]
+  | ExtraSubscribed Text
   | KeyPairsLoaded [Keys]
   | GenerateKeyPair
   | KeyPairGenerated KeyPair

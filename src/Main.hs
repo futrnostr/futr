@@ -146,6 +146,12 @@ handleEvent env wenv node model evt =
       ]
     Subscribed subId t ->
       [ Model $ model & currentSub .~ Subscription subId t ]
+    ExtraSubscribe fs ->
+      [ Model $ model & extraFilters .~ fs
+      , Task $ extraSubscribe env fs
+      ]
+    ExtraSubscribed subId ->
+      [ Model $ model & extraSub .~ subId ]
     KeyPairsLoaded ks ->
       [ Model $ model
         & keys .~ ks
@@ -227,6 +233,7 @@ handleEvent env wenv node model evt =
       [ Model $ model
         & currentView .~ ProfileView xo
         & viewProfileModel .~ vpm
+      , Task $ buildProfileEventFilters xo
       ] where
         (ProfileData name about pictureUrl nip05Identifier) = case Map.lookup xo (model ^. profiles) of
           Just (Profile _ _ pd) -> pd
@@ -248,6 +255,9 @@ handleEvent env wenv node model evt =
       [ Model $ model
         & currentView .~ PostsView
         & dialog .~ Nothing
+        & extraSub .~ ""
+        & extraFilters .~ []
+      , Task $ unsubscribe env $ model ^. extraSub
       ]
     PostSent -> [ Model $ model & newPostInput .~ "" ]
     ReplyToPost e ->
@@ -343,8 +353,7 @@ addFollowing pm e =
 
 buildEventFilters :: XOnlyPubKey -> Map.Map XOnlyPubKey [Profile] -> Maybe DateTime -> IO AppEvent
 buildEventFilters xo pm latest = do
-  now <- getCurrentTime
-  let recent = fromSeconds $ toSeconds now - 86400
+  recent <- last24h
   let ps = Map.findWithDefault [] xo pm
   return $ Subscribe
     [ AllProfilesFilter latest
@@ -356,6 +365,19 @@ buildEventFilters xo pm latest = do
     fromDate recent = case latest of
       Just t -> t
       Nothing -> recent
+
+buildProfileEventFilters :: XOnlyPubKey -> IO AppEvent
+buildProfileEventFilters xo = do
+  recent <- last24h
+  return $ ExtraSubscribe
+    [ OwnEventsFilter xo recent
+    , ProfileFollowers xo
+    ]
+
+last24h :: IO DateTime
+last24h = do
+  now <- getCurrentTime
+  return $ fromSeconds $ toSeconds now - 86400
 
 subscribe :: AppEnv -> [EventFilter] -> IO AppEvent
 subscribe env [] = return NoOp
@@ -369,6 +391,14 @@ unsubscribe :: AppEnv -> Text -> IO AppEvent
 unsubscribe env subId = do
   atomically $ writeTChan (env ^. channel) $ Close subId
   return NoOp
+
+extraSubscribe :: AppEnv -> [EventFilter] -> IO AppEvent
+extraSubscribe env [] = return NoOp
+extraSubscribe env fs = do
+  now <- getCurrentTime
+  subId <- genSubscriptionId
+  atomically $ writeTChan (env ^. channel) $ RequestRelay subId fs
+  return $ ExtraSubscribed subId
 
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do

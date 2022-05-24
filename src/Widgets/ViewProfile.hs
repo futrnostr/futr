@@ -21,7 +21,6 @@ import           Monomer
 import           Helpers
 import           NostrFunctions
 import           NostrTypes
-import           UIHelpers
 
 data ViewProfileModel =  ViewProfileModel
   { _myKeys           :: Maybe Keys

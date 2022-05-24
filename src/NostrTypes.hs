@@ -292,6 +292,7 @@ data EventFilter
   | OwnEventsFilter XOnlyPubKey DateTime
   | MentionsFilter XOnlyPubKey DateTime
   | FollowersFilter [Profile] DateTime
+  | ProfileFollowers XOnlyPubKey
   deriving (Eq, Show)
 
 instance FromJSON Tag where
@@ -361,6 +362,12 @@ instance ToJSON EventFilter where
       ]
       where
         keys = map (\(Profile xo _ _) -> xo) ps
+  toJSON (ProfileFollowers xo) =
+    object $ fromList
+      [ ( "kinds", Array $ fromList $ [ Number 3 ] )
+      , ( "authors", Array $ fromList [ String $ pack $ Schnorr.exportXOnlyPubKey xo ] )
+      , ( "limit", Number $ fromIntegral 1 )
+      ]
 
 
 textToByteStringType :: Text -> (ByteString -> Maybe a) -> Maybe a
