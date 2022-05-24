@@ -101,6 +101,15 @@ buildUI channel wenv model = widgetTree
                 [ baseLayer `styleBasic` [ padding 10 ]
                 , vstack
                     [ label "Following" `styleBasic` [ paddingB 10 ]
+                    , spacer
+                    , hstack
+                        [ textField searchInput
+                            `nodeKey` "searchInput"
+                        , spacer
+                        , button "Search" (SearchProfile (model ^. searchInput))
+                            `nodeEnabled` isValidPubKey
+                        ]
+                    , spacer
                     , scroll_ [ scrollOverlay ] followingLayer
                     ]
                     `styleBasic` [ padding 10, width 200, borderL 1 sep ]
@@ -114,6 +123,7 @@ buildUI channel wenv model = widgetTree
         ]
       where
         sep = rgbaHex "#A9A9A9" 0.75
+        isValidPubKey = isJust $ maybe Nothing xOnlyPubKey $ decodeHex $ view searchInput model
 
 dialogLayer :: AppModel -> AppNode
 dialogLayer model =

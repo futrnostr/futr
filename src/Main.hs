@@ -69,6 +69,7 @@ handleEvent env wenv node model evt =
             & keys .~ keys'
             & receivedEvents .~ []
             & currentView .~ PostsView
+            & searchInput .~ ""
           , Task $ saveKeyPairs keys'
           , Task $ unsubscribe env subId
           , Task $ buildEventFilters xo (model ^. AppTypes.following) Nothing
@@ -251,6 +252,9 @@ handleEvent env wenv node model evt =
                 []
           , _xo = Just xo
           }
+    SearchProfile v ->
+      [ Task $ runSearchProfile v
+      ]
     Back ->
       [ Model $ model
         & currentView .~ PostsView
@@ -391,6 +395,14 @@ unsubscribe :: AppEnv -> Text -> IO AppEvent
 unsubscribe env subId = do
   atomically $ writeTChan (env ^. channel) $ Close subId
   return NoOp
+
+runSearchProfile :: Text -> IO AppEvent
+runSearchProfile v = do
+  case maybe Nothing xOnlyPubKey $ decodeHex v of
+    Just xo ->
+      return $ ViewProfile xo
+    _ ->
+      return NoOp
 
 extraSubscribe :: AppEnv -> [EventFilter] -> IO AppEvent
 extraSubscribe env [] = return NoOp

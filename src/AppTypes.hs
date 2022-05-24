@@ -72,6 +72,7 @@ data AppModel =
     , _pool             :: [Relay]
     , _mySecKeyInput    :: Text
     , _newPostInput     :: Text
+    , _searchInput      :: Text
     , _receivedEvents   :: [ReceivedEvent]
     , _eventFilters     :: [EventFilter]
     , _extraFilters     :: [EventFilter]
@@ -84,7 +85,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def "" defaultPool "" "" [] [] [] Nothing PostsView def def def
+  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def "" defaultPool "" "" "" [] [] [] Nothing PostsView def def def
 
 data AppEvent
   = AppInit
@@ -110,6 +111,7 @@ data AppEvent
   | ViewPostDetails ReceivedEvent
   | EditProfile
   | ViewProfile XOnlyPubKey
+  | SearchProfile Text
   | Back
   | PostSent
   | ReplyToPost Event
