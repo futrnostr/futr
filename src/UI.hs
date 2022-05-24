@@ -20,6 +20,7 @@ import           AppTypes
 import           Helpers
 import           NostrFunctions
 import           NostrTypes
+import           UIHelpers
 import qualified Widgets.EditProfile    as EditProfile
 import qualified Widgets.ViewProfile    as ViewProfile
 
@@ -166,7 +167,6 @@ postRow :: AppWenv -> Map.Map XOnlyPubKey Profile -> Int -> ReceivedEvent -> Dat
 postRow wenv m idx re t = row
   where
     e = fst re
-    rowSep = rgbaHex "#A9A9A9" 0.75
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
     xo = NostrTypes.pubKey e
     row =
@@ -195,7 +195,7 @@ postRow wenv m idx re t = row
                 , spacer
                 ]
             ]
-        ] `styleBasic` [ paddingT 10, paddingB 10, paddingR 20, borderB 1 rowSep ]
+        ] `styleBasic` [ paddingT 10, paddingB 10, paddingR 20, borderB 1 rowSepColor ]
 
 viewPosts :: AppWenv -> AppModel -> AppNode
 viewPosts wenv model = widgetTree
@@ -344,19 +344,6 @@ viewNewRelayDialog model =
     ]
       `styleBasic` [ padding 10 ]
 
-selectableText :: Text -> WidgetNode AppModel AppEvent
-selectableText t =
-  textFieldD_ (WidgetValue t) [ readOnly ]
-    `styleBasic` [ border 0 transparent, radius 0, bgColor $ rgbHex "#515151" ]
-
-xOnlyPubKeyElem :: XOnlyPubKey -> WidgetNode AppModel AppEvent
-xOnlyPubKeyElem x =
-  hstack
-    [ label "XOnlyPubKey"
-    , spacer
-    , textFieldD_ (WidgetValue $ T.pack $ exportXOnlyPubKey x) [ readOnly ]
-    ]
-
 errorReadingKeysFileStack :: AppNode
 errorReadingKeysFileStack =
   vstack
@@ -427,9 +414,3 @@ drawCircle renderer vp r = do
       where
         rx = vp ^. L.x + vp ^. L.w + ox - size
         ry = vp ^. L.y + oy
-
-customDarkTheme :: Theme
-customDarkTheme = darkTheme
-  & L.userColorMap . at "rowBg" ?~ rgbHex "#656565"
-  & L.userColorMap . at "replyBg" ?~ rgbHex "#555555"
-  & L.userColorMap . at "replyFg" ?~ rgbHex "#909090"

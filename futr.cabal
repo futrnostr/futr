@@ -24,6 +24,7 @@ executable futr
       NostrFunctions
       NostrTypes
       UI
+      UIHelpers
       Widgets.EditProfile
       Widgets.ViewProfile
       Paths_futr

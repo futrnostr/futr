@@ -46,6 +46,7 @@ import           Helpers
 import           NostrFunctions
 import           NostrTypes                           as NT
 import           UI
+import           UIHelpers
 import           Widgets.EditProfile
 import           Widgets.ViewProfile                  as ViewProfile
 
