@@ -38,22 +38,6 @@ profileDataFromReceivedEvents res xo = profileData
       True -> Nothing
       False -> decode $ LazyBytes.fromStrict $ encodeUtf8 $ content $ fst $ head $ sortBy latestEvent relatedEvents
 
-profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
-profileName m xo =
-  case Map.lookup xo m of
-    Just (Profile xo' r pd) ->
-      pdName pd
-    Nothing ->
-      ""
-
-shortXOnlyPubKey :: XOnlyPubKey -> Text
-shortXOnlyPubKey xo = pack
-  $ part1 ++ ".." ++ part2
-  where
-    str = exportXOnlyPubKey xo
-    part1 = take 4 str
-    part2 = take 4 $ reverse str
-
 latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering
 latestEvent a b = compare (created_at $ fst b) (created_at $ fst a)
 

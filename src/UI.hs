@@ -29,7 +29,10 @@ buildUI channel wenv model = widgetTree
   where
     baseLayer = case model ^. currentView of
       PostsView ->
-        viewPosts wenv model
+        viewPosts
+          wenv (model ^. profiles) (model ^. receivedEvents)
+          newPostInput (model ^. time)
+          ViewPostDetails SendPost ViewProfile
       PostDetailsView re ->
         viewPostUI wenv model re
       ProfileView xo ->
@@ -162,72 +165,6 @@ currentKeysNode res mks = case mks of
           label $ T.pack $ exportXOnlyPubKey xo
     _ ->
       label ""
-
-postRow :: AppWenv -> Map.Map XOnlyPubKey Profile -> Int -> ReceivedEvent -> DateTime -> AppNode
-postRow wenv m idx re t = row
-  where
-    e = fst re
-    rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
-    xo = NostrTypes.pubKey e
-    row =
-      vstack
-        [ hstack
-            [ filler
-            , (label $ xTimeAgo (created_at e) t) `styleBasic` [ textSize 10 ]
-            ]
-        , hstack
-            [
-              --button (T.pack $ (T.unpack $ profileName m $ NostrTypes.pubKey e) ++ "\n" ++ (T.unpack $ shortXOnlyPubKey $ NostrTypes.pubKey e)) NoOp
-              widgetButton
-                (vstack
-                  [ label $ profileName m xo
-                  , spacer
-                  , (label $ shortXOnlyPubKey xo) `styleBasic` [textSize 10]
-                  ]
-                )
-                (ViewProfile xo)
-            , spacer
-            , selectableText $ content e
-            , spacer
-            , vstack
-                [ spacer
-                , button "Details" (ViewPostDetails re)
-                , spacer
-                ]
-            ]
-        ] `styleBasic` [ paddingT 10, paddingB 10, paddingR 20, borderB 1 rowSepColor ]
-
-viewPosts :: AppWenv -> AppModel -> AppNode
-viewPosts wenv model = widgetTree
-  where
-    posts = vstack postRows
-      where
-        -- display only kind 1 events
-        orderedPosts = filter (\re -> kind (fst re) == 1) (model ^. receivedEvents)
-        postFade idx e = animRow
-          where
-            action = ViewPostDetails e
-            item = postRow wenv (model ^. profiles) idx e (model ^. time)
-            animRow =
-              animFadeOut_ [onFinished action] item `nodeKey` (content $ fst e)
-        postRows = zipWith postFade [ 0 .. ] orderedPosts
-    widgetTree =
-      vstack
-        [ label "New Post"
-        , spacer
-        , vstack
-            [ hstack
-                [ textArea newPostInput
-                  `nodeKey` "newPost"
-                  `styleBasic` [ height 50 ]
-                , filler
-                , button "Post" SendPost
-                    `nodeEnabled` (strip (model ^. newPostInput) /= "")
-                ]
-            ]
-        , spacer
-        , scroll_ [ scrollOverlay ] posts
-        ]
 
 viewPostUI :: AppWenv -> AppModel -> ReceivedEvent -> AppNode
 viewPostUI wenv model re = widgetTree
