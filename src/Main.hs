@@ -228,7 +228,7 @@ handleEvent env wenv node model evt =
         & editProfileModel . inputs . nip05IdentifierInput .~ nip05Identifier
       ] where
         (Keys _ xo _ _) = fromJust (model ^. selectedKeys)
-        (ProfileData name about pictureUrl nip05Identifier) = case Map.lookup xo (model ^. profiles) of
+        (ProfileData name about pictureUrl nip05Identifier) = case Map.lookup xo (model ^. AppTypes.profiles) of
           Just (Profile _ _ pd) -> pd
           Nothing -> def
     ViewProfile xo ->
@@ -237,7 +237,7 @@ handleEvent env wenv node model evt =
         & viewProfileModel .~ vpm
       , Task $ buildProfileEventFilters xo
       ] where
-        (ProfileData name about pictureUrl nip05Identifier) = case Map.lookup xo (model ^. profiles) of
+        (ProfileData name about pictureUrl nip05Identifier) = case Map.lookup xo (model ^. AppTypes.profiles) of
           Just (Profile _ _ pd) -> pd
           Nothing -> def
         vpm = (model ^. viewProfileModel)
@@ -290,7 +290,7 @@ handleEvent env wenv node model evt =
     CloseDialog ->
       [ Model $ model & dialog .~ Nothing ]
     TimerTick now ->
-      [ Model $ model & time .~ now ]
+      [ Model $ model & AppTypes.time .~ now ]
 
 handleReceivedEvent :: AppModel -> Event -> Relay -> AppModel
 handleReceivedEvent model e r =
@@ -306,8 +306,8 @@ handleReceivedEvent model e r =
           map (\ks -> updateName ks) (model ^. keys)
       , _selectedKeys =
           fmap (\ks -> updateName ks) (model ^. selectedKeys)
-      , _profiles =
-          addProfile (model ^. profiles) e r
+      , AppTypes._profiles =
+          addProfile (model ^. AppTypes.profiles) e r
       , _currentSub = Subscription subId $ created_at e
       }
       where

@@ -50,9 +50,15 @@ buildUI channel wenv model = widgetTree
       PostDetailsView re ->
         viewPostUI wenv model re
       ProfileView xo ->
-        ViewProfile.viewProfileWidget channel (fromJust $ model ^. selectedKeys) viewProfileModel
+        ViewProfile.viewProfileWidget
+          channel
+          (fromJust $ model ^. selectedKeys)
+          viewProfileModel
       EditProfileView ->
-        EditProfile.editProfileWidget channel (fromJust $ model ^. selectedKeys) editProfileModel
+        EditProfile.editProfileWidget
+          channel
+          (fromJust $ model ^. selectedKeys)
+          editProfileModel
     headerTree =
       hstack
         [ spacer, button "Back" Back `nodeVisible` (model ^. currentView /= PostsView)

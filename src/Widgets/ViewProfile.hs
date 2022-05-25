@@ -32,12 +32,13 @@ data ViewProfileModel =  ViewProfileModel
   , _pictureUrl       :: Text
   , _nip05Identifier  :: Text
   , _following        :: [Profile]
-  , _profileFollowing :: [Profile]
+  , _profiles         :: Map.Map XOnlyPubKey Profile
   , _posts            :: [ReceivedEvent]
+  , _time             :: DateTime
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel Nothing Nothing "" "" "" "" [] [] []
+  def = ViewProfileModel Nothing Nothing "" "" "" "" [] Map.empty [] (fromSeconds 0)
 
 data ProfileEvent
   = Follow
