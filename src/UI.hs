@@ -29,10 +29,24 @@ buildUI channel wenv model = widgetTree
   where
     baseLayer = case model ^. currentView of
       PostsView ->
-        viewPosts
-          wenv (model ^. profiles) (model ^. receivedEvents)
-          newPostInput (model ^. time)
-          ViewPostDetails SendPost ViewProfile
+        vstack
+          [ label "New Post"
+          , spacer
+          , vstack
+              [ hstack
+                  [ textArea newPostInput
+                    `nodeKey` "newPost"
+                    `styleBasic` [ height 50 ]
+                  , filler
+                  , button "Post" SendPost
+                      `nodeEnabled` (strip (model ^. newPostInput) /= "")
+                  ]
+              ]
+          , spacer
+          , viewPosts
+              wenv (model ^. profiles) (model ^. receivedEvents) (model ^. time)
+              ViewPostDetails ViewProfile
+          ]
       PostDetailsView re ->
         viewPostUI wenv model re
       ProfileView xo ->

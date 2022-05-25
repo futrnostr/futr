@@ -59,45 +59,23 @@ viewPosts
   => WidgetEnv s e
   -> Map.Map XOnlyPubKey Profile
   -> [ReceivedEvent]
-  -> ALens' s Text
   -> DateTime
   -> (ReceivedEvent -> e)
-  -> e
   -> (XOnlyPubKey -> e)
   -> WidgetNode s e
 viewPosts
-  wenv profiles receivedEvents newPostInput
-  time viewDetailsAction sendPostAction viewProfileAction = widgetTree
+  wenv profiles receivedEvents time viewDetailsAction
+  viewProfileAction = scroll_ [ scrollOverlay ] posts
   where
     posts = vstack postRows
+    -- display only kind 1 events
+    orderedPosts = filter (\re -> kind (fst re) == 1) receivedEvents
+    postFade idx ev = animRow
       where
-        -- display only kind 1 events
-        orderedPosts = filter (\re -> kind (fst re) == 1) receivedEvents
-        postFade idx ev = animRow
-          where
-            item = postRow wenv profiles idx ev time viewDetailsAction viewProfileAction
-            animRow =
-              animFadeOut_ [] item `nodeKey` (content $ fst ev)
-        postRows = zipWith postFade [ 0 .. ] orderedPosts
-    wdata = WidgetLens newPostInput
-    newPostInputData = widgetDataGet (_weModel wenv) wdata
-    widgetTree =
-      vstack
-        [ label "New Post"
-        , spacer
-        , vstack
-            [ hstack
-                [ textArea newPostInput
-                  `nodeKey` "newPost"
-                  `styleBasic` [ height 50 ]
-                , filler
-                , button "Post" sendPostAction
-                    `nodeEnabled` (strip newPostInputData /= "")
-                ]
-            ]
-        , spacer
-        , scroll_ [ scrollOverlay ] posts
-        ]
+        item = postRow wenv profiles idx ev time viewDetailsAction viewProfileAction
+        animRow =
+          animFadeOut_ [] item `nodeKey` (content $ fst ev)
+    postRows = zipWith postFade [ 0 .. ] orderedPosts
 
 postRow
   :: (WidgetModel s, WidgetEvent e)
