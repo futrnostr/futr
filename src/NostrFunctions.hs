@@ -178,3 +178,6 @@ relayName r = pr ++ h ++ ":" ++ p where
     pr = if secure r then "wss://" else "ws://"
     h = host r
     p = show $ port r
+
+mapProfileToXOnlyPubKey :: Profile -> XOnlyPubKey
+mapProfileToXOnlyPubKey (Profile xo _ _) = xo

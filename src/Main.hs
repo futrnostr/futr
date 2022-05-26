@@ -328,7 +328,10 @@ handleReceivedEvent model e r =
           else Keys kp xo a n
     3 ->
       model
-        & following .~ addFollowing (model ^. following) e
+        & following .~
+            addFollowing (model ^. following) e
+        & viewProfileModel . ViewProfile.following .~
+            addFollowing (model ^. following) e
         & currentSub .~ (Subscription subId $ created_at e)
       where
         (Subscription subId _) = model ^. currentSub

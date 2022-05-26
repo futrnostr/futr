@@ -55,7 +55,7 @@ buildUI channel wenv model = widgetTree
           ]
           where
             (Keys _ xo _ _) = fromJust $ model ^. selectedKeys
-            userFollowing = map (\(Profile xo' _ _) -> xo') $
+            userFollowing = map mapProfileToXOnlyPubKey $
               Map.findWithDefault [] xo (model ^. following)
       PostDetailsView re ->
         viewPostUI wenv model re

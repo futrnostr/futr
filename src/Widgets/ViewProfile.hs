@@ -164,6 +164,6 @@ viewProfile wenv model =
     (Keys _ user _ _) = fromJust $ model ^. myKeys
     xo' = fromJust $ model ^. xo
     currentlyFollowing = Map.findWithDefault [] user (model ^. following)
-    currentlyFollowing' = List.map (\(Profile xo'' _ _) -> xo'') currentlyFollowing
+    currentlyFollowing' = List.map mapProfileToXOnlyPubKey currentlyFollowing
     action = if List.elem xo' currentlyFollowing' then Unfollow else Follow
     btnText = if List.elem xo' currentlyFollowing' then "Unfollow" else "Follow"
