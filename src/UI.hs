@@ -47,10 +47,16 @@ buildUI channel wenv model = widgetTree
           , ViewPosts.viewPostsWidget
               wenv
               viewPostsModel
-              (\re -> kind (fst re) == 1)
+              (\re -> kind (fst re) == 1
+                && NostrTypes.pubKey (fst re) `elem` (xo : userFollowing)
+              )
               ViewPostDetails
               ViewProfile
           ]
+          where
+            (Keys _ xo _ _) = fromJust $ model ^. selectedKeys
+            userFollowing = map (\(Profile xo' _ _) -> xo') $
+              Map.findWithDefault [] xo (model ^. following)
       PostDetailsView re ->
         viewPostUI wenv model re
       ProfileView xo ->

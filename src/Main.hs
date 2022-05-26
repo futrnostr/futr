@@ -302,7 +302,10 @@ handleReceivedEvent model e r =
     1 ->
       model
         & currentSub .~ (Subscription subId $ created_at e)
-        & viewPostsModel . ViewPosts.receivedEvents .~ addReceivedEvent (model ^. viewPostsModel . ViewPosts.receivedEvents) e r
+        & viewPostsModel . ViewPosts.receivedEvents .~
+            addReceivedEvent (model ^. viewPostsModel . ViewPosts.receivedEvents) e r
+        & viewProfileModel . ViewProfile.viewPostsModel . ViewPosts.receivedEvents .~
+            addReceivedEvent (model ^. viewPostsModel . ViewPosts.receivedEvents) e r
       where
         (Subscription subId _) = model ^. currentSub
     0 ->
@@ -311,7 +314,10 @@ handleReceivedEvent model e r =
         & selectedKeys .~ fmap (\ks -> updateName ks) (model ^. selectedKeys)
         & profiles .~ addProfile (model ^. profiles) e r
         & currentSub .~ (Subscription subId $ created_at e)
-        & viewPostsModel . ViewPosts.profiles .~ addProfile (model ^. profiles) e r
+        & viewPostsModel . ViewPosts.profiles .~
+            addProfile (model ^. profiles) e r
+        & viewProfileModel . ViewProfile.viewPostsModel . ViewPosts.profiles .~
+            addProfile (model ^. profiles) e r
       where
         mp = decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e
         (Subscription subId _) = model ^. currentSub
