@@ -26,6 +26,7 @@ executable futr
       UI
       UIHelpers
       Widgets.EditProfile
+      Widgets.ViewPosts
       Widgets.ViewProfile
       Paths_futr
   hs-source-dirs:

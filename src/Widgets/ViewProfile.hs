@@ -23,26 +23,27 @@ import           Helpers
 import           NostrFunctions
 import           NostrTypes
 import           UIHelpers
+import           Widgets.ViewPosts
 
-data ViewProfileModel =  ViewProfileModel
+data ViewProfileModel = ViewProfileModel
   { _myKeys           :: Maybe Keys
   , _xo               :: Maybe XOnlyPubKey
   , _name             :: Text
   , _about            :: Text
   , _pictureUrl       :: Text
   , _nip05Identifier  :: Text
-  , _following        :: [Profile]
-  , _profiles         :: Map.Map XOnlyPubKey Profile
-  , _posts            :: [ReceivedEvent]
-  , _time             :: DateTime
+  , _following        :: Map.Map XOnlyPubKey [Profile]
+  , _viewPostsModel   :: ViewPostsModel
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel Nothing Nothing "" "" "" "" [] Map.empty [] (fromSeconds 0)
+  def = ViewProfileModel Nothing Nothing "" "" "" "" Map.empty def
 
 data ProfileEvent
   = Follow
   | Unfollow
+  | ViewPostDetails ReceivedEvent
+  | ViewProfile XOnlyPubKey
   deriving (Eq, Show)
 
 makeLenses 'ViewProfileModel
@@ -50,20 +51,23 @@ makeLenses 'ViewProfileModel
 handleProfileEvent
   :: TChan ServerRequest
   -> Keys
+  -> (ReceivedEvent -> ep)
+  -> (XOnlyPubKey -> ep)
   -> WidgetEnv ViewProfileModel ProfileEvent
   -> WidgetNode ViewProfileModel ProfileEvent
   -> ViewProfileModel
   -> ProfileEvent
   -> [EventResponse ViewProfileModel ProfileEvent sp ep]
-handleProfileEvent chan ks env node model evt = case evt of
+handleProfileEvent chan ks viewPostDetailsAction viewProfileAction env node model evt = case evt of
   Follow ->
     [ Producer $ follow chan ks model
     , Model $ model
-      & following .~ (np : model ^. following)
+      & following .~ newFollowing'
     ]
     where
+      xo' = fromJust $ model ^. xo
       np = Profile
-        (fromJust $ model ^. xo)
+        xo'
         ""
         (ProfileData
           (model ^. name)
@@ -71,29 +75,46 @@ handleProfileEvent chan ks env node model evt = case evt of
           (model ^. pictureUrl)
           (model ^. nip05Identifier)
         )
+      oldFollowing = Map.findWithDefault [] xo' (model ^. following)
+      newFollowing = np : oldFollowing
+      newFollowing' = Map.insert xo' newFollowing (model ^. following)
   Unfollow ->
     [ Producer $ unfollow chan ks model
     , Model $ model
-      & following .~ newFollowing
+        & following .~ newFollowing'
     ]
     where
-      oldFollow = model ^. xo
-      newFollowing = Prelude.filter (\(Profile xo'' _ _) -> xo'' /= fromJust oldFollow) (model ^. following)
+      xo' = fromJust $ model ^. xo
+      oldFollowing = Map.findWithDefault [] xo' (model ^. following)
+      newFollowing = Prelude.filter (\(Profile xo'' _ _) -> xo'' /= xo') oldFollowing
+      newFollowing' = Map.insert xo' newFollowing (model ^. following)
+  ViewPostDetails re ->
+    [ Report $ viewPostDetailsAction re ]
+  ViewProfile xo ->
+    [ Report $ viewProfileAction xo ]
 
 viewProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan ServerRequest
   -> Keys
+  -> (ReceivedEvent -> ep)
+  -> (XOnlyPubKey -> ep)
   -> ALens' sp ViewProfileModel
   -> WidgetNode sp ep
-viewProfileWidget chan keys field = composite "ViewProfileWidget" field viewProfile (handleProfileEvent chan keys)
+viewProfileWidget chan keys viewPostDetailsAction viewProfileAction field =
+  composite
+    "ViewProfileWidget"
+    field
+    viewProfile
+    (handleProfileEvent chan keys viewPostDetailsAction viewProfileAction)
 
 follow :: TChan ServerRequest -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 follow chan (Keys kp xo' _ _) model sendMsg = do
   now <- getCurrentTime
-  let raw = setFollowing (np : model ^. following) "" xo' now
+  let raw = setFollowing (np : oldFollowing) "" xo' now
   atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo'
   where
+    oldFollowing = Map.findWithDefault [] xo' (model ^. following)
     np = Profile
       (fromJust $ model ^. xo)
       ""
@@ -110,10 +131,14 @@ unfollow chan (Keys kp xo' _ _) model sendMsg = do
   let raw = setFollowing newFollowing "" xo' now
   atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo'
   where
-    oldFollow = model ^. xo
-    newFollowing = Prelude.filter (\(Profile xo'' _ _) -> xo'' /= fromJust oldFollow) (model ^. following)
+    oldFollow = fromJust $ model ^. xo
+    oldFollowing = Map.findWithDefault [] xo' (model ^. following)
+    newFollowing = Prelude.filter (\(Profile xo'' _ _) -> xo'' /= oldFollow) oldFollowing
 
-viewProfile :: WidgetEnv ViewProfileModel ProfileEvent -> ViewProfileModel -> WidgetNode ViewProfileModel ProfileEvent
+viewProfile
+  :: WidgetEnv ViewProfileModel ProfileEvent
+  -> ViewProfileModel
+  -> WidgetNode ViewProfileModel ProfileEvent
 viewProfile wenv model =
   vstack
     [ hstack
@@ -128,10 +153,17 @@ viewProfile wenv model =
         , vstack [ button btnText action ]
         ] `styleBasic` [ borderB 1 rowSepColor ]
     , spacer
---    , viewProfilePosts a b c
+    , viewPostsWidget
+        wenv
+        viewPostsModel
+        (\re -> kind (fst re) == 1 && NostrTypes.pubKey (fst re) == xo')
+        ViewPostDetails
+        ViewProfile
     ]
   where
-    currentlyFollowing = List.map (\(Profile xo' _ _) -> xo') (model ^. following)
+    (Keys _ user _ _) = fromJust $ model ^. myKeys
     xo' = fromJust $ model ^. xo
-    action = if List.elem xo' currentlyFollowing then Unfollow else Follow
-    btnText = if List.elem xo' currentlyFollowing then "Unfollow" else "Follow"
+    currentlyFollowing = Map.findWithDefault [] user (model ^. following)
+    currentlyFollowing' = List.map (\(Profile xo'' _ _) -> xo'') currentlyFollowing
+    action = if List.elem xo' currentlyFollowing' then Unfollow else Follow
+    btnText = if List.elem xo' currentlyFollowing' then "Unfollow" else "Follow"

@@ -48,7 +48,8 @@ import           NostrTypes                           as NT
 import           UI
 import           UIHelpers
 import           Widgets.EditProfile
-import           Widgets.ViewProfile                  as ViewProfile
+import qualified Widgets.ViewProfile                  as ViewProfile
+import qualified Widgets.ViewPosts                    as ViewPosts
 
 import           Debug.Trace as Trace
 
@@ -68,12 +69,12 @@ handleEvent env wenv node model evt =
           [ Model $ model
             & selectedKeys .~ mks
             & keys .~ keys'
-            & receivedEvents .~ []
+            & viewPostsModel .~ def
             & currentView .~ PostsView
             & searchInput .~ ""
           , Task $ saveKeyPairs keys'
           , Task $ unsubscribe env subId
-          , Task $ buildEventFilters xo (model ^. AppTypes.following) Nothing
+          , Task $ buildEventFilters xo (model ^. following) Nothing
           ] where
             keys' = switchEnabledKeys ks (model ^. keys)
             (Keys _ xo _ _) = ks
@@ -159,14 +160,14 @@ handleEvent env wenv node model evt =
         & keys .~ ks
         & selectedKeys .~ Just mk
         & dialog .~ Nothing
-        & receivedEvents .~ []
-        & AppTypes.following .~ newFollowing
-      , Task $ buildEventFilters xo (model ^. AppTypes.following) Nothing
+        & viewPostsModel .~ def
+        & following .~ newFollowing
+      , Task $ buildEventFilters xo (model ^. following) Nothing
       ]
       where
         mk = mainKeys ks
         (Keys _ xo _ _) = mk
-        newFollowing = Map.insert xo [] (model ^. AppTypes.following)
+        newFollowing = Map.insert xo [] (model ^. following)
     GenerateKeyPair ->
       [ Producer generateNewKeyPair ]
     KeyPairGenerated k ->
@@ -174,17 +175,17 @@ handleEvent env wenv node model evt =
         & keys .~ ks : dk
         & selectedKeys .~ Just ks
         & dialog .~ Nothing
-        & receivedEvents .~ []
-        & AppTypes.following .~ newFollowing
+        & viewPostsModel .~ def
+        & following .~ newFollowing
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env subId
-      , Task $ buildEventFilters xo (model ^. AppTypes.following) Nothing
+      , Task $ buildEventFilters xo (model ^. following) Nothing
       ]
       where
         xo = deriveXOnlyPubKey k
         ks = Keys k xo True Nothing
         dk = disableKeys $ model ^. keys
-        newFollowing = Map.insert xo [] (model ^. AppTypes.following)
+        newFollowing = Map.insert xo [] (model ^. following)
         (Subscription subId _) = model ^. currentSub
     ImportSecKey ->
       [ Model $ model
@@ -192,11 +193,11 @@ handleEvent env wenv node model evt =
         & selectedKeys .~ Just ks
         & mySecKeyInput .~ ""
         & dialog .~ Nothing
-        & receivedEvents .~ []
-        & AppTypes.following .~ newFollowing
+        & viewPostsModel .~ def
+        & following .~ newFollowing
       , Task $ saveKeyPairs $ ks : dk
       , Task $ unsubscribe env subId
-      , Task $ buildEventFilters xo (model ^. AppTypes.following) Nothing
+      , Task $ buildEventFilters xo (model ^. following) Nothing
       ]
       where
         kp =
@@ -206,7 +207,7 @@ handleEvent env wenv node model evt =
         xo = deriveXOnlyPubKey $ kp
         ks = Keys kp xo True Nothing
         dk = disableKeys $ model ^. keys
-        newFollowing = Map.insert xo [] (model ^. AppTypes.following)
+        newFollowing = Map.insert xo [] (model ^. following)
         (Subscription subId _) = model ^. currentSub
     NoKeysFound ->
       [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
@@ -241,17 +242,20 @@ handleEvent env wenv node model evt =
           Just (Profile _ _ pd) -> pd
           Nothing -> def
         vpm = (model ^. viewProfileModel)
-          { _myKeys = model ^. selectedKeys
+          { ViewProfile._myKeys = model ^. selectedKeys
           , ViewProfile._name = name
           , ViewProfile._about = about
           , ViewProfile._pictureUrl = pictureUrl
           , ViewProfile._nip05Identifier = nip05Identifier
-          , ViewProfile._following = case model ^. selectedKeys of
-              Just ks ->
-                Map.findWithDefault [] xo (model ^. AppTypes.following)
-              Nothing ->
-                []
-          , _xo = Just xo
+          , ViewProfile._following = model ^. following
+          -- profile followers
+          -- case model ^. selectedKeys of
+          --     Just ks ->
+          --       Map.findWithDefault [] xo (model ^. following)
+          --     Nothing ->
+          --       []
+          , ViewProfile._xo = Just xo
+          , ViewProfile._viewPostsModel = model ^. viewPostsModel
           }
     SearchProfile v ->
       [ Task $ runSearchProfile v
@@ -283,7 +287,7 @@ handleEvent env wenv node model evt =
         resubscribe = case kind e of
           3 ->
             [ Task $ unsubscribe env subId
-            , Task $ buildEventFilters xo (newModel ^. AppTypes.following) (Just $ created_at e)
+            , Task $ buildEventFilters xo (newModel ^. following) (Just $ created_at e)
             ]
           _ ->
             []
@@ -295,21 +299,19 @@ handleEvent env wenv node model evt =
 handleReceivedEvent :: AppModel -> Event -> Relay -> AppModel
 handleReceivedEvent model e r =
   case kind (trace (show e) e) of
-    1 -> model
-      { _receivedEvents = addReceivedEvent (model ^. receivedEvents) e r
-      , _currentSub = Subscription subId $ created_at e
-      }
+    1 ->
+      model
+        & currentSub .~ (Subscription subId $ created_at e)
+        & viewPostsModel . ViewPosts.receivedEvents .~ addReceivedEvent (model ^. viewPostsModel . ViewPosts.receivedEvents) e r
       where
         (Subscription subId _) = model ^. currentSub
-    0 -> model
-      { _keys =
-          map (\ks -> updateName ks) (model ^. keys)
-      , _selectedKeys =
-          fmap (\ks -> updateName ks) (model ^. selectedKeys)
-      , AppTypes._profiles =
-          addProfile (model ^. AppTypes.profiles) e r
-      , _currentSub = Subscription subId $ created_at e
-      }
+    0 ->
+      model
+        & keys .~ map (\ks -> updateName ks) (model ^. keys)
+        & selectedKeys .~ fmap (\ks -> updateName ks) (model ^. selectedKeys)
+        & profiles .~ addProfile (model ^. profiles) e r
+        & currentSub .~ (Subscription subId $ created_at e)
+        & viewPostsModel . ViewPosts.profiles .~ addProfile (model ^. profiles) e r
       where
         mp = decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e
         (Subscription subId _) = model ^. currentSub
@@ -318,11 +320,10 @@ handleReceivedEvent model e r =
         updateName (Keys kp xo a n) = if xo == xo'
           then Keys kp xo a (Just name)
           else Keys kp xo a n
-    3 -> model
-      { AppTypes._following =
-          addFollowing (model ^. AppTypes.following) e
-      , _currentSub = Subscription subId $ created_at e
-      }
+    3 ->
+      model
+        & following .~ addFollowing (model ^. following) e
+        & currentSub .~ (Subscription subId $ created_at e)
       where
         (Subscription subId _) = model ^. currentSub
     _ ->

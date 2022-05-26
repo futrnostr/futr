@@ -16,6 +16,7 @@ import           Network.Socket
 
 import           NostrTypes
 import           Widgets.EditProfile
+import           Widgets.ViewPosts
 import           Widgets.ViewProfile
 
 type AppWenv = WidgetEnv AppModel AppEvent
@@ -79,13 +80,14 @@ data AppModel =
     , _dialog           :: Maybe AppDialog
     , _currentView      :: AppView
     , _editProfileModel :: EditProfileModel
+    , _viewPostsModel   :: ViewPostsModel
     , _viewProfileModel :: ViewProfileModel
     , _relayModel       :: RelayModel
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def "" defaultPool "" "" "" [] [] [] Nothing PostsView def def def
+  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def "" defaultPool "" "" "" [] [] [] Nothing PostsView def def def def
 
 data AppEvent
   = AppInit

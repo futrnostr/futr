@@ -22,6 +22,7 @@ import           NostrFunctions
 import           NostrTypes
 import           UIHelpers
 import qualified Widgets.EditProfile    as EditProfile
+import qualified Widgets.ViewPosts      as ViewPosts
 import qualified Widgets.ViewProfile    as ViewProfile
 
 buildUI :: TChan ServerRequest -> AppWenv -> AppModel -> AppNode
@@ -43,9 +44,12 @@ buildUI channel wenv model = widgetTree
                   ]
               ]
           , spacer
-          , viewPosts
-              wenv (model ^. profiles) (model ^. receivedEvents) (model ^. time)
-              ViewPostDetails ViewProfile
+          , ViewPosts.viewPostsWidget
+              wenv
+              viewPostsModel
+              (\re -> kind (fst re) == 1)
+              ViewPostDetails
+              ViewProfile
           ]
       PostDetailsView re ->
         viewPostUI wenv model re
@@ -53,6 +57,8 @@ buildUI channel wenv model = widgetTree
         ViewProfile.viewProfileWidget
           channel
           (fromJust $ model ^. selectedKeys)
+          ViewPostDetails
+          ViewProfile
           viewProfileModel
       EditProfileView ->
         EditProfile.editProfileWidget
@@ -105,10 +111,14 @@ buildUI channel wenv model = widgetTree
               [ label "You don't follow anyone" ]
             Just ps ->
               map (\(Profile xo r pd) ->
-                vstack
-                  [ label $ pdName pd
-                  , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
-                  ]
+                box_
+                  [ onClick (ViewProfile xo), alignLeft ]
+                  (vstack
+                    [ label $ pdName pd
+                    , spacer
+                    , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
+                    ])
+                  `styleBasic` [ cursorHand ]
               )
               ps
             Nothing ->
