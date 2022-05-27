@@ -37,6 +37,14 @@ profileName m xo =
     Nothing ->
       ""
 
+profileBox :: (WidgetModel s, WidgetEvent e) => XOnlyPubKey -> Text -> WidgetNode s e
+profileBox xo name =
+  vstack
+    [ label name
+    , spacer
+    , (label $ shortXOnlyPubKey xo) `styleBasic` [textSize 10]
+    ]
+
 shortXOnlyPubKey :: XOnlyPubKey -> Text
 shortXOnlyPubKey xo = T.pack
   $ part1 ++ ".." ++ part2

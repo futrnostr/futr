@@ -119,12 +119,8 @@ buildUI channel wenv model = widgetTree
               map (\(Profile xo r pd) ->
                 box_
                   [ onClick (ViewProfile xo), alignLeft ]
-                  (vstack
-                    [ label $ pdName pd
-                    , spacer
-                    , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
-                    ])
-                  `styleBasic` [ cursorHand ]
+                  (profileBox xo $ pdName pd)
+                    `styleBasic` [ cursorHand ]
               )
               ps
             Nothing ->
@@ -207,17 +203,17 @@ viewPostUI wenv model re = widgetTree
   where
     event = fst re
     rs = snd re
+    xo = NostrTypes.pubKey event
     postInfo =
       vstack
         [ hstack
-            [ vstack
-                [ selectableText
-                  $ profileName (model ^. profiles)
-                  $ NostrTypes.pubKey event
-                , selectableText
-                  $ shortXOnlyPubKey
-                  $ NostrTypes.pubKey event
-                ]
+            [ box_
+                [ onClick (ViewProfile xo) ]
+                (profileBox
+                  xo
+                  (profileName (model ^. profiles) xo)
+                )
+                `styleBasic` [ cursorHand ]
             , spacer
             , selectableText $ content event
             ]
