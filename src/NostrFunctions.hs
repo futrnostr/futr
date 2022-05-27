@@ -152,6 +152,22 @@ signEvent r kp xo =
 isPost :: Event -> Bool
 isPost e = kind e == 1
 
+getReplyEventId :: Event -> Maybe EventId
+getReplyEventId e =
+  if null replyList
+    then Nothing
+    else Just $ extractEventId $ head replyList
+  where
+    replyFilter :: Tag -> Bool
+    replyFilter (ETag _ _ (Just Reply)) = True
+    replyFilter _ = False
+
+    replyList = filter replyFilter $ tags e
+
+    extractEventId :: Tag -> EventId
+    extractEventId (ETag eid _ _) = eid
+    extractEventId _ = error "Could not extract event id from reply tag"
+
 eventToPost :: Event -> Maybe Post
 eventToPost e =
     case kind e of
