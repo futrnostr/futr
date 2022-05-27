@@ -215,7 +215,7 @@ viewPostUI wenv model re = widgetTree
                 )
                 `styleBasic` [ cursorHand ]
             , spacer
-            , selectableText $ content event
+            , label_ (content event) [ multiline, ellipsis ]
             ]
         ] `styleBasic` [ paddingT 10 ]
     seenOnTree =
@@ -234,7 +234,7 @@ viewPostUI wenv model re = widgetTree
                 `nodeEnabled` (strip (model ^. newPostInput) /= "")
             ]
         , spacer
-        , scroll_ [ scrollOverlay ] $ postInfo `styleBasic` [ textTop ]
+        , vscroll_ [ scrollOverlay ] $ postInfo `styleBasic` [ textTop ]
         , filler
         , spacer
         , label "Seen on"

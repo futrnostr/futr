@@ -20,7 +20,6 @@ selectableText t =
   textFieldD_ (WidgetValue t) [ readOnly ]
     `styleBasic` [ border 0 transparent, radius 0, bgColor $ rgbHex "#515151" ]
 
-
 xOnlyPubKeyElem :: WidgetEvent e => XOnlyPubKey -> WidgetNode s e
 xOnlyPubKeyElem x =
   hstack

@@ -48,7 +48,7 @@ viewPosts
   -> ViewPostsModel
   -> WidgetNode s e
 viewPosts eventFilter viewDetailsAction viewProfileAction wenv model =
-    scroll_ [ scrollOverlay ] posts
+    vscroll_ [ scrollOverlay ] posts
   where
     posts = vstack postRows
     filteredEvents = filter eventFilter (model ^. receivedEvents)
@@ -91,12 +91,12 @@ postRow wenv m idx re time viewDetailsAction viewProfileAction = row
             [ box_ [ onClick (viewProfileAction xo) ] profileBox
                 `styleBasic` [ cursorHand ]
             , spacer
-            , selectableText $ content event
-            , spacer
+            , label_ (content event) [ multiline, ellipsis ]
+            , filler
             , vstack
-                [ spacer
+                [ filler
                 , button "Details" $ viewDetailsAction re
-                , spacer
+                , filler
                 ]
             ]
         ] `styleBasic` [ paddingT 10, paddingB 10, paddingR 20, borderB 1 rowSepColor ]
