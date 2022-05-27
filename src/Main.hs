@@ -248,12 +248,6 @@ handleEvent env wenv node model evt =
           , ViewProfile._pictureUrl = pictureUrl
           , ViewProfile._nip05Identifier = nip05Identifier
           , ViewProfile._following = model ^. following
-          -- profile followers
-          -- case model ^. selectedKeys of
-          --     Just ks ->
-          --       Map.findWithDefault [] xo (model ^. following)
-          --     Nothing ->
-          --       []
           , ViewProfile._xo = Just xo
           , ViewProfile._viewPostsModel = model ^. viewPostsModel
           }
