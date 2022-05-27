@@ -34,8 +34,8 @@ serializeEvent e =
   , String $ content e
   ]
 
-serializeRawEvent :: RawEvent -> ByteString
-serializeRawEvent e =
+serializeUnsignedEvent :: UnsignedEvent -> ByteString
+serializeUnsignedEvent e =
   toStrict $
   encode $
   Array $
@@ -82,9 +82,9 @@ verifySignature e =
     p = pubKey e
     s = sig e
 
-setMetadata :: Text -> Text -> Text -> Text -> XOnlyPubKey -> DateTime -> RawEvent
+setMetadata :: Text -> Text -> Text -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 setMetadata name about picture nip05 xo t =
-  RawEvent
+  UnsignedEvent
     { pubKey' = xo
     , created_at' = t
     , kind' = 0
@@ -96,19 +96,19 @@ setMetadata name about picture nip05 xo t =
       "\",\"nip05\":\"" ++ unpack nip05 ++ "\"}"
     }
 
-textNote :: Text -> XOnlyPubKey -> DateTime -> RawEvent
+textNote :: Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 textNote note xo t =
-  RawEvent
+  UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = 1, tags' = [], content' = note}
 
-replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> RawEvent
+replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 replyNote event note xo t =
-  RawEvent
+  UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event) Nothing], content' = note}
 
-setFollowing :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> RawEvent
+setFollowing :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> UnsignedEvent
 setFollowing ps r xo t =
-  RawEvent
+  UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = 3, tags' = profilesToTags ps, content' = ""}
 
 profilesToTags :: [Profile] -> [Tag]
@@ -133,7 +133,7 @@ isPTag :: Tag -> Bool
 isPTag (PTag (ValidXOnlyPubKey xo) _ _) = True
 isPTag _ = False
 
-signEvent :: RawEvent -> KeyPair -> XOnlyPubKey -> Event
+signEvent :: UnsignedEvent -> KeyPair -> XOnlyPubKey -> Event
 signEvent r kp xo =
   Event
     { eventId = eid
@@ -145,7 +145,7 @@ signEvent r kp xo =
     , sig = s
     }
   where
-    eid = EventId {getEventId = SHA256.hash $ serializeRawEvent r}
+    eid = EventId {getEventId = SHA256.hash $ serializeUnsignedEvent r}
     s = Schnorr.signMsgSchnorr kp $ fromJust $ Schnorr.msg $ getEventId eid
 
 isPost :: Event -> Bool

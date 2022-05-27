@@ -208,8 +208,8 @@ instance FromJSON Event where
     <*> e .: "content"
     <*> e .: "sig"
 
-data RawEvent =
-  RawEvent
+data UnsignedEvent =
+  UnsignedEvent
   { pubKey'     :: XOnlyPubKey
   , created_at' :: DateTime
   , kind'       :: Int
