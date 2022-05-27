@@ -153,20 +153,26 @@ isPost :: Event -> Bool
 isPost e = kind e == 1
 
 getReplyEventId :: Event -> Maybe EventId
-getReplyEventId e =
+getReplyEventId = getMarkerEventId Reply
+
+getRootEventId :: Event -> Maybe EventId
+getRootEventId = getMarkerEventId Root
+
+getMarkerEventId :: Marker -> Event -> Maybe EventId
+getMarkerEventId m e =
   if null replyList
     then Nothing
     else Just $ extractEventId $ head replyList
   where
-    replyFilter :: Tag -> Bool
-    replyFilter (ETag _ _ (Just Reply)) = True
-    replyFilter _ = False
+    replyFilter :: Marker -> Tag -> Bool
+    replyFilter m (ETag _ _ (Just m')) = m == m'
+    replyFilter m _ = False
 
-    replyList = filter replyFilter $ tags e
+    replyList = filter (replyFilter m) $ tags e
 
     extractEventId :: Tag -> EventId
     extractEventId (ETag eid _ _) = eid
-    extractEventId _ = error "Could not extract event id from reply tag"
+    extractEventId _ = error "Could not extract event id from reply or root tag"
 
 eventToPost :: Event -> Maybe Post
 eventToPost e =
