@@ -13,7 +13,7 @@ import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import           Data.ByteString.Lazy   (toStrict)
 import           Data.Default
-import           Data.Text              (Text, pack, unpack)
+import           Data.Text              (Text, pack, toLower, unpack)
 import           Data.DateTime
 import qualified Data.Vector            as V
 import           Foreign.C.Types        (CTime (..))
@@ -146,19 +146,19 @@ instance FromJSON KeyPair where
   parseJSON = withText "KeyPair" $ \k -> do
     case (textToByteStringType k Schnorr.keypair) of
       Just k' -> return k'
-      _     -> fail "invalid key pair"
+      _       -> fail "invalid key pair"
 
 instance FromJSON EventId where
   parseJSON = withText "EventId" $ \i -> do
     case eventId' i of
       Just e -> return e
-      _    -> fail "invalid event id"
+      _      -> fail "invalid event id"
 
 instance FromJSON SchnorrSig where
   parseJSON = withText "SchnorrSig" $ \s -> do
     case (textToByteStringType s Schnorr.schnorrSig) of
       Just s' -> return s'
-      _     -> fail "invalid schnorr sig"
+      _       -> fail "invalid schnorr sig"
 
 instance FromJSON ServerResponse where
   parseJSON = withArray "ServerResponse Event" $ \arr -> do
@@ -167,7 +167,7 @@ instance FromJSON ServerResponse where
     e <- parseJSON $ arr V.! 2
     case t of
       String "EVENT" -> return $ ServerResponse s e
-      _ -> fail "Invalid ServerResponse did not have EVENT"
+      _              -> fail "Invalid ServerResponse, did not have EVENT"
 
 instance FromJSON XOnlyPubKey where
   parseJSON = withText "XOnlyPubKey" $ \p -> do
@@ -280,8 +280,22 @@ instance ToJSON ForeignXOnlyPubKey where
   toJSON (ValidXOnlyPubKey xo) = toJSON xo
   toJSON _ = Null
 
+data Marker = Reply | Root
+  deriving (Eq, Show)
+
+instance FromJSON Marker where
+  parseJSON = withText "Marker" $ \m -> do
+    case toLower m of
+      "reply" -> return Reply
+      "root"  -> return Root
+      _       -> mzero
+
+instance ToJSON Marker where
+  toJSON (Reply) = String "reply"
+  toJSON (Root) = String "root"
+
 data Tag
-  = ETag EventId (Maybe RelayURL)
+  = ETag EventId (Maybe RelayURL) (Maybe Marker)
   | PTag ForeignXOnlyPubKey (Maybe RelayURL) (Maybe Text)
   | NonceTag
   | UnknownTag
@@ -300,7 +314,7 @@ instance FromJSON Tag where
     | V.length v > 0 =
         case v V.! 0 of
           String "e" ->
-            ETag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2)
+            ETag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON (v V.! 3)
           String "p" ->
             PTag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON (v V.! 3)
           _ ->
@@ -309,13 +323,20 @@ instance FromJSON Tag where
   parseJSON _ = return UnknownTag
 
 instance ToJSON Tag where
-  toJSON (ETag eventId relayURL) =
+  toJSON (ETag eventId relayURL marker) =
     Array $ fromList
       [ String "e"
       , String $ pack $ exportEventId eventId
       , case relayURL of
           Just relayURL' ->
             String relayURL'
+          Nothing ->
+            Null
+      , case marker of
+          Just Reply ->
+            String "reply"
+          Just Root ->
+            String "root"
           Nothing ->
             Null
       ]

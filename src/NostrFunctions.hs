@@ -52,12 +52,13 @@ serializeTags :: [Tag] -> Value
 serializeTags ts = Array $ fromList $ map serializeTag ts
 
 serializeTag :: Tag -> Value
-serializeTag (ETag i r) =
+serializeTag (ETag i r m) =
   Array $
   fromList
     [ String $ pack "e"
     , String $ pack $ exportEventId i
     , toJSON r
+    , toJSON m
     ]
 serializeTag (PTag xo r n) =
   Array $
@@ -104,7 +105,7 @@ textNote note xo t =
 replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 replyNote event note xo t =
   UnsignedEvent
-    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event) Nothing], content' = note}
+    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event) Nothing (Just Reply)], content' = note}
 
 setFollowing :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> UnsignedEvent
 setFollowing ps r xo t =
