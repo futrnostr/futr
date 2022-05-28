@@ -64,10 +64,10 @@ packages:
     pantry-tree:
       size: 17335
       sha256: 590119e5804546ba76696e518445f896c1e799fae189abf495663971b93f722f
-    commit: 746381463ec7f3bf289081d5e841dc7fe8214358
+    commit: 66db43f71c074b934bf9e50dc9f022cd568db355
   original:
     git: https://github.com/fjvallarino/monomer.git
-    commit: 746381463ec7f3bf289081d5e841dc7fe8214358
+    commit: 66db43f71c074b934bf9e50dc9f022cd568db355
 snapshots:
 - completed:
     size: 586292
