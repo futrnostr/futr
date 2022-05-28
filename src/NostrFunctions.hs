@@ -174,19 +174,6 @@ getMarkerEventId m e =
     extractEventId (ETag eid _ _) = eid
     extractEventId _ = error "Could not extract event id from reply or root tag"
 
-eventToPost :: Event -> Maybe Post
-eventToPost e =
-    case kind e of
-        1 ->
-            Just $ Post
-                { postId = eventId e
-                , author = pack $ Schnorr.exportXOnlyPubKey $ pubKey e
-                , postContent = content e
-                , posted = created_at e
-                }
-        _ ->
-            Nothing
-
 genSubscriptionId :: IO Text
 genSubscriptionId = do
     gen <- newGenIO :: IO CtrDRBG

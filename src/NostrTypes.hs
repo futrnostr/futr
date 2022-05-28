@@ -102,15 +102,6 @@ instance ToJSON Keys where
       , toJSON n
       ]
 
-data Post =
-  Post
-  { postId :: EventId
-  , author :: Text
-  , postContent :: Text
-  , posted :: DateTime
-  }
-  deriving (Eq, Show)
-
 instance ToJSON ServerRequest where
   toJSON sr = case sr of
     SendEvent e -> Array $ fromList
