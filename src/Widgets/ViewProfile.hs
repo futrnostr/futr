@@ -144,15 +144,14 @@ viewProfile wenv model =
     [ hstack
         [ vstack
             [ (selectableText $ model ^. name) `styleBasic` [ textSize 22 ]
-            , spacer
             , (selectableText $ pack $ exportXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
-            , spacer
             , selectableText $ model ^. about
             ]
         , filler
         , vstack [ button btnText action ]
-        ] `styleBasic` [ borderB 1 rowSepColor ]
+        ]
     , spacer
+    , label "Recent posts"  `styleBasic` [ paddingB 10, borderB 1 rowSepColor ]
     , viewPostsWidget
         wenv
         viewPostsModel

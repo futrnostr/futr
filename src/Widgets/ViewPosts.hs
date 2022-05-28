@@ -75,28 +75,23 @@ postRow wenv m idx re time viewDetailsAction viewProfileAction = row
     xo = NostrTypes.pubKey event
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
     profileBox =
-      vstack
-        [ label $ profileName m xo
+      hstack
+        [ label ( profileName m xo) `styleBasic` [ textFont "Bold", textUnderline ]
         , spacer
-        , (label $ shortXOnlyPubKey xo) `styleBasic` [textSize 10]
+        , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
         ]
     row =
       vstack
         [ hstack
-            [ filler
-            , (label $ xTimeAgo (created_at event) time)
-                `styleBasic` [ textSize 10 ]
-            ]
-        , hstack
             [ box_ [ onClick (viewProfileAction xo) ] profileBox
                 `styleBasic` [ cursorHand ]
-            , spacer
-            , label_ (content event) [ multiline, ellipsis ]
             , filler
-            , vstack
-                [ filler
-                , button "Details" $ viewDetailsAction re
-                , filler
-                ]
-            ]
-        ] `styleBasic` [ paddingT 10, paddingB 10, paddingR 20, borderB 1 rowSepColor ]
+            , (label $ xTimeAgo (created_at event) time)
+                `styleBasic` [ textSize 10 ]
+            ] `styleBasic` [ paddingB 10 ]
+        , box_ [ onClick $ viewDetailsAction re ] $
+            hstack
+              [ label_ (content event) [ multiline, ellipsis ]
+              , filler
+              ] `styleBasic` [ cursorHand ]
+        ] `styleBasic` [ paddingT 15, paddingR 20, borderB 1 rowSepColor ]

@@ -204,20 +204,28 @@ viewPostUI wenv model re = widgetTree
     event = fst re
     rs = snd re
     xo = NostrTypes.pubKey event
+    author = profileName (model ^. profiles) xo
+    profileBox =
+      hstack
+        [ label author `styleBasic` [ textFont "Bold", textUnderline ]
+        , spacer
+        , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
+        ]
     postInfo =
       vstack
         [ hstack
             [ box_
-                [ onClick (ViewProfile xo) ]
-                (profileBox
-                  xo
-                  (profileName (model ^. profiles) xo)
-                )
+                [ onClick $ ViewProfile xo ] profileBox
                 `styleBasic` [ cursorHand ]
-            , spacer
-            , label_ (content event) [ multiline, ellipsis ]
+            , filler
+            , label ( xTimeAgo (created_at event) ( model ^. time) )
+                `styleBasic` [ textSize 10 ]
+            ] `styleBasic` [ paddingB 10 ]
+        , hstack
+            [ label_ (content event) [ multiline, ellipsis ]
+            , filler
             ]
-        ] `styleBasic` [ paddingT 10 ]
+        ]
     seenOnTree =
       vstack $
         map (\r -> label $ T.pack $ relayName r) (sortBy sortPool rs)

@@ -540,6 +540,7 @@ main = do
       [ appWindowTitle "FuTr"
       , appTheme customDarkTheme
       , appFontDef "Regular" "./assets/fonts/Roboto-Regular.ttf"
+      , appFontDef "Bold" "./assets/fonts/Roboto-Bold.ttf"
       , appInitEvent AppInit
       -- , appDisableAutoScale True
       ]
