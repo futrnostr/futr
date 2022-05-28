@@ -314,6 +314,21 @@ instance FromJSON Tag where
   parseJSON _ = return UnknownTag
 
 instance ToJSON Tag where
+  toJSON (ETag eventId Nothing Nothing) =
+    Array $ fromList
+      [ String "e"
+      , String $ pack $ exportEventId eventId
+      ]
+  toJSON (ETag eventId relayURL Nothing) =
+    Array $ fromList
+      [ String "e"
+      , String $ pack $ exportEventId eventId
+      , case relayURL of
+          Just relayURL' ->
+            String relayURL'
+          Nothing ->
+            Null
+      ]
   toJSON (ETag eventId relayURL marker) =
     Array $ fromList
       [ String "e"

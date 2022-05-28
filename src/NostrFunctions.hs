@@ -48,16 +48,33 @@ serializeUnsignedEvent e =
   , String $ content' e
   ]
 
+serializeRelayURL :: Maybe RelayURL -> Value
+serializeRelayURL Nothing = String ""
+serializeRelayURL (Just r) = String r
+
 serializeTags :: [Tag] -> Value
 serializeTags ts = Array $ fromList $ map serializeTag ts
 
 serializeTag :: Tag -> Value
+serializeTag (ETag i Nothing Nothing) =
+  Array $
+  fromList
+    [ String $ pack "e"
+    , String $ pack $ exportEventId i
+    ]
+serializeTag (ETag i r Nothing) =
+  Array $
+  fromList
+    [ String $ pack "e"
+    , String $ pack $ exportEventId i
+    , serializeRelayURL r
+    ]
 serializeTag (ETag i r m) =
   Array $
   fromList
     [ String $ pack "e"
     , String $ pack $ exportEventId i
-    , toJSON r
+    , serializeRelayURL r
     , toJSON m
     ]
 serializeTag (PTag xo r n) =
@@ -65,7 +82,7 @@ serializeTag (PTag xo r n) =
   fromList
     [ String $ pack "p"
     , toJSON xo
-    , toJSON r
+    , serializeRelayURL r
     , toJSON n
     ]
 serializeTag NonceTag = Array $ fromList []
@@ -112,6 +129,13 @@ setFollowing ps r xo t =
   UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = 3, tags' = profilesToTags ps, content' = ""}
 
+deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
+deleteEvents eids reason xo t =
+  UnsignedEvent
+    {pubKey' = xo, created_at' = t, kind' = 5, tags' = toDelete, content' = reason}
+  where
+    toDelete = map (\eid -> ETag eid Nothing Nothing) eids
+
 profilesToTags :: [Profile] -> [Tag]
 profilesToTags ps = map (\p -> pd p) ps
   where
@@ -135,18 +159,18 @@ isPTag (PTag (ValidXOnlyPubKey xo) _ _) = True
 isPTag _ = False
 
 signEvent :: UnsignedEvent -> KeyPair -> XOnlyPubKey -> Event
-signEvent r kp xo =
+signEvent u kp xo =
   Event
     { eventId = eid
     , pubKey = xo
-    , created_at = created_at' r
-    , kind = kind' r
-    , tags = tags' r
-    , content = content' r
+    , created_at = created_at' u
+    , kind = kind' u
+    , tags = tags' u
+    , content = content' u
     , sig = s
     }
   where
-    eid = EventId {getEventId = SHA256.hash $ serializeUnsignedEvent r}
+    eid = EventId {getEventId = SHA256.hash $ serializeUnsignedEvent u}
     s = Schnorr.signMsgSchnorr kp $ fromJust $ Schnorr.msg $ getEventId eid
 
 isPost :: Event -> Bool

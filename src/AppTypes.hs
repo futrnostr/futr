@@ -33,6 +33,7 @@ data AppDialog
     | ErrorReadingKeysFileDialog
     | NewRelayDialog
     | RelayDialog Relay
+    | DeleteEventDialog Event
     deriving (Eq, Show)
 
 data AppView
@@ -83,11 +84,15 @@ data AppModel =
     , _viewPostsModel   :: ViewPostsModel
     , _viewProfileModel :: ViewProfileModel
     , _relayModel       :: RelayModel
+    , _deleteReason     :: Text
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def "" defaultPool "" "" "" [] [] [] Nothing PostsView def def def def
+  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def "" defaultPool "" "" "" [] [] [] Nothing PostsView def def def def defaultDeleteReason
+
+defaultDeleteReason :: Text
+defaultDeleteReason = "This post was published by accident."
 
 data AppEvent
   = AppInit
@@ -115,8 +120,9 @@ data AppEvent
   | ViewProfile XOnlyPubKey
   | SearchProfile Text
   | Back
-  | PostSent
+  | EventSent
   | ReplyToPost Event
+  | DeleteEvent Event
   | EventAppeared Event Relay
   | CloseDialog
   | TimerTick DateTime

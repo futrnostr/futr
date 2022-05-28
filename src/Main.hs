@@ -52,6 +52,7 @@ import qualified Widgets.ViewProfile                  as ViewProfile
 import qualified Widgets.ViewPosts                    as ViewPosts
 
 import           Debug.Trace as Trace
+import qualified Crypto.Hash.SHA256     as SHA256 -- debug only
 
 handleEvent
   :: AppEnv
@@ -142,6 +143,8 @@ handleEvent env wenv node model evt =
           ]
         GenerateKeyPairDialog ->
           [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
+        DeleteEventDialog event ->
+          [ Model $ model & dialog .~ (Just $ DeleteEventDialog event) ]
         _ -> []
     Subscribe fs ->
       [ Model $ model & eventFilters .~ fs
@@ -254,6 +257,11 @@ handleEvent env wenv node model evt =
     SearchProfile v ->
       [ Task $ runSearchProfile v
       ]
+    DeleteEvent e ->
+      [ Model $ model
+          & deleteReason .~ defaultDeleteReason
+      , Task $ handleDeleteEvent env e model
+      ]
     Back ->
       [ Model $ model
         & currentView .~ PostsView
@@ -262,7 +270,10 @@ handleEvent env wenv node model evt =
         & extraFilters .~ []
       , Task $ unsubscribe env $ model ^. extraSub
       ]
-    PostSent -> [ Model $ model & newPostInput .~ "" ]
+    EventSent ->
+      [ Model $ model
+          & dialog .~ Nothing
+      ]
     ReplyToPost e ->
       [ Model $ model
           & newPostInput .~ ""
@@ -329,6 +340,7 @@ handleReceivedEvent model e r =
         & currentSub .~ (Subscription subId $ created_at e)
       where
         (Subscription subId _) = model ^. currentSub
+    5 -> trace "delete event" model
     _ ->
       model
 
@@ -421,14 +433,22 @@ handleNewPost :: AppEnv -> AppModel -> IO AppEvent
 handleNewPost env model = do
   now <- getCurrentTime
   let (Keys kp xo _ _) = fromJust $ model ^. selectedKeys
-  let raw = case model ^. currentView of {
+  let unsigned = case model ^. currentView of {
     PostDetailsView re ->
       replyNote (fst re) (strip $ model ^. newPostInput) xo now;
     _ ->
       textNote (strip $ model ^. newPostInput) xo now;
   }
-  atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent raw kp xo
-  return PostSent
+  atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent unsigned kp xo
+  return EventSent
+
+handleDeleteEvent :: AppEnv -> Event -> AppModel -> IO AppEvent
+handleDeleteEvent env event model = do
+  now <- getCurrentTime
+  let (Keys kp xo _ _) = fromJust $ model ^. selectedKeys
+  let unsigned = deleteEvents [eventId event] (model ^. deleteReason) xo now
+  atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent unsigned kp xo
+  return EventSent
 
 maybeSaveKeyPairs :: AppModel -> AppModel -> IO AppEvent
 maybeSaveKeyPairs old new =
@@ -488,6 +508,7 @@ receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
       mzero
     Right msg' -> case decode msg' of
       Just m -> do
+        -- todo: handle notices
         -- lift $ putStrLn $ show $ extractEventFromServerResponse m
         lift $ sendMsg $ EventAppeared (extractEventFromServerResponse m) r
       Nothing -> do

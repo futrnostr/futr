@@ -179,6 +179,7 @@ dialogLayer model =
             ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
             RelayDialog r -> viewRelayDialog r model
             NewRelayDialog -> viewNewRelayDialog model
+            DeleteEventDialog e -> viewDeleteEventDialog e
         ] `styleBasic`
       [ width 500, height 400, padding 10, radius 10, bgColor darkGray ]
   where
@@ -201,21 +202,22 @@ currentKeysNode res mks = case mks of
 viewPostUI :: AppWenv -> AppModel -> ReceivedEvent -> AppNode
 viewPostUI wenv model re = widgetTree
   where
+    (Keys _ xo _ _) = fromJust (model ^. selectedKeys)
     event = fst re
     rs = snd re
-    xo = NostrTypes.pubKey event
-    author = profileName (model ^. profiles) xo
+    xo' = NostrTypes.pubKey event
+    author = profileName (model ^. profiles) xo'
     profileBox =
       hstack
         [ label author `styleBasic` [ textFont "Bold", textUnderline ]
         , spacer
-        , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
+        , (label $ shortXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
         ]
     postInfo =
       vstack
         [ hstack
             [ box_
-                [ onClick $ ViewProfile xo ] profileBox
+                [ onClick $ ViewProfile xo' ] profileBox
                 `styleBasic` [ cursorHand ]
             , filler
             , label ( xTimeAgo (created_at event) ( model ^. time) )
@@ -225,6 +227,10 @@ viewPostUI wenv model re = widgetTree
             [ label_ (content event) [ multiline, ellipsis ]
             , filler
             ]
+        , hstack
+            [ filler
+            , button "Delete" $ ShowDialog $ DeleteEventDialog event
+            ] `nodeVisible` (xo == xo')
         ]
     seenOnTree =
       vstack $
@@ -318,6 +324,32 @@ viewNewRelayDialog model =
         ]
     , spacer
     , button "Add relay" AddRelay
+    ]
+      `styleBasic` [ padding 10 ]
+
+viewDeleteEventDialog :: Event -> AppNode
+viewDeleteEventDialog event =
+  vstack
+    [ label "Are you sure you want to delete this event?"
+        `styleBasic` [ textFont "Bold" ]
+    , spacer
+    , hstack
+        [ label_ (content event) [ multiline, ellipsis ]
+        , filler
+        ]
+    , filler
+    , label "Delete reason:"
+    , spacer
+    , textArea deleteReason
+        `nodeKey` "deleteEventReason"
+        `styleBasic` [ height 50 ]
+    , spacer
+    , hstack
+        [ filler
+        , button "No" CloseDialog
+        , spacer
+        , mainButton "Yes" (DeleteEvent event)
+        ]
     ]
       `styleBasic` [ padding 10 ]
 
