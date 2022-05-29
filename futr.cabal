@@ -49,10 +49,12 @@ executable futr
     , datetime
     , directory
     , lens
+    , modern-uri
     , monomer
     , mtl
     , network
     , parallel-io
+    , req
     , secp256k1-schnorr
     , stm
     , text

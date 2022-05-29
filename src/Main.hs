@@ -32,6 +32,7 @@ import           Data.Text.Encoding                   (encodeUtf8)
 import           Monomer
 import           Monomer.Widgets.Single
 import qualified Network.Connection                   as Connection
+import qualified Network.HTTP.Req                     as Req
 import           Network.Socket
 import           Network.WebSockets                   (ClientApp, Connection,
                                                        receiveData, sendClose,
@@ -39,6 +40,7 @@ import           Network.WebSockets                   (ClientApp, Connection,
 import qualified Network.WebSockets                   as WS
 import qualified Network.WebSockets.Stream            as Stream
 import           System.Directory                     (doesFileExist)
+import           Text.URI
 import           Wuss
 
 import           AppTypes

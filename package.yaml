@@ -22,12 +22,14 @@ dependencies:
   - datetime
   - directory
   - lens
+  - modern-uri
   - monomer
   - mtl
   - network
   - connection
   - DRBG >=0.5.5 && <0.6
   - parallel-io
+  - req
   - secp256k1-schnorr
   - stm
   - text
