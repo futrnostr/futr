@@ -21,8 +21,15 @@ executable futr
   other-modules:
       AppTypes
       Helpers
+      Nostr.Event
+      Nostr.Filter
+      Nostr.Keys
+      Nostr.Kind
+      Nostr.Profile
+      Nostr.Relay
+      Nostr.Request
+      Nostr.Response
       NostrFunctions
-      NostrTypes
       UI
       UIHelpers
       Widgets.EditProfile
@@ -41,6 +48,7 @@ executable futr
     , aeson
     , base >=4.9 && <5
     , base16 >=0.3.0.1
+    , basement
     , bytestring >=0.10.8 && <0.11
     , connection
     , containers

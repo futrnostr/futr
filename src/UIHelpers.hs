@@ -13,7 +13,7 @@ import           Monomer
 import qualified Monomer.Lens           as L
 
 import Helpers
-import NostrTypes
+import Nostr.Profile
 
 selectableText :: WidgetEvent e => Text -> WidgetNode s e
 selectableText t =
@@ -32,7 +32,7 @@ profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
 profileName m xo =
   case Map.lookup xo m of
     Just (Profile xo' r pd) ->
-      pdName pd
+      name pd
     Nothing ->
       ""
 

@@ -14,7 +14,12 @@ import           Monomer                              (WidgetEnv, WidgetNode)
 import qualified Network.WebSockets                   as WS
 import           Network.Socket
 
-import           NostrTypes
+import           Nostr.Event
+import           Nostr.Filter
+import           Nostr.Keys
+import           Nostr.Profile
+import           Nostr.Relay
+import           Nostr.Request       (Request)
 import           Widgets.EditProfile
 import           Widgets.ViewPosts
 import           Widgets.ViewProfile
@@ -25,7 +30,7 @@ type AppNode = WidgetNode AppModel AppEvent
 
 newtype AppEnv =
   AppEnv
-    { _channel :: TChan ServerRequest
+    { _channel :: TChan Request
     }
 
 data AppDialog
@@ -45,22 +50,15 @@ data AppView
 
 data RelayModel =
   RelayModel
-    { _relayHostInput     :: Text
-    , _relayPortInput     :: Integer
-    , _relaySecureInput   :: Bool
+    { _relayURI           :: Text
     , _relayReadableInput :: Bool
     , _relayWritableInput :: Bool
+    , _isInvalidInput     :: Bool
     }
   deriving (Eq, Show)
 
 instance Default RelayModel where
-  def = RelayModel "" 433 True True True
-
-data Subscription = Subscription Text DateTime
-  deriving (Eq, Show)
-
-instance Default Subscription where
-  def = Subscription "" $ fromSeconds 0
+  def = RelayModel "wss://" True True False
 
 data AppModel =
   AppModel
@@ -76,8 +74,8 @@ data AppModel =
     , _newPostInput     :: Text
     , _searchInput      :: Text
     , _receivedEvents   :: [ReceivedEvent]
-    , _eventFilters     :: [EventFilter]
-    , _extraFilters     :: [EventFilter]
+    , _eventFilters     :: [Filter]
+    , _extraFilters     :: [Filter]
     , _dialog           :: Maybe AppDialog
     , _currentView      :: AppView
     , _editProfileModel :: EditProfileModel
@@ -100,12 +98,14 @@ data AppEvent
   | DisconnectRelay Relay
   | UpdateRelay Relay
   | RelayConnected Relay
-  | AddRelay
+  | ValidateAndAddRelay
+  | InvalidRelayURI
+  | AddRelay Relay
   | RelayDisconnected Relay
   | ShowDialog AppDialog
-  | Subscribe [EventFilter]
+  | Subscribe [Filter]
   | Subscribed Text DateTime
-  | ExtraSubscribe [EventFilter]
+  | ExtraSubscribe [Filter]
   | ExtraSubscribed Text
   | KeyPairsLoaded [Keys]
   | GenerateKeyPair

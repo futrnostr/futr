@@ -4,10 +4,11 @@ module UI where
 
 import           Control.Concurrent.STM.TChan
 import           Control.Lens
-import           Crypto.Schnorr
+import           Crypto.Schnorr         (XOnlyPubKey, decodeHex, secKey,
+                                         exportXOnlyPubKey, xOnlyPubKey)
 import           Data.DateTime
 import           Data.Default
-import           Data.List              (sortBy)
+import           Data.List              (sort)
 import qualified Data.Map               as Map
 import           Data.Maybe             as Maybe
 import           Data.Text              (Text, strip)
@@ -19,13 +20,18 @@ import           Monomer.Widgets.Single
 import           AppTypes
 import           Helpers
 import           NostrFunctions
-import           NostrTypes
+import           Nostr.Event
+import           Nostr.Keys
+import           Nostr.Kind
+import           Nostr.Profile
+import           Nostr.Relay
+import           Nostr.Request
 import           UIHelpers
 import qualified Widgets.EditProfile    as EditProfile
 import qualified Widgets.ViewPosts      as ViewPosts
 import qualified Widgets.ViewProfile    as ViewProfile
 
-buildUI :: TChan ServerRequest -> AppWenv -> AppModel -> AppNode
+buildUI :: TChan Request -> AppWenv -> AppModel -> AppNode
 buildUI channel wenv model = widgetTree
   where
     baseLayer = case model ^. currentView of
@@ -47,8 +53,8 @@ buildUI channel wenv model = widgetTree
           , ViewPosts.viewPostsWidget
               wenv
               viewPostsModel
-              (\re -> kind (fst re) == 1
-                && NostrTypes.pubKey (fst re) `elem` (xo : userFollowing)
+              (\re -> kind (fst re) == TextNote
+                && pubKey (fst re) `elem` (xo : userFollowing)
               )
               ViewPostDetails
               ViewProfile
@@ -96,10 +102,10 @@ buildUI channel wenv model = widgetTree
             (\r ->
               box_
                 [ onClick $ ShowDialog $ RelayDialog r ]
-                (tooltip (T.pack $ relayName r) (viewCircle r) `styleBasic`
+                (tooltip (relayName r) (viewCircle r) `styleBasic`
                 [ cursorIcon CursorHand ])
             )
-            (sortBy sortPool (model ^. pool))
+            (sort $ model ^. pool)
         addRelay =
           box_ [ alignTop, onClick $ ShowDialog NewRelayDialog ] $
           tooltip (T.pack $ "Add new relayy") $
@@ -119,7 +125,7 @@ buildUI channel wenv model = widgetTree
               map (\(Profile xo r pd) ->
                 box_
                   [ onClick (ViewProfile xo), alignLeft ]
-                  (profileBox xo $ pdName pd)
+                  (profileBox xo $ name pd)
                     `styleBasic` [ cursorHand ]
               )
               ps
@@ -205,7 +211,7 @@ viewPostUI wenv model re = widgetTree
     (Keys _ xo _ _) = fromJust (model ^. selectedKeys)
     event = fst re
     rs = snd re
-    xo' = NostrTypes.pubKey event
+    xo' = pubKey event
     author = profileName (model ^. profiles) xo'
     profileBox =
       hstack
@@ -234,7 +240,7 @@ viewPostUI wenv model re = widgetTree
         ]
     seenOnTree =
       vstack $
-        map (\r -> label $ T.pack $ relayName r) (sortBy sortPool rs)
+        map (\r -> label $ relayName r) (sort rs)
     widgetTree =
       vstack
         [ label "Post Details"
@@ -259,7 +265,7 @@ viewPostUI wenv model re = widgetTree
 viewRelayDialog :: Relay -> AppModel -> AppNode
 viewRelayDialog r model =
   vstack
-    [ label (T.pack $ relayName r)
+    [ label (relayName r)
         `styleBasic` [ textSize 22 ]
     , filler
     , hstack
@@ -294,21 +300,9 @@ viewNewRelayDialog :: AppModel -> AppNode
 viewNewRelayDialog model =
   vstack
     [ hstack
-        [ label "Host"
+        [ label "URI"
         , spacer
-        , textField (relayModel . relayHostInput) `nodeKey` "relayHostInput"
-        ]
-    , spacer
-    , hstack
-        [ label "Port"
-        , spacer
-        , numericField (relayModel . relayPortInput) `nodeKey` "relayPortInput"
-        ]
-    , spacer
-    , hstack
-        [ label "Secure connection"
-        , spacer
-        , checkbox (relayModel . relaySecureInput) `nodeKey` "relaySecureCheckbox"
+        , textField (relayModel . relayURI) `nodeKey` "relayURI"
         ]
     , spacer
     , hstack
@@ -322,8 +316,10 @@ viewNewRelayDialog model =
         , spacer
         , checkbox (relayModel . relayWritableInput) `nodeKey` "relayWriteableCheckbox"
         ]
+    , spacer `nodeVisible` (model ^. relayModel . isInvalidInput)
+    , label "Invalid relay URI given" `nodeVisible` (model ^. relayModel . isInvalidInput)
     , spacer
-    , button "Add relay" AddRelay
+    , button "Add relay" ValidateAndAddRelay
     ]
       `styleBasic` [ padding 10 ]
 

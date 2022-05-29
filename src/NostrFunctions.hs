@@ -18,35 +18,12 @@ import           Data.Text              (Text, pack, unpack)
 import           Data.DateTime
 import           GHC.Exts               (fromList)
 
-import NostrTypes
-
-serializeEvent :: Event -> ByteString
-serializeEvent e =
-  toStrict $
-  encode $
-  Array $
-  fromList $
-  [ Number 0
-  , String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey e
-  , Number $ fromIntegral $ toSeconds $ created_at e
-  , Number $ fromIntegral $ kind e
-  , serializeTags $ tags e
-  , String $ content e
-  ]
-
-serializeUnsignedEvent :: UnsignedEvent -> ByteString
-serializeUnsignedEvent e =
-  toStrict $
-  encode $
-  Array $
-  fromList $
-  [ Number 0
-  , String $ pack $ Schnorr.exportXOnlyPubKey $ pubKey' e
-  , Number $ fromIntegral $ toSeconds $ created_at' e
-  , Number $ fromIntegral $ kind' e
-  , serializeTags $ tags' e
-  , String $ content' e
-  ]
+import Nostr.Event
+import Nostr.Keys
+import Nostr.Kind
+import Nostr.Profile
+import Nostr.Relay
+import Nostr.Response
 
 serializeRelayURL :: Maybe RelayURL -> Value
 serializeRelayURL Nothing = String ""
@@ -89,11 +66,11 @@ serializeTag NonceTag = Array $ fromList []
 serializeTag UnknownTag = Array $ fromList []
 
 validateEvent :: Event -> Bool
-validateEvent e = (getEventId $ eventId e) == (SHA256.hash $ serializeEvent e)
+validateEvent e = (getEventId $ eventId e) == (SHA256.hash $ toStrict $ encode e)
 
 verifySignature :: Event -> Bool
 verifySignature e =
-  case Schnorr.msg $ serializeEvent e of
+  case Schnorr.msg $ toStrict $ encode e of
     Just m  -> Schnorr.verifyMsgSchnorr p s m
     Nothing -> False
   where
@@ -105,7 +82,7 @@ setMetadata name about picture nip05 xo t =
   UnsignedEvent
     { pubKey' = xo
     , created_at' = t
-    , kind' = 0
+    , kind' = Metadata
     , tags' = []
     , content' = pack $
       "{\"name\":\"" ++ unpack name ++
@@ -117,29 +94,29 @@ setMetadata name about picture nip05 xo t =
 textNote :: Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 textNote note xo t =
   UnsignedEvent
-    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [], content' = note}
+    {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [], content' = note}
 
 replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 replyNote event note xo t =
   UnsignedEvent
-    {pubKey' = xo, created_at' = t, kind' = 1, tags' = [ETag (eventId event) Nothing (Just Reply)], content' = note}
+    {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [ETag (eventId event) Nothing (Just Reply)], content' = note}
 
 setFollowing :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> UnsignedEvent
 setFollowing ps r xo t =
   UnsignedEvent
-    {pubKey' = xo, created_at' = t, kind' = 3, tags' = profilesToTags ps, content' = ""}
+    {pubKey' = xo, created_at' = t, kind' = Contacts, tags' = profilesToTags ps, content' = ""}
 
 deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 deleteEvents eids reason xo t =
   UnsignedEvent
-    {pubKey' = xo, created_at' = t, kind' = 5, tags' = toDelete, content' = reason}
+    {pubKey' = xo, created_at' = t, kind' = Delete, tags' = toDelete, content' = reason}
   where
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
 
 profilesToTags :: [Profile] -> [Tag]
 profilesToTags ps = map (\p -> pd p) ps
   where
-    pd (Profile xo r d) = PTag (ValidXOnlyPubKey xo) (Just r) (Just $ pdName d)
+    pd (Profile xo r d) = PTag (ValidXOnlyPubKey xo) (Just r) (Just $ name d)
 
 tagsToProfiles :: [Tag] -> [Profile]
 tagsToProfiles ts = map (\t ->
@@ -170,11 +147,8 @@ signEvent u kp xo =
     , sig = s
     }
   where
-    eid = EventId {getEventId = SHA256.hash $ serializeUnsignedEvent u}
+    eid = EventId {getEventId = SHA256.hash $ toStrict $ encode u}
     s = Schnorr.signMsgSchnorr kp $ fromJust $ Schnorr.msg $ getEventId eid
-
-isPost :: Event -> Bool
-isPost e = kind e == 1
 
 getReplyEventId :: Event -> Maybe EventId
 getReplyEventId = getMarkerEventId Reply
@@ -204,14 +178,8 @@ genSubscriptionId = do
     let Right (randomBytes, newGen) = genBytes 32 gen
     return $ B16.encodeBase16 randomBytes
 
-extractEventFromServerResponse :: ServerResponse -> Event
-extractEventFromServerResponse (ServerResponse subId event) = event
-
-relayName :: Relay -> String
-relayName r = pr ++ h ++ ":" ++ p where
-    pr = if secure r then "wss://" else "ws://"
-    h = host r
-    p = show $ port r
+extractEventFromServerResponse :: Response -> Event
+extractEventFromServerResponse (EventReceived subId event) = event
 
 mapProfileToXOnlyPubKey :: Profile -> XOnlyPubKey
 mapProfileToXOnlyPubKey (Profile xo _ _) = xo

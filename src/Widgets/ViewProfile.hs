@@ -21,7 +21,11 @@ import qualified Monomer.Lens                         as L
 
 import           Helpers
 import           NostrFunctions
-import           NostrTypes
+import           Nostr.Event        as NE
+import           Nostr.Keys
+import           Nostr.Kind
+import qualified Nostr.Profile      as Profile
+import           Nostr.Request
 import           UIHelpers
 import           Widgets.ViewPosts
 
@@ -32,7 +36,7 @@ data ViewProfileModel = ViewProfileModel
   , _about            :: Text
   , _pictureUrl       :: Text
   , _nip05Identifier  :: Text
-  , _following        :: Map.Map XOnlyPubKey [Profile]
+  , _following        :: Map.Map XOnlyPubKey [Profile.Profile]
   , _viewPostsModel   :: ViewPostsModel
   } deriving (Eq, Show)
 
@@ -49,7 +53,7 @@ data ProfileEvent
 makeLenses 'ViewProfileModel
 
 handleProfileEvent
-  :: TChan ServerRequest
+  :: TChan Request
   -> Keys
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
@@ -66,10 +70,10 @@ handleProfileEvent chan ks viewPostDetailsAction viewProfileAction env node mode
     ]
     where
       xo' = fromJust $ model ^. xo
-      np = Profile
+      np = Profile.Profile
         xo'
         ""
-        (ProfileData
+        (Profile.ProfileData
           (model ^. name)
           (model ^. about)
           (model ^. pictureUrl)
@@ -86,7 +90,7 @@ handleProfileEvent chan ks viewPostDetailsAction viewProfileAction env node mode
     where
       xo' = fromJust $ model ^. xo
       oldFollowing = Map.findWithDefault [] xo' (model ^. following)
-      newFollowing = Prelude.filter (\(Profile xo'' _ _) -> xo'' /= xo') oldFollowing
+      newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= xo') oldFollowing
       newFollowing' = Map.insert xo' newFollowing (model ^. following)
   ViewPostDetails re ->
     [ Report $ viewPostDetailsAction re ]
@@ -95,7 +99,7 @@ handleProfileEvent chan ks viewPostDetailsAction viewProfileAction env node mode
 
 viewProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
-  => TChan ServerRequest
+  => TChan Request
   -> Keys
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
@@ -108,24 +112,24 @@ viewProfileWidget chan keys viewPostDetailsAction viewProfileAction field =
     viewProfile
     (handleProfileEvent chan keys viewPostDetailsAction viewProfileAction)
 
-follow :: TChan ServerRequest -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
+follow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 follow chan (Keys kp xo' _ _) model sendMsg = do
   now <- getCurrentTime
   let raw = setFollowing (np : oldFollowing) "" xo' now
   atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo'
   where
     oldFollowing = Map.findWithDefault [] xo' (model ^. following)
-    np = Profile
+    np = Profile.Profile
       (fromJust $ model ^. xo)
       ""
-      (ProfileData
+      (Profile.ProfileData
         (model ^. name)
         (model ^. about)
         (model ^. pictureUrl)
         (model ^. nip05Identifier)
       )
 
-unfollow :: TChan ServerRequest -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
+unfollow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 unfollow chan (Keys kp xo' _ _) model sendMsg = do
   now <- getCurrentTime
   let raw = setFollowing newFollowing "" xo' now
@@ -133,7 +137,7 @@ unfollow chan (Keys kp xo' _ _) model sendMsg = do
   where
     oldFollow = fromJust $ model ^. xo
     oldFollowing = Map.findWithDefault [] xo' (model ^. following)
-    newFollowing = Prelude.filter (\(Profile xo'' _ _) -> xo'' /= oldFollow) oldFollowing
+    newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= oldFollow) oldFollowing
 
 viewProfile
   :: WidgetEnv ViewProfileModel ProfileEvent
@@ -151,11 +155,11 @@ viewProfile wenv model =
         , vstack [ button btnText action ]
         ]
     , spacer
-    , label "Recent posts"  `styleBasic` [ paddingB 10, borderB 1 rowSepColor ]
+    , label "Recent posts"  `styleBasic` [ paddingB 10, paddingT 15, borderB 1 rowSepColor ]
     , viewPostsWidget
         wenv
         viewPostsModel
-        (\re -> kind (fst re) == 1 && NostrTypes.pubKey (fst re) == xo')
+        (\re -> kind (fst re) == TextNote && NE.pubKey (fst re) == xo')
         ViewPostDetails
         ViewProfile
     ]

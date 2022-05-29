@@ -12,9 +12,12 @@ import           Data.Default
 import           Data.Text
 import           Monomer
 
-import           Helpers
-import           NostrFunctions
-import           NostrTypes
+import Helpers
+import Nostr.Event
+import Nostr.Keys
+import Nostr.Profile
+import Nostr.Request
+import NostrFunctions
 
 data ProfileModelInputs = ProfileModelInputs
   { _nameInput            :: Text
@@ -47,7 +50,7 @@ makeLenses 'ProfileModelInputs
 makeLenses 'EditProfileModel
 
 handleProfileEvent
-  :: TChan ServerRequest
+  :: TChan Request
   -> Keys
   -> WidgetEnv EditProfileModel ProfileEvent
   -> WidgetNode EditProfileModel ProfileEvent
@@ -60,13 +63,13 @@ handleProfileEvent chan ks env node model evt = case evt of
 
 editProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
-  => TChan ServerRequest
+  => TChan Request
   -> Keys
   -> ALens' sp EditProfileModel
   -> WidgetNode sp ep
 editProfileWidget chan keys field = composite "editProfileWidget" field viewProfile (handleProfileEvent chan keys)
 
-saveProfile :: TChan ServerRequest -> Keys -> EditProfileModel -> (ProfileEvent -> IO ()) -> IO ()
+saveProfile :: TChan Request -> Keys -> EditProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 saveProfile chan (Keys kp xo _ _) model sendMsg = do
   now <- getCurrentTime
   let raw = setMetadata name about picture nip05 xo now

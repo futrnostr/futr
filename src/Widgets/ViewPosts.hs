@@ -14,7 +14,8 @@ import           Monomer
 import qualified Monomer.Lens           as L
 
 import Helpers
-import NostrTypes
+import Nostr.Event   as NE
+import Nostr.Profile
 import UIHelpers
 
 data ViewPostsModel = ViewPostsModel
@@ -72,7 +73,7 @@ postRow
 postRow wenv m idx re time viewDetailsAction viewProfileAction = row
   where
     event = fst re
-    xo = NostrTypes.pubKey event
+    xo = NE.pubKey event
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
     profileBox =
       hstack

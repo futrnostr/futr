@@ -13,7 +13,10 @@ import           Control.Monad                        (forever, mzero, unless, v
 import           Control.Monad.STM                    (atomically)
 import           Control.Monad.Trans                  (lift, liftIO)
 import           Control.Monad.Trans.Maybe            (runMaybeT)
-import           Crypto.Schnorr
+import           Crypto.Schnorr                       (XOnlyPubKey, KeyPair,
+                                                       decodeHex, deriveXOnlyPubKey,
+                                                       keyPairFromSecKey, generateKeyPair,
+                                                       secKey, xOnlyPubKey)
 import           Data.Aeson
 import qualified Data.ByteString                      as BS
 import qualified Data.ByteString.Base16               as B16
@@ -22,7 +25,7 @@ import qualified Data.ByteString.Lazy                 as LazyBytes
 import           Data.DateTime
 import           Data.Default
 import           Data.Either                          (fromRight)
-import           Data.List                            (find, sortBy)
+import           Data.List                            (find, sort, sortBy)
 import qualified Data.Map                             as Map
 import           Data.Maybe
 import           Data.Monoid                          (mconcat)
@@ -40,13 +43,19 @@ import           Network.WebSockets                   (ClientApp, Connection,
 import qualified Network.WebSockets                   as WS
 import qualified Network.WebSockets.Stream            as Stream
 import           System.Directory                     (doesFileExist)
-import           Text.URI
+import qualified Text.URI                             as URI
+import           Text.URI.Lens
 import           Wuss
 
 import           AppTypes
 import           Helpers
 import           NostrFunctions
-import           NostrTypes                           as NT
+import           Nostr.Event
+import           Nostr.Filter
+import           Nostr.Keys
+import           Nostr.Profile
+import           Nostr.Relay
+import           Nostr.Request  (Request(..), Subscription(..))
 import           UI
 import           UIHelpers
 import           Widgets.EditProfile
@@ -81,7 +90,7 @@ handleEvent env wenv node model evt =
           ] where
             keys' = switchEnabledKeys ks (model ^. keys)
             (Keys _ xo _ _) = ks
-            (Subscription subId _) = model ^. currentSub
+            (AppTypes.Subscription subId _) = model ^. currentSub
         Nothing -> []
     ConnectRelay r ->
       [ Producer $ connectRelay env r
@@ -105,55 +114,42 @@ handleEvent env wenv node model evt =
       [ Model $ model & pool .~ newPool ]
       where
         newPool = (r {connected = False}) : (poolWithoutRelay (model ^. pool) r)
-    AddRelay ->
+    ValidateAndAddRelay ->
+      [ Task $ validateAndAddRelay (model ^. relayModel) ]
+    InvalidRelayURI ->
+      [ Model $ model & relayModel . isInvalidInput .~ True ]
+    AddRelay r ->
       [ Producer $ connectRelay env r
       , Model $ model
           & dialog .~ Nothing
-          & relayModel . relayHostInput .~ ""
-          & relayModel . relayPortInput .~ 433
-          & relayModel . relaySecureInput .~ True
+          & relayModel . relayURI .~ "wss://"
           & relayModel . relayReadableInput .~ True
           & relayModel . relayWritableInput .~ True
-          & pool .~ newPool
+          & pool .~ r : (poolWithoutRelay (model ^. pool) r)
       ]
-      where
-        r = Relay
-            { host = T.unpack $ model ^. relayModel . relayHostInput
-            , port = fromIntegral $ model ^. relayModel . relayPortInput
-            , secure = model ^. relayModel . relaySecureInput
-            , readable = model ^. relayModel . relayReadableInput
-            , writable = model ^. relayModel . relayWritableInput
-            , connected = False
-            }
-        newPool = r : (poolWithoutRelay (model ^. pool) r)
     ShowDialog d ->
       case d of
         RelayDialog r ->
           [ Model $ model
             & dialog .~ Just (RelayDialog r)
-            & relayModel . relayReadableInput .~ readable r
-            & relayModel . relayWritableInput .~ writable r
+            & relayModel . relayReadableInput .~ readable info'
+            & relayModel . relayWritableInput .~ writable info'
           ]
+          where
+            info' = info r
         NewRelayDialog ->
-          [ Model $ model
-            & dialog .~ Just NewRelayDialog
-            & relayModel . relayHostInput .~ ""
-            & relayModel . relayPortInput .~ 433
-            & relayModel . relaySecureInput  .~ True
-            & relayModel . relayReadableInput .~ True
-            & relayModel . relayWritableInput .~ True
-          ]
+          [ Model $ model & dialog .~ Just NewRelayDialog ]
         GenerateKeyPairDialog ->
           [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
         DeleteEventDialog event ->
           [ Model $ model & dialog .~ (Just $ DeleteEventDialog event) ]
         _ -> []
-    Subscribe fs ->
+    AppTypes.Subscribe fs ->
       [ Model $ model & eventFilters .~ fs
       , Task $ subscribe env fs
       ]
     Subscribed subId t ->
-      [ Model $ model & currentSub .~ Subscription subId t ]
+      [ Model $ model & currentSub .~ AppTypes.Subscription subId t ]
     ExtraSubscribe fs ->
       [ Model $ model & extraFilters .~ fs
       , Task $ extraSubscribe env fs
@@ -191,7 +187,7 @@ handleEvent env wenv node model evt =
         ks = Keys k xo True Nothing
         dk = disableKeys $ model ^. keys
         newFollowing = Map.insert xo [] (model ^. following)
-        (Subscription subId _) = model ^. currentSub
+        (AppTypes.Subscription subId _) = model ^. currentSub
     ImportSecKey ->
       [ Model $ model
         & keys .~ ks : dk
@@ -213,7 +209,7 @@ handleEvent env wenv node model evt =
         ks = Keys kp xo True Nothing
         dk = disableKeys $ model ^. keys
         newFollowing = Map.insert xo [] (model ^. following)
-        (Subscription subId _) = model ^. currentSub
+        (AppTypes.Subscription subId _) = model ^. currentSub
     NoKeysFound ->
       [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
     ErrorReadingKeysFile ->
@@ -286,7 +282,7 @@ handleEvent env wenv node model evt =
       where
         (Keys _ xo _ _) = fromJust $ model ^. selectedKeys
         newModel = handleReceivedEvent model e r
-        (Subscription subId _) = model ^. currentSub
+        (AppTypes.Subscription subId _) = model ^. currentSub
         updateModel =
           [ Model $ newModel
           , Task $ maybeSaveKeyPairs model newModel
@@ -306,42 +302,42 @@ handleEvent env wenv node model evt =
 handleReceivedEvent :: AppModel -> Event -> Relay -> AppModel
 handleReceivedEvent model e r =
   case kind (trace (show e) e) of
-    1 ->
+    1 -> -- text notes
       model
-        & currentSub .~ (Subscription subId $ created_at e)
+        & currentSub .~ (AppTypes.Subscription subId $ created_at e)
         & viewPostsModel . ViewPosts.receivedEvents .~
             addReceivedEvent (model ^. viewPostsModel . ViewPosts.receivedEvents) e r
         & viewProfileModel . ViewProfile.viewPostsModel . ViewPosts.receivedEvents .~
             addReceivedEvent (model ^. viewPostsModel . ViewPosts.receivedEvents) e r
       where
-        (Subscription subId _) = model ^. currentSub
-    0 ->
+        (AppTypes.Subscription subId _) = model ^. currentSub
+    0 -> -- set metadata
       model
         & keys .~ map (\ks -> updateName ks) (model ^. keys)
         & selectedKeys .~ fmap (\ks -> updateName ks) (model ^. selectedKeys)
         & profiles .~ addProfile (model ^. profiles) e r
-        & currentSub .~ (Subscription subId $ created_at e)
+        & currentSub .~ (AppTypes.Subscription subId $ created_at e)
         & viewPostsModel . ViewPosts.profiles .~
             addProfile (model ^. profiles) e r
         & viewProfileModel . ViewProfile.viewPostsModel . ViewPosts.profiles .~
             addProfile (model ^. profiles) e r
       where
         mp = decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e
-        (Subscription subId _) = model ^. currentSub
-        name = maybe "" pdName mp
-        xo' = NT.pubKey e
+        (AppTypes.Subscription subId _) = model ^. currentSub
+        name = maybe "" name mp
+        xo' = pubKey e
         updateName (Keys kp xo a n) = if xo == xo'
           then Keys kp xo a (Just name)
           else Keys kp xo a n
-    3 ->
+    3 -> -- contact list
       model
         & following .~
             addFollowing (model ^. following) e
         & viewProfileModel . ViewProfile.following .~
             addFollowing (model ^. following) e
-        & currentSub .~ (Subscription subId $ created_at e)
+        & currentSub .~ (AppTypes.Subscription subId $ created_at e)
       where
-        (Subscription subId _) = model ^. currentSub
+        (AppTypes.Subscription subId _) = model ^. currentSub
     5 -> trace "delete event" model
     _ ->
       model
@@ -350,7 +346,7 @@ addReceivedEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
 addReceivedEvent re e r = sortBy sortByDate $ addedEvent : newList
   where
     addedEvent = case find (dupEvent e) re of
-      Just (e', rs) -> (e', r : filter (\r' -> not $ r' `sameRelay` r) rs)
+      Just (e', rs) -> (e', r : filter (\r' -> not $ r' == r) rs)
       _             -> (e, [r])
     newList = filter (not . dupEvent e) re
     dupEvent e' re' = e' == fst re'
@@ -364,21 +360,21 @@ addProfile profiles e r =
     Nothing ->
       profiles
   where
-    xo = NT.pubKey e
-    u = T.pack $ relayName r
+    xo = pubKey e
+    u = relayName r
 
 addFollowing :: Map.Map XOnlyPubKey [Profile] -> Event -> Map.Map XOnlyPubKey [Profile]
 addFollowing pm e =
   Map.insert xo (tagsToProfiles tags') pm
   where
     tags' = tags e
-    xo = NT.pubKey e
+    xo = pubKey e
 
 buildEventFilters :: XOnlyPubKey -> Map.Map XOnlyPubKey [Profile] -> Maybe DateTime -> IO AppEvent
 buildEventFilters xo pm latest = do
   recent <- last24h
   let ps = Map.findWithDefault [] xo pm
-  return $ Subscribe
+  return $ AppTypes.Subscribe
     [ AllProfilesFilter latest
     , OwnEventsFilter xo $ fromDate recent
     , MentionsFilter xo $ fromDate recent
@@ -402,12 +398,12 @@ last24h = do
   now <- getCurrentTime
   return $ fromSeconds $ toSeconds now - 86400
 
-subscribe :: AppEnv -> [EventFilter] -> IO AppEvent
+subscribe :: AppEnv -> [Filter] -> IO AppEvent
 subscribe env [] = return NoOp
 subscribe env fs = do
   now <- getCurrentTime
   subId <- genSubscriptionId
-  atomically $ writeTChan (env ^. channel) $ RequestRelay subId fs
+  atomically $ writeTChan (env ^. channel) $ Nostr.Request.Subscribe fs subId
   return $ Subscribed subId now
 
 unsubscribe :: AppEnv -> Text -> IO AppEvent
@@ -423,12 +419,13 @@ runSearchProfile v = do
     _ ->
       return NoOp
 
-extraSubscribe :: AppEnv -> [EventFilter] -> IO AppEvent
+extraSubscribe :: AppEnv -> [Filter] -> IO AppEvent
 extraSubscribe env [] = return NoOp
 extraSubscribe env fs = do
   now <- getCurrentTime
   subId <- genSubscriptionId
-  atomically $ writeTChan (env ^. channel) $ RequestRelay subId fs
+  let sub = Nostr.Request.Subscription fs subId
+  atomically $ writeTChan (env ^. channel) $ Nostr.Request.Subscribe sub
   return $ ExtraSubscribed subId
 
 handleNewPost :: AppEnv -> AppModel -> IO AppEvent
@@ -479,21 +476,33 @@ tryLoadKeysFromDisk sendMsg = do
       _       -> do
         sendMsg $ ErrorReadingKeysFile
 
+validateAndAddRelay :: RelayModel -> IO AppEvent
+validateAndAddRelay model = do
+  uri <- URI.mkURI $ model ^. relayURI
+  return $ if isValidRelayURI uri
+    then do
+      let info = RelayInfo (model ^. relayReadableInput) (model ^. relayWritableInput)
+      AddRelay (Relay uri info False)
+    else
+      InvalidRelayURI
+
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = if connected r then return () else do
-  putStrLn $ "trying to connect to " ++ relayName r ++ " ..."
+  putStrLn $ "trying to connect to " ++ (T.unpack $ relayName r) ++ " ..."
   start $ \conn -> do
     let r' = r { connected = True }
-    putStrLn $ "Connected to " ++ relayName r
+    putStrLn $ "Connected to " ++ (T.unpack $ relayName r)
     sendMsg $ RelayConnected r'
-    if readable r then receiveWs r' conn sendMsg else sendMsg NoOp
-    if writable r then sendWs (env ^. channel) r' conn sendMsg else sendMsg NoOp
+    if readable info' then receiveWs r' conn sendMsg else sendMsg NoOp
+    if writable info' then sendWs (env ^. channel) r' conn sendMsg else sendMsg NoOp
   where
-    h = host r
-    path = "/"
-    start = case secure r of
-      True  ->  runSecureClient h (port r) path
-      False -> WS.runClient h (fromIntegral $ port r) path
+    host = T.unpack $ extractHostname r
+    port = extractPort r
+    path = T.unpack $ extractPath r
+    info' = info r
+    start = case extractScheme r of
+      "wss" -> runSecureClient host (fromIntegral port) path
+      "ws"  -> WS.runClient host port path
 
 disconnectRelay :: AppEnv -> Relay -> IO AppEvent
 disconnectRelay env r = if not $ connected r then return NoOp else do
@@ -505,7 +514,7 @@ receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
   msg <- lift (Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString))
   case msg of
     Left ex    -> do
-      liftIO $ putStrLn $ "Connection to " ++ relayName r ++ " closed"
+      liftIO $ putStrLn $ "Connection to " ++ (T.unpack $ relayName r) ++ " closed"
       lift $ sendMsg $ RelayDisconnected r
       mzero
     Right msg' -> case decode msg' of
@@ -517,17 +526,17 @@ receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
         lift $ putStrLn $ "Could not decode server response: " ++ show msg'
         lift $ sendMsg $ NoOp
 
-sendWs :: TChan ServerRequest -> Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
+sendWs :: TChan Request -> Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
 sendWs broadcastChannel r conn sendMsg = do
   channel <- atomically $ dupTChan broadcastChannel
   forever $ do
-    msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException ServerRequest)
+    msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException Request)
     case msg of
       Left ex -> sendMsg $ RelayDisconnected r
       Right msg' -> do
         case msg' of
           Disconnect r' ->
-            if r' `sameRelay` r then do
+            if r' == r then do
                 WS.sendClose conn $ T.pack "Bye!"
             else return ()
           _ ->

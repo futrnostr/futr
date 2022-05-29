@@ -2,7 +2,7 @@
 
 module Helpers where
 
-import           Crypto.Schnorr
+import           Crypto.Schnorr                       (XOnlyPubKey)
 import           Data.Aeson
 import qualified Data.ByteString.Lazy                 as LazyBytes
 import           Data.DateTime
@@ -12,27 +12,25 @@ import           Data.Maybe                           (fromMaybe)
 import           Data.Text                            (Text, pack)
 import           Data.Text.Encoding                   (encodeUtf8)
 
-import           NostrTypes
+import           Nostr.Event
+import           Nostr.Keys
+import           Nostr.Kind
+import           Nostr.Profile
+import           Nostr.Relay
 
 mainKeys :: [Keys] -> Keys
 mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
 
 poolWithoutRelay :: [Relay] -> Relay -> [Relay]
-poolWithoutRelay p r = filter (\r' -> not $ r `sameRelay` r') p
-
-sameRelay :: Relay -> Relay -> Bool
-sameRelay a b = host a == host b && port a == port b
-
-sortPool :: Relay -> Relay -> Ordering
-sortPool a b = mconcat [compare (host a) (host b), compare (port a) (port b)]
+poolWithoutRelay p r = filter (\r' -> not $ r == r') p
 
 profileDataFromReceivedEvents :: [ReceivedEvent] -> XOnlyPubKey -> Maybe ProfileData
 profileDataFromReceivedEvents res xo = profileData
   where
     relatedEvents = filter
       (\re ->
-        kind (fst re) == 0
-        && NostrTypes.pubKey (fst re) == xo
+        kind (fst re) == Metadata
+        && pubKey (fst re) == xo
       ) res
     profileData = case null relatedEvents of
       True -> Nothing
