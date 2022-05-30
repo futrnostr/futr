@@ -12,6 +12,32 @@ import           GHC.Exts               (fromList)
 import Nostr.Profile
 
 data Filter
+  = InitialFilter XOnlyPubKey
+  | ContactsFilter [XOnlyPubKey]
+  | TextNoteFilter [XOnlyPubKey]
+  deriving (Eq, Show)
+
+instance ToJSON Filter where
+  toJSON (InitialFilter xo) =
+    object $ fromList
+      [ ( "kinds", Array $ fromList $ [ Number 3 ] )
+      , ( "authors", Array $ fromList $ [ toJSON xo ] )
+      , ( "limit", Number 1 )
+      ]
+  toJSON (ContactsFilter xos) =
+    object $ fromList
+      [ ( "kinds", Array $ fromList $ [ Number 3 ] )
+      , ( "authors", Array $ fromList $ map toJSON xos )
+      ]
+  toJSON (TextNoteFilter xos) =
+    object $ fromList
+      [ ( "kinds", Array $ fromList $ [ Number 1 ] )
+      , ( "authors", Array $ fromList $ map toJSON xos )
+      , ( "limit", Number 500 )
+      ]
+
+{-
+data Filter
   = AllProfilesFilter (Maybe DateTime)
   | OwnEventsFilter XOnlyPubKey DateTime
   | MentionsFilter XOnlyPubKey DateTime
@@ -54,3 +80,4 @@ instance ToJSON Filter where
       , ( "authors", Array $ fromList [ String $ pack $ exportXOnlyPubKey xo ] )
       , ( "limit", Number $ fromIntegral 1 )
       ]
+-}

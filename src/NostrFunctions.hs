@@ -135,21 +135,6 @@ isPTag :: Tag -> Bool
 isPTag (PTag (ValidXOnlyPubKey xo) _ _) = True
 isPTag _ = False
 
-signEvent :: UnsignedEvent -> KeyPair -> XOnlyPubKey -> Event
-signEvent u kp xo =
-  Event
-    { eventId = eid
-    , pubKey = xo
-    , created_at = created_at' u
-    , kind = kind' u
-    , tags = tags' u
-    , content = content' u
-    , sig = s
-    }
-  where
-    eid = EventId {getEventId = SHA256.hash $ toStrict $ encode u}
-    s = Schnorr.signMsgSchnorr kp $ fromJust $ Schnorr.msg $ getEventId eid
-
 getReplyEventId :: Event -> Maybe EventId
 getReplyEventId = getMarkerEventId Reply
 
@@ -172,14 +157,11 @@ getMarkerEventId m e =
     extractEventId (ETag eid _ _) = eid
     extractEventId _ = error "Could not extract event id from reply or root tag"
 
-genSubscriptionId :: IO Text
-genSubscriptionId = do
-    gen <- newGenIO :: IO CtrDRBG
-    let Right (randomBytes, newGen) = genBytes 32 gen
-    return $ B16.encodeBase16 randomBytes
 
 extractEventFromServerResponse :: Response -> Event
 extractEventFromServerResponse (EventReceived subId event) = event
 
+-- @todo remove
+-- @see Helpers::extractXOFromProfile
 mapProfileToXOnlyPubKey :: Profile -> XOnlyPubKey
 mapProfileToXOnlyPubKey (Profile xo _ _) = xo

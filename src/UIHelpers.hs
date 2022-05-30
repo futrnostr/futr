@@ -28,13 +28,13 @@ xOnlyPubKeyElem x =
     , textFieldD_ (WidgetValue $ T.pack $ exportXOnlyPubKey x) [ readOnly ]
     ]
 
-profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
-profileName m xo =
-  case Map.lookup xo m of
-    Just (Profile xo' r pd) ->
-      name pd
-    Nothing ->
-      ""
+-- profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
+-- profileName m xo =
+--   case Map.lookup xo m of
+--     Just (Profile xo' r pd) ->
+--       name pd
+--     Nothing ->
+--       ""
 
 profileBox :: (WidgetModel s, WidgetEvent e) => XOnlyPubKey -> Text -> WidgetNode s e
 profileBox xo name =
@@ -43,14 +43,6 @@ profileBox xo name =
     , spacer
     , (label $ shortXOnlyPubKey xo) `styleBasic` [textSize 10]
     ]
-
-shortXOnlyPubKey :: XOnlyPubKey -> Text
-shortXOnlyPubKey xo = T.pack
-  $ part1 ++ ".." ++ part2
-  where
-    str = exportXOnlyPubKey xo
-    part1 = take 4 str
-    part2 = take 4 $ reverse str
 
 rowSepColor :: Color
 rowSepColor = rgbaHex "#A9A9A9" 0.75

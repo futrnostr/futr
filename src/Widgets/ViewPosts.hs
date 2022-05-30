@@ -20,12 +20,12 @@ import UIHelpers
 
 data ViewPostsModel = ViewPostsModel
   { _time             :: DateTime
-  , _profiles         :: Map.Map XOnlyPubKey Profile
-  , _receivedEvents   :: [ReceivedEvent]
+  , _contacts         :: [Profile]
+  , _events   :: [ReceivedEvent]
   } deriving (Eq, Show)
 
 instance Default ViewPostsModel where
-  def = ViewPostsModel (fromSeconds 0) Map.empty []
+  def = ViewPostsModel (fromSeconds 0) [] []
 
 makeLenses 'ViewPostsModel
 
@@ -41,21 +41,21 @@ viewPostsWidget wenv model eventFilter viewDetailsAction viewProfileAction =
   composite "ViewPostsWidget" model (viewPosts eventFilter viewDetailsAction viewProfileAction) (\_ _ _ e -> [Report e])
 
 viewPosts
-  :: (WidgetModel s, WidgetEvent e)
+  :: (WidgetModel sp, WidgetEvent ep)
   => (ReceivedEvent -> Bool)
-  -> (ReceivedEvent -> e)
-  -> (XOnlyPubKey -> e)
-  -> WidgetEnv s e
+  -> (ReceivedEvent -> ep)
+  -> (XOnlyPubKey -> ep)
+  -> WidgetEnv sp ep
   -> ViewPostsModel
-  -> WidgetNode s e
+  -> WidgetNode sp ep
 viewPosts eventFilter viewDetailsAction viewProfileAction wenv model =
     vscroll_ [ scrollOverlay ] posts
   where
     posts = vstack postRows
-    filteredEvents = filter eventFilter (model ^. receivedEvents)
+    filteredEvents = filter eventFilter (model ^. events)
     postFade idx ev = animRow
       where
-        item = postRow wenv (model ^. profiles) idx ev (model ^. time) viewDetailsAction viewProfileAction
+        item = postRow wenv (model ^. contacts) idx ev (model ^. time) viewDetailsAction viewProfileAction
         animRow =
           animFadeOut_ [] item `nodeKey` (content $ fst ev)
     postRows = zipWith postFade [ 0 .. ] filteredEvents
@@ -63,21 +63,21 @@ viewPosts eventFilter viewDetailsAction viewProfileAction wenv model =
 postRow
   :: (WidgetModel s, WidgetEvent e)
   => WidgetEnv s e
-  -> Map.Map XOnlyPubKey Profile
+  -> [Profile]
   -> Int
   -> ReceivedEvent
   -> DateTime
   -> (ReceivedEvent -> e)
   -> (XOnlyPubKey -> e)
   -> WidgetNode s e
-postRow wenv m idx re time viewDetailsAction viewProfileAction = row
+postRow wenv contacts idx re time viewDetailsAction viewProfileAction = row
   where
     event = fst re
     xo = NE.pubKey event
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
     profileBox =
       hstack
-        [ label ( profileName m xo) `styleBasic` [ textFont "Bold", textUnderline ]
+        [ label ( profileName contacts xo) `styleBasic` [ textFont "Bold", textUnderline ]
         , spacer
         , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
         ]

@@ -19,8 +19,9 @@ import           Nostr.Filter
 import           Nostr.Keys
 import           Nostr.Profile
 import           Nostr.Relay
-import           Nostr.Request       (Request)
+import           Nostr.Request       (Request, SubscriptionId)
 import           Widgets.EditProfile
+import           Widgets.Home
 import           Widgets.ViewPosts
 import           Widgets.ViewProfile
 
@@ -38,13 +39,12 @@ data AppDialog
     | ErrorReadingKeysFileDialog
     | NewRelayDialog
     | RelayDialog Relay
-    | DeleteEventDialog Event
+--    | DeleteEventDialog Event
     deriving (Eq, Show)
 
 data AppView
-    = PostsView
-    | PostDetailsView ReceivedEvent
-    | ProfileView XOnlyPubKey
+    = HomeView
+    | SetupView
     | EditProfileView
     deriving (Eq, Show)
 
@@ -65,21 +65,16 @@ data AppModel =
     { _time             :: DateTime
     , _keys             :: [Keys]
     , _selectedKeys     :: Maybe Keys
-    , _following        :: Map.Map XOnlyPubKey [Profile]
-    , _profiles         :: Map.Map XOnlyPubKey Profile
-    , _currentSub       :: Subscription
-    , _extraSub         :: Text
+    , _mainSub          :: SubscriptionId
+    , _contactsSub      :: SubscriptionId
+    , _initialSub       :: SubscriptionId
     , _pool             :: [Relay]
     , _mySecKeyInput    :: Text
-    , _newPostInput     :: Text
-    , _searchInput      :: Text
-    , _receivedEvents   :: [ReceivedEvent]
-    , _eventFilters     :: [Filter]
-    , _extraFilters     :: [Filter]
+--    , _searchInput      :: Text
     , _dialog           :: Maybe AppDialog
     , _currentView      :: AppView
     , _editProfileModel :: EditProfileModel
-    , _viewPostsModel   :: ViewPostsModel
+    , _homeModel        :: HomeModel
     , _viewProfileModel :: ViewProfileModel
     , _relayModel       :: RelayModel
     , _deleteReason     :: Text
@@ -87,7 +82,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel (fromSeconds 0) [] Nothing Map.empty Map.empty def "" defaultPool "" "" "" [] [] [] Nothing PostsView def def def def defaultDeleteReason
+  def = AppModel (fromSeconds 0) [] Nothing "" "" "" defaultPool "" Nothing HomeView def def def def defaultDeleteReason
 
 defaultDeleteReason :: Text
 defaultDeleteReason = "This post was published by accident."
@@ -103,10 +98,6 @@ data AppEvent
   | AddRelay Relay
   | RelayDisconnected Relay
   | ShowDialog AppDialog
-  | Subscribe [Filter]
-  | Subscribed Text DateTime
-  | ExtraSubscribe [Filter]
-  | ExtraSubscribed Text
   | KeyPairsLoaded [Keys]
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
@@ -114,16 +105,13 @@ data AppEvent
   | NoKeysFound
   | ErrorReadingKeysFile
   | ImportSecKey
-  | SendPost
-  | ViewPostDetails ReceivedEvent
   | EditProfile
-  | ViewProfile XOnlyPubKey
-  | SearchProfile Text
-  | Back
-  | EventSent
-  | ReplyToPost Event
-  | DeleteEvent Event
-  | EventAppeared Event Relay
+--  | SearchProfile Text
+--  | Back
+  -- | EventSent
+  -- | ReplyToPost Event
+  -- | DeleteEvent Event
+  -- | EventAppeared Event Relay
   | CloseDialog
   | TimerTick DateTime
   | NoOp

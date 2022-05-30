@@ -20,6 +20,7 @@ executable futr
   main-is: Main.hs
   other-modules:
       AppTypes
+      DebugJSON
       Helpers
       Nostr.Event
       Nostr.Filter
@@ -33,6 +34,7 @@ executable futr
       UI
       UIHelpers
       Widgets.EditProfile
+      Widgets.Home
       Widgets.ViewPosts
       Widgets.ViewProfile
       Paths_futr

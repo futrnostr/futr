@@ -1,6 +1,8 @@
 module Nostr.Request where
 
+import           Crypto.Random.DRBG     (CtrDRBG, genBytes, newGen, newGenIO)
 import           Data.Aeson
+import qualified Data.ByteString.Base16 as B16
 import           Data.Text              (Text, pack)
 import           GHC.Exts               (fromList)
 
@@ -38,3 +40,9 @@ instance ToJSON Request where
        , String subId
        ]
     Disconnect _ -> String $ pack "Bye!"
+
+genSubscriptionId :: IO Text
+genSubscriptionId = do
+    gen <- newGenIO :: IO CtrDRBG
+    let Right (randomBytes, newGen) = genBytes 32 gen
+    return $ B16.encodeBase16 randomBytes

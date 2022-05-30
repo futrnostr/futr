@@ -105,10 +105,10 @@ viewProfileWidget
   -> (XOnlyPubKey -> ep)
   -> ALens' sp ViewProfileModel
   -> WidgetNode sp ep
-viewProfileWidget chan keys viewPostDetailsAction viewProfileAction field =
+viewProfileWidget chan keys viewPostDetailsAction viewProfileAction model =
   composite
     "ViewProfileWidget"
-    field
+    model
     viewProfile
     (handleProfileEvent chan keys viewPostDetailsAction viewProfileAction)
 

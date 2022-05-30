@@ -28,6 +28,7 @@ import           Nostr.Relay
 import           Nostr.Request
 import           UIHelpers
 import qualified Widgets.EditProfile    as EditProfile
+import qualified Widgets.Home           as Home
 import qualified Widgets.ViewPosts      as ViewPosts
 import qualified Widgets.ViewProfile    as ViewProfile
 
@@ -35,43 +36,10 @@ buildUI :: TChan Request -> AppWenv -> AppModel -> AppNode
 buildUI channel wenv model = widgetTree
   where
     baseLayer = case model ^. currentView of
-      PostsView ->
-        vstack
-          [ label "New Post"
-          , spacer
-          , vstack
-              [ hstack
-                  [ textArea newPostInput
-                    `nodeKey` "newPost"
-                    `styleBasic` [ height 50 ]
-                  , filler
-                  , button "Post" SendPost
-                      `nodeEnabled` (strip (model ^. newPostInput) /= "")
-                  ]
-              ]
-          , spacer
-          , ViewPosts.viewPostsWidget
-              wenv
-              viewPostsModel
-              (\re -> kind (fst re) == TextNote
-                && pubKey (fst re) `elem` (xo : userFollowing)
-              )
-              ViewPostDetails
-              ViewProfile
-          ]
-          where
-            (Keys _ xo _ _) = fromJust $ model ^. selectedKeys
-            userFollowing = map mapProfileToXOnlyPubKey $
-              Map.findWithDefault [] xo (model ^. following)
-      PostDetailsView re ->
-        viewPostUI wenv model re
-      ProfileView xo ->
-        ViewProfile.viewProfileWidget
-          channel
-          (fromJust $ model ^. selectedKeys)
-          ViewPostDetails
-          ViewProfile
-          viewProfileModel
+      HomeView ->
+        Home.homeWidget channel homeModel
+      SetupView ->
+        vstack [ label "SETUP VIEW" ]
       EditProfileView ->
         EditProfile.editProfileWidget
           channel
@@ -79,13 +47,12 @@ buildUI channel wenv model = widgetTree
           editProfileModel
     headerTree =
       hstack
-        [ spacer, button "Back" Back `nodeVisible` (model ^. currentView /= PostsView)
-        , filler
+        [ filler
         , dropdown_
             selectedKeys
             (map (\k -> Just k) (model ^. keys))
-            (currentKeysNode (model ^. receivedEvents))
-            (currentKeysNode (model ^. receivedEvents))
+            currentKeysNode
+            currentKeysNode
             [ onChange KeysSelected ]
             `styleBasic` [ width 400 ]
         , spacer
@@ -113,26 +80,27 @@ buildUI channel wenv model = widgetTree
         addIcon =
           icon IconPlus `styleBasic`
           [width 16, height 16, fgColor black, cursorHand]
-    followingLayer = case model ^. selectedKeys of
-      Nothing ->
-        vstack []
-      Just (Keys _ xo _ _)  ->
-        vstack $
-          case Map.lookup xo $ model ^. AppTypes.following of
-            Just [] ->
-              [ label "You don't follow anyone" ]
-            Just ps ->
-              map (\(Profile xo r pd) ->
-                box_
-                  [ onClick (ViewProfile xo), alignLeft ]
-                  (profileBox xo $ name pd)
-                    `styleBasic` [ cursorHand ]
-              )
-              ps
-            Nothing ->
-              [ label "You don't follow anyone" ]
-      where
-        keys = fromJust $ model ^. selectedKeys
+    followingLayer = vstack []
+    -- followingLayer = case model ^. selectedKeys of
+    --   Nothing ->
+    --     vstack []
+    --   Just (Keys _ xo _ _)  ->
+    --     vstack $
+    --       case Map.lookup xo $ model ^. AppTypes.following of
+    --         Just [] ->
+    --           [ label "You don't follow anyone" ]
+    --         Just ps ->
+    --           map (\(Profile xo r pd) ->
+    --             box_
+    --               [ onClick (ViewProfile xo), alignLeft ]
+    --               (profileBox xo $ name pd)
+    --                 `styleBasic` [ cursorHand ]
+    --           )
+    --           ps
+    --         Nothing ->
+    --           [ label "You don't follow anyone" ]
+      --where
+      --  keys = fromJust $ model ^. selectedKeys
     widgetTree =
       zstack
         [ vstack
@@ -144,14 +112,14 @@ buildUI channel wenv model = widgetTree
                 , vstack
                     [ label "Following" `styleBasic` [ paddingB 10 ]
                     , spacer
-                    , hstack
-                        [ textField searchInput
-                            `nodeKey` "searchInput"
-                        , spacer
-                        , button "Search" (SearchProfile (model ^. searchInput))
-                            `nodeEnabled` isValidPubKey
-                        ]
-                    , spacer
+                    -- , hstack
+                    --     [ textField searchInput
+                    --         `nodeKey` "searchInput"
+                    --     , spacer
+                    --     , button "Search" (SearchProfile (model ^. searchInput))
+                    --         `nodeEnabled` isValidPubKey
+                    --     ]
+                    -- , spacer
                     , scroll_ [ scrollOverlay ] followingLayer
                     ]
                     `styleBasic` [ padding 10, width 200, borderL 1 sep ]
@@ -165,7 +133,7 @@ buildUI channel wenv model = widgetTree
         ]
       where
         sep = rgbaHex "#A9A9A9" 0.75
-        isValidPubKey = isJust $ maybe Nothing xOnlyPubKey $ decodeHex $ view searchInput model
+        -- isValidPubKey = isJust $ maybe Nothing xOnlyPubKey $ decodeHex $ view searchInput model
 
 dialogLayer :: AppModel -> AppNode
 dialogLayer model =
@@ -185,7 +153,7 @@ dialogLayer model =
             ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
             RelayDialog r -> viewRelayDialog r model
             NewRelayDialog -> viewNewRelayDialog model
-            DeleteEventDialog e -> viewDeleteEventDialog e
+            -- DeleteEventDialog e -> viewDeleteEventDialog e
         ] `styleBasic`
       [ width 500, height 400, padding 10, radius 10, bgColor darkGray ]
   where
@@ -194,8 +162,8 @@ dialogLayer model =
     closeIcon = icon IconClose
       `styleBasic` [ width 16, height 16, fgColor black, cursorHand ]
 
-currentKeysNode :: [ReceivedEvent] -> Maybe Keys -> AppNode
-currentKeysNode res mks = case mks of
+currentKeysNode :: Maybe Keys -> AppNode
+currentKeysNode mks = case mks of
     Just (Keys _ xo _ n) ->
       case n of
         Just n' ->
@@ -205,62 +173,62 @@ currentKeysNode res mks = case mks of
     _ ->
       label ""
 
-viewPostUI :: AppWenv -> AppModel -> ReceivedEvent -> AppNode
-viewPostUI wenv model re = widgetTree
-  where
-    (Keys _ xo _ _) = fromJust (model ^. selectedKeys)
-    event = fst re
-    rs = snd re
-    xo' = pubKey event
-    author = profileName (model ^. profiles) xo'
-    profileBox =
-      hstack
-        [ label author `styleBasic` [ textFont "Bold", textUnderline ]
-        , spacer
-        , (label $ shortXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
-        ]
-    postInfo =
-      vstack
-        [ hstack
-            [ box_
-                [ onClick $ ViewProfile xo' ] profileBox
-                `styleBasic` [ cursorHand ]
-            , filler
-            , label ( xTimeAgo (created_at event) ( model ^. time) )
-                `styleBasic` [ textSize 10 ]
-            ] `styleBasic` [ paddingB 10 ]
-        , hstack
-            [ label_ (content event) [ multiline, ellipsis ]
-            , filler
-            ]
-        , hstack
-            [ filler
-            , button "Delete" $ ShowDialog $ DeleteEventDialog event
-            ] `nodeVisible` (xo == xo')
-        ]
-    seenOnTree =
-      vstack $
-        map (\r -> label $ relayName r) (sort rs)
-    widgetTree =
-      vstack
-        [ label "Post Details"
-        , spacer
-        , hstack
-            [ textArea newPostInput
-                `nodeKey` "replyPost"
-                `styleBasic` [ height 50 ]
-            , filler
-            , button "Reply" (ReplyToPost event)
-                `nodeEnabled` (strip (model ^. newPostInput) /= "")
-            ]
-        , spacer
-        , vscroll_ [ scrollOverlay ] $ postInfo `styleBasic` [ textTop ]
-        , filler
-        , spacer
-        , label "Seen on"
-        , spacer
-        , seenOnTree
-        ]
+-- viewPostUI :: AppWenv -> AppModel -> ReceivedEvent -> AppNode
+-- viewPostUI wenv model re = widgetTree
+--   where
+--     (Keys _ xo _ _) = fromJust (model ^. selectedKeys)
+--     event = fst re
+--     rs = snd re
+--     xo' = pubKey event
+--     author = profileName (model ^. profiles) xo'
+--     profileBox =
+--       hstack
+--         [ label author `styleBasic` [ textFont "Bold", textUnderline ]
+--         , spacer
+--         , (label $ shortXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
+--         ]
+--     postInfo =
+--       vstack
+--         [ hstack
+--             [ box_
+--                 [ onClick $ ViewProfile xo' ] profileBox
+--                 `styleBasic` [ cursorHand ]
+--             , filler
+--             , label ( xTimeAgo (created_at event) ( model ^. time) )
+--                 `styleBasic` [ textSize 10 ]
+--             ] `styleBasic` [ paddingB 10 ]
+--         , hstack
+--             [ label_ (content event) [ multiline, ellipsis ]
+--             , filler
+--             ]
+--         , hstack
+--             [ filler
+--             , button "Delete" $ ShowDialog $ DeleteEventDialog event
+--             ] `nodeVisible` (xo == xo')
+--         ]
+--     seenOnTree =
+--       vstack $
+--         map (\r -> label $ relayName r) (sort rs)
+--     widgetTree =
+--       vstack
+--         [ label "Post Details"
+--         , spacer
+--         , hstack
+--             [ textArea newPostInput
+--                 `nodeKey` "replyPost"
+--                 `styleBasic` [ height 50 ]
+--             , filler
+--             , button "Reply" (ReplyToPost event)
+--                 `nodeEnabled` (strip (model ^. newPostInput) /= "")
+--             ]
+--         , spacer
+--         , vscroll_ [ scrollOverlay ] $ postInfo `styleBasic` [ textTop ]
+--         , filler
+--         , spacer
+--         , label "Seen on"
+--         , spacer
+--         , seenOnTree
+--         ]
 
 viewRelayDialog :: Relay -> AppModel -> AppNode
 viewRelayDialog r model =
@@ -323,31 +291,31 @@ viewNewRelayDialog model =
     ]
       `styleBasic` [ padding 10 ]
 
-viewDeleteEventDialog :: Event -> AppNode
-viewDeleteEventDialog event =
-  vstack
-    [ label "Are you sure you want to delete this event?"
-        `styleBasic` [ textFont "Bold" ]
-    , spacer
-    , hstack
-        [ label_ (content event) [ multiline, ellipsis ]
-        , filler
-        ]
-    , filler
-    , label "Delete reason:"
-    , spacer
-    , textArea deleteReason
-        `nodeKey` "deleteEventReason"
-        `styleBasic` [ height 50 ]
-    , spacer
-    , hstack
-        [ filler
-        , button "No" CloseDialog
-        , spacer
-        , mainButton "Yes" (DeleteEvent event)
-        ]
-    ]
-      `styleBasic` [ padding 10 ]
+-- viewDeleteEventDialog :: Event -> AppNode
+-- viewDeleteEventDialog event =
+--   vstack
+--     [ label "Are you sure you want to delete this event?"
+--         `styleBasic` [ textFont "Bold" ]
+--     , spacer
+--     , hstack
+--         [ label_ (content event) [ multiline, ellipsis ]
+--         , filler
+--         ]
+--     , filler
+--     , label "Delete reason:"
+--     , spacer
+--     , textArea deleteReason
+--         `nodeKey` "deleteEventReason"
+--         `styleBasic` [ height 50 ]
+--     , spacer
+--     , hstack
+--         [ filler
+--         , button "No" CloseDialog
+--         , spacer
+--         , mainButton "Yes" (DeleteEvent event)
+--         ]
+--     ]
+--       `styleBasic` [ padding 10 ]
 
 errorReadingKeysFileStack :: AppNode
 errorReadingKeysFileStack =

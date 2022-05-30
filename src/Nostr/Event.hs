@@ -4,6 +4,7 @@
 module Nostr.Event where
 
 import           Control.Monad          (mzero)
+import qualified Crypto.Hash.SHA256     as SHA256
 import           Crypto.Schnorr
 import           Data.Aeson
 import           Data.ByteString        (ByteString)
@@ -11,6 +12,7 @@ import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import           Data.ByteString.Lazy   (toStrict)
 import           Data.DateTime
+import           Data.Maybe             (fromJust)
 import           Data.Text              (Text, toLower, pack, unpack)
 import qualified Data.Vector            as V
 import           GHC.Exts               (fromList)
@@ -180,3 +182,23 @@ eventId' t = do
 
 exportEventId :: EventId -> String
 exportEventId i = unpack . B16.encodeBase16 $ getEventId i
+
+signEvent :: UnsignedEvent -> KeyPair -> XOnlyPubKey -> Event
+signEvent u kp xo =
+  Event
+    { eventId = eid
+    , pubKey = xo
+    , created_at = created_at' u
+    , kind = kind' u
+    , tags = tags' u
+    , content = content' u
+    , sig = s
+    }
+  where
+    eid = EventId {getEventId = SHA256.hash $ toStrict $ encode u}
+    s = signMsgSchnorr kp $ fromJust $ msg $ getEventId eid
+
+textNote :: Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
+textNote note xo t =
+  UnsignedEvent
+    {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [], content' = note}

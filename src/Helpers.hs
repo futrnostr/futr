@@ -2,7 +2,7 @@
 
 module Helpers where
 
-import           Crypto.Schnorr                       (XOnlyPubKey)
+import           Crypto.Schnorr                       (XOnlyPubKey, exportXOnlyPubKey)
 import           Data.Aeson
 import qualified Data.ByteString.Lazy                 as LazyBytes
 import           Data.DateTime
@@ -49,3 +49,25 @@ xTimeAgo old new
   | otherwise = pack $ show old
   where
     diff = toSeconds new - toSeconds old
+
+shortXOnlyPubKey :: XOnlyPubKey -> Text
+shortXOnlyPubKey xo = pack
+  $ part1 ++ ".." ++ part2
+  where
+    str = exportXOnlyPubKey xo
+    part1 = take 4 str
+    part2 = take 4 $ reverse str
+
+
+extractXOFromProfile :: Profile -> XOnlyPubKey
+extractXOFromProfile (Profile xo _ _) = xo
+
+profileName :: [Profile] -> XOnlyPubKey -> Text
+profileName profiles xo =
+  if null pList
+    then ""
+    else do
+      let (Profile _ _ (ProfileData name _ _ _)) = head pList
+      name
+  where
+    pList = filter (\(Profile xo' _ _) -> xo == xo') profiles
