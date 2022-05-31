@@ -1,10 +1,16 @@
+{-# LANGUAGE OverloadedStrings   #-}
+
 module Nostr.Request where
 
-import           Crypto.Random.DRBG     (CtrDRBG, genBytes, newGen, newGenIO)
-import           Data.Aeson
+import Control.Concurrent.STM.TChan
+import Control.Monad.STM            (atomically)
+import Crypto.Random.DRBG           (CtrDRBG, genBytes, newGen, newGenIO)
+import Data.Aeson
+import Data.DateTime
+import Data.Text                    (Text, pack)
+import GHC.Exts                     (fromList)
+
 import qualified Data.ByteString.Base16 as B16
-import           Data.Text              (Text, pack)
-import           GHC.Exts               (fromList)
 
 import Nostr.Event
 import Nostr.Filter
@@ -41,8 +47,16 @@ instance ToJSON Request where
        ]
     Disconnect _ -> String $ pack "Bye!"
 
-genSubscriptionId :: IO Text
-genSubscriptionId = do
-    gen <- newGenIO :: IO CtrDRBG
-    let Right (randomBytes, newGen) = genBytes 32 gen
-    return $ B16.encodeBase16 randomBytes
+subscribe :: TChan Request -> [Filter] -> IO SubscriptionId
+subscribe channel [] = return ""
+subscribe channel fs = do
+  now <- getCurrentTime
+  gen <- newGenIO :: IO CtrDRBG
+  let Right (randomBytes, newGen) = genBytes 32 gen
+  let subId = B16.encodeBase16 randomBytes
+  atomically $ writeTChan channel $ Subscribe $ Subscription fs subId
+  return subId
+
+unsubscribe :: TChan Request -> SubscriptionId -> IO ()
+unsubscribe channel subId =
+  atomically $ writeTChan channel $ Close subId

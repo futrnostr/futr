@@ -111,28 +111,18 @@ handleHomeEvent chan env node model evt = case evt of
     []
 
 sendInitFilter :: TChan Request -> Keys -> IO HomeEvent
-sendInitFilter chan (Keys _ xo _ _) = do
-  subId <- genSubscriptionId
-  atomically $ writeTChan chan $ Subscribe (Subscription [InitialFilter xo] subId)
+sendInitFilter channel (Keys _ xo _ _) = do
+  subId <- subscribe channel [InitialFilter xo]
   return $ InitSubscribed subId
 
-stopInitFilter :: TChan Request -> SubscriptionId -> IO HomeEvent
-stopInitFilter chan subId = do
-  atomically $ writeTChan chan $ Close subId
-  return $ NoOp
-
 sendHomeFilters :: TChan Request -> HomeModel -> IO HomeEvent
-sendHomeFilters chan model = do
-  subId <- genSubscriptionId
-  atomically $ writeTChan chan $
-    Subscribe (Subscription [textNoteFilter, contactsFilter] subId)
+sendHomeFilters channel model = do
+  subId <- subscribe channel [TextNoteFilter xoList, ContactsFilter xoList]
   return $ HomeFilterSubscribed subId
   where
     (Keys _ xo _ _) = fromJust $ model ^. keys
     contactList = map extractXOFromProfile (model ^. contacts)
     xoList = xo : contactList
-    textNoteFilter = TextNoteFilter xoList
-    contactsFilter = ContactsFilter xoList
 
 handleEvent :: HomeModel -> Event -> Relay -> HomeModel
 handleEvent model e r =

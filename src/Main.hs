@@ -213,13 +213,6 @@ handleEvent env wenv node model evt =
       [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
     ErrorReadingKeysFile ->
       [ Model $ model & dialog .~ Just ErrorReadingKeysFileDialog ]
-    SendPost ->
-      [ Model $ model
-          & newPostInput .~ ""
-      , Task $ handleNewPost env model
-      ]
-    ViewPostDetails re ->
-      [ Model $ model & currentView .~ PostDetailsView re ]
     EditProfile ->
       [ Model $ model
         & currentView .~ EditProfileView
@@ -267,15 +260,6 @@ handleEvent env wenv node model evt =
         & extraFilters .~ []
       , Task $ unsubscribe env $ model ^. extraSub
       ]
-    EventSent ->
-      [ Model $ model
-          & dialog .~ Nothing
-      ]
-    ReplyToPost e ->
-      [ Model $ model
-          & newPostInput .~ ""
-      , Task $ handleNewPost env model
-      ]
     EventAppeared e r ->
       updateModel ++ resubscribe
       where
@@ -295,8 +279,7 @@ handleEvent env wenv node model evt =
             []
     CloseDialog ->
       [ Model $ model & dialog .~ Nothing ]
-    TimerTick now ->
-      [ Model $ model & AppTypes.time .~ now ]
+
 
 handleReceivedEvent :: AppModel -> Event -> Relay -> AppModel
 handleReceivedEvent model e r =
@@ -369,84 +352,21 @@ addFollowing pm e =
     tags' = tags e
     xo = pubKey e
 
-buildEventFilters :: XOnlyPubKey -> Map.Map XOnlyPubKey [Profile] -> Maybe DateTime -> IO AppEvent
-buildEventFilters xo pm latest = do
-  recent <- last24h
-  let ps = Map.findWithDefault [] xo pm
-  return $ AppTypes.Subscribe
-    [ AllProfilesFilter latest
-    , OwnEventsFilter xo $ fromDate recent
-    , MentionsFilter xo $ fromDate recent
-    , FollowersFilter ps $ fromDate recent
-    ]
-  where
-    fromDate recent = case latest of
-      Just t -> t
-      Nothing -> recent
+-- runSearchProfile :: Text -> IO AppEvent
+-- runSearchProfile v = do
+--   case maybe Nothing xOnlyPubKey $ decodeHex v of
+--     Just xo ->
+--       return $ ViewProfile xo
+--     _ ->
+--       return NoOp
 
-buildProfileEventFilters :: XOnlyPubKey -> IO AppEvent
-buildProfileEventFilters xo = do
-  recent <- last24h
-  return $ ExtraSubscribe
-    [ OwnEventsFilter xo recent
-    , ProfileFollowers xo
-    ]
-
-last24h :: IO DateTime
-last24h = do
-  now <- getCurrentTime
-  return $ fromSeconds $ toSeconds now - 86400
-
-subscribe :: AppEnv -> [Filter] -> IO AppEvent
-subscribe env [] = return NoOp
-subscribe env fs = do
-  now <- getCurrentTime
-  subId <- genSubscriptionId
-  atomically $ writeTChan (env ^. channel) $ Nostr.Request.Subscribe fs subId
-  return $ Subscribed subId now
-
-unsubscribe :: AppEnv -> Text -> IO AppEvent
-unsubscribe env subId = do
-  atomically $ writeTChan (env ^. channel) $ Close subId
-  return NoOp
-
-runSearchProfile :: Text -> IO AppEvent
-runSearchProfile v = do
-  case maybe Nothing xOnlyPubKey $ decodeHex v of
-    Just xo ->
-      return $ ViewProfile xo
-    _ ->
-      return NoOp
-
-extraSubscribe :: AppEnv -> [Filter] -> IO AppEvent
-extraSubscribe env [] = return NoOp
-extraSubscribe env fs = do
-  now <- getCurrentTime
-  subId <- genSubscriptionId
-  let sub = Nostr.Request.Subscription fs subId
-  atomically $ writeTChan (env ^. channel) $ Nostr.Request.Subscribe sub
-  return $ ExtraSubscribed subId
-
-handleNewPost :: AppEnv -> AppModel -> IO AppEvent
-handleNewPost env model = do
-  now <- getCurrentTime
-  let (Keys kp xo _ _) = fromJust $ model ^. selectedKeys
-  let unsigned = case model ^. currentView of {
-    PostDetailsView re ->
-      replyNote (fst re) (strip $ model ^. newPostInput) xo now;
-    _ ->
-      textNote (strip $ model ^. newPostInput) xo now;
-  }
-  atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent unsigned kp xo
-  return EventSent
-
-handleDeleteEvent :: AppEnv -> Event -> AppModel -> IO AppEvent
-handleDeleteEvent env event model = do
-  now <- getCurrentTime
-  let (Keys kp xo _ _) = fromJust $ model ^. selectedKeys
-  let unsigned = deleteEvents [eventId event] (model ^. deleteReason) xo now
-  atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent unsigned kp xo
-  return EventSent
+-- handleDeleteEvent :: AppEnv -> Event -> AppModel -> IO AppEvent
+-- handleDeleteEvent env event model = do
+--   now <- getCurrentTime
+--   let (Keys kp xo _ _) = fromJust $ model ^. selectedKeys
+--   let unsigned = deleteEvents [eventId event] (model ^. deleteReason) xo now
+--   atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent unsigned kp xo
+--   return EventSent
 
 maybeSaveKeyPairs :: AppModel -> AppModel -> IO AppEvent
 maybeSaveKeyPairs old new =
@@ -540,11 +460,6 @@ sendWs broadcastChannel r conn sendMsg = do
             else return ()
           _ ->
             WS.sendTextData conn $ encode msg'
-
-generateNewKeyPair :: (AppEvent -> IO ()) -> IO ()
-generateNewKeyPair sendMsg = do
-  k <- generateKeyPair
-  sendMsg $ KeyPairGenerated k
 
 switchEnabledKeys :: Keys -> [Keys] -> [Keys]
 switchEnabledKeys (Keys kp _ _ _) ks =
