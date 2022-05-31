@@ -19,6 +19,10 @@ import Nostr.Profile
 import Nostr.Request
 import NostrFunctions
 
+type EditProfileWenv = WidgetEnv EditProfileModel EditProfileEvent
+
+type EditProfileNode = WidgetNode EditProfileModel EditProfileEvent
+
 data ProfileModelInputs = ProfileModelInputs
   { _nameInput            :: Text
   , _aboutInput           :: Text
@@ -41,8 +45,7 @@ data EditProfileModel =  EditProfileModel
 instance Default EditProfileModel where
   def = EditProfileModel "" "" "" "" def
 
-
-data ProfileEvent
+data EditProfileEvent
   = SaveProfile
   deriving (Eq, Show)
 
@@ -52,11 +55,11 @@ makeLenses 'EditProfileModel
 handleProfileEvent
   :: TChan Request
   -> Keys
-  -> WidgetEnv EditProfileModel ProfileEvent
-  -> WidgetNode EditProfileModel ProfileEvent
+  -> EditProfileWenv
+  -> EditProfileNode
   -> EditProfileModel
-  -> ProfileEvent
-  -> [EventResponse EditProfileModel ProfileEvent sp ep]
+  -> EditProfileEvent
+  -> [EventResponse EditProfileModel EditProfileEvent sp ep]
 handleProfileEvent chan ks env node model evt = case evt of
   SaveProfile ->
     [ Producer $ saveProfile chan ks model ]
@@ -69,7 +72,7 @@ editProfileWidget
   -> WidgetNode sp ep
 editProfileWidget chan keys field = composite "editProfileWidget" field viewProfile (handleProfileEvent chan keys)
 
-saveProfile :: TChan Request -> Keys -> EditProfileModel -> (ProfileEvent -> IO ()) -> IO ()
+saveProfile :: TChan Request -> Keys -> EditProfileModel -> (EditProfileEvent -> IO ()) -> IO ()
 saveProfile chan (Keys kp xo _ _) model sendMsg = do
   now <- getCurrentTime
   let raw = setMetadata name about picture nip05 xo now
@@ -81,7 +84,7 @@ saveProfile chan (Keys kp xo _ _) model sendMsg = do
     picture = strip $ is ^. pictureUrlInput
     nip05 = strip $ is ^. nip05IdentifierInput
 
-viewProfile :: WidgetEnv EditProfileModel ProfileEvent -> EditProfileModel -> WidgetNode EditProfileModel ProfileEvent
+viewProfile :: EditProfileWenv -> EditProfileModel -> EditProfileNode
 viewProfile wenv model =
   vstack
     [ label "Profile"

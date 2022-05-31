@@ -29,6 +29,8 @@ import Nostr.Request
 
 import qualified Widgets.ViewPosts as ViewPosts
 
+type HomeWenv = WidgetEnv HomeModel HomeEvent
+
 type HomeNode = WidgetNode HomeModel HomeEvent
 
 data HomeModel = HomeModel
@@ -67,8 +69,8 @@ homeWidget chan model = composite "homeWidget" model viewHome (handleHomeEvent c
 
 handleHomeEvent
   :: TChan Request
-  -> WidgetEnv HomeModel HomeEvent
-  -> WidgetNode HomeModel HomeEvent
+  -> HomeWenv
+  -> HomeNode
   -> HomeModel
   -> HomeEvent
   -> [EventResponse HomeModel HomeEvent sp ep]
@@ -204,9 +206,9 @@ sendPost chan model = do
   return NoOp
 
 viewHome
-  :: WidgetEnv HomeModel HomeEvent
+  :: HomeWenv
   -> HomeModel
-  -> WidgetNode HomeModel HomeEvent
+  -> HomeNode
 viewHome wenv model = widgetTree
   where
     widgetTree =

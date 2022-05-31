@@ -317,41 +317,6 @@ viewNewRelayDialog model =
 --     ]
 --       `styleBasic` [ padding 10 ]
 
-errorReadingKeysFileStack :: AppNode
-errorReadingKeysFileStack =
-  vstack
-    [ label "ERROR: Keys file could not be read." ]
-
-generateOrImportKeyPairStack :: AppModel -> AppNode
-generateOrImportKeyPairStack model =
-  vstack
-    (title ++
-    [ hstack
-        [ label "Generate new key pair"
-        , spacer
-        , button "Generate" GenerateKeyPair
-        ]
-    , spacer
-    , label "or import an existing private key"
-    , spacer
-    , hstack
-        [ textField mySecKeyInput `nodeKey` "importmyprivatekey"
-        , spacer
-        , button "Import" ImportSecKey `nodeEnabled` isValidPrivateKey
-        ]
-    ]) `styleBasic` [ padding 10 ]
-  where
-    isValidPrivateKey =
-      isJust $ maybe Nothing secKey $ decodeHex $ view mySecKeyInput model
-    title = case model ^. selectedKeys of
-      Nothing ->
-        [ label "Welcome to nostr"
-        , spacer
-        , label "To get started, you need a valid key pair first"
-        , spacer
-        ]
-      _ ->
-        []
 
 viewCircle :: Relay -> WidgetNode AppModel AppEvent
 viewCircle r = defaultWidgetNode "circlesGrid" widget

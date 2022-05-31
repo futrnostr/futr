@@ -35,6 +35,7 @@ executable futr
       UIHelpers
       Widgets.EditProfile
       Widgets.Home
+      Widgets.Setup
       Widgets.ViewPosts
       Widgets.ViewProfile
       Paths_futr

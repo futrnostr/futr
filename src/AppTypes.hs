@@ -39,7 +39,6 @@ data AppDialog
     | ErrorReadingKeysFileDialog
     | NewRelayDialog
     | RelayDialog Relay
---    | DeleteEventDialog Event
     deriving (Eq, Show)
 
 data AppView
@@ -70,12 +69,10 @@ data AppModel =
     , _initialSub       :: SubscriptionId
     , _pool             :: [Relay]
     , _mySecKeyInput    :: Text
---    , _searchInput      :: Text
     , _dialog           :: Maybe AppDialog
     , _currentView      :: AppView
     , _editProfileModel :: EditProfileModel
     , _homeModel        :: HomeModel
-    , _viewProfileModel :: ViewProfileModel
     , _relayModel       :: RelayModel
     , _deleteReason     :: Text
     }
@@ -106,14 +103,8 @@ data AppEvent
   | ErrorReadingKeysFile
   | ImportSecKey
   | EditProfile
---  | SearchProfile Text
---  | Back
-  -- | EventSent
-  -- | ReplyToPost Event
-  -- | DeleteEvent Event
-  -- | EventAppeared Event Relay
   | CloseDialog
-  | TimerTick DateTime
+--  | TimerTick DateTime
   | NoOp
   deriving (Eq, Show)
 

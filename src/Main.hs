@@ -553,15 +553,17 @@ generateNewKeyPair sendMsg = do
   k <- generateKeyPair
   sendMsg $ KeyPairGenerated k
 
-disableKeys :: [Keys] -> [Keys]
-disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
-
 switchEnabledKeys :: Keys -> [Keys] -> [Keys]
 switchEnabledKeys (Keys kp _ _ _) ks =
   map (\(Keys kp' xo' a' n') -> if kp == kp'
     then Keys kp' xo' True n'
     else Keys kp' xo' False n'
   ) ks
+
+errorReadingKeysFileStack :: SetupNode
+errorReadingKeysFileStack =
+  vstack
+    [ label "ERROR: Keys file could not be read." ]
 
 main :: IO ()
 main = do

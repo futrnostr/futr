@@ -29,6 +29,10 @@ import           Nostr.Request
 import           UIHelpers
 import           Widgets.ViewPosts
 
+type ViewProfileWenv = WidgetEnv ViewProfileModel ProfileEvent
+
+type ViewProfileNode = WidgetNode ViewProfileModel ProfileEvent
+
 data ViewProfileModel = ViewProfileModel
   { _myKeys           :: Maybe Keys
   , _xo               :: Maybe XOnlyPubKey
@@ -57,8 +61,8 @@ handleProfileEvent
   -> Keys
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
-  -> WidgetEnv ViewProfileModel ProfileEvent
-  -> WidgetNode ViewProfileModel ProfileEvent
+  -> ViewProfileWenv
+  -> ViewProfileNode
   -> ViewProfileModel
   -> ProfileEvent
   -> [EventResponse ViewProfileModel ProfileEvent sp ep]
@@ -140,9 +144,9 @@ unfollow chan (Keys kp xo' _ _) model sendMsg = do
     newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= oldFollow) oldFollowing
 
 viewProfile
-  :: WidgetEnv ViewProfileModel ProfileEvent
+  :: ViewProfileWenv
   -> ViewProfileModel
-  -> WidgetNode ViewProfileModel ProfileEvent
+  -> ViewProfileNode
 viewProfile wenv model =
   vstack
     [ hstack
