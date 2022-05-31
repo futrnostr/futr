@@ -3,8 +3,10 @@
 
 module Widgets.Home where
 
+import Control.Concurrent           (forkIO, threadDelay)
 import Control.Concurrent.STM.TChan
 import Control.Lens
+import Control.Monad                (forever, void)
 import Control.Monad.STM            (atomically)
 import Crypto.Schnorr               (XOnlyPubKey)
 import Data.Aeson
@@ -35,6 +37,7 @@ type HomeNode = WidgetNode HomeModel HomeEvent
 
 data HomeModel = HomeModel
   { _keys            :: Maybe Keys
+  , _time            :: DateTime
   , _events          :: [ReceivedEvent]
   , _contacts        :: [Profile]
   , _noteInput       :: Text
@@ -45,10 +48,11 @@ data HomeModel = HomeModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel Nothing [] [] "" False "" "" def
+  def = HomeModel Nothing (fromSeconds 0) [] [] "" False "" "" def
 
 data HomeEvent
   = NoOp
+  | TimerTick DateTime
   | Initialize
   | InitSubscribed SubscriptionId
   | HomeFilterSubscribed SubscriptionId
@@ -77,8 +81,12 @@ handleHomeEvent
 handleHomeEvent chan env node model evt = case evt of
   NoOp ->
     []
+  TimerTick now ->
+    [ Model $ model & time .~ now ]
   Initialize ->
-    [ Task $ sendInitFilter chan (fromJust $ model ^.keys) ]
+    [ Task $ sendInitFilter chan (fromJust $ model ^.keys)
+    , Producer timerLoop
+    ]
   InitSubscribed subId ->
     [ Model $ model & initSub .~ subId ]
   EventAppeared e r -> do
@@ -187,6 +195,12 @@ sendPost chan model = do
   let unsigned = textNote (strip $ model ^. noteInput) xo now;
   atomically $ writeTChan chan $ SendEvent $ signEvent unsigned kp xo
   return NoOp
+
+timerLoop :: (HomeEvent -> IO ()) -> IO ()
+timerLoop sendMsg = void . forkIO $ void $ forever $ do
+  now <- getCurrentTime
+  sendMsg $ TimerTick now
+  threadDelay 1000000
 
 viewHome
   :: HomeWenv

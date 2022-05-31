@@ -104,7 +104,6 @@ data AppEvent
   | ImportSecKey
   | EditProfile
   | CloseDialog
---  | TimerTick DateTime
   | NoOp
   deriving (Eq, Show)
 
