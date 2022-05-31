@@ -19,7 +19,6 @@ import           Monomer.Widgets.Single
 
 import           AppTypes
 import           Helpers
-import           NostrFunctions
 import           Nostr.Event
 import           Nostr.Keys
 import           Nostr.Kind
@@ -56,9 +55,9 @@ buildUI channel wenv model = widgetTree
             [ onChange KeysSelected ]
             `styleBasic` [ width 400 ]
         , spacer
-        , button "Edit" EditProfile
+        , button "Edit" NoOp --  EditProfile
         , spacer
-        , button "Add" $ ShowDialog GenerateKeyPairDialog
+        , button "Add" $ NoOp -- ShowDialog GenerateKeyPairDialog
         ] `styleBasic` [ paddingR 10 ]
     footerTree =
       vstack [hstack ([ filler ] ++ connections ++ [ spacer, addRelay ])]
@@ -149,8 +148,10 @@ dialogLayer model =
             ]
         , spacer
         , case d of
-            GenerateKeyPairDialog -> generateOrImportKeyPairStack model
-            ErrorReadingKeysFileDialog -> errorReadingKeysFileStack
+            -- GenerateKeyPairDialog -> generateOrImportKeyPairStack model
+            ErrorReadingKeysFileDialog ->
+              vstack
+                [ label "ERROR: Keys file could not be read." ]
             RelayDialog r -> viewRelayDialog r model
             NewRelayDialog -> viewNewRelayDialog model
             -- DeleteEventDialog e -> viewDeleteEventDialog e

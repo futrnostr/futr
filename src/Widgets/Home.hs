@@ -29,6 +29,7 @@ import Nostr.Profile
 import Nostr.Relay
 import Nostr.Request
 
+import qualified Widgets.EditProfile  as EditProfile
 import qualified Widgets.ViewPosts    as ViewPosts
 
 type HomeWenv = WidgetEnv HomeModel HomeEvent
@@ -36,19 +37,20 @@ type HomeWenv = WidgetEnv HomeModel HomeEvent
 type HomeNode = WidgetNode HomeModel HomeEvent
 
 data HomeModel = HomeModel
-  { _keys            :: Maybe Keys
-  , _time            :: DateTime
-  , _events          :: [ReceivedEvent]
-  , _contacts        :: [Profile]
-  , _noteInput       :: Text
-  , _isInitialized   :: Bool
-  , _homeSub         :: SubscriptionId
-  , _initSub         :: SubscriptionId
-  , _viewPostsModel  :: ViewPosts.ViewPostsModel
+  { _keys             :: Maybe Keys
+  , _time             :: DateTime
+  , _events           :: [ReceivedEvent]
+  , _contacts         :: [Profile]
+  , _noteInput        :: Text
+  , _isInitialized    :: Bool
+  , _homeSub          :: SubscriptionId
+  , _initSub          :: SubscriptionId
+  , _viewPostsModel   :: ViewPosts.ViewPostsModel
+  , _editProfileModel :: EditProfile.EditProfileModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel Nothing (fromSeconds 0) [] [] "" False "" "" def
+  def = HomeModel Nothing (fromSeconds 0) [] [] "" False "" "" def def
 
 data HomeEvent
   = NoOp
@@ -136,9 +138,16 @@ handleEvent model e r =
     Metadata ->
       model
         & keys .~ Just (updateName (fromJust $ model ^. keys))
+        & editProfileModel . EditProfile.inputs . EditProfile.nameInput .~ name'
+        & editProfileModel . EditProfile.inputs . EditProfile.aboutInput .~ about'
+        & editProfileModel . EditProfile.inputs . EditProfile.pictureUrlInput .~ pictureUrl'
+        & editProfileModel . EditProfile.inputs . EditProfile.nip05IdentifierInput .~ nip05'
       where
         mp = decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e :: Maybe ProfileData
         name' = maybe "" name mp
+        about' = maybe "" about mp
+        pictureUrl' = maybe "" pictureUrl mp
+        nip05' = maybe "" nip05 mp
         xo' = pubKey e
         updateName (Keys kp xo a n) = if xo == xo'
           then Keys kp xo a (Just name')

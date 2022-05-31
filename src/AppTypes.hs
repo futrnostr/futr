@@ -35,8 +35,7 @@ newtype AppEnv =
     }
 
 data AppDialog
-    = GenerateKeyPairDialog
-    | ErrorReadingKeysFileDialog
+    = ErrorReadingKeysFileDialog
     | NewRelayDialog
     | RelayDialog Relay
     deriving (Eq, Show)
@@ -61,28 +60,22 @@ instance Default RelayModel where
 
 data AppModel =
   AppModel
-    { _time             :: DateTime
-    , _keys             :: [Keys]
+    { _keys             :: [Keys]
     , _selectedKeys     :: Maybe Keys
     , _mainSub          :: SubscriptionId
     , _contactsSub      :: SubscriptionId
     , _initialSub       :: SubscriptionId
     , _pool             :: [Relay]
-    , _mySecKeyInput    :: Text
     , _dialog           :: Maybe AppDialog
     , _currentView      :: AppView
     , _editProfileModel :: EditProfileModel
     , _homeModel        :: HomeModel
     , _relayModel       :: RelayModel
-    , _deleteReason     :: Text
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel (fromSeconds 0) [] Nothing "" "" "" defaultPool "" Nothing HomeView def def def def defaultDeleteReason
-
-defaultDeleteReason :: Text
-defaultDeleteReason = "This post was published by accident."
+  def = AppModel [] Nothing "" "" "" defaultPool Nothing HomeView def def def
 
 data AppEvent
   = AppInit
@@ -95,14 +88,11 @@ data AppEvent
   | AddRelay Relay
   | RelayDisconnected Relay
   | ShowDialog AppDialog
-  | KeyPairsLoaded [Keys]
-  | GenerateKeyPair
-  | KeyPairGenerated KeyPair
+  | KeysUpdated [Keys]
   | KeysSelected (Maybe Keys)
+  | KeyPairsLoaded [Keys]
   | NoKeysFound
   | ErrorReadingKeysFile
-  | ImportSecKey
-  | EditProfile
   | CloseDialog
   | NoOp
   deriving (Eq, Show)

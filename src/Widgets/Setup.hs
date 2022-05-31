@@ -31,7 +31,6 @@ data SetupEvent
   = ImportSecKey
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
-  | KeysSaved
   deriving (Eq, Show)
 
 makeLenses 'SetupModel
@@ -49,7 +48,7 @@ handleSetupEvent reportKeys env node model evt = case evt of
     [ Model $ model
       & allKeys .~ ks : dk
       & secretKeyInput .~ ""
-    , Task $ saveKeyPairs $ ks : dk
+    , Report $ reportKeys $ model ^. allKeys
     ]
     where
       kp =
@@ -64,14 +63,12 @@ handleSetupEvent reportKeys env node model evt = case evt of
   KeyPairGenerated k ->
     [ Model $ model
       & allKeys .~ ks : dk
-    , Task $ saveKeyPairs $ ks : dk
+    , Report $ reportKeys $ model ^. allKeys
     ]
     where
       xo = deriveXOnlyPubKey k
       ks = Keys k xo True Nothing
       dk = disableKeys $ model ^. allKeys
-  KeysSaved ->
-    [ Report $ reportKeys $ model ^. allKeys ]
 
 setupWidget
   :: (WidgetModel sp, WidgetEvent ep)
@@ -115,9 +112,3 @@ generateNewKeyPair :: IO SetupEvent
 generateNewKeyPair = do
   kp <- generateKeyPair
   return $ KeyPairGenerated kp
-
-saveKeyPairs :: [Keys] -> IO SetupEvent
-saveKeyPairs ks = do
-  LazyBytes.writeFile "keys.ft" $ encode ks
-  putStrLn "KeyPairs saved to disk"
-  return KeysSaved
