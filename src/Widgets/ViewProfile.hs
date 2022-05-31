@@ -3,31 +3,33 @@
 
 module Widgets.ViewProfile where
 
-import           Control.Concurrent.STM.TChan
-import           Control.Lens
-import           Control.Monad.STM                    (atomically)
-import           Crypto.Schnorr
-import           Data.Aeson
-import qualified Data.ByteString.Lazy                 as LazyBytes
-import           Data.DateTime
-import           Data.Default
-import qualified Data.List                            as List
-import qualified Data.Map                             as Map
-import           Data.Maybe                           (fromJust)
-import           Data.Text
-import           Data.Text.Encoding                   (encodeUtf8)
-import           Monomer
-import qualified Monomer.Lens                         as L
+import Control.Concurrent.STM.TChan
+import Control.Lens
+import Control.Monad.STM              (atomically)
+import Crypto.Schnorr
+import Data.Aeson
+import Data.DateTime
+import Data.Default
+import Data.Maybe                     (fromJust)
+import Data.Text
+import Data.Text.Encoding             (encodeUtf8)
+import Monomer
 
-import           Helpers
-import           NostrFunctions
-import           Nostr.Event        as NE
-import           Nostr.Keys
-import           Nostr.Kind
-import qualified Nostr.Profile      as Profile
-import           Nostr.Request
-import           UIHelpers
-import           Widgets.ViewPosts
+import qualified Data.List            as List
+import qualified Data.Map             as Map
+import qualified Data.ByteString.Lazy as LazyBytes
+import qualified Monomer.Lens         as L
+
+import Helpers
+import NostrFunctions
+import Nostr.Event             as NE
+import Nostr.Keys
+import Nostr.Kind
+import Nostr.Request
+import UIHelpers
+import Widgets.ViewPosts
+
+import qualified Nostr.Profile as Profile
 
 type ViewProfileWenv = WidgetEnv ViewProfileModel ProfileEvent
 

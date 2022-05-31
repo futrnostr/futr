@@ -3,22 +3,22 @@
 
 module Widgets.Home where
 
-import           Control.Concurrent.STM.TChan
-import           Control.Lens
-import           Control.Monad.STM                    (atomically)
-import           Crypto.Schnorr                       (XOnlyPubKey)
-import           Data.Aeson
-import qualified Data.ByteString.Lazy                 as LazyBytes
-import           Data.DateTime
-import           Data.Default
-import           Data.List                            (find, sortBy)
-import           Data.Maybe
-import           Data.Text                            (Text, strip)
-import           Data.Text.Encoding                   (encodeUtf8)
-import           Monomer
+import Control.Concurrent.STM.TChan
+import Control.Lens
+import Control.Monad.STM            (atomically)
+import Crypto.Schnorr               (XOnlyPubKey)
+import Data.Aeson
+import Data.DateTime
+import Data.Default
+import Data.List                    (find, sortBy)
+import Data.Maybe
+import Data.Text                    (Text, strip)
+import Data.Text.Encoding           (encodeUtf8)
+import Monomer
+
+import qualified Data.ByteString.Lazy as LazyBytes
 
 import Helpers
-
 import Nostr.Event
 import Nostr.Filter
 import Nostr.Keys
@@ -27,7 +27,7 @@ import Nostr.Profile
 import Nostr.Relay
 import Nostr.Request
 
-import qualified Widgets.ViewPosts as ViewPosts
+import qualified Widgets.ViewPosts    as ViewPosts
 
 type HomeWenv = WidgetEnv HomeModel HomeEvent
 

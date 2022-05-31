@@ -50,6 +50,9 @@ defaultPool =
     }
   ]
 
+poolWithoutRelay :: [Relay] -> Relay -> [Relay]
+poolWithoutRelay p r = filter (\r' -> not $ r == r') p
+
 relayName :: Relay -> Text
 relayName r = render $ uri r
 

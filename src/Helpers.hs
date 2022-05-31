@@ -18,26 +18,24 @@ import           Nostr.Kind
 import           Nostr.Profile
 import           Nostr.Relay
 
-mainKeys :: [Keys] -> Keys
-mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
+-- mainKeys :: [Keys] -> Keys
+-- mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
 
-poolWithoutRelay :: [Relay] -> Relay -> [Relay]
-poolWithoutRelay p r = filter (\r' -> not $ r == r') p
 
-profileDataFromReceivedEvents :: [ReceivedEvent] -> XOnlyPubKey -> Maybe ProfileData
-profileDataFromReceivedEvents res xo = profileData
-  where
-    relatedEvents = filter
-      (\re ->
-        kind (fst re) == Metadata
-        && pubKey (fst re) == xo
-      ) res
-    profileData = case null relatedEvents of
-      True -> Nothing
-      False -> decode $ LazyBytes.fromStrict $ encodeUtf8 $ content $ fst $ head $ sortBy latestEvent relatedEvents
-
-latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering
-latestEvent a b = compare (created_at $ fst b) (created_at $ fst a)
+-- profileDataFromReceivedEvents :: [ReceivedEvent] -> XOnlyPubKey -> Maybe ProfileData
+-- profileDataFromReceivedEvents res xo = profileData
+--   where
+--     relatedEvents = filter
+--       (\re ->
+--         kind (fst re) == Metadata
+--         && pubKey (fst re) == xo
+--       ) res
+--     profileData = case null relatedEvents of
+--       True -> Nothing
+--       False -> decode $ LazyBytes.fromStrict $ encodeUtf8 $ content $ fst $ head $ sortBy latestEvent relatedEvents
+--
+-- latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering
+-- latestEvent a b = compare (created_at $ fst b) (created_at $ fst a)
 
 xTimeAgo :: DateTime -> DateTime -> Text
 xTimeAgo old new

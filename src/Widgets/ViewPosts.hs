@@ -3,18 +3,19 @@
 
 module Widgets.ViewPosts where
 
-import           Control.Lens
-import           Crypto.Schnorr
-import           Data.DateTime
-import           Data.Default
-import qualified Data.Map               as Map
-import           Data.Text              (Text, strip)
-import qualified Data.Text              as T
-import           Monomer
-import qualified Monomer.Lens           as L
+import Control.Lens
+import Crypto.Schnorr
+import Data.DateTime
+import Data.Default
+import Data.Text        (Text, strip)
+import Monomer
+
+import qualified Data.Map     as Map
+import qualified Data.Text    as T
+import qualified Monomer.Lens as L
 
 import Helpers
-import Nostr.Event   as NE
+import Nostr.Event            as NE
 import Nostr.Profile
 import UIHelpers
 

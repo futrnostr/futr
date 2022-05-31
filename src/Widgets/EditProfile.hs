@@ -3,14 +3,14 @@
 
 module Widgets.EditProfile where
 
-import           Control.Concurrent.STM.TChan
-import           Control.Lens
-import           Control.Monad.STM                    (atomically)
-import           Crypto.Schnorr
-import           Data.DateTime
-import           Data.Default
-import           Data.Text
-import           Monomer
+import Control.Concurrent.STM.TChan
+import Control.Lens
+import Control.Monad.STM (atomically)
+import Crypto.Schnorr
+import Data.DateTime
+import Data.Default
+import Data.Text
+import Monomer
 
 import Helpers
 import Nostr.Event

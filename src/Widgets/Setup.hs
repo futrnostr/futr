@@ -3,24 +3,17 @@
 
 module Widgets.Setup where
 
-import           Control.Lens
-import           Crypto.Schnorr
-import           Data.Aeson
-import qualified Data.ByteString.Lazy                 as LazyBytes
-import           Data.Default
-import           Data.Maybe
-import           Data.Text                            (Text)
-import           Monomer
+import Control.Lens
+import Crypto.Schnorr
+import Data.Aeson
+import Data.Default
+import Data.Maybe
+import Data.Text      (Text)
+import Monomer
 
--- import Helpers
+import qualified Data.ByteString.Lazy as LazyBytes
 
--- import Nostr.Event
--- import Nostr.Filter
 import Nostr.Keys
--- import Nostr.Kind
--- import Nostr.Profile
--- import Nostr.Relay
--- import Nostr.Request
 
 type SetupWenv = WidgetEnv SetupModel SetupEvent
 
