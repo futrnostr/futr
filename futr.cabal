@@ -30,7 +30,6 @@ executable futr
       Nostr.Relay
       Nostr.Request
       Nostr.Response
-      NostrFunctions
       UI
       UIHelpers
       Widgets.EditProfile

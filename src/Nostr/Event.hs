@@ -5,7 +5,9 @@ module Nostr.Event where
 
 import           Control.Monad          (mzero)
 import qualified Crypto.Hash.SHA256     as SHA256
-import           Crypto.Schnorr
+import           Crypto.Schnorr         (KeyPair, SchnorrSig, XOnlyPubKey,
+                                         decodeHex, exportSchnorrSig, exportXOnlyPubKey,
+                                         msg, signMsgSchnorr, verifyMsgSchnorr)
 import           Data.Aeson
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
@@ -19,7 +21,7 @@ import           GHC.Exts               (fromList)
 
 import Nostr.Keys
 import Nostr.Kind
-import Nostr.Profile (RelayURL)
+import Nostr.Profile (Profile(..), ProfileData(..), RelayURL)
 import Nostr.Relay
 
 newtype EventId = EventId
@@ -198,7 +200,78 @@ signEvent u kp xo =
     eid = EventId {getEventId = SHA256.hash $ toStrict $ encode u}
     s = signMsgSchnorr kp $ fromJust $ msg $ getEventId eid
 
+validateEventId :: Event -> Bool
+validateEventId e = (getEventId $ eventId e) == (SHA256.hash $ toStrict $ encode e)
+
+verifySignature :: Event -> Bool
+verifySignature e =
+  case msg $ toStrict $ encode e of
+    Just m  -> verifyMsgSchnorr p s m
+    Nothing -> False
+  where
+    p = pubKey e
+    s = sig e
+
+
 textNote :: Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 textNote note xo t =
   UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [], content' = note}
+
+setMetadata :: Text -> Text -> Text -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
+setMetadata name about picture nip05 xo t =
+  UnsignedEvent
+    { pubKey' = xo
+    , created_at' = t
+    , kind' = Metadata
+    , tags' = []
+    , content' = pack $
+      "{\"name\":\"" ++ unpack name ++
+      "\",\"about\":\"" ++ unpack about ++
+      "\",\"picture\":\"" ++ unpack picture ++
+      "\",\"nip05\":\"" ++ unpack nip05 ++ "\"}"
+    }
+
+replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
+replyNote event note xo t =
+  UnsignedEvent
+    {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [ETag (eventId event) Nothing (Just Reply)], content' = note}
+
+setContacts :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> UnsignedEvent
+setContacts ps r xo t =
+  UnsignedEvent
+    {pubKey' = xo, created_at' = t, kind' = Contacts, tags' = profilesToTags ps, content' = ""}
+
+deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
+deleteEvents eids reason xo t =
+  UnsignedEvent
+    {pubKey' = xo, created_at' = t, kind' = Delete, tags' = toDelete, content' = reason}
+  where
+    toDelete = map (\eid -> ETag eid Nothing Nothing) eids
+
+profilesToTags :: [Profile] -> [Tag]
+profilesToTags ps = map (\p -> pd p) ps
+  where
+    pd (Profile xo r d) = PTag (ValidXOnlyPubKey xo) (Just r) (Just $ name d)
+
+getReplyEventId :: Event -> Maybe EventId
+getReplyEventId = getMarkerEventId Reply
+
+getRootEventId :: Event -> Maybe EventId
+getRootEventId = getMarkerEventId Root
+
+getMarkerEventId :: Marker -> Event -> Maybe EventId
+getMarkerEventId m e =
+  if null replyList
+    then Nothing
+    else Just $ extractEventId $ head replyList
+  where
+    replyFilter :: Marker -> Tag -> Bool
+    replyFilter m (ETag _ _ (Just m')) = m == m'
+    replyFilter m _ = False
+
+    replyList = filter (replyFilter m) $ tags e
+
+    extractEventId :: Tag -> EventId
+    extractEventId (ETag eid _ _) = eid
+    extractEventId _ = error "Could not extract event id from reply or root tag"

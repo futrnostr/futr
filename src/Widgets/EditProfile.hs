@@ -5,7 +5,7 @@ module Widgets.EditProfile where
 
 import Control.Concurrent.STM.TChan
 import Control.Lens
-import Control.Monad.STM (atomically)
+import Control.Monad.STM            (atomically)
 import Crypto.Schnorr
 import Data.DateTime
 import Data.Default
@@ -17,7 +17,6 @@ import Nostr.Event
 import Nostr.Keys
 import Nostr.Profile
 import Nostr.Request
-import NostrFunctions
 
 type EditProfileWenv = WidgetEnv EditProfileModel EditProfileEvent
 

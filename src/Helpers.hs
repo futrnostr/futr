@@ -2,21 +2,22 @@
 
 module Helpers where
 
-import           Crypto.Schnorr                       (XOnlyPubKey, exportXOnlyPubKey)
-import           Data.Aeson
-import qualified Data.ByteString.Lazy                 as LazyBytes
-import           Data.DateTime
-import           Data.List                            (sortBy)
-import qualified Data.Map                             as Map
-import           Data.Maybe                           (fromMaybe)
-import           Data.Text                            (Text, pack)
-import           Data.Text.Encoding                   (encodeUtf8)
+import Crypto.Schnorr                 (XOnlyPubKey, exportXOnlyPubKey)
+import Data.Aeson
+import Data.DateTime
+import Data.Default
+import Data.List                      (sortBy)
+import Data.Maybe                     (fromMaybe)
+import Data.Text                      (Text, pack)
+import Data.Text.Encoding             (encodeUtf8)
+import qualified Data.Map             as Map
+import qualified Data.ByteString.Lazy as LazyBytes
 
-import           Nostr.Event
-import           Nostr.Keys
-import           Nostr.Kind
-import           Nostr.Profile
-import           Nostr.Relay
+import Nostr.Event
+import Nostr.Keys
+import Nostr.Kind
+import Nostr.Profile
+import Nostr.Relay
 
 -- mainKeys :: [Keys] -> Keys
 -- mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
@@ -69,3 +70,20 @@ profileName profiles xo =
       name
   where
     pList = filter (\(Profile xo' _ _) -> xo == xo') profiles
+
+tagsToProfiles :: [Tag] -> [Profile]
+tagsToProfiles ts = map (\t ->
+    Profile (xo t) (fromMaybe "" $ r t) (pd t)
+  ) ts'
+  where
+    ts' = filter (\p -> isPTag p) ts
+    xo (PTag (ValidXOnlyPubKey xo) _ _) = xo
+    xo _ = error "error transforming tags to profiles, invalid XOnlyPubKey"
+    r (PTag _ r _) = r
+    r _ = Nothing
+    pd (PTag _ _ n) = ProfileData (fromMaybe "" n) "" "" ""
+    pd _ = def
+
+isPTag :: Tag -> Bool
+isPTag (PTag (ValidXOnlyPubKey xo) _ _) = True
+isPTag _ = False

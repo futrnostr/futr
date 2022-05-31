@@ -180,23 +180,6 @@ addContact profiles e = profiles ++ newProfiles
     newProfiles = tagsToProfiles (tags e)
     newProfiles' = filter (\p -> not $ p `elem` profiles)
 
-tagsToProfiles :: [Tag] -> [Profile]
-tagsToProfiles ts = map (\t ->
-    Profile (xo t) (fromMaybe "" $ r t) (pd t)
-  ) ts'
-  where
-    ts' = filter (\p -> isPTag p) ts
-    xo (PTag (ValidXOnlyPubKey xo) _ _) = xo
-    xo _ = error "error transforming tags to profiles, invalid XOnlyPubKey"
-    r (PTag _ r _) = r
-    r _ = Nothing
-    pd (PTag _ _ n) = ProfileData (fromMaybe "" n) "" "" ""
-    pd _ = def
-
-isPTag :: Tag -> Bool
-isPTag (PTag (ValidXOnlyPubKey xo) _ _) = True
-isPTag _ = False
-
 sendPost :: TChan Request -> HomeModel -> IO HomeEvent
 sendPost chan model = do
   now <- getCurrentTime

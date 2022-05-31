@@ -21,7 +21,6 @@ import qualified Data.ByteString.Lazy as LazyBytes
 import qualified Monomer.Lens         as L
 
 import Helpers
-import NostrFunctions
 import Nostr.Event             as NE
 import Nostr.Keys
 import Nostr.Kind
@@ -121,7 +120,7 @@ viewProfileWidget chan keys viewPostDetailsAction viewProfileAction model =
 follow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 follow chan (Keys kp xo' _ _) model sendMsg = do
   now <- getCurrentTime
-  let raw = setFollowing (np : oldFollowing) "" xo' now
+  let raw = setContacts (np : oldFollowing) "" xo' now
   atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo'
   where
     oldFollowing = Map.findWithDefault [] xo' (model ^. following)
@@ -138,7 +137,7 @@ follow chan (Keys kp xo' _ _) model sendMsg = do
 unfollow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 unfollow chan (Keys kp xo' _ _) model sendMsg = do
   now <- getCurrentTime
-  let raw = setFollowing newFollowing "" xo' now
+  let raw = setContacts newFollowing "" xo' now
   atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo'
   where
     oldFollow = fromJust $ model ^. xo
@@ -173,6 +172,6 @@ viewProfile wenv model =
     (Keys _ user _ _) = fromJust $ model ^. myKeys
     xo' = fromJust $ model ^. xo
     currentlyFollowing = Map.findWithDefault [] user (model ^. following)
-    currentlyFollowing' = List.map mapProfileToXOnlyPubKey currentlyFollowing
+    currentlyFollowing' = List.map extractXOFromProfile currentlyFollowing
     action = if List.elem xo' currentlyFollowing' then Unfollow else Follow
     btnText = if List.elem xo' currentlyFollowing' then "Unfollow" else "Follow"
