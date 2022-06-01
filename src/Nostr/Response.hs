@@ -9,9 +9,10 @@ import qualified Data.Vector            as V
 
 import Nostr.Event
 import Nostr.Relay
+import Nostr.Request
 
 data Response
-  = EventReceived Text Event
+  = EventReceived SubscriptionId Event
   | Notice Text
   deriving (Eq, Show)
 

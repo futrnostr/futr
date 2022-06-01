@@ -52,12 +52,15 @@ import           Helpers
 import           Nostr.Event
 import           Nostr.Filter
 import           Nostr.Keys
-import           Nostr.Profile
+import           Nostr.Kind
+import           Nostr.Profile  as Profile
 import           Nostr.Relay
-import           Nostr.Request  (Request(..), Subscription(..))
+import           Nostr.Request  as Request
+import           Nostr.Response
 import           UI
 import           UIHelpers
-import           Widgets.EditProfile
+import qualified Widgets.EditProfile                  as EditProfile
+import qualified Widgets.Home                         as Home
 import qualified Widgets.ViewProfile                  as ViewProfile
 import qualified Widgets.ViewPosts                    as ViewPosts
 
@@ -102,7 +105,7 @@ handleEvent env wenv node model evt =
       ] ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
     RelayConnected r ->
       [ Model $ model & pool .~ newPool
-      , Task $ subscribe env (model ^. eventFilters)
+      --, Task $ subscribe env (model ^. eventFilters)
       ] where
           newPool = r : (poolWithoutRelay (model ^. pool) r)
     RelayDisconnected r ->
@@ -145,11 +148,32 @@ handleEvent env wenv node model evt =
         mk = mainKeys ks
         (Keys _ xo _ _) = mk
     NoKeysFound ->
-      [ Model $ model & dialog .~ Just GenerateKeyPairDialog ]
+      [ Model $ model & currentView .~ SetupView ]
     ErrorReadingKeysFile ->
       [ Model $ model & dialog .~ Just ErrorReadingKeysFileDialog ]
     CloseDialog ->
       [ Model $ model & dialog .~ Nothing ]
+    -- relay connection
+    TimerTick now ->
+      [ Model $ model & homeModel . Home.time .~ now ]
+    Initialize ->
+      [ Task $ sendInitFilter (env ^. channel) (fromJust $ model ^. selectedKeys)
+      , Producer timerLoop
+      ]
+    InitSubscribed subId ->
+      [ Model $ model & homeModel . Home.initSub .~ subId ]
+    EventAppeared e r -> do
+      let newModel = Home.handleReceivedEvent (model ^. homeModel) e r
+      if not $ model ^. homeModel . Home.isInitialized
+        && model ^. homeModel . Home.isInitialized
+        then
+          [ Model $ model & homeModel .~ newModel
+          , Task $ sendHomeFilters (env ^. channel) model
+          ]
+        else
+          [ Model $ model & homeModel .~ newModel ]
+    HomeFilterSubscribed subId ->
+      [ Model $ model & homeModel . Home.homeSub .~ subId ]
 
 -- runSearchProfile :: Text -> IO AppEvent
 -- runSearchProfile v = do
@@ -166,43 +190,6 @@ handleEvent env wenv node model evt =
 --   let unsigned = deleteEvents [eventId event] (model ^. deleteReason) xo now
 --   atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent unsigned kp xo
 --   return EventSent
-
-maybeSaveKeyPairs :: AppModel -> AppModel -> IO AppEvent
-maybeSaveKeyPairs old new =
-  if (old ^. keys) /= (new ^. keys)
-    then saveKeyPairs $ new ^. keys
-    else return NoOp
-
-saveKeyPairs :: [Keys] -> IO AppEvent
-saveKeyPairs ks = do
-  LazyBytes.writeFile "keys.ft" $ encode ks
-  putStrLn "KeyPairs saved to disk"
-  return NoOp
-
-tryLoadKeysFromDisk :: (AppEvent -> IO ()) -> IO ()
-tryLoadKeysFromDisk sendMsg = do
-  let fp = "keys.ft"
-  fe <- doesFileExist fp
-  if not fe then sendMsg $ NoKeysFound
-  else do
-    content <- LazyBytes.readFile fp
-    case decode content :: Maybe [Keys] of
-      Just [] -> do
-        sendMsg $ NoKeysFound
-      Just ks -> do
-        sendMsg $ KeyPairsLoaded ks
-      _       -> do
-        sendMsg $ ErrorReadingKeysFile
-
-validateAndAddRelay :: RelayModel -> IO AppEvent
-validateAndAddRelay model = do
-  uri <- URI.mkURI $ model ^. relayURI
-  return $ if isValidRelayURI uri
-    then do
-      let info = RelayInfo (model ^. relayReadableInput) (model ^. relayWritableInput)
-      AddRelay (Relay uri info False)
-    else
-      InvalidRelayURI
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = if connected r then return () else do
@@ -236,10 +223,11 @@ receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
       lift $ sendMsg $ RelayDisconnected r
       mzero
     Right msg' -> case decode msg' of
-      Just m -> do
-        -- todo: handle notices
-        -- lift $ putStrLn $ show $ extractEventFromServerResponse m
-        lift $ sendMsg $ EventAppeared (extractEventFromServerResponse m) r
+      Just m -> case m of
+          EventReceived subId event ->
+            lift $ sendMsg $ EventAppeared event r
+          Notice notice ->
+            lift $ putStrLn $ "NOTICE: " ++ T.unpack notice
       Nothing -> do
         lift $ putStrLn $ "Could not decode server response: " ++ show msg'
         lift $ sendMsg $ NoOp
@@ -260,9 +248,63 @@ sendWs broadcastChannel r conn sendMsg = do
           _ ->
             WS.sendTextData conn $ encode msg'
 
+saveKeyPairs :: [Keys] -> IO AppEvent
+saveKeyPairs ks = do
+  LazyBytes.writeFile "keys.ft" $ encode ks
+  putStrLn "KeyPairs saved to disk"
+  return NoOp
+
+tryLoadKeysFromDisk :: (AppEvent -> IO ()) -> IO ()
+tryLoadKeysFromDisk sendMsg = do
+  let fp = "keys.ft"
+  fe <- doesFileExist fp
+  if not fe then sendMsg $ NoKeysFound
+  else do
+    content <- LazyBytes.readFile fp
+    case decode content :: Maybe [Keys] of
+      Just [] -> do
+        sendMsg $ NoKeysFound
+      Just ks -> do
+        sendMsg $ KeyPairsLoaded ks
+      _       -> do
+        sendMsg $ ErrorReadingKeysFile
+
+validateAndAddRelay :: RelayModel -> IO AppEvent
+validateAndAddRelay model = do
+  uri <- URI.mkURI $ model ^. relayURI
+  return $ if isValidRelayURI uri
+    then do
+      let info = RelayInfo (model ^. relayReadableInput) (model ^. relayWritableInput)
+      AddRelay (Relay uri info False)
+    else
+      InvalidRelayURI
+
 switchEnabledKeys :: Keys -> [Keys] -> [Keys]
 switchEnabledKeys (Keys kp _ _ _) ks =
   map (\(Keys kp' xo' a' n') -> if kp == kp'
     then Keys kp' xo' True n'
     else Keys kp' xo' False n'
   ) ks
+
+timerLoop :: (AppEvent -> IO ()) -> IO ()
+timerLoop sendMsg = void . forkIO $ void $ forever $ do
+  now <- getCurrentTime
+  sendMsg $ TimerTick now
+  threadDelay 1000000
+
+sendInitFilter :: TChan Request -> Keys -> IO AppEvent
+sendInitFilter channel (Keys _ xo _ _) = do
+  subId <- subscribe channel [InitialFilter xo]
+  return $ InitSubscribed subId
+
+sendHomeFilters :: TChan Request -> AppModel -> IO AppEvent
+sendHomeFilters channel model = do
+  subId <- subscribe channel [TextNoteFilter xoList, ContactsFilter xoList]
+  return $ HomeFilterSubscribed subId
+  where
+    (Keys _ xo _ _) = fromJust $ model ^. homeModel . Home.keys
+    contactList = map extractXOFromProfile (model ^. homeModel . Home.contacts)
+    xoList = xo : contactList
+
+mainKeys :: [Keys] -> Keys
+mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks

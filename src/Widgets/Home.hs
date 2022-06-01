@@ -54,11 +54,6 @@ instance Default HomeModel where
 
 data HomeEvent
   = NoOp
-  | TimerTick DateTime
-  | Initialize
-  | InitSubscribed SubscriptionId
-  | HomeFilterSubscribed SubscriptionId
-  | EventAppeared Event Relay
   | SendPost
   | ViewPostDetails ReceivedEvent
   | ViewProfile XOnlyPubKey
@@ -83,25 +78,6 @@ handleHomeEvent
 handleHomeEvent chan env node model evt = case evt of
   NoOp ->
     []
-  TimerTick now ->
-    [ Model $ model & time .~ now ]
-  Initialize ->
-    [ Task $ sendInitFilter chan (fromJust $ model ^.keys)
-    , Producer timerLoop
-    ]
-  InitSubscribed subId ->
-    [ Model $ model & initSub .~ subId ]
-  EventAppeared e r -> do
-    let newModel = handleEvent model e r
-    if not $ model ^. isInitialized && model ^. isInitialized
-      then
-        [ Model $ newModel
-        , Task $ sendHomeFilters chan model
-        ]
-      else
-        [ Model $ newModel ]
-  HomeFilterSubscribed subId ->
-    [ Model $ model & homeSub .~ subId ]
   SendPost ->
     [ Model $ model
         & noteInput .~ ""
@@ -112,22 +88,56 @@ handleHomeEvent chan env node model evt = case evt of
   ViewProfile xo ->
     []
 
-sendInitFilter :: TChan Request -> Keys -> IO HomeEvent
-sendInitFilter channel (Keys _ xo _ _) = do
-  subId <- subscribe channel [InitialFilter xo]
-  return $ InitSubscribed subId
-
-sendHomeFilters :: TChan Request -> HomeModel -> IO HomeEvent
-sendHomeFilters channel model = do
-  subId <- subscribe channel [TextNoteFilter xoList, ContactsFilter xoList]
-  return $ HomeFilterSubscribed subId
+addContact :: [Profile] -> Event -> [Profile]
+addContact profiles e = profiles ++ newProfiles
   where
-    (Keys _ xo _ _) = fromJust $ model ^. keys
-    contactList = map extractXOFromProfile (model ^. contacts)
-    xoList = xo : contactList
+    newProfiles = tagsToProfiles (tags e)
+    newProfiles' = filter (\p -> not $ p `elem` profiles)
 
-handleEvent :: HomeModel -> Event -> Relay -> HomeModel
-handleEvent model e r =
+sendPost :: TChan Request -> HomeModel -> IO HomeEvent
+sendPost chan model = do
+  now <- getCurrentTime
+  let (Keys kp xo _ _) = fromJust $ model ^. keys
+  let unsigned = textNote (strip $ model ^. noteInput) xo now;
+  atomically $ writeTChan chan $ SendEvent $ signEvent unsigned kp xo
+  return NoOp
+
+viewHome
+  :: HomeWenv
+  -> HomeModel
+  -> HomeNode
+viewHome wenv model = widgetTree
+  where
+    widgetTree =
+      vstack
+        [ label "New Post"
+        , spacer
+        , vstack
+            [ hstack
+                [ textArea noteInput
+                  `nodeKey` "noteInput"
+                  `styleBasic` [ height 50 ]
+                , filler
+                , button "Post" SendPost
+                    `nodeEnabled` (strip (model ^. noteInput) /= "")
+                ]
+            ]
+        , spacer
+        , ViewPosts.viewPostsWidget
+            wenv
+            viewPostsModel
+            (\re -> kind (fst re) == TextNote
+              && pubKey (fst re) `elem` (xo : contacts')
+            )
+            ViewPostDetails
+            ViewProfile
+        ]
+        where
+          (Keys _ xo _ _) = fromJust $ model ^. keys
+          contacts' = map extractXOFromProfile (model ^. contacts)
+
+handleReceivedEvent :: HomeModel -> Event -> Relay -> HomeModel
+handleReceivedEvent model e r =
   case kind e of
     TextNote ->
       model
@@ -180,57 +190,3 @@ addEvent re e r = sortBy sortByDate $ addedEvent : newList
     newList = filter (not . dupEvent e) re
     dupEvent e' re' = e' == fst re'
     sortByDate a b = compare (created_at $ fst b) (created_at $ fst a)
-
-addContact :: [Profile] -> Event -> [Profile]
-addContact profiles e = profiles ++ newProfiles
-  where
-    newProfiles = tagsToProfiles (tags e)
-    newProfiles' = filter (\p -> not $ p `elem` profiles)
-
-sendPost :: TChan Request -> HomeModel -> IO HomeEvent
-sendPost chan model = do
-  now <- getCurrentTime
-  let (Keys kp xo _ _) = fromJust $ model ^. keys
-  let unsigned = textNote (strip $ model ^. noteInput) xo now;
-  atomically $ writeTChan chan $ SendEvent $ signEvent unsigned kp xo
-  return NoOp
-
-timerLoop :: (HomeEvent -> IO ()) -> IO ()
-timerLoop sendMsg = void . forkIO $ void $ forever $ do
-  now <- getCurrentTime
-  sendMsg $ TimerTick now
-  threadDelay 1000000
-
-viewHome
-  :: HomeWenv
-  -> HomeModel
-  -> HomeNode
-viewHome wenv model = widgetTree
-  where
-    widgetTree =
-      vstack
-        [ label "New Post"
-        , spacer
-        , vstack
-            [ hstack
-                [ textArea noteInput
-                  `nodeKey` "noteInput"
-                  `styleBasic` [ height 50 ]
-                , filler
-                , button "Post" SendPost
-                    `nodeEnabled` (strip (model ^. noteInput) /= "")
-                ]
-            ]
-        , spacer
-        , ViewPosts.viewPostsWidget
-            wenv
-            viewPostsModel
-            (\re -> kind (fst re) == TextNote
-              && pubKey (fst re) `elem` (xo : contacts')
-            )
-            ViewPostDetails
-            ViewProfile
-        ]
-        where
-          (Keys _ xo _ _) = fromJust $ model ^. keys
-          contacts' = map extractXOFromProfile (model ^. contacts)

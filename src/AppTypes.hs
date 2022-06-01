@@ -79,6 +79,8 @@ instance Default AppModel where
 
 data AppEvent
   = AppInit
+  | NoOp
+  -- relay events
   | ConnectRelay Relay
   | DisconnectRelay Relay
   | UpdateRelay Relay
@@ -87,14 +89,21 @@ data AppEvent
   | InvalidRelayURI
   | AddRelay Relay
   | RelayDisconnected Relay
+  -- app dialog
   | ShowDialog AppDialog
+  | CloseDialog
+  -- keys events
   | KeysUpdated [Keys]
   | KeysSelected (Maybe Keys)
   | KeyPairsLoaded [Keys]
   | NoKeysFound
   | ErrorReadingKeysFile
-  | CloseDialog
-  | NoOp
+  -- relay connection
+  | TimerTick DateTime
+  | Initialize
+  | InitSubscribed SubscriptionId
+  | HomeFilterSubscribed SubscriptionId
+  | EventAppeared Event Relay
   deriving (Eq, Show)
 
 makeLenses 'AppEnv

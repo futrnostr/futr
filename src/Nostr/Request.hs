@@ -45,7 +45,7 @@ instance ToJSON Request where
        [ String $ pack "CLOSE"
        , String subId
        ]
-    Disconnect _ -> String $ pack "Bye!"
+    Disconnect r -> String $ pack "Bye!"
 
 subscribe :: TChan Request -> [Filter] -> IO SubscriptionId
 subscribe channel [] = return ""
