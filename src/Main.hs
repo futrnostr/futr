@@ -208,6 +208,7 @@ connectRelay env r sendMsg = if connected r then return () else do
     start = case extractScheme r of
       "wss" -> runSecureClient host (fromIntegral port) path
       "ws"  -> WS.runClient host port path
+      _     -> error "Wrong websocket scheme"
 
 disconnectRelay :: AppEnv -> Relay -> IO AppEvent
 disconnectRelay env r = if not $ connected r then return NoOp else do
@@ -242,7 +243,7 @@ sendWs broadcastChannel r conn sendMsg = do
       Right msg' -> do
         case msg' of
           Disconnect r' ->
-            if r' == r then do
+            if r `sameRelay` r' then do
                 WS.sendClose conn $ T.pack "Bye!"
             else return ()
           _ ->

@@ -23,10 +23,7 @@ data Relay = Relay
   , info      :: RelayInfo
   , connected :: Bool
   }
-  deriving (Show)
-
-instance Eq Relay where
-  (Relay r _ _) == (Relay r' _ _) = r == r'
+  deriving (Eq, Show)
 
 instance Ord Relay where
   compare (Relay r _ _) (Relay r' _ _) = compare r r'
@@ -51,7 +48,7 @@ defaultPool =
   ]
 
 poolWithoutRelay :: [Relay] -> Relay -> [Relay]
-poolWithoutRelay p r = filter (\r' -> not $ r == r') p
+poolWithoutRelay p r = filter (\r' -> not $ r `sameRelay` r') p
 
 relayName :: Relay -> Text
 relayName r = render $ uri r
@@ -90,3 +87,6 @@ extractPath r =
     _       -> "/"
   where
     uri' = uri r
+
+sameRelay :: Relay -> Relay -> Bool
+sameRelay r r' = uri r == uri r'

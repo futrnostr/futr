@@ -185,7 +185,7 @@ addEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
 addEvent re e r = sortBy sortByDate $ addedEvent : newList
   where
     addedEvent = case find (dupEvent e) re of
-      Just (e', rs) -> (e', r : filter (\r' -> not $ r' == r) rs)
+      Just (e', rs) -> (e', r : filter (\r' -> not $ r `sameRelay` r') rs)
       _             -> (e, [r])
     newList = filter (not . dupEvent e) re
     dupEvent e' re' = e' == fst re'
