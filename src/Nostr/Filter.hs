@@ -9,6 +9,7 @@ import           Data.Text              (Text, pack)
 import qualified Data.Vector            as V
 import           GHC.Exts               (fromList)
 
+import Nostr.Kind
 import Nostr.Profile
 
 data Filter
@@ -20,19 +21,19 @@ data Filter
 instance ToJSON Filter where
   toJSON (InitialFilter xo) =
     object $ fromList
-      [ ( "kinds", Array $ fromList $ [ Number 3 ] )
-      , ( "authors", Array $ fromList $ [ toJSON xo ] )
-      , ( "limit", Number 1 )
+      [ ( "kinds", toJSON [ Contacts, Metadata] )
+      , ( "authors", toJSON [ xo ] )
+      , ( "limit", Number 2 )
       ]
   toJSON (ContactsFilter xos) =
     object $ fromList
-      [ ( "kinds", Array $ fromList $ [ Number 3 ] )
-      , ( "authors", Array $ fromList $ map toJSON xos )
+      [ ( "kinds", toJSON [ Contacts ] )
+      , ( "authors", toJSON xos )
       ]
   toJSON (TextNoteFilter xos) =
     object $ fromList
-      [ ( "kinds", Array $ fromList $ [ Number 1 ] )
-      , ( "authors", Array $ fromList $ map toJSON xos )
+      [ ( "kinds", toJSON [ TextNote ] )
+      , ( "authors", toJSON xos )
       , ( "limit", Number 500 )
       ]
 
