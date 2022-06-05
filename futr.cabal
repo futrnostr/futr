@@ -28,6 +28,8 @@ executable futr
       Nostr.Kind
       Nostr.Profile
       Nostr.Relay
+      Nostr.RelayConnection
+      Nostr.RelayPool
       Nostr.Request
       Nostr.Response
       UI

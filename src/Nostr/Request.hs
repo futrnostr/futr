@@ -47,6 +47,8 @@ instance ToJSON Request where
        ]
     Disconnect r -> String $ pack "Bye!"
 
+-- @todo delete all below this line
+
 subscribe :: TChan Request -> [Filter] -> IO SubscriptionId
 subscribe channel [] = return ""
 subscribe channel fs = do

@@ -2,6 +2,7 @@
 
 module UI where
 
+import           Control.Concurrent.MVar
 import           Control.Concurrent.STM.TChan
 import           Control.Lens
 import           Crypto.Schnorr         (XOnlyPubKey, decodeHex, secKey,
@@ -24,6 +25,7 @@ import           Nostr.Keys
 import           Nostr.Kind
 import           Nostr.Profile
 import           Nostr.Relay
+import           Nostr.RelayPool
 import           Nostr.Request
 import           UIHelpers
 import qualified Widgets.EditProfile    as EditProfile
@@ -31,8 +33,8 @@ import qualified Widgets.Home           as Home
 import qualified Widgets.ViewPosts      as ViewPosts
 import qualified Widgets.ViewProfile    as ViewProfile
 
-buildUI :: TChan Request -> AppWenv -> AppModel -> AppNode
-buildUI channel wenv model = widgetTree
+buildUI :: TChan Request -> MVar RelayPool -> AppWenv -> AppModel -> AppNode
+buildUI channel poolMVar wenv model = widgetTree
   where
     baseLayer = case model ^. currentView of
       HomeView ->
@@ -71,7 +73,7 @@ buildUI channel wenv model = widgetTree
                 (tooltip (relayName r) (viewCircle r) `styleBasic`
                 [ cursorIcon CursorHand ])
             )
-            (sort $ model ^. pool)
+            (sort $ model ^. relays)
         addRelay =
           box_ [ alignTop, onClick $ ShowDialog NewRelayDialog ] $
           tooltip (T.pack $ "Add new relayy") $
@@ -80,26 +82,26 @@ buildUI channel wenv model = widgetTree
           icon IconPlus `styleBasic`
           [width 16, height 16, fgColor black, cursorHand]
     followingLayer = vstack []
-    -- followingLayer = case model ^. selectedKeys of
-    --   Nothing ->
-    --     vstack []
-    --   Just (Keys _ xo _ _)  ->
-    --     vstack $
-    --       case Map.lookup xo $ model ^. AppTypes.following of
-    --         Just [] ->
-    --           [ label "You don't follow anyone" ]
-    --         Just ps ->
-    --           map (\(Profile xo r pd) ->
-    --             box_
-    --               [ onClick (ViewProfile xo), alignLeft ]
-    --               (profileBox xo $ name pd)
-    --                 `styleBasic` [ cursorHand ]
-    --           )
-    --           ps
-    --         Nothing ->
-    --           [ label "You don't follow anyone" ]
-      --where
-      --  keys = fromJust $ model ^. selectedKeys
+--    followingLayer = case model ^. selectedKeys of
+--       Nothing ->
+--         vstack []
+--       Just (Keys _ xo _ _)  ->
+--         vstack $
+--           case Map.lookup xo $ model ^. AppTypes.following of
+--             Just [] ->
+--               [ label "You don't follow anyone" ]
+--             Just ps ->
+--               map (\(Profile xo r pd) ->
+--                 box_
+--                   [ onClick (ViewProfile xo), alignLeft ]
+--                   (profileBox xo $ name pd)
+--                     `styleBasic` [ cursorHand ]
+--               )
+--               ps
+--             Nothing ->
+--               [ label "You don't follow anyone" ]
+--      where
+--        keys = fromJust $ model ^. selectedKeys
     widgetTree =
       zstack
         [ vstack
@@ -110,16 +112,16 @@ buildUI channel wenv model = widgetTree
                 [ baseLayer `styleBasic` [ padding 10 ]
                 , vstack
                     [ label "Following" `styleBasic` [ paddingB 10 ]
-                    , spacer
-                    -- , hstack
-                    --     [ textField searchInput
-                    --         `nodeKey` "searchInput"
-                    --     , spacer
-                    --     , button "Search" (SearchProfile (model ^. searchInput))
-                    --         `nodeEnabled` isValidPubKey
-                    --     ]
-                    -- , spacer
-                    , scroll_ [ scrollOverlay ] followingLayer
+--                    , spacer
+--                     , hstack
+--                         [ textField searchInput
+--                             `nodeKey` "searchInput"
+--                         , spacer
+--                         , button "Search" (SearchProfile (model ^. searchInput))
+--                             `nodeEnabled` True isValidPubKey
+--                         ]
+--                     , spacer
+--                    , scroll_ [ scrollOverlay ] followingLayer
                     ]
                     `styleBasic` [ padding 10, width 200, borderL 1 sep ]
                 ]
@@ -132,7 +134,7 @@ buildUI channel wenv model = widgetTree
         ]
       where
         sep = rgbaHex "#A9A9A9" 0.75
-        -- isValidPubKey = isJust $ maybe Nothing xOnlyPubKey $ decodeHex $ view searchInput model
+        --isValidPubKey = isJust $ maybe Nothing xOnlyPubKey $ decodeHex $ view searchInput model
 
 dialogLayer :: AppModel -> AppNode
 dialogLayer model =

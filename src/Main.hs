@@ -6,6 +6,7 @@
 module Main where
 
 import           Control.Concurrent                   (forkIO, threadDelay)
+import           Control.Concurrent.MVar
 import           Control.Concurrent.STM.TChan
 import qualified Control.Exception                    as Exception
 import           Control.Lens
@@ -26,6 +27,7 @@ import           Data.DateTime
 import           Data.Default
 import           Data.Either                          (fromRight)
 import           Data.List                            (find, sort, sortBy)
+import           Data.Map                             (Map)
 import qualified Data.Map                             as Map
 import           Data.Maybe
 import           Data.Monoid                          (mconcat)
@@ -36,7 +38,7 @@ import           Monomer
 import           Monomer.Widgets.Single
 import qualified Network.Connection                   as Connection
 import qualified Network.HTTP.Req                     as Req
-import           Network.Socket
+--import           Network.Socket
 import           Network.WebSockets                   (ClientApp, Connection,
                                                        receiveData, sendClose,
                                                        sendTextData)
@@ -55,6 +57,8 @@ import           Nostr.Keys
 import           Nostr.Kind
 import           Nostr.Profile  as Profile
 import           Nostr.Relay
+import           Nostr.RelayConnection
+import           Nostr.RelayPool
 import           Nostr.Request  as Request
 import           Nostr.Response
 import           UI
@@ -70,7 +74,8 @@ import qualified Crypto.Hash.SHA256     as SHA256 -- debug only
 main :: IO ()
 main = do
   channel <- atomically newBroadcastTChan
-  startApp def (handleEvent $ AppEnv channel) (buildUI channel) config
+  poolMVar <- newMVar def
+  startApp def (handleEvent $ AppEnv channel poolMVar) (buildUI channel poolMVar) config
   where
     config =
       [ appWindowTitle "FuTr"
@@ -91,10 +96,10 @@ handleEvent
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
-    ConnectRelay r ->
-      [ Producer $ connectRelay env r
-      , Model $ model & dialog .~ Nothing
-      ]
+    ConnectRelay r -> []
+--      [ Producer $ connectRelay (env ^. channel) r
+--      , Model $ model & dialog .~ Nothing
+--      ]
     DisconnectRelay r ->
       [ Task $ disconnectRelay env r
       , Model $ model & dialog .~ Nothing
@@ -102,29 +107,35 @@ handleEvent env wenv node model evt =
     UpdateRelay r -> []
     AppInit ->
       [ Producer tryLoadKeysFromDisk
-      ] ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
-    RelayConnected r ->
-      [ Model $ model & pool .~ newPool
-      --, Task $ subscribe env (model ^. eventFilters)
-      ] where
-          newPool = r : (poolWithoutRelay (model ^. pool) r)
-    RelayDisconnected r ->
-      [ Model $ model & pool .~ newPool ]
-      where
-        newPool = (r {connected = False}) : (poolWithoutRelay (model ^. pool) r)
+      , Task $ loadRelayPool env
+      ] -- ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
+    RelayPoolLoaded (RelayPool relays' handlers) ->
+      [ Model $ model & relays .~ relays'
+      ] ++ (map (\r -> Producer $ connectRelay (env ^. channel) handlers r) relays')
+      -- connectRelay :: TChan Request -> Map SubscriptionId RelayHandler -> (AppEvent -> IO ()) -> Relay -> IO ()
+
+    RelayConnected r -> []
+--      [ Model $ model & pool .~ newPool
+--      --, Task $ subscribe env (model ^. eventFilters)
+--      ] where
+--          newPool = r : (poolWithoutRelay (model ^. pool) r)
+    RelayDisconnected r -> []
+--      [ Model $ model & pool .~ newPool ]
+--      where
+--        newPool = (r {connected = False}) : (poolWithoutRelay (model ^. pool) r)
     ValidateAndAddRelay ->
       [ Task $ validateAndAddRelay (model ^. relayModel) ]
     InvalidRelayURI ->
       [ Model $ model & relayModel . isInvalidInput .~ True ]
-    AddRelay r ->
-      [ Producer $ connectRelay env r
-      , Model $ model
-          & dialog .~ Nothing
-          & relayModel . relayURI .~ "wss://"
-          & relayModel . relayReadableInput .~ True
-          & relayModel . relayWritableInput .~ True
-          & pool .~ r : (poolWithoutRelay (model ^. pool) r)
-      ]
+    AddRelay r -> []
+      -- [ Producer $ connectRelay (env ^. channel) r
+--      , Model $ model
+--          & dialog .~ Nothing
+--          & relayModel . relayURI .~ "wss://"
+--          & relayModel . relayReadableInput .~ True
+--          & relayModel . relayWritableInput .~ True
+--          & pool .~ r : (poolWithoutRelay (model ^. pool) r)
+      --]
     ShowDialog d ->
       case d of
         RelayDialog r ->
@@ -191,6 +202,12 @@ handleEvent env wenv node model evt =
 --   atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent unsigned kp xo
 --   return EventSent
 
+connectRelay :: TChan Request -> Map SubscriptionId RelayHandler -> Relay -> (AppEvent -> IO ()) -> IO ()
+connectRelay channel handlers relay sendMsg =
+  connect channel handlers sendMsg RelayConnected RelayDisconnected relay
+--  channel sendMsg msgConnected relay
+
+{-
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env r sendMsg = if connected r then return () else do
   putStrLn $ "trying to connect to " ++ (T.unpack $ relayName r) ++ " ..."
@@ -209,7 +226,7 @@ connectRelay env r sendMsg = if connected r then return () else do
       "wss" -> runSecureClient host (fromIntegral port) path
       "ws"  -> WS.runClient host port path
       _     -> error "Wrong websocket scheme"
-
+-}
 disconnectRelay :: AppEnv -> Relay -> IO AppEvent
 disconnectRelay env r = if not $ connected r then return NoOp else do
   atomically $ writeTChan (env ^. channel) $ Disconnect r
@@ -270,6 +287,11 @@ tryLoadKeysFromDisk sendMsg = do
       _       -> do
         sendMsg $ ErrorReadingKeysFile
 
+loadRelayPool :: AppEnv -> IO AppEvent
+loadRelayPool env = do
+  relayPool' <- readMVar $ env ^. relayPool
+  return $ RelayPoolLoaded relayPool'
+
 validateAndAddRelay :: RelayModel -> IO AppEvent
 validateAndAddRelay model = do
   uri <- URI.mkURI $ model ^. relayURI
@@ -295,13 +317,13 @@ timerLoop sendMsg = void . forkIO $ void $ forever $ do
 
 sendInitFilter :: TChan Request -> Keys -> IO AppEvent
 sendInitFilter channel (Keys _ xo _ _) = do
-  subId <- subscribe channel [InitialFilter xo]
-  return $ InitSubscribed subId
+  --subId <- subscribe channel [InitialFilter xo]
+  return $ InitSubscribed "dumy" -- subId
 
 sendHomeFilters :: TChan Request -> AppModel -> IO AppEvent
 sendHomeFilters channel model = do
-  subId <- subscribe channel [TextNoteFilter xoList, ContactsFilter xoList]
-  return $ HomeFilterSubscribed subId
+  --subId <- subscribe channel [TextNoteFilter xoList, ContactsFilter xoList]
+  return $ HomeFilterSubscribed "dummy" -- subId
   where
     (Keys _ xo _ _) = fromJust $ model ^. homeModel . Home.keys
     contactList = map extractXOFromProfile (model ^. homeModel . Home.contacts)

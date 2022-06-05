@@ -3,6 +3,7 @@
 
 module AppTypes where
 
+import           Control.Concurrent.MVar
 import           Control.Concurrent.STM.TChan
 import           Control.Lens
 import           Crypto.Schnorr
@@ -19,6 +20,7 @@ import           Nostr.Filter
 import           Nostr.Keys
 import           Nostr.Profile
 import           Nostr.Relay
+import           Nostr.RelayPool
 import           Nostr.Request       (Request, SubscriptionId)
 import           Widgets.EditProfile
 import           Widgets.Home
@@ -29,9 +31,10 @@ type AppWenv = WidgetEnv AppModel AppEvent
 
 type AppNode = WidgetNode AppModel AppEvent
 
-newtype AppEnv =
+data AppEnv =
   AppEnv
-    { _channel :: TChan Request
+    { _channel   :: TChan Request
+    , _relayPool :: MVar RelayPool
     }
 
 data AppDialog
@@ -62,10 +65,7 @@ data AppModel =
   AppModel
     { _keys             :: [Keys]
     , _selectedKeys     :: Maybe Keys
-    , _mainSub          :: SubscriptionId
-    , _contactsSub      :: SubscriptionId
-    , _initialSub       :: SubscriptionId
-    , _pool             :: [Relay]
+    , _relays           :: [Relay]
     , _dialog           :: Maybe AppDialog
     , _currentView      :: AppView
     , _editProfileModel :: EditProfileModel
@@ -75,12 +75,13 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing "" "" "" defaultPool Nothing HomeView def def def
+  def = AppModel [] Nothing [] Nothing HomeView def def def
 
 data AppEvent
   = AppInit
   | NoOp
   -- relay events
+  | RelayPoolLoaded RelayPool
   | ConnectRelay Relay
   | DisconnectRelay Relay
   | UpdateRelay Relay
@@ -104,7 +105,6 @@ data AppEvent
   | InitSubscribed SubscriptionId
   | HomeFilterSubscribed SubscriptionId
   | EventAppeared Event Relay
-  deriving (Eq, Show)
 
 makeLenses 'AppEnv
 makeLenses 'RelayModel
