@@ -52,17 +52,10 @@ connect channel handlers sendMsg msgConnected msgDisconnected relay = do
     sendMsg $ msgConnected relay'
     receiveWs sendMsg msgDisconnected relay' conn handlers
     sendWs channel sendMsg msgDisconnected relay' conn
-
---    receiveWs sendMsg msgDisconnected relay conn handlers
-    --sendWs channel relay' conn sendMsg
-
-    --if readable info' then receiveWs relay' conn sendMsg else return ()
---    if writable info' then sendWs channel relay' conn sendMsg else return ()
   where
     host = unpack $ extractHostname relay
     port = extractPort relay
     path = unpack $ extractPath relay
---    info' = info relay
     start = case extractScheme relay of
       "wss" -> runSecureClient host (fromIntegral port) path
       "ws"  -> WS.runClient host port path

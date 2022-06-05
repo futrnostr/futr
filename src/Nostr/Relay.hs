@@ -69,27 +69,3 @@ extractPath r =
 
 sameRelay :: Relay -> Relay -> Bool
 sameRelay r r' = uri r == uri r'
-
--- @todo delete everything below this line
---
---defaultPool :: [Relay]
---defaultPool =
---  [
---  --   Relay
---  --   { host = "nostr-pub.wellorder.net"
---  --   , port = 443
---  --   , secure = True
---  --   , readable = True
---  --   , writable = True
---  --   , connected = False
---  --   }
---  -- ,
---    Relay
---    { uri = [QQ.uri|ws://localhost:2700|]
---    , info = RelayInfo True True
---    , connected = False
---    }
---  ]
---
---poolWithoutRelay :: [Relay] -> Relay -> [Relay]
---poolWithoutRelay p r = filter (\r' -> not $ r `sameRelay` r') p
