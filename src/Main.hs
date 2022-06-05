@@ -106,7 +106,7 @@ handleEvent env wenv node model evt =
       ]
     UpdateRelay r -> []
     AppInit ->
-      [ Producer tryLoadKeysFromDisk
+      [ Task tryLoadKeysFromDisk
       , Task $ loadRelayPool env
       ] -- ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
     RelayPoolLoaded (RelayPool relays' handlers) ->
@@ -272,20 +272,20 @@ saveKeyPairs ks = do
   putStrLn "KeyPairs saved to disk"
   return NoOp
 
-tryLoadKeysFromDisk :: (AppEvent -> IO ()) -> IO ()
-tryLoadKeysFromDisk sendMsg = do
+tryLoadKeysFromDisk :: IO AppEvent
+tryLoadKeysFromDisk = do
   let fp = "keys.ft"
   fe <- doesFileExist fp
-  if not fe then sendMsg $ NoKeysFound
+  if not fe then return NoKeysFound
   else do
     content <- LazyBytes.readFile fp
     case decode content :: Maybe [Keys] of
       Just [] -> do
-        sendMsg $ NoKeysFound
+        return NoKeysFound
       Just ks -> do
-        sendMsg $ KeyPairsLoaded ks
+        return $ KeyPairsLoaded ks
       _       -> do
-        sendMsg $ ErrorReadingKeysFile
+        return ErrorReadingKeysFile
 
 loadRelayPool :: AppEnv -> IO AppEvent
 loadRelayPool env = do
