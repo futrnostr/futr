@@ -39,12 +39,6 @@ data AppEnv =
     , _relayPool :: MVar RelayPool
     }
 
-data AppDialog
-    = ErrorReadingKeysFileDialog
-    | NewRelayDialog
-    | RelayDialog Relay
-    deriving (Eq, Show)
-
 data AppView
     = HomeView
     | SetupView
@@ -68,7 +62,7 @@ data AppModel =
     { _keys             :: [Keys]
     , _selectedKeys     :: Maybe Keys
     , _relays           :: [Relay]
-    , _dialog           :: Maybe AppDialog
+    , _errorMsg         :: Maybe Text
     , _currentView      :: AppView
     , _editProfileModel :: EditProfileModel
     , _homeModel        :: HomeModel
@@ -80,31 +74,32 @@ instance Default AppModel where
   def = AppModel [] Nothing [] Nothing HomeView def def def
 
 data AppEvent
-  = AppInit
-  | NoOp
-  | ConnectRelay Relay
-  | DisconnectRelay Relay
-  | UpdateRelay Relay
-  | RelayConnected Relay
-  | ValidateAndAddRelay
-  | InvalidRelayURI
-  | AddRelay Relay
-  | RelayDisconnected Relay
-  -- app dialog
-  | ShowDialog AppDialog
-  | CloseDialog
-  -- keys events
-  | KeysUpdated [Keys]
-  | KeysSelected (Maybe Keys)
+  = NoOp
+  | AppInit
+  | RelaysInitialized [Relay]
+  -- keys
   | KeyPairsLoaded [Keys]
   | NoKeysFound
   | ErrorReadingKeysFile
+  -- relays
+  | ConnectRelay Relay
+  | DisconnectRelay Relay
+  | RelayConnected Relay
+  | RelayDisconnected Relay
+  {-
+  | ValidateAndAddRelay
+  | InvalidRelayURI
+  | AddRelay Relay
+  -}
+  -- keys events
+--  | KeysUpdated [Keys]
+--  | KeysSelected (Maybe Keys)
   -- relay connection
-  | TimerTick DateTime
-  | Initialize
-  | InitSubscribed SubscriptionId
-  | HomeFilterSubscribed SubscriptionId
-  | EventAppeared Event Relay
+  -- | TimerTick DateTime
+  -- | Initialize
+  -- | InitSubscribed SubscriptionId
+  -- | HomeFilterSubscribed SubscriptionId
+  -- | EventAppeared Event Relay
 
 makeLenses 'AppEnv
 makeLenses 'RelayModel

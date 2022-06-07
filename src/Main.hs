@@ -96,46 +96,13 @@ handleEvent
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
-    ConnectRelay relay ->
-      [ Producer $ connectRelay env relay
-      ]
-    DisconnectRelay r ->
-      [ Task $ disconnectRelay env r
-      , Model $ model & dialog .~ Nothing
-      ]
-    UpdateRelay r -> []
     AppInit ->
       [ Task loadKeysFromDisk
       , Producer $ initRelays env
       ]
-    RelayConnected r ->
-      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)
+    RelaysInitialized rs ->
+      [
       ]
-    RelayDisconnected r ->
-      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)
-      ]
-    ValidateAndAddRelay ->
-      [ Task $ validateAndAddRelay (model ^. relayModel) ]
-    InvalidRelayURI ->
-      [ Model $ model & relayModel . isInvalidInput .~ True ]
-    AddRelay relay ->
-      [ Producer $ connectRelay env relay
-      , Model $ model
-          & relays .~ relay : (removeRelayFromList (model ^. relays) relay)
-      ]
-    ShowDialog d ->
-      case d of
-        RelayDialog r ->
-          [ Model $ model
-            & dialog .~ Just (RelayDialog r)
-            & relayModel . relayReadableInput .~ readable info'
-            & relayModel . relayWritableInput .~ writable info'
-          ]
-          where
-            info' = info r
-        NewRelayDialog ->
-          [ Model $ model & dialog .~ Just NewRelayDialog ]
-        _ -> []
     KeyPairsLoaded ks ->
       [ Model $ model
         & keys .~ ks
@@ -148,10 +115,31 @@ handleEvent env wenv node model evt =
     NoKeysFound ->
       [ Model $ model & currentView .~ SetupView ]
     ErrorReadingKeysFile ->
-      [ Model $ model & dialog .~ Just ErrorReadingKeysFileDialog ]
-    CloseDialog ->
-      [ Model $ model & dialog .~ Nothing ]
+      [ Model $ model & errorMsg .~ (Just $ T.pack "Could not read keys file.\nCheck the file permissions. Maybe the file was corrupted.") ]
+    ConnectRelay relay ->
+      [ Producer $ connectRelay env relay
+      ]
+    DisconnectRelay r ->
+      [ Task $ disconnectRelay env r
+      ]
+    RelayConnected r ->
+      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)
+      ]
+    RelayDisconnected r ->
+      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)
+      ]
+{-    ValidateAndAddRelay ->
+      [ Task $ validateAndAddRelay (model ^. relayModel) ]
+    InvalidRelayURI ->
+      [ Model $ model & relayModel . isInvalidInput .~ True ]
+    AddRelay relay ->
+      [ Producer $ connectRelay env relay
+      , Model $ model
+          & relays .~ relay : (removeRelayFromList (model ^. relays) relay)
+      ]
+-}
     -- relay connection
+    {-
     TimerTick now ->
       [ Model $ model & homeModel . Home.time .~ now ]
     Initialize ->
@@ -172,11 +160,39 @@ handleEvent env wenv node model evt =
           [ Model $ model & homeModel .~ newModel ]
     HomeFilterSubscribed subId ->
       [ Model $ model & homeModel . Home.homeSub .~ subId ]
+-}
+
+loadKeysFromDisk :: IO AppEvent
+loadKeysFromDisk = do
+  let fp = "keys.ft"
+  fe <- doesFileExist fp
+  if not fe then return NoKeysFound
+  else do
+    content <- LazyBytes.readFile fp
+    case decode content :: Maybe [Keys] of
+      Just [] -> do
+        return NoKeysFound
+      Just ks -> do
+        return $ KeyPairsLoaded ks
+      _       -> do
+        return ErrorReadingKeysFile
 
 initRelays :: AppEnv -> (AppEvent -> IO ()) -> IO ()
 initRelays env sendMsg = do
   (RelayPool relays _) <- readMVar $ env ^. relayPool
-  mapM_ (\relay -> sendMsg $ AddRelay relay) relays
+  mapM_ (\relay -> sendMsg $ ConnectRelay relay) relays
+
+connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
+connectRelay env relay sendMsg =
+  connect (env ^. channel) (env ^. relayPool) sendMsg RelayConnected RelayDisconnected relay
+
+disconnectRelay :: AppEnv -> Relay -> IO AppEvent
+disconnectRelay env r = if not $ connected r then return NoOp else do
+  atomically $ writeTChan (env ^. channel) $ Disconnect r
+  return NoOp
+
+mainKeys :: [Keys] -> Keys
+mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
 
 -- runSearchProfile :: Text -> IO AppEvent
 -- runSearchProfile v = do
@@ -194,9 +210,6 @@ initRelays env sendMsg = do
 --   atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent unsigned kp xo
 --   return EventSent
 
-connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
-connectRelay env relay sendMsg =
-  connect (env ^. channel) (env ^. relayPool) sendMsg RelayConnected RelayDisconnected relay
 
 {-
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
@@ -219,11 +232,9 @@ connectRelay env r sendMsg = if connected r then return () else do
       _     -> error "Wrong websocket scheme"
 -}
 
-disconnectRelay :: AppEnv -> Relay -> IO AppEvent
-disconnectRelay env r = if not $ connected r then return NoOp else do
-  atomically $ writeTChan (env ^. channel) $ Disconnect r
-  return NoOp
 
+
+{-
 receiveWs :: Relay -> WS.Connection -> (AppEvent -> IO ()) -> IO ()
 receiveWs r conn sendMsg = void . forkIO $ void . runMaybeT $ forever $ do
   msg <- lift (Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString))
@@ -256,28 +267,16 @@ sendWs broadcastChannel r conn sendMsg = do
           else return ()
         _ ->
           WS.sendTextData conn $ encode msg'
-
+-}
+{-
 saveKeyPairs :: [Keys] -> IO AppEvent
 saveKeyPairs ks = do
   LazyBytes.writeFile "keys.ft" $ encode ks
   putStrLn "KeyPairs saved to disk"
   return NoOp
+-}
 
-loadKeysFromDisk :: IO AppEvent
-loadKeysFromDisk = do
-  let fp = "keys.ft"
-  fe <- doesFileExist fp
-  if not fe then return NoKeysFound
-  else do
-    content <- LazyBytes.readFile fp
-    case decode content :: Maybe [Keys] of
-      Just [] -> do
-        return NoKeysFound
-      Just ks -> do
-        return $ KeyPairsLoaded ks
-      _       -> do
-        return ErrorReadingKeysFile
-
+{-
 validateAndAddRelay :: RelayModel -> IO AppEvent
 validateAndAddRelay model = do
   uri <- URI.mkURI $ model ^. relayURI
@@ -314,6 +313,4 @@ sendHomeFilters channel model = do
     (Keys _ xo _ _) = fromJust $ model ^. homeModel . Home.keys
     contactList = map extractXOFromProfile (model ^. homeModel . Home.contacts)
     xoList = xo : contactList
-
-mainKeys :: [Keys] -> Keys
-mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
+-}

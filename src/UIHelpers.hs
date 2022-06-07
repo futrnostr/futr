@@ -30,7 +30,7 @@ xOnlyPubKeyElem x =
 
 bigLabel :: Text -> WidgetNode s e
 bigLabel text =
-  label text `styleBasic` [ textSize 14, textFont "Bold" ]
+  label text `styleBasic` [ textSize 20, textFont "Bold" ]
 
 -- profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
 -- profileName m xo =
