@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes       #-}
--- {-# LANGUAGE RankNTypes #-}
 
 module Nostr.RelayPool where
 
@@ -24,16 +23,7 @@ import Nostr.Relay
 import Nostr.Request
 import Nostr.Response
 
--- data RelayHandler = RelayHandler (TChan Response -> SubscriptionId -> Event -> IO ())
---newtype RelayHandler = RelayHandler (forall i . Typeable i => SubscriptionId -> Event -> i)
-
--- data RelayHandler = RelayHandler (TChan Response -> IO ())
-
---data RelayHandlers =
-
 data RelayPool = RelayPool [Relay] (Map SubscriptionId (TChan Response))
-
---type RelayPool = [Relay]
 
 instance Default RelayPool where
   def =
