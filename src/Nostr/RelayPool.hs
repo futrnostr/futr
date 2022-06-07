@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes       #-}
-{-# LANGUAGE RankNTypes #-}
+-- {-# LANGUAGE RankNTypes #-}
 
 module Nostr.RelayPool where
 
@@ -24,9 +24,16 @@ import Nostr.Relay
 import Nostr.Request
 import Nostr.Response
 
-newtype RelayHandler = RelayHandler (forall i . Typeable i => SubscriptionId -> Event -> i)
+-- data RelayHandler = RelayHandler (TChan Response -> SubscriptionId -> Event -> IO ())
+--newtype RelayHandler = RelayHandler (forall i . Typeable i => SubscriptionId -> Event -> i)
 
-data RelayPool = RelayPool [Relay] (Map SubscriptionId RelayHandler)
+-- data RelayHandler = RelayHandler (TChan Response -> IO ())
+
+--data RelayHandlers =
+
+data RelayPool = RelayPool [Relay] (Map SubscriptionId (TChan Response))
+
+--type RelayPool = [Relay]
 
 instance Default RelayPool where
   def =
@@ -49,14 +56,13 @@ instance Default RelayPool where
       ]
       Map.empty
 
-registerHandler :: RelayPool -> SubscriptionId -> RelayHandler -> RelayPool
-registerHandler pool subId handler = do
-   let RelayPool relays handlers = pool
-   RelayPool relays (Map.insert subId handler handlers)
+registerResponseChannel :: RelayPool -> SubscriptionId -> TChan Response -> RelayPool
+registerResponseChannel (RelayPool relays outputs) subId output =
+   RelayPool relays (Map.insert subId output outputs)
 
-removeHandler :: RelayPool -> SubscriptionId -> RelayPool
-removeHandler (RelayPool relays handlers) subId =
-  RelayPool relays (Map.delete subId handlers)
+removeResponseChannel :: RelayPool -> SubscriptionId -> RelayPool
+removeResponseChannel (RelayPool relays outputs) subId =
+  RelayPool relays (Map.delete subId outputs)
 
 addRelay :: RelayPool -> Relay -> RelayPool
 addRelay (RelayPool relays handlers) relay =
@@ -66,19 +72,19 @@ removeRelay :: RelayPool -> Relay -> RelayPool
 removeRelay (RelayPool relays handlers) relay =
   RelayPool (filter (\r -> r `sameRelay` relay) relays) handlers
 
-subscribe :: RelayPool -> TChan Request -> [Filter] -> RelayHandler -> IO (SubscriptionId, RelayPool)
-subscribe pool channel filters handler = do
+subscribe :: RelayPool -> TChan Request -> [Filter] -> TChan Response -> IO (SubscriptionId, RelayPool)
+subscribe pool input filters output = do
   gen <- newGenIO :: IO CtrDRBG
   let Right (randomBytes, newGen) = genBytes 16 gen
   let subId = B16.encodeBase16 randomBytes
-  let pool' = registerHandler pool subId handler
-  send channel $ Subscribe $ Subscription filters subId
+  let pool' = registerResponseChannel pool subId output
+  send input $ Subscribe $ Subscription filters subId
   return (subId, pool')
 
 unsubscribe :: RelayPool -> TChan Request -> SubscriptionId -> IO RelayPool
 unsubscribe pool channel subId = do
   send channel $ Close subId
-  return $ removeHandler pool subId
+  return $ removeResponseChannel pool subId
 
 send :: TChan Request -> Request -> IO ()
 send channel request =

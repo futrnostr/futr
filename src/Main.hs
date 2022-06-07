@@ -96,46 +96,33 @@ handleEvent
 handleEvent env wenv node model evt =
   case evt of
     NoOp -> []
-    ConnectRelay r -> []
---      [ Producer $ connectRelay (env ^. channel) r
---      , Model $ model & dialog .~ Nothing
---      ]
+    ConnectRelay relay ->
+      [ Producer $ connectRelay env relay
+      ]
     DisconnectRelay r ->
       [ Task $ disconnectRelay env r
       , Model $ model & dialog .~ Nothing
       ]
     UpdateRelay r -> []
     AppInit ->
-      [ Task tryLoadKeysFromDisk
-      , Task $ loadRelayPool env
-      ] -- ++ (map (\r -> Producer $ connectRelay env r) (model ^. pool) )
-    RelayPoolLoaded (RelayPool relays' handlers) ->
-      [ Model $ model & relays .~ relays'
-      ] ++ (map (\r -> Producer $ connectRelay (env ^. channel) handlers r) relays')
-      -- connectRelay :: TChan Request -> Map SubscriptionId RelayHandler -> (AppEvent -> IO ()) -> Relay -> IO ()
-
-    RelayConnected r -> []
---      [ Model $ model & pool .~ newPool
---      --, Task $ subscribe env (model ^. eventFilters)
---      ] where
---          newPool = r : (poolWithoutRelay (model ^. pool) r)
-    RelayDisconnected r -> []
---      [ Model $ model & pool .~ newPool ]
---      where
---        newPool = (r {connected = False}) : (poolWithoutRelay (model ^. pool) r)
+      [ Task loadKeysFromDisk
+      , Producer $ initRelays env
+      ]
+    RelayConnected r ->
+      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)
+      ]
+    RelayDisconnected r ->
+      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)
+      ]
     ValidateAndAddRelay ->
       [ Task $ validateAndAddRelay (model ^. relayModel) ]
     InvalidRelayURI ->
       [ Model $ model & relayModel . isInvalidInput .~ True ]
-    AddRelay r -> []
-      -- [ Producer $ connectRelay (env ^. channel) r
---      , Model $ model
---          & dialog .~ Nothing
---          & relayModel . relayURI .~ "wss://"
---          & relayModel . relayReadableInput .~ True
---          & relayModel . relayWritableInput .~ True
---          & pool .~ r : (poolWithoutRelay (model ^. pool) r)
-      --]
+    AddRelay relay ->
+      [ Producer $ connectRelay env relay
+      , Model $ model
+          & relays .~ relay : (removeRelayFromList (model ^. relays) relay)
+      ]
     ShowDialog d ->
       case d of
         RelayDialog r ->
@@ -186,6 +173,11 @@ handleEvent env wenv node model evt =
     HomeFilterSubscribed subId ->
       [ Model $ model & homeModel . Home.homeSub .~ subId ]
 
+initRelays :: AppEnv -> (AppEvent -> IO ()) -> IO ()
+initRelays env sendMsg = do
+  (RelayPool relays _) <- readMVar $ env ^. relayPool
+  mapM_ (\relay -> sendMsg $ AddRelay relay) relays
+
 -- runSearchProfile :: Text -> IO AppEvent
 -- runSearchProfile v = do
 --   case maybe Nothing xOnlyPubKey $ decodeHex v of
@@ -202,10 +194,9 @@ handleEvent env wenv node model evt =
 --   atomically $ writeTChan (env ^. channel) $ SendEvent $ signEvent unsigned kp xo
 --   return EventSent
 
-connectRelay :: TChan Request -> Map SubscriptionId RelayHandler -> Relay -> (AppEvent -> IO ()) -> IO ()
-connectRelay channel handlers relay sendMsg =
-  connect channel handlers sendMsg RelayConnected RelayDisconnected relay
---  channel sendMsg msgConnected relay
+connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
+connectRelay env relay sendMsg =
+  connect (env ^. channel) (env ^. relayPool) sendMsg RelayConnected RelayDisconnected relay
 
 {-
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
@@ -227,6 +218,7 @@ connectRelay env r sendMsg = if connected r then return () else do
       "ws"  -> WS.runClient host port path
       _     -> error "Wrong websocket scheme"
 -}
+
 disconnectRelay :: AppEnv -> Relay -> IO AppEvent
 disconnectRelay env r = if not $ connected r then return NoOp else do
   atomically $ writeTChan (env ^. channel) $ Disconnect r
@@ -257,14 +249,13 @@ sendWs broadcastChannel r conn sendMsg = do
     msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException Request)
     case msg of
       Left ex -> sendMsg $ RelayDisconnected r
-      Right msg' -> do
-        case msg' of
-          Disconnect r' ->
-            if r `sameRelay` r' then do
-                WS.sendClose conn $ T.pack "Bye!"
-            else return ()
-          _ ->
-            WS.sendTextData conn $ encode msg'
+      Right msg' -> case msg' of
+        Disconnect r' ->
+          if r `sameRelay` r' then do
+              WS.sendClose conn $ T.pack "Bye!"
+          else return ()
+        _ ->
+          WS.sendTextData conn $ encode msg'
 
 saveKeyPairs :: [Keys] -> IO AppEvent
 saveKeyPairs ks = do
@@ -272,8 +263,8 @@ saveKeyPairs ks = do
   putStrLn "KeyPairs saved to disk"
   return NoOp
 
-tryLoadKeysFromDisk :: IO AppEvent
-tryLoadKeysFromDisk = do
+loadKeysFromDisk :: IO AppEvent
+loadKeysFromDisk = do
   let fp = "keys.ft"
   fe <- doesFileExist fp
   if not fe then return NoKeysFound
@@ -286,11 +277,6 @@ tryLoadKeysFromDisk = do
         return $ KeyPairsLoaded ks
       _       -> do
         return ErrorReadingKeysFile
-
-loadRelayPool :: AppEnv -> IO AppEvent
-loadRelayPool env = do
-  relayPool' <- readMVar $ env ^. relayPool
-  return $ RelayPoolLoaded relayPool'
 
 validateAndAddRelay :: RelayModel -> IO AppEvent
 validateAndAddRelay model = do

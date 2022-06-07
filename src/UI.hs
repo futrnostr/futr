@@ -265,7 +265,8 @@ viewRelayDialog r model =
     connButton =
       if connected r
         then DisconnectRelay r
-        else ConnectRelay r
+        else DisconnectRelay r
+--        else ConnectRelay r
 
 viewNewRelayDialog :: AppModel -> AppNode
 viewNewRelayDialog model =

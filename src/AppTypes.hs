@@ -9,6 +9,7 @@ import           Control.Lens
 import           Crypto.Schnorr
 import           Data.DateTime
 import           Data.Default
+import           Data.Map                             (Map)
 import qualified Data.Map                             as Map
 import           Data.Text
 import           Monomer                              (WidgetEnv, WidgetNode)
@@ -22,6 +23,7 @@ import           Nostr.Profile
 import           Nostr.Relay
 import           Nostr.RelayPool
 import           Nostr.Request       (Request, SubscriptionId)
+import           Nostr.Response
 import           Widgets.EditProfile
 import           Widgets.Home
 import           Widgets.ViewPosts
@@ -80,8 +82,6 @@ instance Default AppModel where
 data AppEvent
   = AppInit
   | NoOp
-  -- relay events
-  | RelayPoolLoaded RelayPool
   | ConnectRelay Relay
   | DisconnectRelay Relay
   | UpdateRelay Relay

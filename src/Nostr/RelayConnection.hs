@@ -4,6 +4,7 @@
 module Nostr.RelayConnection where
 
 import Control.Concurrent (forkIO)
+import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Monad (forever, mzero, unless, void)
 import Control.Monad.STM (atomically)
@@ -14,7 +15,6 @@ import Data.Map (Map)
 import Data.Text (Text, pack, unpack)
 import Data.Typeable (Typeable)
 import Monomer
---import Network.Socket
 import Network.WebSockets (ClientApp, Connection, receiveData,
                            sendClose, sendTextData)
 import Text.URI (URI, render)
@@ -38,19 +38,19 @@ import Nostr.Response
 connect
   :: WidgetEvent e
   => TChan Request
-  -> Map SubscriptionId RelayHandler
+  -> MVar RelayPool
   -> (e -> IO ())
   -> (Relay -> e)
   -> (Relay -> e)
   -> Relay
   -> IO ()
-connect channel handlers sendMsg msgConnected msgDisconnected relay = do
+connect channel relayPool sendMsg msgConnected msgDisconnected relay = do
   putStrLn $ "trying to connect to " ++ (unpack $ relayName relay) ++ " ..."
   start $ \conn -> do
     let relay' = relay { connected = True }
     putStrLn $ "Connected to " ++ (unpack $ relayName relay)
     sendMsg $ msgConnected relay'
-    receiveWs sendMsg msgDisconnected relay' conn handlers
+    receiveWs relayPool sendMsg msgDisconnected relay' conn
     sendWs channel sendMsg msgDisconnected relay' conn
   where
     host = unpack $ extractHostname relay
@@ -69,13 +69,13 @@ disconnect channel relay =
 
 receiveWs
   :: WidgetEvent e
-  => (e -> IO ())
+  => MVar RelayPool
+  -> (e -> IO ())
   -> (Relay -> e)
   -> Relay
   -> WS.Connection
-  -> Map SubscriptionId RelayHandler
   -> IO ()
-receiveWs sendMsg msgDisconnected relay conn handlers =
+receiveWs mvarPool sendMsg msgDisconnected relay conn =
   if not $ readable $ info relay
     then return ()
     else void . forkIO $ void . runMaybeT $ forever $ do
@@ -86,21 +86,21 @@ receiveWs sendMsg msgDisconnected relay conn handlers =
           lift $ sendMsg $ msgDisconnected relay
           mzero
         Right msg' -> case decode msg' of
-          Just m -> case m of
-            EventReceived subId event ->
-              case Map.lookup subId handlers of
-                Just (RelayHandler handler) ->
-                  handler subId event -- @todo does this work???
-                Nothing ->
-                  lift $ putStrLn $ "No event handler found for subscription " ++ unpack subId
-            Notice notice ->
-              lift $ putStrLn $ "NOTICE: " ++ unpack notice
+          Just (EventReceived subId event) -> do
+            (RelayPool _ handlers) <- lift $ readMVar mvarPool
+            case Map.lookup subId handlers of
+              Just responseChannel ->
+                lift $ atomically $ writeTChan responseChannel $ EventReceived subId event
+              Nothing ->
+                lift $ putStrLn $ "No event handler found for subscription " ++ unpack subId
+          Just (Notice notice) ->
+            lift $ putStrLn $ "Notice: " ++ unpack notice
           Nothing -> do
             lift $ putStrLn $ "Could not decode server response: " ++ show msg'
 
 sendWs
   :: WidgetEvent e
-  =>  TChan Request
+  => TChan Request
   -> (e -> IO ())
   -> (Relay -> e)
   -> Relay

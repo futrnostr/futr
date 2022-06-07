@@ -28,6 +28,10 @@ xOnlyPubKeyElem x =
     , textFieldD_ (WidgetValue $ T.pack $ exportXOnlyPubKey x) [ readOnly ]
     ]
 
+bigLabel :: Text -> WidgetNode s e
+bigLabel text =
+  label text `styleBasic` [ textSize 14, textFont "Bold" ]
+
 -- profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
 -- profileName m xo =
 --   case Map.lookup xo m of

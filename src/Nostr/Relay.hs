@@ -69,3 +69,6 @@ extractPath r =
 
 sameRelay :: Relay -> Relay -> Bool
 sameRelay r r' = uri r == uri r'
+
+removeRelayFromList :: [Relay] -> Relay -> [Relay]
+removeRelayFromList relayList relay = filter (\r' -> not $ relay `sameRelay` r') relayList
