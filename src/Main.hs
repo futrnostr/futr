@@ -7,9 +7,6 @@ import           Control.Concurrent.STM.TChan
 import           Control.Lens
 import           Control.Monad.STM                    (atomically)
 import           Data.Aeson
-import qualified Data.ByteString                      as BS
-import qualified Data.ByteString.Base16               as B16
-import qualified Data.ByteString.Char8                as B8
 import qualified Data.ByteString.Lazy                 as LazyBytes
 import           Data.DateTime
 import           Data.Default
@@ -22,7 +19,6 @@ import           Monomer.Widgets.Single
 import           System.Directory                     (doesFileExist)
 
 import           AppTypes
-import           Helpers
 import           Nostr.Keys
 import           Nostr.Relay
 import           Nostr.RelayConnection
@@ -30,11 +26,6 @@ import           Nostr.RelayPool
 import           Nostr.Request  as Request
 import           UI
 import           UIHelpers
-
-import qualified Widgets.EditProfile                  as EditProfile
-import qualified Widgets.Home                         as Home
-import qualified Widgets.ViewProfile                  as ViewProfile
-import qualified Widgets.ViewPosts                    as ViewPosts
 
 main :: IO ()
 main = do
@@ -66,8 +57,7 @@ handleEvent env wenv node model evt =
       , Producer $ initRelays env
       ]
     RelaysInitialized rs ->
-      [
-      ]
+      [ Model $ model & relays .~ rs ]
     KeyPairsLoaded ks ->
       [ Model $ model
         & keys .~ ks
@@ -82,17 +72,13 @@ handleEvent env wenv node model evt =
     ErrorReadingKeysFile ->
       [ Model $ model & errorMsg .~ (Just $ pack "Could not read keys file.\nCheck the file permissions. Maybe the file was corrupted.") ]
     ConnectRelay relay ->
-      [ Producer $ connectRelay env relay
-      ]
+      [ Producer $ connectRelay env relay ]
     DisconnectRelay r ->
-      [ Task $ disconnectRelay env r
-      ]
+      [ Task $ disconnectRelay env r ]
     RelayConnected r ->
-      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)
-      ]
+      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
     RelayDisconnected r ->
-      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)
-      ]
+      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
 
 loadKeysFromDisk :: IO AppEvent
 loadKeysFromDisk = do
@@ -113,6 +99,7 @@ initRelays :: AppEnv -> (AppEvent -> IO ()) -> IO ()
 initRelays env sendMsg = do
   (RelayPool relays _) <- readMVar $ env ^. relayPool
   mapM_ (\relay -> sendMsg $ ConnectRelay relay) relays
+  sendMsg $ RelaysInitialized relays
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env relay sendMsg =

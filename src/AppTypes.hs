@@ -22,7 +22,7 @@ import           Nostr.Keys
 import           Nostr.Profile
 import           Nostr.Relay
 import           Nostr.RelayPool
-import           Nostr.Request       (Request, SubscriptionId)
+import           Nostr.Request                        (Request, SubscriptionId)
 import           Nostr.Response
 import           Widgets.EditProfile
 import           Widgets.Home
@@ -63,6 +63,7 @@ data AppModel =
     , _selectedKeys     :: Maybe Keys
     , _relays           :: [Relay]
     , _errorMsg         :: Maybe Text
+    -- views
     , _currentView      :: AppView
     , _editProfileModel :: EditProfileModel
     , _homeModel        :: HomeModel
