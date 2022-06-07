@@ -106,17 +106,6 @@ errorLayer errorMsg' =
       , bgColor darkGray
       ]
 
-currentKeysNode :: Maybe Keys -> AppNode
-currentKeysNode mks = case mks of
-    Just (Keys _ xo _ n) ->
-      case n of
-        Just n' ->
-          label n'
-        Nothing ->
-          label $ T.pack $ exportXOnlyPubKey xo
-    _ ->
-      label ""
-
 viewCircle :: Relay -> WidgetNode AppModel AppEvent
 viewCircle r = defaultWidgetNode "circlesGrid" widget
   where
