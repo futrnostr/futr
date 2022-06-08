@@ -66,7 +66,7 @@ homeWidget
   => TChan Request
   -> ALens' sp HomeModel
   -> WidgetNode sp ep
-homeWidget chan model = composite "homeWidget" model viewHome (handleHomeEvent chan)
+homeWidget chan model = composite "HomeWidget" model viewHome (handleHomeEvent chan)
 
 handleHomeEvent
   :: TChan Request
@@ -88,11 +88,11 @@ handleHomeEvent chan env node model evt = case evt of
   ViewProfile xo ->
     []
 
-addContact :: [Profile] -> Event -> [Profile]
-addContact profiles e = profiles ++ newProfiles
-  where
-    newProfiles = tagsToProfiles (tags e)
-    newProfiles' = filter (\p -> not $ p `elem` profiles)
+--addContact :: [Profile] -> Event -> [Profile]
+--addContact profiles e = profiles ++ newProfiles
+--  where
+--    newProfiles = tagsToProfiles (tags e)
+--    newProfiles' = filter (\p -> not $ p `elem` profiles)
 
 sendPost :: TChan Request -> HomeModel -> IO HomeEvent
 sendPost chan model = do
@@ -123,18 +123,19 @@ viewHome wenv model = widgetTree
                 ]
             ]
         , spacer
-        , ViewPosts.viewPostsWidget
-            wenv
-            viewPostsModel
-            (\re -> kind (fst re) == TextNote
-              && pubKey (fst re) `elem` (xo : contacts')
-            )
-            ViewPostDetails
-            ViewProfile
         ]
-        where
-          (Keys _ xo _ _) = fromJust $ model ^. keys
-          contacts' = map extractXOFromProfile (model ^. contacts)
+--        , ViewPosts.viewPostsWidget
+--            wenv
+--            viewPostsModel
+--            (\re -> kind (fst re) == TextNote
+--              && pubKey (fst re) `elem` (xo : contacts')
+--            )
+--            ViewPostDetails
+--            ViewProfile
+--        ]
+--        where
+--          (Keys _ xo _ _) = fromJust $ model ^. keys
+--          contacts' = map extractXOFromProfile (model ^. contacts)
 
 handleReceivedEvent :: HomeModel -> Event -> Relay -> HomeModel
 handleReceivedEvent model e r =
@@ -145,37 +146,35 @@ handleReceivedEvent model e r =
         & events .~ newEvents
       where
         newEvents = addEvent (model ^. events) e r
-    Metadata ->
-      model
-        & keys .~ Just (updateName (fromJust $ model ^. keys))
-        & editProfileModel . EditProfile.inputs . EditProfile.nameInput .~ name'
-        & editProfileModel . EditProfile.inputs . EditProfile.aboutInput .~ about'
-        & editProfileModel . EditProfile.inputs . EditProfile.pictureUrlInput .~ pictureUrl'
-        & editProfileModel . EditProfile.inputs . EditProfile.nip05IdentifierInput .~ nip05'
-      where
-        mp = decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e :: Maybe ProfileData
-        name' = maybe "" name mp
-        about' = maybe "" about mp
-        pictureUrl' = maybe "" pictureUrl mp
-        nip05' = maybe "" nip05 mp
-        xo' = pubKey e
-        updateName (Keys kp xo a n) = if xo == xo'
-          then Keys kp xo a (Just name')
-          else Keys kp xo a n
-    Contacts ->
-      if not $ model ^. isInitialized
-        then
-          model
-            & isInitialized .~ True
-            & initSub .~ ""
-            & contacts .~ newContacts
-            & viewPostsModel . ViewPosts.contacts .~ newContacts
-        else
-          model
-            & contacts .~ newContacts
-            & viewPostsModel . ViewPosts.contacts .~ newContacts
-      where
-        newContacts = addContact (model ^. contacts) e
+--    Metadata ->
+--      model
+--        & keys .~ Just (updateName (fromJust $ model ^. keys))
+--        & editProfileModel . EditProfile.inputs . EditProfile.nameInput .~ name'
+--        & editProfileModel . EditProfile.inputs . EditProfile.aboutInput .~ about'
+--        & editProfileModel . EditProfile.inputs . EditProfile.pictureUrlInput .~ pictureUrl'
+--      where
+--        mp = decode $ LazyBytes.fromStrict $ encodeUtf8 $ content e :: Maybe Profile
+--        name' = maybe "" name mp
+--        about' = maybe "" about mp
+--        pictureUrl' = maybe "" pictureUrl mp
+--        xo' = pubKey e
+--        updateName (Keys kp xo a n) = if xo == xo'
+--          then Keys kp xo a (Just name')
+--          else Keys kp xo a n
+--    Contacts ->
+--      if not $ model ^. isInitialized
+--        then
+--          model
+--            & isInitialized .~ True
+--            & initSub .~ ""
+--            & contacts .~ newContacts
+--            & viewPostsModel . ViewPosts.contacts .~ newContacts
+--        else
+--          model
+--            & contacts .~ newContacts
+--            & viewPostsModel . ViewPosts.contacts .~ newContacts
+--      where
+--        newContacts = addContact (model ^. contacts) e
     Delete -> -- @todo handle delete events
       model
     _ ->

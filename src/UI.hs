@@ -22,10 +22,9 @@ import           Nostr.RelayPool
 import           Nostr.Request
 import           UIHelpers
 
-import qualified Widgets.EditProfile    as EditProfile
-import qualified Widgets.Home           as Home
-import qualified Widgets.ViewPosts      as ViewPosts
-import qualified Widgets.ViewProfile    as ViewProfile
+import qualified Widgets.EditProfile as EditProfile
+import qualified Widgets.Home        as Home
+import qualified Widgets.Setup       as Setup
 
 buildUI :: TChan Request -> MVar RelayPool -> AppWenv -> AppModel -> AppNode
 buildUI channel poolMVar wenv model = widgetTree
@@ -34,7 +33,7 @@ buildUI channel poolMVar wenv model = widgetTree
       HomeView ->
         Home.homeWidget channel homeModel
       SetupView ->
-        vstack [ label "SETUP VIEW" ]
+        Setup.setupWidget channel poolMVar NewKeysCreated setupModel
       EditProfileView ->
         EditProfile.editProfileWidget
           channel
@@ -68,7 +67,7 @@ buildUI channel poolMVar wenv model = widgetTree
                     Nothing ->
                       "PubKey: " `T.append` (T.pack $ exportXOnlyPubKey xo)
             Nothing ->
-              label "No account"
+              filler
     widgetTree =
       zstack
         [ vstack

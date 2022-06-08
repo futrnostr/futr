@@ -57,7 +57,7 @@ shortXOnlyPubKey xo = pack
     part1 = take 4 str
     part2 = take 4 $ reverse str
 
-
+{-
 extractXOFromProfile :: Profile -> XOnlyPubKey
 extractXOFromProfile (Profile xo _ _) = xo
 
@@ -87,3 +87,4 @@ tagsToProfiles ts = map (\t ->
 isPTag :: Tag -> Bool
 isPTag (PTag (ValidXOnlyPubKey xo) _ _) = True
 isPTag _ = False
+-}

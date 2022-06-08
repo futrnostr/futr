@@ -22,18 +22,18 @@ instance ToJSON Filter where
   toJSON (InitialFilter xo) =
     object $ fromList
       [ ( "kinds", toJSON [ Contacts, Metadata] )
-      , ( "authors", toJSON [ xo ] )
+      -- , ( "authors", toJSON [ xo ] )
       , ( "limit", Number 2 )
       ]
   toJSON (ContactsFilter xos) =
     object $ fromList
       [ ( "kinds", toJSON [ Contacts ] )
-      , ( "authors", toJSON xos )
+      --, ( "authors", toJSON xos )
       ]
   toJSON (TextNoteFilter xos) =
     object $ fromList
       [ ( "kinds", toJSON [ TextNote ] )
-      , ( "authors", toJSON xos )
+      --, ( "authors", toJSON xos )
       , ( "limit", Number 500 )
       ]
 

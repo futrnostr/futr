@@ -21,7 +21,7 @@ import           GHC.Exts               (fromList)
 
 import Nostr.Keys
 import Nostr.Kind
-import Nostr.Profile (Profile(..), ProfileData(..), RelayURL)
+import Nostr.Profile (Profile(..), RelayURL)
 import Nostr.Relay
 
 newtype EventId = EventId
@@ -236,24 +236,24 @@ replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 replyNote event note xo t =
   UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [ETag (eventId event) Nothing (Just Reply)], content' = note}
-
+{-
 setContacts :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> UnsignedEvent
 setContacts ps r xo t =
   UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = Contacts, tags' = profilesToTags ps, content' = ""}
-
+-}
 deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 deleteEvents eids reason xo t =
   UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = Delete, tags' = toDelete, content' = reason}
   where
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
-
+{-
 profilesToTags :: [Profile] -> [Tag]
 profilesToTags ps = map (\p -> pd p) ps
   where
     pd (Profile xo r d) = PTag (ValidXOnlyPubKey xo) (Just r) (Just $ name d)
-
+-}
 getReplyEventId :: Event -> Maybe EventId
 getReplyEventId = getMarkerEventId Reply
 

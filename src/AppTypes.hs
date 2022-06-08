@@ -26,8 +26,7 @@ import           Nostr.Request                        (Request, SubscriptionId)
 import           Nostr.Response
 import           Widgets.EditProfile
 import           Widgets.Home
-import           Widgets.ViewPosts
-import           Widgets.ViewProfile
+import           Widgets.Setup
 
 type AppWenv = WidgetEnv AppModel AppEvent
 
@@ -68,11 +67,12 @@ data AppModel =
     , _editProfileModel :: EditProfileModel
     , _homeModel        :: HomeModel
     , _relayModel       :: RelayModel
+    , _setupModel       :: SetupModel
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing [] Nothing HomeView def def def
+  def = AppModel [] Nothing [] Nothing HomeView def def def def
 
 data AppEvent
   = NoOp
@@ -82,6 +82,7 @@ data AppEvent
   | KeyPairsLoaded [Keys]
   | NoKeysFound
   | ErrorReadingKeysFile
+  | NewKeysCreated Keys
   -- relays
   | ConnectRelay Relay
   | DisconnectRelay Relay
