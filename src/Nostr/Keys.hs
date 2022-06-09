@@ -74,12 +74,12 @@ instance ToJSON XOnlyPubKey where
 
 instance FromJSON KeyPair where
   parseJSON = withText "KeyPair" $ \k -> do
-    case (textToByteStringType k Schnorr.keypair) of
-      Just k' -> return k'
+    case (textToByteStringType k Schnorr.secKey) of
+      Just k' -> return $ Schnorr.keyPairFromSecKey k'
       _       -> fail "invalid key pair"
 
 instance ToJSON KeyPair where
-  toJSON e = String $ T.pack $ Schnorr.exportKeyPair e
+  toJSON kp = String $ T.pack $ Schnorr.exportSecKey $ Schnorr.deriveSecKey kp
 
 instance FromJSON SchnorrSig where
   parseJSON = withText "SchnorrSig" $ \s -> do
