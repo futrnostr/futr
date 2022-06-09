@@ -19,6 +19,7 @@ import           Monomer.Widgets.Single
 import           System.Directory                     (doesFileExist)
 
 import           AppTypes
+import           Helpers
 import           Nostr.Keys
 import           Nostr.Relay
 import           Nostr.RelayConnection
@@ -26,6 +27,7 @@ import           Nostr.RelayPool
 import           Nostr.Request  as Request
 import           UI
 import           UIHelpers
+import           Widgets.BackupKeys as BackupKeys
 
 main :: IO ()
 main = do
@@ -79,6 +81,21 @@ handleEvent env wenv node model evt =
       [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
     RelayDisconnected r ->
       [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
+    NewKeysCreated ks ->
+      [ Model $ model
+          & keys .~ ks : dk
+          & selectedKeys .~ Just ks
+          & backupKeysModel . BackupKeys.backupKeys .~ Just ks
+          & currentView .~ BackupKeysView
+      , Task $ saveKeyPairs $ ks : dk
+      ]
+      where
+        dk = disableKeys $ model ^. keys
+    KeysBackupDone ->
+      [ Model $ model
+          & currentView .~ HomeView
+          & backupKeysModel . BackupKeys.backupKeys .~ Nothing
+      ]
 
 loadKeysFromDisk :: IO AppEvent
 loadKeysFromDisk = do
@@ -112,3 +129,9 @@ disconnectRelay env r = if not $ connected r then return NoOp else do
 
 mainKeys :: [Keys] -> Keys
 mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
+
+saveKeyPairs :: [Keys] -> IO AppEvent
+saveKeyPairs ks = do
+  LazyBytes.writeFile "keys.ft" $ encode ks
+  putStrLn "KeyPairs saved to disk"
+  return NoOp

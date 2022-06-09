@@ -9,13 +9,17 @@ import           Crypto.Schnorr         (KeyPair, SchnorrSig, XOnlyPubKey,
                                          decodeHex, exportSchnorrSig, exportXOnlyPubKey,
                                          msg, signMsgSchnorr, verifyMsgSchnorr)
 import           Data.Aeson
+import           Data.Aeson.Text        (encodeToTextBuilder)
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
-import           Data.ByteString.Lazy   (toStrict)
+import           Data.ByteString.Lazy   (fromStrict, toStrict)
 import           Data.DateTime
 import           Data.Maybe             (fromJust)
 import           Data.Text              (Text, toLower, pack, unpack)
+import           Data.Text.Encoding     (encodeUtf8)
+import qualified Data.Text.Lazy         as LazyText
+import           Data.Text.Lazy.Builder (toLazyText)
 import qualified Data.Vector            as V
 import           GHC.Exts               (fromList)
 
@@ -59,7 +63,33 @@ data UnsignedEvent = UnsignedEvent
   }
   deriving (Eq, Show)
 
+type Username = Text
+
+type DisplayName = Text
+
+type About = Text
+
+type Picture = Text
+
+data MetadataContent = MetadataContent Username (Maybe DisplayName) (Maybe About) (Maybe Picture)
+  deriving (Eq, Show)
+
 type ReceivedEvent = (Event, [Relay])
+
+instance ToJSON MetadataContent where
+  toJSON (MetadataContent username displayName about picture) = object
+    [ "name" .= toJSON username
+    , "display_name" .= toJSON displayName
+    , "about" .= toJSON about
+    , "picture" .= toJSON picture
+    ]
+
+instance FromJSON MetadataContent where
+  parseJSON = withObject "metadata content" $ \e -> MetadataContent
+    <$> e .: "username"
+    <*> e .:? "display_name"
+    <*> e .:? "about"
+    <*> e .:? "picture"
 
 instance Show EventId where
   showsPrec _ = shows . B16.encodeBase16 . getEventId
@@ -218,42 +248,46 @@ textNote note xo t =
   UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [], content' = note}
 
-setMetadata :: Text -> Text -> Text -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
-setMetadata name about picture nip05 xo t =
+setMetadata :: MetadataContent -> XOnlyPubKey -> DateTime -> UnsignedEvent
+setMetadata metadataContent xo t =
   UnsignedEvent
     { pubKey' = xo
     , created_at' = t
     , kind' = Metadata
     , tags' = []
-    , content' = pack $
-      "{\"name\":\"" ++ unpack name ++
-      "\",\"about\":\"" ++ unpack about ++
-      "\",\"picture\":\"" ++ unpack picture ++
-      "\",\"nip05\":\"" ++ unpack nip05 ++ "\"}"
+    , content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ metadataContent
     }
+
+readMetadataContent :: Event -> Maybe MetadataContent
+readMetadataContent event = case kind event of
+  Metadata ->
+    decode $ fromStrict $ encodeUtf8 $ content event
+  _ ->
+    Nothing
+
 
 replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 replyNote event note xo t =
   UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [ETag (eventId event) Nothing (Just Reply)], content' = note}
-{-
-setContacts :: [Profile] -> RelayURL -> XOnlyPubKey -> DateTime -> UnsignedEvent
-setContacts ps r xo t =
+
+setContacts :: [(XOnlyPubKey, Maybe Username)] -> XOnlyPubKey -> DateTime -> UnsignedEvent
+setContacts contacts xo t =
   UnsignedEvent
-    {pubKey' = xo, created_at' = t, kind' = Contacts, tags' = profilesToTags ps, content' = ""}
--}
+    { pubKey' = xo
+    , created_at' = t
+    , kind' = Contacts
+    , tags' = map (\c -> PTag (ValidXOnlyPubKey $ fst c) (Just "") (snd c)) contacts
+    , content' = ""
+    }
+
 deleteEvents :: [EventId] -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 deleteEvents eids reason xo t =
   UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = Delete, tags' = toDelete, content' = reason}
   where
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
-{-
-profilesToTags :: [Profile] -> [Tag]
-profilesToTags ps = map (\p -> pd p) ps
-  where
-    pd (Profile xo r d) = PTag (ValidXOnlyPubKey xo) (Just r) (Just $ name d)
--}
+
 getReplyEventId :: Event -> Maybe EventId
 getReplyEventId = getMarkerEventId Reply
 

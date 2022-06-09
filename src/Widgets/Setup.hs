@@ -4,19 +4,24 @@
 module Widgets.Setup where
 
 import Control.Concurrent.MVar
+import Control.Monad.STM            (atomically)
 import Control.Concurrent.STM.TChan
 import Control.Lens
 import Crypto.Schnorr
 import Data.Aeson
+import Data.DateTime
 import Data.Default
-import Data.Map       (Map)
+import Data.Map                     (Map)
 import Data.Maybe
-import Data.Text      (Text, pack)
+import Data.Text                    (Text, pack)
 import Monomer
 
 import qualified Data.ByteString.Lazy as LazyBytes
+import qualified Data.Map             as Map
 
+import Nostr.Event
 import Nostr.Keys
+import Nostr.Kind
 import Nostr.Relay
 import Nostr.RelayPool
 import Nostr.Request
@@ -32,20 +37,24 @@ data SetupModel = SetupModel
   , _mainRelay      :: Maybe Relay
   , _relays         :: [Relay]
   , _keys           :: Maybe Keys
-  , _name           :: Text
-  , _displayName    :: Text
-  , _about          :: Text
-  , _picture        :: Text
+  , _name           :: Username
+  , _displayName    :: DisplayName
+  , _about          :: About
+  , _picture        :: Picture
+  , _imported       :: Bool
   } deriving (Eq, Show)
 
 instance Default SetupModel where
-  def = SetupModel "" Nothing [] Nothing "" "" "" ""
+  def = SetupModel "" Nothing [] Nothing "" "" "" "" False
 
 data SetupEvent
   = ImportSecKey
-  | SecKeyImported
+  | SecKeyImported Keys MetadataContent
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
+  | CreateAccount Keys MetadataContent
+  | AccountCreated Keys
+  | ImportAccount Keys MetadataContent
   deriving (Eq, Show)
 
 makeLenses 'SetupModel
@@ -78,9 +87,9 @@ handleSetupEvent
 handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case evt of
   ImportSecKey ->
     [ Model $ model
-      & secretKeyInput .~ ""
       & keys .~ Just ks
-    , Task $ loadImportedKeyData poolMVar ks
+      & imported .~ True
+    , Task $ loadImportedKeyData requestChannel poolMVar ks
     ]
     where
       kp =
@@ -89,8 +98,19 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
         maybe Nothing secKey $ decodeHex $ model ^. secretKeyInput
       xo = deriveXOnlyPubKey $ kp
       ks = Keys kp xo True Nothing
+  SecKeyImported keys (MetadataContent username' displayName' about' picture') ->
+    [ Model $ model
+        & name .~ username'
+        & displayName .~ fromMaybe "" displayName'
+        & about .~ fromMaybe "" about'
+        & picture .~ fromMaybe "" picture'
+    ]
   GenerateKeyPair ->
-    [ Task generateNewKeyPair ]
+    [ Task generateNewKeyPair
+    , Model $ model
+        & imported .~ False
+        & secretKeyInput .~ ""
+    ]
   KeyPairGenerated k ->
     [ Model $ model & keys .~ Just ks
     --, Report $ reportKeys ks
@@ -98,9 +118,20 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
     where
       xo = deriveXOnlyPubKey k
       ks = Keys k xo True Nothing
+  CreateAccount ks metadataContent ->
+    [ Task $ createAccount requestChannel ks metadataContent
+    ]
+  AccountCreated ks ->
+    [ Report $ reportKeys ks ]
 
 viewSetup :: SetupWenv -> SetupModel -> SetupNode
 viewSetup wenv model = setupView where
+  metadataContent = MetadataContent
+    (model ^. name)
+    Nothing
+    Nothing
+    Nothing
+  ks = fromJust $ model ^. keys
   formLabel t = label t `styleBasic` [ width 150 ]
   form = vstack
     [ vstack
@@ -112,10 +143,19 @@ viewSetup wenv model = setupView where
         , spacer
         , hstack [ formLabel "About", textField about `nodeKey` "about" ]
         , spacer
-        , hstack [ formLabel "Picture", textField picture `nodeKey` "picture" ]
+        , hstack [ formLabel "Picture URL", textField picture `nodeKey` "picture" ]
         ]
         , filler
-        , hstack [ filler, mainButton "Create Account" SecKeyImported ]
+        , hstack
+            [ filler
+            , case model ^. imported of
+                True ->
+                  mainButton "Import Account" (ImportAccount ks metadataContent)
+                    `nodeEnabled` (model ^. name /= "")
+                False ->
+                  mainButton "Create Account" (CreateAccount ks metadataContent)
+                    `nodeEnabled` (model ^. name /= "")
+            ]
         , spacer
         , label "Private Key"
         , spacer
@@ -128,7 +168,12 @@ viewSetup wenv model = setupView where
   setupView = vstack
     [ hstack
         [ vstack
-            [ fallbackProfileImage xo Big, spacer, button "Generate new key pair" GenerateKeyPair ]
+            [ fallbackProfileImage xo Big
+            , spacer
+            , label "Robots lovingly delivered by Robohash.org" `styleBasic` [ textSize 8 ]
+            , spacer
+            , button "Generate new key pair" GenerateKeyPair
+            ]
         , form
         ]
     , filler
@@ -137,7 +182,7 @@ viewSetup wenv model = setupView where
     , label "Import an existing private key (32 byte hex-encoded)"
     , spacer
     , hstack
-        [ textField secretKeyInput `nodeKey` "importmyprivatekey"
+        [ textField secretKeyInput `nodeKey` "importPrivateKey"
         , spacer
         , button "Import" ImportSecKey `nodeEnabled` isValidPrivateKey
         ]
@@ -152,7 +197,33 @@ generateNewKeyPair = do
   kp <- generateKeyPair
   return $ KeyPairGenerated kp
 
-loadImportedKeyData :: MVar RelayPool -> Keys -> IO SetupEvent
-loadImportedKeyData poolMVar (Keys pk xo _ _) = do
-  (RelayPool _ handlers) <- readMVar poolMVar
-  return SecKeyImported
+loadImportedKeyData :: TChan Request -> MVar RelayPool -> Keys -> IO SetupEvent
+loadImportedKeyData requestChannel poolMVar keys = do
+  let (Keys pk xo _ _) = keys
+  pool <- readMVar poolMVar
+  responseChannel <- atomically newTChan
+  (subId, pool) <- subscribe pool requestChannel [] responseChannel
+  response <- atomically $ readTChan responseChannel
+  case response of
+    (EventReceived _ event) ->
+      case kind event of
+        Metadata -> do
+          pool' <- unsubscribe pool requestChannel subId
+          putMVar poolMVar pool'
+          case readMetadataContent event of
+            Just md ->
+              return $ SecKeyImported keys md
+            Nothing ->
+              error "Unexpected event metadata received"
+        _ -> error "Unexpected event kind received when loading key data"
+    _ ->
+      error "Unexpected response received when loading key data"
+
+createAccount :: TChan Request -> Keys -> MetadataContent -> IO SetupEvent
+createAccount requestChannel keys metadataContent = do
+  let (Keys pk xo _ _) = keys
+  let (MetadataContent name _ _ _) = metadataContent
+  now <- getCurrentTime
+  send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) pk xo
+  send requestChannel $ SendEvent $ signEvent (setContacts [(xo, Just name)] xo (addSeconds 1 now)) pk xo
+  return $ AccountCreated $ Keys pk xo True (Just name)

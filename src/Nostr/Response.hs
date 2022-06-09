@@ -20,8 +20,11 @@ instance FromJSON Response where
   parseJSON = withArray "ServerResponse" $ \arr -> do
     t <- parseJSON $ arr V.! 0
     s <- parseJSON $ arr V.! 1
-    e <- parseJSON $ arr V.! 2
     case t of
-      String "EVENT"  -> return $ EventReceived s e
-      String "NOTICE" -> return $ Notice s
-      _               -> mzero
+      String "EVENT"  -> do
+        e <- parseJSON $ arr V.! 2
+        return $ EventReceived s e
+      String "NOTICE" ->
+        return $ Notice s
+      _ ->
+        mzero

@@ -85,18 +85,20 @@ receiveWs mvarPool sendMsg msgDisconnected relay conn =
           liftIO $ putStrLn $ "Connection to " ++ (unpack $ relayName relay) ++ " closed"
           lift $ sendMsg $ msgDisconnected relay
           mzero
-        Right msg' -> case decode msg' of
-          Just (EventReceived subId event) -> do
-            (RelayPool _ handlers) <- lift $ readMVar mvarPool
-            case Map.lookup subId handlers of
-              Just responseChannel ->
-                lift $ atomically $ writeTChan responseChannel $ EventReceived subId event
-              Nothing ->
-                lift $ putStrLn $ "No event handler found for subscription " ++ unpack subId
-          Just (Notice notice) ->
-            lift $ putStrLn $ "Notice: " ++ unpack notice
-          Nothing -> do
-            lift $ putStrLn $ "Could not decode server response: " ++ show msg'
+        Right msg' -> do
+          lift $ putStrLn $ show msg'
+          case decode msg' of
+            Just (EventReceived subId event) -> do
+              (RelayPool _ handlers) <- lift $ readMVar mvarPool
+              case Map.lookup subId handlers of
+                Just responseChannel ->
+                  lift $ atomically $ writeTChan responseChannel $ EventReceived subId event
+                Nothing ->
+                  lift $ putStrLn $ "No event handler found for subscription " ++ unpack subId
+            Just (Notice notice) ->
+              lift $ putStrLn $ "Notice: " ++ unpack notice
+            Nothing -> do
+              lift $ putStrLn $ "Could not decode server response: " ++ show msg'
 
 sendWs
   :: WidgetEvent e
@@ -113,6 +115,7 @@ sendWs broadcastChannel sendMsg msgDisconnected relay conn =
       channel <- atomically $ dupTChan broadcastChannel
       forever $ do
         msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException Request)
+        putStrLn $ show msg
         case msg of
           Left ex -> sendMsg $ msgDisconnected relay
           Right msg' -> case msg' of
@@ -120,5 +123,6 @@ sendWs broadcastChannel sendMsg msgDisconnected relay conn =
               if relay `sameRelay` relay' then do
                   WS.sendClose conn $ pack "Bye!"
               else return ()
-            _ ->
+            _ -> do
+              putStrLn $ show $ encode msg'
               WS.sendTextData conn $ encode msg'

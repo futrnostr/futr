@@ -22,6 +22,7 @@ import           Nostr.RelayPool
 import           Nostr.Request
 import           UIHelpers
 
+import qualified Widgets.BackupKeys  as BackupKeys
 import qualified Widgets.EditProfile as EditProfile
 import qualified Widgets.Home        as Home
 import qualified Widgets.Setup       as Setup
@@ -34,6 +35,8 @@ buildUI channel poolMVar wenv model = widgetTree
         Home.homeWidget channel homeModel
       SetupView ->
         Setup.setupWidget channel poolMVar NewKeysCreated setupModel
+      BackupKeysView ->
+        BackupKeys.backupKeysWidget KeysBackupDone backupKeysModel
       EditProfileView ->
         EditProfile.editProfileWidget
           channel

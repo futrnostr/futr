@@ -9,31 +9,39 @@ import           Data.Text              (Text, pack)
 import qualified Data.Vector            as V
 import           GHC.Exts               (fromList)
 
+import Nostr.Keys
 import Nostr.Kind
 import Nostr.Profile
 
 data Filter
-  = InitialFilter XOnlyPubKey
+  = LoadMetadataFilter XOnlyPubKey
+  | InitialFilter XOnlyPubKey
   | ContactsFilter [XOnlyPubKey]
   | TextNoteFilter [XOnlyPubKey]
   deriving (Eq, Show)
 
 instance ToJSON Filter where
+  toJSON (LoadMetadataFilter xo) =
+    object $ fromList
+      [ ( "kinds", toJSON [ Metadata ] )
+      , ( "authors", toJSON [ xo ] )
+      , ( "limit", Number 1 )
+      ]
   toJSON (InitialFilter xo) =
     object $ fromList
       [ ( "kinds", toJSON [ Contacts, Metadata] )
-      -- , ( "authors", toJSON [ xo ] )
+      , ( "authors", toJSON [ xo ] )
       , ( "limit", Number 2 )
       ]
   toJSON (ContactsFilter xos) =
     object $ fromList
       [ ( "kinds", toJSON [ Contacts ] )
-      --, ( "authors", toJSON xos )
+      , ( "authors", toJSON xos )
       ]
   toJSON (TextNoteFilter xos) =
     object $ fromList
       [ ( "kinds", toJSON [ TextNote ] )
-      --, ( "authors", toJSON xos )
+      , ( "authors", toJSON xos )
       , ( "limit", Number 500 )
       ]
 

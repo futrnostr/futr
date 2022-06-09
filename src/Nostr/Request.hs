@@ -46,19 +46,3 @@ instance ToJSON Request where
        , String subId
        ]
     Disconnect r -> String $ pack "Bye!"
-
--- @todo delete all below this line
-
-subscribe :: TChan Request -> [Filter] -> IO SubscriptionId
-subscribe channel [] = return ""
-subscribe channel fs = do
-  now <- getCurrentTime
-  gen <- newGenIO :: IO CtrDRBG
-  let Right (randomBytes, newGen) = genBytes 32 gen
-  let subId = B16.encodeBase16 randomBytes
-  atomically $ writeTChan channel $ Subscribe $ Subscription fs subId
-  return subId
-
-unsubscribe :: TChan Request -> SubscriptionId -> IO ()
-unsubscribe channel subId =
-  atomically $ writeTChan channel $ Close subId

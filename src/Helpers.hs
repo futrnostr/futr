@@ -38,6 +38,9 @@ import Nostr.Relay
 -- latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering
 -- latestEvent a b = compare (created_at $ fst b) (created_at $ fst a)
 
+disableKeys :: [Keys] -> [Keys]
+disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
+
 xTimeAgo :: DateTime -> DateTime -> Text
 xTimeAgo old new
   | diff > (60*60*24) = pack $ (show $ diff `div` 60  `div` 60  `div` 24) ++ " days ago"

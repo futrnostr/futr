@@ -74,8 +74,9 @@ editProfileWidget chan keys field = composite "editProfileWidget" field viewProf
 saveProfile :: TChan Request -> Keys -> EditProfileModel -> (EditProfileEvent -> IO ()) -> IO ()
 saveProfile chan (Keys kp xo _ _) model sendMsg = do
   now <- getCurrentTime
-  let raw = setMetadata name about picture nip05 xo now
-  atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo
+  --let raw = setMetadata name about picture nip05 xo now
+  --atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo
+  return ()
   where
     is = model ^. inputs
     name = strip $ is ^. nameInput
