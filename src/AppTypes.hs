@@ -85,7 +85,7 @@ data AppEvent
   | KeyPairsLoaded [Keys]
   | NoKeysFound
   | ErrorReadingKeysFile
-  | NewKeysCreated Keys
+  | NewKeysCreated Keys MetadataContent
   | KeysBackupDone
   -- relays
   | ConnectRelay Relay

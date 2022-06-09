@@ -37,7 +37,8 @@ type HomeWenv = WidgetEnv HomeModel HomeEvent
 type HomeNode = WidgetNode HomeModel HomeEvent
 
 data HomeModel = HomeModel
-  { _keys             :: Maybe Keys
+  { _myKeys           :: Maybe Keys
+  , _metadataContent  :: Maybe MetadataContent
   , _time             :: DateTime
   , _events           :: [ReceivedEvent]
   , _contacts         :: [Profile]
@@ -50,11 +51,10 @@ data HomeModel = HomeModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel Nothing (fromSeconds 0) [] [] "" False "" "" def def
+  def = HomeModel Nothing Nothing (fromSeconds 0) [] [] "" False "" "" def def
 
 data HomeEvent
-  = NoOp
-  | SendPost
+  = SendPost
   | ViewPostDetails ReceivedEvent
   | ViewProfile XOnlyPubKey
   deriving (Eq, Show)
@@ -76,12 +76,10 @@ handleHomeEvent
   -> HomeEvent
   -> [EventResponse HomeModel HomeEvent sp ep]
 handleHomeEvent chan env node model evt = case evt of
-  NoOp ->
-    []
   SendPost ->
     [ Model $ model
         & noteInput .~ ""
-    , Task $ sendPost chan model
+    , Producer $ sendPost chan model
     ]
   ViewPostDetails re ->
     []
@@ -94,13 +92,12 @@ handleHomeEvent chan env node model evt = case evt of
 --    newProfiles = tagsToProfiles (tags e)
 --    newProfiles' = filter (\p -> not $ p `elem` profiles)
 
-sendPost :: TChan Request -> HomeModel -> IO HomeEvent
-sendPost chan model = do
+sendPost :: TChan Request -> HomeModel -> (HomeEvent -> IO ()) -> IO ()
+sendPost chan model _ = do
   now <- getCurrentTime
-  let (Keys kp xo _ _) = fromJust $ model ^. keys
+  let (Keys kp xo _ _) = fromJust $ model ^. myKeys
   let unsigned = textNote (strip $ model ^. noteInput) xo now;
   atomically $ writeTChan chan $ SendEvent $ signEvent unsigned kp xo
-  return NoOp
 
 viewHome
   :: HomeWenv
@@ -134,7 +131,7 @@ viewHome wenv model = widgetTree
 --            ViewProfile
 --        ]
 --        where
---          (Keys _ xo _ _) = fromJust $ model ^. keys
+--          (Keys _ xo _ _) = fromJust $ model ^. myKeys
 --          contacts' = map extractXOFromProfile (model ^. contacts)
 
 handleReceivedEvent :: HomeModel -> Event -> Relay -> HomeModel
@@ -148,7 +145,7 @@ handleReceivedEvent model e r =
         newEvents = addEvent (model ^. events) e r
 --    Metadata ->
 --      model
---        & keys .~ Just (updateName (fromJust $ model ^. keys))
+--        & myKeys .~ Just (updateName (fromJust $ model ^. myKeys))
 --        & editProfileModel . EditProfile.inputs . EditProfile.nameInput .~ name'
 --        & editProfileModel . EditProfile.inputs . EditProfile.aboutInput .~ about'
 --        & editProfileModel . EditProfile.inputs . EditProfile.pictureUrlInput .~ pictureUrl'

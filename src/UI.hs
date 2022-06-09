@@ -42,11 +42,33 @@ buildUI channel poolMVar wenv model = widgetTree
           channel
           (fromJust $ model ^. selectedKeys)
           editProfileModel
+    imageButtonStyling =
+      [ padding 3
+      , width 60
+      , height 40
+      , cursorHand
+      , border 1 $ rgbHex "#bae3ff"
+      , radius 4
+      , bgColor $ rgbHex "#7e7e7e"
+      ]
     headerTree =
       hstack
         [ bigLabel "FuTr - nostr client" `styleBasic` [ padding 10 ]
         , filler
-        ] `styleBasic` [ paddingR 10 ]
+        , hstack
+            [ box_
+                [ onClick NoOp ]
+                (tooltip "Key Management" $ image_ "assets/icons/keys-icon.png" [ fitNone, alignCenter, alignMiddle ]
+                )
+                `styleBasic` imageButtonStyling
+            , spacer
+            , box_
+                [ onClick NoOp ]
+                (tooltip "My Profile" $ image_ "assets/icons/keys-icon.png" [ fitEither, alignCenter, alignMiddle ]
+                )
+                `styleBasic` imageButtonStyling
+            ] `nodeVisible` (model ^. currentView == HomeView)
+        ] `styleBasic` [ paddingR 10, paddingT 10 ]
     footerTree =
       hstack [ currentKeyInfo, filler, hstack connections ]
         `styleBasic` [ padding 10 ]

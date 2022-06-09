@@ -28,6 +28,7 @@ import           Nostr.Request  as Request
 import           UI
 import           UIHelpers
 import           Widgets.BackupKeys as BackupKeys
+import           Widgets.Home as Home
 
 main :: IO ()
 main = do
@@ -81,12 +82,13 @@ handleEvent env wenv node model evt =
       [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
     RelayDisconnected r ->
       [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
-    NewKeysCreated ks ->
+    NewKeysCreated ks md ->
       [ Model $ model
           & keys .~ ks : dk
           & selectedKeys .~ Just ks
           & backupKeysModel . BackupKeys.backupKeys .~ Just ks
           & currentView .~ BackupKeysView
+          & homeModel . Home.metadataContent .~ Just md
       , Task $ saveKeyPairs $ ks : dk
       ]
       where

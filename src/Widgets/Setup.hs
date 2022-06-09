@@ -55,7 +55,7 @@ data SetupEvent
   | KeyPairGenerated KeyPair
   | CreateAccount Keys MetadataContent
   | ImportAccount Keys MetadataContent
-  | SetupDone Keys
+  | SetupDone Keys MetadataContent
   deriving (Eq, Show)
 
 makeLenses 'SetupModel
@@ -64,7 +64,7 @@ setupWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan Request
   -> MVar RelayPool
-  -> (Keys -> ep)
+  -> (Keys -> MetadataContent -> ep)
   -> ALens' sp SetupModel
   -> WidgetNode sp ep
 setupWidget requestChannel poolMVar reportKeys model =
@@ -79,7 +79,7 @@ handleSetupEvent
   :: (WidgetEvent ep)
   => TChan Request
   -> MVar RelayPool
-  -> (Keys -> ep)
+  -> (Keys -> MetadataContent -> ep)
   -> SetupWenv
   -> SetupNode
   -> SetupModel
@@ -123,8 +123,8 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
     [ Task $ createAccount requestChannel ks metadataContent ]
   ImportAccount ks metadataContent ->
     [ Task $ importAccount requestChannel ks metadataContent ]
-  SetupDone ks ->
-    [ Report $ reportKeys ks ]
+  SetupDone ks md ->
+    [ Report $ reportKeys ks md ]
 
 viewSetup :: SetupWenv -> SetupModel -> SetupNode
 viewSetup wenv model = setupView where
@@ -232,7 +232,7 @@ createAccount requestChannel keys metadataContent = do
   now <- getCurrentTime
   send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) pk xo
   send requestChannel $ SendEvent $ signEvent (setContacts [(xo, Just name)] xo (addSeconds 1 now)) pk xo
-  return $ SetupDone $ Keys pk xo True (Just name)
+  return $ SetupDone (Keys pk xo True (Just name)) metadataContent
 
 importAccount :: TChan Request -> Keys -> MetadataContent -> IO SetupEvent
 importAccount requestChannel keys metadataContent = do
@@ -240,4 +240,4 @@ importAccount requestChannel keys metadataContent = do
   let (MetadataContent name _ _ _) = metadataContent
   now <- getCurrentTime
   send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) pk xo
-  return $ SetupDone $ Keys pk xo True (Just name)
+  return $ SetupDone (Keys pk xo True (Just name)) metadataContent
