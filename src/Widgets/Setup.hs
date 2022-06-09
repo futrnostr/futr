@@ -20,6 +20,7 @@ import qualified Data.ByteString.Lazy as LazyBytes
 import qualified Data.Map             as Map
 
 import Nostr.Event
+import Nostr.Filter
 import Nostr.Keys
 import Nostr.Kind
 import Nostr.Relay
@@ -200,18 +201,16 @@ generateNewKeyPair = do
 loadImportedKeyData :: TChan Request -> MVar RelayPool -> Keys -> IO SetupEvent
 loadImportedKeyData requestChannel poolMVar keys = do
   let (Keys pk xo _ _) = keys
-  pool <- readMVar poolMVar
   responseChannel <- atomically newTChan
-  (subId, pool) <- subscribe pool requestChannel [] responseChannel
+  subId <- subscribe poolMVar requestChannel [LoadMetadataFilter xo] responseChannel
   response <- atomically $ readTChan responseChannel
   case response of
-    (EventReceived _ event) ->
+    (EventReceived _ event) -> do
       case kind event of
         Metadata -> do
-          pool' <- unsubscribe pool requestChannel subId
-          putMVar poolMVar pool'
+          unsubscribe poolMVar requestChannel subId
           case readMetadataContent event of
-            Just md ->
+            Just md -> do
               return $ SecKeyImported keys md
             Nothing ->
               error "Unexpected event metadata received"

@@ -86,7 +86,7 @@ instance ToJSON MetadataContent where
 
 instance FromJSON MetadataContent where
   parseJSON = withObject "metadata content" $ \e -> MetadataContent
-    <$> e .: "username"
+    <$> e .: "name"
     <*> e .:? "display_name"
     <*> e .:? "about"
     <*> e .:? "picture"

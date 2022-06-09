@@ -3,6 +3,7 @@
 
 module Nostr.RelayPool where
 
+import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Monad.STM (atomically)
 import Crypto.Random.DRBG (CtrDRBG, genBytes, newGen, newGenIO)
@@ -46,35 +47,43 @@ instance Default RelayPool where
       ]
       Map.empty
 
-registerResponseChannel :: RelayPool -> SubscriptionId -> TChan Response -> RelayPool
-registerResponseChannel (RelayPool relays outputs) subId output =
-   RelayPool relays (Map.insert subId output outputs)
+registerResponseChannel :: MVar RelayPool -> SubscriptionId -> TChan Response -> IO ()
+registerResponseChannel poolMVar subId responseChannel = do
+  (RelayPool relays responseChannels) <- takeMVar poolMVar
+  let responseChannels' = Map.insert subId responseChannel responseChannels
+  putMVar poolMVar (RelayPool relays responseChannels')
 
-removeResponseChannel :: RelayPool -> SubscriptionId -> RelayPool
-removeResponseChannel (RelayPool relays outputs) subId =
-  RelayPool relays (Map.delete subId outputs)
+removeResponseChannel :: MVar RelayPool -> SubscriptionId -> IO ()
+removeResponseChannel poolMVar subId = do
+  (RelayPool relays responseChannels) <- takeMVar poolMVar
+  let responseChannels' = Map.delete subId responseChannels
+  putMVar poolMVar (RelayPool relays responseChannels')
 
-addRelay :: RelayPool -> Relay -> RelayPool
-addRelay (RelayPool relays handlers) relay =
-  RelayPool (relay : (filter (\r -> r `sameRelay` relay) relays)) handlers
+addRelay :: MVar RelayPool -> Relay -> IO ()
+addRelay poolMVar relay = do
+  (RelayPool relays responseChannels) <- takeMVar poolMVar
+  let relays' = relay : (filter (\r -> r `sameRelay` relay) relays)
+  putMVar poolMVar (RelayPool relays' responseChannels)
 
-removeRelay :: RelayPool -> Relay -> RelayPool
-removeRelay (RelayPool relays handlers) relay =
-  RelayPool (filter (\r -> r `sameRelay` relay) relays) handlers
+removeRelay :: MVar RelayPool -> Relay -> IO ()
+removeRelay poolMVar relay = do
+  (RelayPool relays responseChannels) <- takeMVar poolMVar
+  let relays' = (filter (\r -> r `sameRelay` relay) relays)
+  putMVar poolMVar (RelayPool relays' responseChannels)
 
-subscribe :: RelayPool -> TChan Request -> [Filter] -> TChan Response -> IO (SubscriptionId, RelayPool)
-subscribe pool input filters output = do
+subscribe :: MVar RelayPool -> TChan Request -> [Filter] -> TChan Response -> IO SubscriptionId
+subscribe poolMVar input filters responseChannel = do
   gen <- newGenIO :: IO CtrDRBG
   let Right (randomBytes, newGen) = genBytes 16 gen
   let subId = B16.encodeBase16 randomBytes
-  let pool' = registerResponseChannel pool subId output
+  registerResponseChannel poolMVar subId responseChannel
   send input $ Subscribe $ Subscription filters subId
-  return (subId, pool')
+  return subId
 
-unsubscribe :: RelayPool -> TChan Request -> SubscriptionId -> IO RelayPool
-unsubscribe pool channel subId = do
+unsubscribe :: MVar RelayPool -> TChan Request -> SubscriptionId -> IO ()
+unsubscribe poolMVar channel subId = do
   send channel $ Close subId
-  return $ removeResponseChannel pool subId
+  removeResponseChannel poolMVar subId
 
 send :: TChan Request -> Request -> IO ()
 send channel request =
