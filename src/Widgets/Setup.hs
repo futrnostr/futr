@@ -54,8 +54,8 @@ data SetupEvent
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
   | CreateAccount Keys MetadataContent
-  | AccountCreated Keys
   | ImportAccount Keys MetadataContent
+  | SetupDone Keys
   deriving (Eq, Show)
 
 makeLenses 'SetupModel
@@ -120,18 +120,22 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
       xo = deriveXOnlyPubKey k
       ks = Keys k xo True Nothing
   CreateAccount ks metadataContent ->
-    [ Task $ createAccount requestChannel ks metadataContent
-    ]
-  AccountCreated ks ->
+    [ Task $ createAccount requestChannel ks metadataContent ]
+  ImportAccount ks metadataContent ->
+    [ Task $ importAccount requestChannel ks metadataContent ]
+  SetupDone ks ->
     [ Report $ reportKeys ks ]
 
 viewSetup :: SetupWenv -> SetupModel -> SetupNode
 viewSetup wenv model = setupView where
+  textToMaybe f = if "" == f
+    then Nothing
+    else Just $ f
   metadataContent = MetadataContent
     (model ^. name)
-    Nothing
-    Nothing
-    Nothing
+    (textToMaybe $ model ^. displayName)
+    (textToMaybe $ model ^. about)
+    (textToMaybe $ model ^. picture)
   ks = fromJust $ model ^. keys
   formLabel t = label t `styleBasic` [ width 150 ]
   form = vstack
@@ -145,6 +149,8 @@ viewSetup wenv model = setupView where
         , hstack [ formLabel "About", textField about `nodeKey` "about" ]
         , spacer
         , hstack [ formLabel "Picture URL", textField picture `nodeKey` "picture" ]
+        , spacer
+        , label "Username is a required field" `styleBasic` [ textSize 9 ]
         ]
         , filler
         , hstack
@@ -211,9 +217,10 @@ loadImportedKeyData requestChannel poolMVar keys = do
           unsubscribe poolMVar requestChannel subId
           case readMetadataContent event of
             Just md -> do
+              putStrLn $ show md
               return $ SecKeyImported keys md
             Nothing ->
-              error "Unexpected event metadata received"
+              return $ SecKeyImported keys (MetadataContent "" Nothing Nothing Nothing)
         _ -> error "Unexpected event kind received when loading key data"
     _ ->
       error "Unexpected response received when loading key data"
@@ -225,4 +232,12 @@ createAccount requestChannel keys metadataContent = do
   now <- getCurrentTime
   send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) pk xo
   send requestChannel $ SendEvent $ signEvent (setContacts [(xo, Just name)] xo (addSeconds 1 now)) pk xo
-  return $ AccountCreated $ Keys pk xo True (Just name)
+  return $ SetupDone $ Keys pk xo True (Just name)
+
+importAccount :: TChan Request -> Keys -> MetadataContent -> IO SetupEvent
+importAccount requestChannel keys metadataContent = do
+  let (Keys pk xo _ _) = keys
+  let (MetadataContent name _ _ _) = metadataContent
+  now <- getCurrentTime
+  send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) pk xo
+  return $ SetupDone $ Keys pk xo True (Just name)
