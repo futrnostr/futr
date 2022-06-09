@@ -41,9 +41,9 @@ fallbackProfileImage xo size = maybe (label "a") img xo where
   imgSize = case size of
     Big   -> [ width 300, height 300 ]
     Small -> [ width 100, height 100 ]
-    Mini  -> [ width 50, height 50 ]
+    Mini  -> [ width 40, height 40 ]
   imgUrl x = T.replace "<xo>" (T.pack $ exportXOnlyPubKey x) baseUrl
-  img x = image_ (imgUrl x) [ fitFill ] `styleBasic` imgSize
+  img x = image_ (imgUrl x) [ fitEither ] `styleBasic` imgSize
 
 -- profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
 -- profileName m xo =

@@ -20,6 +20,7 @@ import           System.Directory                     (doesFileExist)
 
 import           AppTypes
 import           Helpers
+import           Nostr.Event
 import           Nostr.Keys
 import           Nostr.Relay
 import           Nostr.RelayConnection
@@ -88,11 +89,12 @@ handleEvent env wenv node model evt =
           & selectedKeys .~ Just ks
           & backupKeysModel . BackupKeys.backupKeys .~ Just ks
           & currentView .~ BackupKeysView
-          & homeModel . Home.metadataContent .~ Just md
+          & homeModel . Home.profileImage .~ fromMaybe "" p
       , Task $ saveKeyPairs $ ks : dk
       ]
       where
         dk = disableKeys $ model ^. keys
+        MetadataContent _ _ _ p = md
     KeysBackupDone ->
       [ Model $ model
           & currentView .~ HomeView

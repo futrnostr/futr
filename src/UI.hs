@@ -30,6 +30,15 @@ import qualified Widgets.Setup       as Setup
 buildUI :: TChan Request -> MVar RelayPool -> AppWenv -> AppModel -> AppNode
 buildUI channel poolMVar wenv model = widgetTree
   where
+    myProfileImage = case model ^. selectedKeys of
+      Nothing ->
+        vstack []
+      Just (Keys _ xo _ _) ->
+        case model ^. homeModel . Home.profileImage of
+          "" ->
+            fallbackProfileImage (Just xo) Mini
+          pi ->
+            image_ pi [ fitEither, alignCenter, alignMiddle ] `styleBasic` [ width 40, height 40 ]
     baseLayer = case model ^. currentView of
       HomeView ->
         Home.homeWidget channel homeModel
@@ -64,8 +73,7 @@ buildUI channel poolMVar wenv model = widgetTree
             , spacer
             , box_
                 [ onClick NoOp ]
-                (tooltip "My Profile" $ image_ "assets/icons/keys-icon.png" [ fitEither, alignCenter, alignMiddle ]
-                )
+                (tooltip "My Profile" myProfileImage)
                 `styleBasic` imageButtonStyling
             ] `nodeVisible` (model ^. currentView == HomeView)
         ] `styleBasic` [ paddingR 10, paddingT 10 ]

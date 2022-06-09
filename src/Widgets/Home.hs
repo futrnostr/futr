@@ -38,7 +38,7 @@ type HomeNode = WidgetNode HomeModel HomeEvent
 
 data HomeModel = HomeModel
   { _myKeys           :: Maybe Keys
-  , _metadataContent  :: Maybe MetadataContent
+  , _profileImage     :: Text
   , _time             :: DateTime
   , _events           :: [ReceivedEvent]
   , _contacts         :: [Profile]
@@ -51,7 +51,7 @@ data HomeModel = HomeModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel Nothing Nothing (fromSeconds 0) [] [] "" False "" "" def def
+  def = HomeModel Nothing "" (fromSeconds 0) [] [] "" False "" "" def def
 
 data HomeEvent
   = SendPost
