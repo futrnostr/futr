@@ -21,6 +21,7 @@ import           Nostr.Relay
 import           Nostr.RelayPool
 import           Nostr.Request
 import           UIHelpers
+import           Widgets.ProfileImage
 
 import qualified Widgets.BackupKeys  as BackupKeys
 import qualified Widgets.EditProfile as EditProfile
@@ -36,9 +37,11 @@ buildUI channel poolMVar wenv model = widgetTree
       Just (Keys _ xo _ _) ->
         case model ^. homeModel . Home.profileImage of
           "" ->
-            fallbackProfileImage (Just xo) Mini
+            profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
+--            fallbackProfileImage (Just xo) Mini
           pi ->
-            image_ pi [ fitEither, alignCenter, alignMiddle ] `styleBasic` [ width 40, height 40 ]
+            profileImage_ (Just pi) xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
+--            image_ pi [ fitEither, alignCenter, alignMiddle ] `styleBasic` [ width 40, height 40 ]
     baseLayer = case model ^. currentView of
       HomeView ->
         Home.homeWidget channel homeModel
