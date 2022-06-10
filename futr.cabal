@@ -37,6 +37,7 @@ executable futr
       Widgets.BackupKeys
       Widgets.EditProfile
       Widgets.Home
+      Widgets.KeyManagement
       Widgets.ProfileImage
       Widgets.Setup
       Widgets.ViewPosts

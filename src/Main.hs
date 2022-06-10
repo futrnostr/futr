@@ -31,6 +31,7 @@ import UI
 import UIHelpers
 import Widgets.BackupKeys as BackupKeys
 import Widgets.EditProfile as EditProfile
+import Widgets.KeyManagement as KeyManagement
 import Widgets.Home as Home
 
 main :: IO ()
@@ -65,6 +66,13 @@ handleEvent env wenv node model evt =
       ]
     GoHome ->
       [ Model $ model & currentView .~ HomeView ]
+    GoKeyManagement ->
+      [ Model $ model
+          & currentView .~ KeyManagementView
+          & keyMgmtModel . KeyManagement.keyList .~ model ^. keys
+      ]
+    AppTypes.GoSetup ->
+      [ Model $ model & currentView .~ SetupView ]
     RelaysInitialized rs ->
       [ Model $ model & relays .~ rs ]
     -- keys
@@ -97,6 +105,14 @@ handleEvent env wenv node model evt =
     KeysBackupDone ->
       [ Model $ model
           & currentView .~ HomeView
+      ]
+    KeysUpdated keysList ->
+      [ Model $ model
+          & keys .~ keysList
+          & selectedKeys .~
+            if null keysList then initialKeys else head $ filter (\(Keys _ _ active _) -> active == True) keysList
+      , Task $ saveKeyPairs keysList
+      , if null keysList then Model $ model & currentView .~ SetupView else Monomer.Event NoOp
       ]
     -- relays
     ConnectRelay relay ->

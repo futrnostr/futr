@@ -23,10 +23,11 @@ import           Nostr.Request
 import           UIHelpers
 import           Widgets.ProfileImage
 
-import qualified Widgets.BackupKeys  as BackupKeys
-import qualified Widgets.EditProfile as EditProfile
-import qualified Widgets.Home        as Home
-import qualified Widgets.Setup       as Setup
+import qualified Widgets.BackupKeys    as BackupKeys
+import qualified Widgets.EditProfile   as EditProfile
+import qualified Widgets.Home          as Home
+import qualified Widgets.KeyManagement as KeyManagement
+import qualified Widgets.Setup         as Setup
 
 buildUI :: TChan Request -> MVar RelayPool -> AppWenv -> AppModel -> AppNode
 buildUI channel poolMVar wenv model = widgetTree
@@ -51,6 +52,12 @@ buildUI channel poolMVar wenv model = widgetTree
           ProfileUpdated
           GoHome
           editProfileModel
+      KeyManagementView ->
+        KeyManagement.keyManagementWidget
+          GoSetup
+          GoHome
+          KeysUpdated
+          keyMgmtModel
     imageButtonStyling =
       [ padding 3
       , width 60
@@ -66,7 +73,7 @@ buildUI channel poolMVar wenv model = widgetTree
         , filler
         , hstack
             [ box_
-                [ onClick NoOp ]
+                [ onClick GoKeyManagement ]
                 (tooltip "Key Management" $ image_ "assets/icons/keys-icon.png" [ fitNone, alignCenter, alignMiddle ]
                 )
                 `styleBasic` imageButtonStyling

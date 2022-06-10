@@ -27,6 +27,7 @@ import Nostr.Request (Request, SubscriptionId)
 import Nostr.Response
 import Widgets.BackupKeys
 import Widgets.EditProfile
+import Widgets.KeyManagement
 import Widgets.Home
 import Widgets.Setup
 
@@ -45,6 +46,7 @@ data AppView
     | SetupView
     | BackupKeysView
     | EditProfileView
+    | KeyManagementView
     deriving (Eq, Show)
 
 data RelayModel =
@@ -73,16 +75,19 @@ data AppModel =
     , _relayModel        :: RelayModel
     , _setupModel        :: SetupModel
     , _backupKeysModel   :: BackupKeysModel
+    , _keyMgmtModel      :: KeyManagementModel
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] initialKeys Nothing [] Nothing HomeView def def def def def
+  def = AppModel [] initialKeys Nothing [] Nothing HomeView def def def def def def
 
 data AppEvent
   = NoOp
   | AppInit
   | GoHome
+  | GoKeyManagement
+  | GoSetup
   | RelaysInitialized [Relay]
   -- keys
   | KeyPairsLoaded [Keys]
@@ -90,6 +95,7 @@ data AppEvent
   | ErrorReadingKeysFile
   | NewKeysCreated Keys MetadataContent
   | KeysBackupDone
+  | KeysUpdated [Keys]
   -- relays
   | ConnectRelay Relay
   | DisconnectRelay Relay

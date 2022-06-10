@@ -37,8 +37,6 @@ type SetupNode = WidgetNode SetupModel SetupEvent
 
 data SetupModel = SetupModel
   { _secretKeyInput :: Text
-  , _mainRelay      :: Maybe Relay
-  , _relays         :: [Relay]
   , _keys           :: Keys
   , _name           :: Username
   , _displayName    :: DisplayName
@@ -49,7 +47,7 @@ data SetupModel = SetupModel
   } deriving (Eq, Show)
 
 instance Default SetupModel where
-  def = SetupModel "" Nothing [] initialKeys "" "" "" "" "" False
+  def = SetupModel "" initialKeys "" "" "" "" "" False
 
 data SetupEvent
   = ImportSecKey
