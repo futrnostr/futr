@@ -16,104 +16,109 @@ import Helpers
 import Nostr.Event
 import Nostr.Keys
 import Nostr.Profile
+import Nostr.RelayPool
 import Nostr.Request
+import UIHelpers
 
 type EditProfileWenv = WidgetEnv EditProfileModel EditProfileEvent
 
 type EditProfileNode = WidgetNode EditProfileModel EditProfileEvent
 
-data ProfileModelInputs = ProfileModelInputs
-  { _nameInput            :: Text
-  , _aboutInput           :: Text
-  , _pictureUrlInput      :: Text
-  , _nip05IdentifierInput :: Text
-  , _errors               :: [Text]
-} deriving (Eq, Show)
-
-instance Default ProfileModelInputs where
-  def = ProfileModelInputs "" "" "" "" []
-
 data EditProfileModel =  EditProfileModel
-  { _name            :: Text
-  , _about           :: Text
-  , _pictureUrl      :: Text
-  , _nip05Identifier :: Text
-  , _inputs          :: ProfileModelInputs
+  { _nameInput        :: Text
+  , _displayNameInput :: Text
+  , _aboutInput       :: Text
+  , _pictureInput     :: Text
   } deriving (Eq, Show)
 
 instance Default EditProfileModel where
-  def = EditProfileModel "" "" "" "" def
+  def = EditProfileModel "" "" "" ""
 
 data EditProfileEvent
   = SaveProfile
+  | ProfileSaved MetadataContent
+  | Back
   deriving (Eq, Show)
 
-makeLenses 'ProfileModelInputs
 makeLenses 'EditProfileModel
-
-handleProfileEvent
-  :: TChan Request
-  -> Keys
-  -> EditProfileWenv
-  -> EditProfileNode
-  -> EditProfileModel
-  -> EditProfileEvent
-  -> [EventResponse EditProfileModel EditProfileEvent sp ep]
-handleProfileEvent chan ks env node model evt = case evt of
-  SaveProfile ->
-    [ Producer $ saveProfile chan ks model ]
 
 editProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan Request
   -> Keys
+  -> (MetadataContent -> ep)
+  -> ep
   -> ALens' sp EditProfileModel
   -> WidgetNode sp ep
-editProfileWidget chan keys field = composite "editProfileWidget" field viewProfile (handleProfileEvent chan keys)
+editProfileWidget chan keys profileSaved goHome field =
+  composite "editProfileWidget" field viewProfile (handleProfileEvent chan keys profileSaved goHome)
 
-saveProfile :: TChan Request -> Keys -> EditProfileModel -> (EditProfileEvent -> IO ()) -> IO ()
-saveProfile chan (Keys kp xo _ _) model sendMsg = do
+handleProfileEvent
+  :: (WidgetEvent ep)
+  => TChan Request
+  -> Keys
+  -> (MetadataContent -> ep)
+  -> ep
+  -> EditProfileWenv
+  -> EditProfileNode
+  -> EditProfileModel
+  -> EditProfileEvent
+  -> [EventResponse EditProfileModel EditProfileEvent sp ep]
+handleProfileEvent chan ks profileSaved goHome env node model evt = case evt of
+  SaveProfile ->
+    [ Task $ saveProfile chan ks model ]
+  ProfileSaved metadataContent ->
+    [ Report $ profileSaved metadataContent ]
+  Back ->
+    [ Report $ goHome ]
+
+saveProfile
+  :: TChan Request
+  -> Keys
+  -> EditProfileModel
+  -> IO EditProfileEvent
+saveProfile requestChannel (Keys kp xo _ _) model = do
   now <- getCurrentTime
-  --let raw = setMetadata name about picture nip05 xo now
-  --atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo
-  return ()
+  send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) kp xo
+  return $ ProfileSaved metadataContent
   where
-    is = model ^. inputs
-    name = strip $ is ^. nameInput
-    about = strip $ is ^. aboutInput
-    picture = strip $ is ^. pictureUrlInput
-    nip05 = strip $ is ^. nip05IdentifierInput
+    name = strip $ model ^. nameInput
+    displayName = strip $ model ^. displayNameInput
+    about = strip $ model ^. aboutInput
+    picture = strip $ model ^. pictureInput
+    metadataContent = MetadataContent name (Just displayName) (Just about) (Just picture)
 
 viewProfile :: EditProfileWenv -> EditProfileModel -> EditProfileNode
 viewProfile wenv model =
   vstack
-    [ label "Profile"
-    , spacer
+    [ hstack [ button "Back" Back, filler, bigLabel "Edit Profile", filler ]
+    , filler
     , hstack
         [ label "Name"
         , filler
-        , tf (inputs . nameInput) "nameInput"
+        , tf nameInput "name"
+        ]
+    , spacer
+    , hstack
+        [ label "Display Name"
+        , filler
+        , tf displayNameInput "displayName"
         ]
     , spacer
     , hstack
         [ label "About"
         , filler
-        , tf (inputs . aboutInput) "aboutInput"
+        , tf aboutInput "about"
         ]
     , spacer
     , hstack
         [ label "Picture URL"
         , filler
-        , tf (inputs . pictureUrlInput) "pictureUrlInput"
+        , tf pictureInput "picture"
         ]
-    , spacer
-    , hstack
-        [ label "NIP-05 Identifier"
-        , filler
-        , tf (inputs . nip05IdentifierInput) "nip05IdentifierInput"
-        ]
-    , spacer
-    , button "Save" SaveProfile
-    ]
+    , filler
+    , mainButton "Save" SaveProfile
+    , filler
+    ] `styleBasic` [ padding 20 ]
     where
       tf input id' = textField input `nodeKey` id' `styleBasic` [ width 400 ]

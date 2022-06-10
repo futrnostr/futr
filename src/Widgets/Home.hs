@@ -47,11 +47,10 @@ data HomeModel = HomeModel
   , _homeSub          :: SubscriptionId
   , _initSub          :: SubscriptionId
   , _viewPostsModel   :: ViewPosts.ViewPostsModel
-  , _editProfileModel :: EditProfile.EditProfileModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel Nothing "" (fromSeconds 0) [] [] "" False "" "" def def
+  def = HomeModel Nothing "" (fromSeconds 0) [] [] "" False "" "" def
 
 data HomeEvent
   = SendPost

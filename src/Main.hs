@@ -2,34 +2,36 @@
 
 module Main where
 
-import           Control.Concurrent.MVar
-import           Control.Concurrent.STM.TChan
-import           Control.Lens
-import           Control.Monad.STM                    (atomically)
-import           Data.Aeson
-import qualified Data.ByteString.Lazy                 as LazyBytes
-import           Data.DateTime
-import           Data.Default
-import           Data.Map                             (Map)
-import qualified Data.Map                             as Map
-import           Data.Maybe
-import           Data.Text                            (pack)
-import           Monomer
-import           Monomer.Widgets.Single
-import           System.Directory                     (doesFileExist)
+import Control.Concurrent.MVar
+import Control.Concurrent.STM.TChan
+import Control.Lens
+import Control.Monad.STM (atomically)
+import Data.Aeson
+import Data.DateTime
+import Data.Default
+import Data.Map (Map)
+import Data.Maybe
+import Data.Text (pack)
+import Monomer
+import Monomer.Widgets.Single
+import System.Directory (createDirectory, doesDirectoryExist, doesFileExist)
 
-import           AppTypes
-import           Helpers
-import           Nostr.Event
-import           Nostr.Keys
-import           Nostr.Relay
-import           Nostr.RelayConnection
-import           Nostr.RelayPool
-import           Nostr.Request  as Request
-import           UI
-import           UIHelpers
-import           Widgets.BackupKeys as BackupKeys
-import           Widgets.Home as Home
+import qualified Data.ByteString.Lazy as LazyBytes
+import qualified Data.Map as Map
+
+import AppTypes
+import Helpers
+import Nostr.Event
+import Nostr.Keys
+import Nostr.Relay
+import Nostr.RelayConnection
+import Nostr.RelayPool
+import Nostr.Request  as Request
+import UI
+import UIHelpers
+import Widgets.BackupKeys as BackupKeys
+import Widgets.EditProfile as EditProfile
+import Widgets.Home as Home
 
 main :: IO ()
 main = do
@@ -58,10 +60,14 @@ handleEvent env wenv node model evt =
     NoOp -> []
     AppInit ->
       [ Task loadKeysFromDisk
+      , Producer createProfileCacheDir
       , Producer $ initRelays env
       ]
+    GoHome ->
+      [ Model $ model & currentView .~ HomeView ]
     RelaysInitialized rs ->
       [ Model $ model & relays .~ rs ]
+    -- keys
     KeyPairsLoaded ks ->
       [ Model $ model
         & keys .~ ks
@@ -75,6 +81,25 @@ handleEvent env wenv node model evt =
       [ Model $ model & currentView .~ SetupView ]
     ErrorReadingKeysFile ->
       [ Model $ model & errorMsg .~ (Just $ pack "Could not read keys file.\nCheck the file permissions. Maybe the file was corrupted.") ]
+    NewKeysCreated ks metadataContent ->
+      [ Model $ model
+          & keys .~ ks : dk
+          & myMetadataContent .~ Just metadataContent
+          & selectedKeys .~ Just ks
+          & backupKeysModel . BackupKeys.backupKeys .~ Just ks
+          & currentView .~ BackupKeysView
+          & homeModel . Home.profileImage .~ fromMaybe "" picture
+      , Task $ saveKeyPairs $ ks : dk
+      ]
+      where
+        dk = disableKeys $ model ^. keys
+        MetadataContent _ _ _ picture = metadataContent
+    KeysBackupDone ->
+      [ Model $ model
+          & currentView .~ HomeView
+          & backupKeysModel . BackupKeys.backupKeys .~ Nothing
+      ]
+    -- relays
     ConnectRelay relay ->
       [ Producer $ connectRelay env relay ]
     DisconnectRelay r ->
@@ -83,23 +108,33 @@ handleEvent env wenv node model evt =
       [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
     RelayDisconnected r ->
       [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
-    NewKeysCreated ks md ->
+    -- edit profile
+    EditProfile ->
       [ Model $ model
-          & keys .~ ks : dk
-          & selectedKeys .~ Just ks
-          & backupKeysModel . BackupKeys.backupKeys .~ Just ks
-          & currentView .~ BackupKeysView
-          & homeModel . Home.profileImage .~ fromMaybe "" p
-      , Task $ saveKeyPairs $ ks : dk
+          & currentView .~ EditProfileView
+          & editProfileModel . EditProfile.nameInput .~ name
+          & editProfileModel . EditProfile.displayNameInput .~ fromMaybe "" displayName
+          & editProfileModel . EditProfile.aboutInput .~ fromMaybe "" about
+          & editProfileModel . EditProfile.pictureInput .~ fromMaybe "" picture
       ]
       where
-        dk = disableKeys $ model ^. keys
-        MetadataContent _ _ _ p = md
-    KeysBackupDone ->
+        MetadataContent name displayName about picture = fromMaybe def (model ^. myMetadataContent)
+    ProfileUpdated metadataContent ->
       [ Model $ model
           & currentView .~ HomeView
-          & backupKeysModel . BackupKeys.backupKeys .~ Nothing
+          & myMetadataContent .~ Just metadataContent
+          & homeModel . Home.profileImage .~ fromMaybe "" picture
+          & keys .~ ks' : dk
+          & selectedKeys .~ Just ks'
+          & backupKeysModel . BackupKeys.backupKeys .~ Just ks'
+      , Task $ saveKeyPairs $ ks' : dk
       ]
+      where
+        MetadataContent name displayName about picture = metadataContent
+        ks = fromJust $ model ^. selectedKeys
+        (Keys pk xo _ _) = ks
+        ks' = Keys pk xo True (Just name)
+        dk = disableKeys $ filter (\(Keys pk' _ _ _) -> pk' /= pk) $ model ^. keys
 
 loadKeysFromDisk :: IO AppEvent
 loadKeysFromDisk = do
@@ -139,3 +174,10 @@ saveKeyPairs ks = do
   LazyBytes.writeFile "keys.ft" $ encode ks
   putStrLn "KeyPairs saved to disk"
   return NoOp
+
+createProfileCacheDir :: (AppEvent -> IO ()) -> IO ()
+createProfileCacheDir _ = do
+  dirExists <- doesDirectoryExist "profiles"
+  if dirExists
+    then return ()
+    else createDirectory "profiles"

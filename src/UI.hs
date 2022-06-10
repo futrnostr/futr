@@ -53,6 +53,8 @@ buildUI channel poolMVar wenv model = widgetTree
         EditProfile.editProfileWidget
           channel
           (fromJust $ model ^. selectedKeys)
+          ProfileUpdated
+          GoHome
           editProfileModel
     imageButtonStyling =
       [ padding 3
@@ -75,7 +77,7 @@ buildUI channel poolMVar wenv model = widgetTree
                 `styleBasic` imageButtonStyling
             , spacer
             , box_
-                [ onClick NoOp ]
+                [ onClick EditProfile ]
                 (tooltip "My Profile" myProfileImage)
                 `styleBasic` imageButtonStyling
             ] `nodeVisible` (model ^. currentView == HomeView)

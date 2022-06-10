@@ -170,7 +170,7 @@ viewSetup wenv model = setupView where
         , spacer
         , label "Public Key"
         , spacer
-        , label (pack $ maybe "" (exportSecKey . deriveSecKey) pk) `styleBasic` [ textSize 11 ]
+        , label (pack $ maybe "" (exportSecKey . deriveSecKey) kp) `styleBasic` [ textSize 11 ]
     ] `styleBasic` [ paddingL 20 ]
   setupView = vstack
     [ hstack
@@ -194,7 +194,7 @@ viewSetup wenv model = setupView where
         , button "Import" ImportSecKey `nodeEnabled` isValidPrivateKey
         ]
     ] `styleBasic` [ padding 10 ]
-  pk = maybe Nothing (\(Keys pk _ _ _) -> Just pk) (model ^. keys)
+  kp = maybe Nothing (\(Keys kp _ _ _) -> Just kp) (model ^. keys)
   xo = maybe Nothing (\(Keys _ xo _ _) -> Just xo) (model ^. keys)
   isValidPrivateKey =
     isJust $ maybe Nothing secKey $ decodeHex $ view secretKeyInput model
@@ -206,7 +206,7 @@ generateNewKeyPair = do
 
 loadImportedKeyData :: TChan Request -> MVar RelayPool -> Keys -> IO SetupEvent
 loadImportedKeyData requestChannel poolMVar keys = do
-  let (Keys pk xo _ _) = keys
+  let (Keys kp xo _ _) = keys
   responseChannel <- atomically newTChan
   subId <- subscribe poolMVar requestChannel [LoadMetadataFilter xo] responseChannel
   response <- atomically $ readTChan responseChannel
@@ -227,17 +227,17 @@ loadImportedKeyData requestChannel poolMVar keys = do
 
 createAccount :: TChan Request -> Keys -> MetadataContent -> IO SetupEvent
 createAccount requestChannel keys metadataContent = do
-  let (Keys pk xo _ _) = keys
+  let (Keys kp xo _ _) = keys
   let (MetadataContent name _ _ _) = metadataContent
   now <- getCurrentTime
-  send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) pk xo
-  send requestChannel $ SendEvent $ signEvent (setContacts [(xo, Just name)] xo (addSeconds 1 now)) pk xo
-  return $ SetupDone (Keys pk xo True (Just name)) metadataContent
+  send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) kp xo
+  send requestChannel $ SendEvent $ signEvent (setContacts [(xo, Just name)] xo (addSeconds 1 now)) kp xo
+  return $ SetupDone (Keys kp xo True (Just name)) metadataContent
 
 importAccount :: TChan Request -> Keys -> MetadataContent -> IO SetupEvent
 importAccount requestChannel keys metadataContent = do
-  let (Keys pk xo _ _) = keys
+  let (Keys kp xo _ _) = keys
   let (MetadataContent name _ _ _) = metadataContent
   now <- getCurrentTime
-  send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) pk xo
-  return $ SetupDone (Keys pk xo True (Just name)) metadataContent
+  send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) kp xo
+  return $ SetupDone (Keys kp xo True (Just name)) metadataContent

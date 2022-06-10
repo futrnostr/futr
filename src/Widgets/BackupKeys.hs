@@ -58,7 +58,7 @@ viewBackupKeys done wenv model =
     , filler
     , label "Your private key"
     , spacer
-    , selectableText $ pack $ exportSecKey $ deriveSecKey $ pk
+    , selectableText $ pack $ exportSecKey $ deriveSecKey $ kp
     , spacer
     , label "Make sure you backup your private key, don't give it to anyone!"
     , filler
@@ -66,4 +66,4 @@ viewBackupKeys done wenv model =
     , filler
     ] `styleBasic` [ padding 20 ]
     where
-      (Keys pk xo _ _) = fromJust $ model ^. backupKeys
+      (Keys kp xo _ _) = fromJust $ model ^. backupKeys

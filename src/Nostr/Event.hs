@@ -15,6 +15,7 @@ import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import           Data.ByteString.Lazy   (fromStrict, toStrict)
 import           Data.DateTime
+import           Data.Default
 import           Data.Maybe             (fromJust)
 import           Data.Text              (Text, toLower, pack, unpack)
 import           Data.Text.Encoding     (encodeUtf8)
@@ -73,6 +74,9 @@ type Picture = Text
 
 data MetadataContent = MetadataContent Username (Maybe DisplayName) (Maybe About) (Maybe Picture)
   deriving (Eq, Show)
+
+instance Default MetadataContent where
+  def = MetadataContent "" Nothing Nothing Nothing
 
 type ReceivedEvent = (Event, [Relay])
 

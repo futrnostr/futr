@@ -60,26 +60,28 @@ instance Default RelayModel where
 
 data AppModel =
   AppModel
-    { _keys             :: [Keys]
-    , _selectedKeys     :: Maybe Keys
-    , _relays           :: [Relay]
-    , _errorMsg         :: Maybe Text
+    { _keys              :: [Keys]
+    , _selectedKeys      :: Maybe Keys
+    , _myMetadataContent :: Maybe MetadataContent
+    , _relays            :: [Relay]
+    , _errorMsg          :: Maybe Text
     -- views
-    , _currentView      :: AppView
-    , _editProfileModel :: EditProfileModel
-    , _homeModel        :: HomeModel
-    , _relayModel       :: RelayModel
-    , _setupModel       :: SetupModel
-    , _backupKeysModel  :: BackupKeysModel
+    , _currentView       :: AppView
+    , _editProfileModel  :: EditProfileModel
+    , _homeModel         :: HomeModel
+    , _relayModel        :: RelayModel
+    , _setupModel        :: SetupModel
+    , _backupKeysModel   :: BackupKeysModel
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing [] Nothing HomeView def def def def def
+  def = AppModel [] Nothing Nothing [] Nothing HomeView def def def def def
 
 data AppEvent
   = NoOp
   | AppInit
+  | GoHome
   | RelaysInitialized [Relay]
   -- keys
   | KeyPairsLoaded [Keys]
@@ -92,6 +94,9 @@ data AppEvent
   | DisconnectRelay Relay
   | RelayConnected Relay
   | RelayDisconnected Relay
+  -- profile
+  | EditProfile
+  | ProfileUpdated MetadataContent
   {-
   | ValidateAndAddRelay
   | InvalidRelayURI

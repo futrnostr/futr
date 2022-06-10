@@ -12,3 +12,4 @@ dist-docs.*/
 *.ser
 cabal.project.local*
 *.ft
+profiles/
