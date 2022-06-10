@@ -71,6 +71,7 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & currentView .~ KeyManagementView
           & keyMgmtModel . KeyManagement.keyList .~ model ^. keys
+          & keyMgmtModel . KeyManagement.kmProfiles .~ model ^. profiles
       ]
     AppTypes.GoSetup ->
       [ Model $ model & currentView .~ SetupView ]

@@ -2,26 +2,29 @@
 
 module UI where
 
-import           Control.Concurrent.MVar
-import           Control.Concurrent.STM.TChan
-import           Control.Lens
-import           Crypto.Schnorr         (exportXOnlyPubKey)
-import           Data.Default
-import           Data.List              (sort)
-import           Data.Maybe
-import           Data.Text              (Text)
-import qualified Data.Text              as T
-import           Monomer
-import qualified Monomer.Lens           as L
-import           Monomer.Widgets.Single
+import Control.Concurrent.MVar
+import Control.Concurrent.STM.TChan
+import Control.Lens
+import Crypto.Schnorr (exportXOnlyPubKey)
+import Data.Default
+import Data.List (sort)
+import Data.Maybe
+import Data.Text (Text)
+import Monomer
+import Monomer.Widgets.Single
 
-import           AppTypes
-import           Nostr.Keys
-import           Nostr.Relay
-import           Nostr.RelayPool
-import           Nostr.Request
-import           UIHelpers
-import           Widgets.ProfileImage
+import qualified Data.Map as Map
+import qualified Monomer.Lens as L
+import qualified Data.Text as T
+
+import AppTypes
+import Nostr.Keys
+import Nostr.Profile
+import Nostr.Relay
+import Nostr.RelayPool
+import Nostr.Request
+import UIHelpers
+import Widgets.ProfileImage
 
 import qualified Widgets.BackupKeys    as BackupKeys
 import qualified Widgets.EditProfile   as EditProfile
@@ -33,11 +36,11 @@ buildUI :: TChan Request -> MVar RelayPool -> AppWenv -> AppModel -> AppNode
 buildUI channel poolMVar wenv model = widgetTree
   where
     Keys _ xo _ name = model ^. selectedKeys
-    myProfileImage = case model ^. homeModel . Home.profileImage of
-      "" ->
+    myProfileImage = case Map.lookup xo (model ^. profiles) of
+      Nothing ->
         profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
-      pi ->
-        profileImage_ (Just pi) xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
+      Just ((Profile _ _ _ picture), _) ->
+        profileImage_ picture xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
     baseLayer = case model ^. currentView of
       HomeView ->
         Home.homeWidget channel homeModel

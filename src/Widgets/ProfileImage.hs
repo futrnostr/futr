@@ -242,15 +242,17 @@ profileImage picture xo = profileImage_ picture xo [ fitEither ]
 profileImage_ :: WidgetEvent e => Maybe Text -> XOnlyPubKey -> [ImageCfg e] -> WidgetNode s e
 profileImage_ picture xo configs = defaultWidgetNode "image" widget where
   path = case picture of
-    Just p -> p
-    Nothing -> do
-      let baseUrl = "https://robohash.org/<xo>.png"
-      let imgUrl x = T.replace "<xo>" (T.pack $ exportXOnlyPubKey x) baseUrl
-      imgUrl xo
+    Just p ->
+      if p == "" then fallback else p
+    Nothing -> fallback
   config = mconcat configs
   source = ImagePath path
   imageState = ImageState source Nothing
   widget = makeImage source config imageState
+  fallback = do
+    let baseUrl = "https://robohash.org/<xo>.png"
+    let imgUrl x = T.replace "<xo>" (T.pack $ exportXOnlyPubKey x) baseUrl
+    imgUrl xo
 
 makeImage
   :: WidgetEvent e => ImageSource -> ImageCfg e -> ImageState -> Widget s e

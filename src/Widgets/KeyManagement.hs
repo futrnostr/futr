@@ -40,7 +40,7 @@ type KeyManagementNode = WidgetNode KeyManagementModel KeyManagementEvent
 data KeyManagementModel = KeyManagementModel
   { _keyList         :: [Keys]
   , _backupKeysModel :: BackupKeysModel
-  , _metadatas       :: Map XOnlyPubKey Profile
+  , _kmProfiles       :: Map XOnlyPubKey (Profile, DateTime)
   } deriving (Eq, Show)
 
 instance Default KeyManagementModel where
@@ -119,23 +119,20 @@ viewKeyManagement wenv model =
     then keyManagementView
     else backupKeysWidget BackupDone (backupKeysModel)
   where
-  {-
-  myProfileImage = case model ^. currentImage of
-    "" ->
-      profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 300, height 300 ]
-    pi ->
-      profileImage_ (Just $ model ^. currentImage) xo [ fitEither ] `styleBasic` [ width 300, height 300 ]
-  info = case model ^. currentImage of
-    "" ->
-      label "Robots lovingly delivered by Robohash.org" `styleBasic` [ textSize 8 ]
-    _ ->
-      hstack []
-  -}
+  pictureUrl xo = case Map.lookup xo (model ^. kmProfiles) of
+    Just ((Profile _ _ _ picture), _) ->
+      picture
+    Nothing ->
+      Nothing
   keysRow idx (Keys pk xo active name) = box $
     hstack
       [ hstack
           [ spacer
-          , profileImage Nothing xo `styleBasic` [ width 40, height 40 ]
+          , vstack
+              [ filler
+              , profileImage (pictureUrl xo) xo `styleBasic` [ width 40, height 40 ]
+              , filler
+              ]
           , spacer
           , label (fromMaybe "" name) `styleBasic` [ width 200 ]
           , filler
