@@ -4,12 +4,8 @@
 
 module Widgets.KeyManagement where
 
-import Control.Concurrent.MVar
-import Control.Monad.STM (atomically)
-import Control.Concurrent.STM.TChan
 import Control.Lens
 import Crypto.Schnorr
-import Data.Aeson
 import Data.DateTime
 import Data.Default
 import Data.Map (Map)
