@@ -65,7 +65,7 @@ data AppModel =
   AppModel
     { _keys              :: [Keys]
     , _selectedKeys      :: Keys
-    , _myMetadataContent :: Maybe MetadataContent
+    , _myProfile         :: Profile
     , _relays            :: [Relay]
     , _errorMsg          :: Maybe Text
     -- views
@@ -80,20 +80,21 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] initialKeys Nothing [] Nothing HomeView def def def def def def
+  def = AppModel [] initialKeys def [] Nothing HomeView def def def def def def
 
 data AppEvent
   = NoOp
   | AppInit
+  | RelaysInitialized [Relay]
+  -- go to
   | GoHome
   | GoKeyManagement
   | GoSetup
-  | RelaysInitialized [Relay]
   -- keys
   | KeyPairsLoaded [Keys]
   | NoKeysFound
   | ErrorReadingKeysFile
-  | NewKeysCreated Keys MetadataContent
+  | NewKeysCreated Keys Profile
   | KeysBackupDone
   | KeysUpdated [Keys]
   -- relays
@@ -103,7 +104,7 @@ data AppEvent
   | RelayDisconnected Relay
   -- profile
   | EditProfile
-  | ProfileUpdated MetadataContent
+  | ProfileUpdated Profile
   {-
   | ValidateAndAddRelay
   | InvalidRelayURI

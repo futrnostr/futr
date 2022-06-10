@@ -24,6 +24,7 @@ import Nostr.Event
 import Nostr.Filter
 import Nostr.Keys
 import Nostr.Kind
+import Nostr.Profile
 import Nostr.Relay
 import Nostr.RelayPool
 import Nostr.Request
@@ -39,11 +40,11 @@ type KeyManagementNode = WidgetNode KeyManagementModel KeyManagementEvent
 data KeyManagementModel = KeyManagementModel
   { _keyList         :: [Keys]
   , _backupKeysModel :: BackupKeysModel
-  , _metadatas       :: [ (XOnlyPubKey, MetadataContent) ]
+  , _metadatas       :: Map XOnlyPubKey Profile
   } deriving (Eq, Show)
 
 instance Default KeyManagementModel where
-  def = KeyManagementModel [] def []
+  def = KeyManagementModel [] def Map.empty
 
 data KeyManagementEvent
   = GoSetup

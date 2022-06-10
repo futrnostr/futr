@@ -23,6 +23,7 @@ import AppTypes
 import Helpers
 import Nostr.Event
 import Nostr.Keys
+import Nostr.Profile
 import Nostr.Relay
 import Nostr.RelayConnection
 import Nostr.RelayPool
@@ -89,10 +90,10 @@ handleEvent env wenv node model evt =
       [ Model $ model & currentView .~ SetupView ]
     ErrorReadingKeysFile ->
       [ Model $ model & errorMsg .~ (Just $ pack "Could not read keys file.\nCheck the file permissions. Maybe the file was corrupted.") ]
-    NewKeysCreated ks metadataContent ->
+    NewKeysCreated ks profile ->
       [ Model $ model
           & keys .~ ks : dk
-          & myMetadataContent .~ Just metadataContent
+          & myProfile .~ profile
           & selectedKeys .~ ks
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
           & currentView .~ BackupKeysView
@@ -101,7 +102,7 @@ handleEvent env wenv node model evt =
       ]
       where
         dk = disableKeys $ model ^. keys
-        MetadataContent _ _ _ picture = metadataContent
+        Profile _ _ _ picture = profile
     KeysBackupDone ->
       [ Model $ model
           & currentView .~ HomeView
@@ -133,11 +134,11 @@ handleEvent env wenv node model evt =
           & editProfileModel . EditProfile.pictureInput .~ fromMaybe "" picture
       ]
       where
-        MetadataContent name displayName about picture = fromMaybe def (model ^. myMetadataContent)
-    ProfileUpdated metadataContent ->
+        Profile name displayName about picture = model ^. myProfile
+    ProfileUpdated profile ->
       [ Model $ model
           & currentView .~ HomeView
-          & myMetadataContent .~ Just metadataContent
+          & myProfile .~ profile
           & homeModel . Home.profileImage .~ fromMaybe "" picture
           & keys .~ ks' : dk
           & selectedKeys .~ ks'
@@ -145,7 +146,7 @@ handleEvent env wenv node model evt =
       , Task $ saveKeyPairs $ ks' : dk
       ]
       where
-        MetadataContent name displayName about picture = metadataContent
+        Profile name displayName about picture = profile
         ks = model ^. selectedKeys
         (Keys pk xo _ _) = ks
         ks' = Keys pk xo True (Just name)

@@ -26,7 +26,7 @@ import           GHC.Exts               (fromList)
 
 import Nostr.Keys
 import Nostr.Kind
-import Nostr.Profile (Profile(..), RelayURL)
+import Nostr.Profile (Profile(..), RelayURL, Username)
 import Nostr.Relay
 
 newtype EventId = EventId
@@ -64,36 +64,7 @@ data UnsignedEvent = UnsignedEvent
   }
   deriving (Eq, Show)
 
-type Username = Text
-
-type DisplayName = Text
-
-type About = Text
-
-type Picture = Text
-
-data MetadataContent = MetadataContent Username (Maybe DisplayName) (Maybe About) (Maybe Picture)
-  deriving (Eq, Show)
-
-instance Default MetadataContent where
-  def = MetadataContent "" Nothing Nothing Nothing
-
 type ReceivedEvent = (Event, [Relay])
-
-instance ToJSON MetadataContent where
-  toJSON (MetadataContent username displayName about picture) = object
-    [ "name" .= toJSON username
-    , "display_name" .= toJSON displayName
-    , "about" .= toJSON about
-    , "picture" .= toJSON picture
-    ]
-
-instance FromJSON MetadataContent where
-  parseJSON = withObject "metadata content" $ \e -> MetadataContent
-    <$> e .: "name"
-    <*> e .:? "display_name"
-    <*> e .:? "about"
-    <*> e .:? "picture"
 
 instance Show EventId where
   showsPrec _ = shows . B16.encodeBase16 . getEventId
@@ -252,23 +223,22 @@ textNote note xo t =
   UnsignedEvent
     {pubKey' = xo, created_at' = t, kind' = TextNote, tags' = [], content' = note}
 
-setMetadata :: MetadataContent -> XOnlyPubKey -> DateTime -> UnsignedEvent
-setMetadata metadataContent xo t =
+setMetadata :: Profile -> XOnlyPubKey -> DateTime -> UnsignedEvent
+setMetadata profile xo t =
   UnsignedEvent
     { pubKey' = xo
     , created_at' = t
     , kind' = Metadata
     , tags' = []
-    , content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ metadataContent
+    , content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ profile
     }
 
-readMetadataContent :: Event -> Maybe MetadataContent
-readMetadataContent event = case kind event of
+readProfile :: Event -> Maybe Profile
+readProfile event = case kind event of
   Metadata ->
     decode $ fromStrict $ encodeUtf8 $ content event
   _ ->
     Nothing
-
 
 replyNote :: Event -> Text -> XOnlyPubKey -> DateTime -> UnsignedEvent
 replyNote event note xo t =

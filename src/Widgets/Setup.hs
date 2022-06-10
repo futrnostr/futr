@@ -24,6 +24,7 @@ import Nostr.Event
 import Nostr.Filter
 import Nostr.Keys
 import Nostr.Kind
+import Nostr.Profile
 import Nostr.Relay
 import Nostr.RelayPool
 import Nostr.Request
@@ -51,13 +52,13 @@ instance Default SetupModel where
 
 data SetupEvent
   = ImportSecKey
-  | SecKeyImported Keys MetadataContent
+  | SecKeyImported Keys Profile
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
-  | CreateAccount Keys MetadataContent
-  | ImportAccount Keys MetadataContent
+  | CreateAccount Keys Profile
+  | ImportAccount Keys Profile
   | LoadImage
-  | SetupDone Keys MetadataContent
+  | SetupDone Keys Profile
   deriving (Eq, Show)
 
 makeLenses 'SetupModel
@@ -66,7 +67,7 @@ setupWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan Request
   -> MVar RelayPool
-  -> (Keys -> MetadataContent -> ep)
+  -> (Keys -> Profile -> ep)
   -> ALens' sp SetupModel
   -> WidgetNode sp ep
 setupWidget requestChannel poolMVar reportKeys model =
@@ -81,7 +82,7 @@ handleSetupEvent
   :: (WidgetEvent ep)
   => TChan Request
   -> MVar RelayPool
-  -> (Keys -> MetadataContent -> ep)
+  -> (Keys -> Profile -> ep)
   -> SetupWenv
   -> SetupNode
   -> SetupModel
@@ -101,7 +102,7 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
         maybe Nothing secKey $ decodeHex $ model ^. secretKeyInput
       xo = deriveXOnlyPubKey $ kp
       ks = Keys kp xo True Nothing
-  SecKeyImported keys (MetadataContent username' displayName' about' picture') ->
+  SecKeyImported keys (Profile username' displayName' about' picture') ->
     [ Model $ model
         & name .~ username'
         & displayName .~ fromMaybe "" displayName'
@@ -121,10 +122,10 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
     where
       xo = deriveXOnlyPubKey kp
       ks = Keys kp xo True Nothing
-  CreateAccount ks metadataContent ->
-    [ Task $ createAccount requestChannel ks metadataContent ]
-  ImportAccount ks metadataContent ->
-    [ Task $ importAccount requestChannel ks metadataContent ]
+  CreateAccount ks profile ->
+    [ Task $ createAccount requestChannel ks profile ]
+  ImportAccount ks profile ->
+    [ Task $ importAccount requestChannel ks profile ]
   LoadImage ->
     [ Model $ model & currentImage .~ model ^. picture ]
   SetupDone ks md ->
@@ -135,7 +136,7 @@ viewSetup wenv model = setupView where
   textToMaybe f = if "" == f
     then Nothing
     else Just $ f
-  metadataContent = MetadataContent
+  profile = Profile
     (model ^. name)
     (textToMaybe $ model ^. displayName)
     (textToMaybe $ model ^. about)
@@ -175,10 +176,10 @@ viewSetup wenv model = setupView where
             [ filler
             , case model ^. imported of
                 True ->
-                  mainButton "Import Account" (ImportAccount ks metadataContent)
+                  mainButton "Import Account" (ImportAccount ks profile)
                     `nodeEnabled` (model ^. name /= "")
                 False ->
-                  mainButton "Create Account" (CreateAccount ks metadataContent)
+                  mainButton "Create Account" (CreateAccount ks profile)
                     `nodeEnabled` (model ^. name /= "")
             ]
         , spacer
@@ -232,29 +233,29 @@ loadImportedKeyData requestChannel poolMVar keys = do
       case kind event of
         Metadata -> do
           unsubscribe poolMVar requestChannel subId
-          case readMetadataContent event of
+          case readProfile event of
             Just md -> do
               putStrLn $ show md
               return $ SecKeyImported keys md
             Nothing ->
-              return $ SecKeyImported keys (MetadataContent "" Nothing Nothing Nothing)
+              return $ SecKeyImported keys (Profile "" Nothing Nothing Nothing)
         _ -> error "Unexpected event kind received when loading key data"
     _ ->
       error "Unexpected response received when loading key data"
 
-createAccount :: TChan Request -> Keys -> MetadataContent -> IO SetupEvent
-createAccount requestChannel keys metadataContent = do
+createAccount :: TChan Request -> Keys -> Profile -> IO SetupEvent
+createAccount requestChannel keys profile = do
   let (Keys kp xo _ _) = keys
-  let (MetadataContent name _ _ _) = metadataContent
+  let (Profile name _ _ _) = profile
   now <- getCurrentTime
-  send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) kp xo
+  send requestChannel $ SendEvent $ signEvent (setMetadata profile xo now) kp xo
   send requestChannel $ SendEvent $ signEvent (setContacts [(xo, Just name)] xo (addSeconds 1 now)) kp xo
-  return $ SetupDone (Keys kp xo True (Just name)) metadataContent
+  return $ SetupDone (Keys kp xo True (Just name)) profile
 
-importAccount :: TChan Request -> Keys -> MetadataContent -> IO SetupEvent
-importAccount requestChannel keys metadataContent = do
+importAccount :: TChan Request -> Keys -> Profile -> IO SetupEvent
+importAccount requestChannel keys profile = do
   let (Keys kp xo _ _) = keys
-  let (MetadataContent name _ _ _) = metadataContent
+  let (Profile name _ _ _) = profile
   now <- getCurrentTime
-  send requestChannel $ SendEvent $ signEvent (setMetadata metadataContent xo now) kp xo
-  return $ SetupDone (Keys kp xo True (Just name)) metadataContent
+  send requestChannel $ SendEvent $ signEvent (setMetadata profile xo now) kp xo
+  return $ SetupDone (Keys kp xo True (Just name)) profile
