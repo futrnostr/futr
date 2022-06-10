@@ -31,17 +31,12 @@ import qualified Widgets.Setup       as Setup
 buildUI :: TChan Request -> MVar RelayPool -> AppWenv -> AppModel -> AppNode
 buildUI channel poolMVar wenv model = widgetTree
   where
-    myProfileImage = case model ^. selectedKeys of
-      Nothing ->
-        vstack []
-      Just (Keys _ xo _ _) ->
-        case model ^. homeModel . Home.profileImage of
-          "" ->
-            profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
---            fallbackProfileImage (Just xo) Mini
-          pi ->
-            profileImage_ (Just pi) xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
---            image_ pi [ fitEither, alignCenter, alignMiddle ] `styleBasic` [ width 40, height 40 ]
+    Keys _ xo _ name = model ^. selectedKeys
+    myProfileImage = case model ^. homeModel . Home.profileImage of
+      "" ->
+        profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
+      pi ->
+        profileImage_ (Just pi) xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
     baseLayer = case model ^. currentView of
       HomeView ->
         Home.homeWidget channel homeModel
@@ -52,7 +47,7 @@ buildUI channel poolMVar wenv model = widgetTree
       EditProfileView ->
         EditProfile.editProfileWidget
           channel
-          (fromJust $ model ^. selectedKeys)
+          (model ^. selectedKeys)
           ProfileUpdated
           GoHome
           editProfileModel
@@ -94,18 +89,13 @@ buildUI channel poolMVar wenv model = widgetTree
                 [ cursorIcon CursorHand ])
             )
             (sort $ model ^. relays)
-        currentKeyInfo =
-          case model ^. selectedKeys of
-            Just (Keys _ xo _ name) ->
-              selectableText accountData `styleBasic` [ textSize 12 ]
-                where
-                  accountData = case name of
-                    Just n ->
-                      n `T.append` " - PubKey: " `T.append` (T.pack $ exportXOnlyPubKey xo)
-                    Nothing ->
-                      "PubKey: " `T.append` (T.pack $ exportXOnlyPubKey xo)
-            Nothing ->
-              filler
+        currentKeyInfo = selectableText accountData `styleBasic` [ textSize 12 ]
+          where
+            accountData = case name of
+              Just n ->
+                n `T.append` " - PubKey: " `T.append` (T.pack $ exportXOnlyPubKey xo)
+              Nothing ->
+                "PubKey: " `T.append` (T.pack $ exportXOnlyPubKey xo)
     widgetTree =
       zstack
         [ vstack

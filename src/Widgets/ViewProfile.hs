@@ -35,7 +35,7 @@ type ViewProfileWenv = WidgetEnv ViewProfileModel ProfileEvent
 type ViewProfileNode = WidgetNode ViewProfileModel ProfileEvent
 
 data ViewProfileModel = ViewProfileModel
-  { _myKeys           :: Maybe Keys
+  { _myKeys           :: Keys
   , _xo               :: Maybe XOnlyPubKey
   , _name             :: Text
   , _about            :: Text
@@ -46,7 +46,7 @@ data ViewProfileModel = ViewProfileModel
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel Nothing Nothing "" "" "" "" Map.empty def
+  def = ViewProfileModel initialKeys Nothing "" "" "" "" Map.empty def
 
 data ProfileEvent
   = Follow
@@ -169,7 +169,7 @@ viewProfile wenv model =
         ViewProfile
     ]
   where
-    (Keys _ user _ _) = fromJust $ model ^. myKeys
+    (Keys _ user _ _) = model ^. myKeys
     xo' = fromJust $ model ^. xo
 --    currentlyFollowing = Map.findWithDefault [] user (model ^. following)
 --    currentlyFollowing' = List.map extractXOFromProfile currentlyFollowing

@@ -10,15 +10,16 @@ import Data.Maybe (fromJust)
 import Data.Text (pack)
 import Monomer
 
+import Helpers
 import Nostr.Keys
 import UIHelpers
 
 data BackupKeysModel = BackupKeysModel
-  { _backupKeys :: Maybe Keys
+  { _backupKeys :: Keys
   } deriving (Eq, Show)
 
 instance Default BackupKeysModel where
-  def = BackupKeysModel Nothing
+  def = BackupKeysModel initialKeys
 
 makeLenses 'BackupKeysModel
 
@@ -66,4 +67,4 @@ viewBackupKeys done wenv model =
     , filler
     ] `styleBasic` [ padding 20 ]
     where
-      (Keys kp xo _ _) = fromJust $ model ^. backupKeys
+      Keys kp xo _ _ = model ^. backupKeys

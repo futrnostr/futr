@@ -37,7 +37,7 @@ type HomeWenv = WidgetEnv HomeModel HomeEvent
 type HomeNode = WidgetNode HomeModel HomeEvent
 
 data HomeModel = HomeModel
-  { _myKeys           :: Maybe Keys
+  { _myKeys           :: Keys
   , _profileImage     :: Text
   , _time             :: DateTime
   , _events           :: [ReceivedEvent]
@@ -50,7 +50,7 @@ data HomeModel = HomeModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel Nothing "" (fromSeconds 0) [] [] "" False "" "" def
+  def = HomeModel initialKeys "" (fromSeconds 0) [] [] "" False "" "" def
 
 data HomeEvent
   = SendPost
@@ -94,7 +94,7 @@ handleHomeEvent chan env node model evt = case evt of
 sendPost :: TChan Request -> HomeModel -> (HomeEvent -> IO ()) -> IO ()
 sendPost chan model _ = do
   now <- getCurrentTime
-  let (Keys kp xo _ _) = fromJust $ model ^. myKeys
+  let (Keys kp xo _ _) = model ^. myKeys
   let unsigned = textNote (strip $ model ^. noteInput) xo now;
   atomically $ writeTChan chan $ SendEvent $ signEvent unsigned kp xo
 

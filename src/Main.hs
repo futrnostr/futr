@@ -71,7 +71,7 @@ handleEvent env wenv node model evt =
     KeyPairsLoaded ks ->
       [ Model $ model
         & keys .~ ks
-        & selectedKeys .~ Just mk
+        & selectedKeys .~ mk
         & currentView .~ HomeView
       ]
       where
@@ -85,8 +85,8 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & keys .~ ks : dk
           & myMetadataContent .~ Just metadataContent
-          & selectedKeys .~ Just ks
-          & backupKeysModel . BackupKeys.backupKeys .~ Just ks
+          & selectedKeys .~ ks
+          & backupKeysModel . BackupKeys.backupKeys .~ ks
           & currentView .~ BackupKeysView
           & homeModel . Home.profileImage .~ fromMaybe "" picture
       , Task $ saveKeyPairs $ ks : dk
@@ -97,7 +97,6 @@ handleEvent env wenv node model evt =
     KeysBackupDone ->
       [ Model $ model
           & currentView .~ HomeView
-          & backupKeysModel . BackupKeys.backupKeys .~ Nothing
       ]
     -- relays
     ConnectRelay relay ->
@@ -125,13 +124,13 @@ handleEvent env wenv node model evt =
           & myMetadataContent .~ Just metadataContent
           & homeModel . Home.profileImage .~ fromMaybe "" picture
           & keys .~ ks' : dk
-          & selectedKeys .~ Just ks'
-          & backupKeysModel . BackupKeys.backupKeys .~ Just ks'
+          & selectedKeys .~ ks'
+          & backupKeysModel . BackupKeys.backupKeys .~ ks'
       , Task $ saveKeyPairs $ ks' : dk
       ]
       where
         MetadataContent name displayName about picture = metadataContent
-        ks = fromJust $ model ^. selectedKeys
+        ks = model ^. selectedKeys
         (Keys pk xo _ _) = ks
         ks' = Keys pk xo True (Just name)
         dk = disableKeys $ filter (\(Keys pk' _ _ _) -> pk' /= pk) $ model ^. keys

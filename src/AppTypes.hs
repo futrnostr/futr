@@ -16,18 +16,19 @@ import           Monomer                              (WidgetEnv, WidgetNode)
 import qualified Network.WebSockets                   as WS
 import           Network.Socket
 
-import           Nostr.Event
-import           Nostr.Filter
-import           Nostr.Keys
-import           Nostr.Profile
-import           Nostr.Relay
-import           Nostr.RelayPool
-import           Nostr.Request                        (Request, SubscriptionId)
-import           Nostr.Response
-import           Widgets.BackupKeys
-import           Widgets.EditProfile
-import           Widgets.Home
-import           Widgets.Setup
+import Helpers
+import Nostr.Event
+import Nostr.Filter
+import Nostr.Keys
+import Nostr.Profile
+import Nostr.Relay
+import Nostr.RelayPool
+import Nostr.Request (Request, SubscriptionId)
+import Nostr.Response
+import Widgets.BackupKeys
+import Widgets.EditProfile
+import Widgets.Home
+import Widgets.Setup
 
 type AppWenv = WidgetEnv AppModel AppEvent
 
@@ -61,7 +62,7 @@ instance Default RelayModel where
 data AppModel =
   AppModel
     { _keys              :: [Keys]
-    , _selectedKeys      :: Maybe Keys
+    , _selectedKeys      :: Keys
     , _myMetadataContent :: Maybe MetadataContent
     , _relays            :: [Relay]
     , _errorMsg          :: Maybe Text
@@ -76,7 +77,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Nothing Nothing [] Nothing HomeView def def def def def
+  def = AppModel [] initialKeys Nothing [] Nothing HomeView def def def def def
 
 data AppEvent
   = NoOp
@@ -104,7 +105,7 @@ data AppEvent
   -}
   -- keys events
 --  | KeysUpdated [Keys]
---  | KeysSelected (Maybe Keys)
+--  | KeysSelected (Keys)
   -- relay connection
   -- | TimerTick DateTime
   -- | Initialize

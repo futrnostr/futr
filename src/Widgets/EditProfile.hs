@@ -19,24 +19,27 @@ import Nostr.Profile
 import Nostr.RelayPool
 import Nostr.Request
 import UIHelpers
+import Widgets.ProfileImage
 
 type EditProfileWenv = WidgetEnv EditProfileModel EditProfileEvent
 
 type EditProfileNode = WidgetNode EditProfileModel EditProfileEvent
 
 data EditProfileModel =  EditProfileModel
-  { _nameInput        :: Text
-  , _displayNameInput :: Text
-  , _aboutInput       :: Text
-  , _pictureInput     :: Text
+  { _nameInput        :: Username
+  , _displayNameInput :: DisplayName
+  , _aboutInput       :: About
+  , _pictureInput     :: Picture
+  , _currentImage     :: Picture
   } deriving (Eq, Show)
 
 instance Default EditProfileModel where
-  def = EditProfileModel "" "" "" ""
+  def = EditProfileModel "" "" "" "" ""
 
 data EditProfileEvent
   = SaveProfile
   | ProfileSaved MetadataContent
+  | LoadImage
   | Back
   deriving (Eq, Show)
 
@@ -51,7 +54,7 @@ editProfileWidget
   -> ALens' sp EditProfileModel
   -> WidgetNode sp ep
 editProfileWidget chan keys profileSaved goHome field =
-  composite "editProfileWidget" field viewProfile (handleProfileEvent chan keys profileSaved goHome)
+  composite "editProfileWidget" field (viewEditProfile keys) (handleProfileEvent chan keys profileSaved goHome)
 
 handleProfileEvent
   :: (WidgetEvent ep)
@@ -69,6 +72,8 @@ handleProfileEvent chan ks profileSaved goHome env node model evt = case evt of
     [ Task $ saveProfile chan ks model ]
   ProfileSaved metadataContent ->
     [ Report $ profileSaved metadataContent ]
+  LoadImage ->
+    [ Model $ model & currentImage .~ model ^. pictureInput ]
   Back ->
     [ Report $ goHome ]
 
@@ -88,37 +93,60 @@ saveProfile requestChannel (Keys kp xo _ _) model = do
     picture = strip $ model ^. pictureInput
     metadataContent = MetadataContent name (Just displayName) (Just about) (Just picture)
 
-viewProfile :: EditProfileWenv -> EditProfileModel -> EditProfileNode
-viewProfile wenv model =
-  vstack
-    [ hstack [ button "Back" Back, filler, bigLabel "Edit Profile", filler ]
+viewEditProfile :: Keys -> EditProfileWenv -> EditProfileModel -> EditProfileNode
+viewEditProfile (Keys kp xo _ _) wenv model = editView where
+  myProfileImage = case model ^. currentImage of
+    "" ->
+      profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 300, height 300 ]
+    pi ->
+      profileImage_ (Just $ model ^. currentImage) xo [ fitEither ] `styleBasic` [ width 300, height 300 ]
+  info = case model ^. currentImage of
+    "" ->
+      label "Robots lovingly delivered by Robohash.org" `styleBasic` [ textSize 8 ]
+    _ ->
+      hstack []
+  formLabel t = label t `styleBasic` [ width 150 ]
+  form = vstack
+    [ vstack
+        [ hstack [ bigLabel "Edit Account" ]
+        , spacer
+        , hstack [ formLabel "Username", textField nameInput `nodeKey` "username" ]
+        , spacer
+        , hstack [ formLabel "Display name", textField displayNameInput `nodeKey` "displayName" ]
+        , spacer
+        , hstack [ formLabel "About", textField aboutInput `nodeKey` "about" ]
+        , spacer
+        , hstack [ formLabel "Picture URL", textField pictureInput `nodeKey` "picture" ]
+        , spacer
+        , hstack
+            [ label "Username is a required field" `styleBasic` [ textSize 9 ]
+            , filler
+            , button "Load image" LoadImage
+            ]
+        ]
+        , filler
+        , hstack
+            [ filler
+            , mainButton "Save" SaveProfile
+            ]
+        , spacer
+        , label "Public Key"
+        , spacer
+        , label (pack $ exportXOnlyPubKey xo) `styleBasic` [ textSize 11 ]
+        , spacer
+        , label "Private Key"
+        , spacer
+        , label "hidden" `styleBasic` [ textSize 11 ]
+    ] `styleBasic` [ paddingL 20 ]
+  editView = vstack
+    [ hstack
+        [ vstack
+            [ hstack [ button "Back" Back, filler ]
+            , myProfileImage
+            , spacer
+            , info
+            ]
+        , form
+        ]
     , filler
-    , hstack
-        [ label "Name"
-        , filler
-        , tf nameInput "name"
-        ]
-    , spacer
-    , hstack
-        [ label "Display Name"
-        , filler
-        , tf displayNameInput "displayName"
-        ]
-    , spacer
-    , hstack
-        [ label "About"
-        , filler
-        , tf aboutInput "about"
-        ]
-    , spacer
-    , hstack
-        [ label "Picture URL"
-        , filler
-        , tf pictureInput "picture"
-        ]
-    , filler
-    , mainButton "Save" SaveProfile
-    , filler
-    ] `styleBasic` [ padding 20 ]
-    where
-      tf input id' = textField input `nodeKey` id' `styleBasic` [ width 400 ]
+    ] `styleBasic` [ padding 10 ]

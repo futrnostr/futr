@@ -19,6 +19,7 @@ import Monomer
 import qualified Data.ByteString.Lazy as LazyBytes
 import qualified Data.Map             as Map
 
+import Helpers
 import Nostr.Event
 import Nostr.Filter
 import Nostr.Keys
@@ -28,6 +29,7 @@ import Nostr.RelayPool
 import Nostr.Request
 import Nostr.Response
 import UIHelpers
+import Widgets.ProfileImage
 
 type SetupWenv = WidgetEnv SetupModel SetupEvent
 
@@ -37,16 +39,17 @@ data SetupModel = SetupModel
   { _secretKeyInput :: Text
   , _mainRelay      :: Maybe Relay
   , _relays         :: [Relay]
-  , _keys           :: Maybe Keys
+  , _keys           :: Keys
   , _name           :: Username
   , _displayName    :: DisplayName
   , _about          :: About
   , _picture        :: Picture
+  , _currentImage   :: Picture
   , _imported       :: Bool
   } deriving (Eq, Show)
 
 instance Default SetupModel where
-  def = SetupModel "" Nothing [] Nothing "" "" "" "" False
+  def = SetupModel "" Nothing [] initialKeys "" "" "" "" "" False
 
 data SetupEvent
   = ImportSecKey
@@ -55,6 +58,7 @@ data SetupEvent
   | KeyPairGenerated KeyPair
   | CreateAccount Keys MetadataContent
   | ImportAccount Keys MetadataContent
+  | LoadImage
   | SetupDone Keys MetadataContent
   deriving (Eq, Show)
 
@@ -88,7 +92,7 @@ handleSetupEvent
 handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case evt of
   ImportSecKey ->
     [ Model $ model
-      & keys .~ Just ks
+      & keys .~ ks
       & imported .~ True
     , Task $ loadImportedKeyData requestChannel poolMVar ks
     ]
@@ -112,17 +116,19 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
         & imported .~ False
         & secretKeyInput .~ ""
     ]
-  KeyPairGenerated k ->
-    [ Model $ model & keys .~ Just ks
+  KeyPairGenerated kp ->
+    [ Model $ model & keys .~ ks
     --, Report $ reportKeys ks
     ]
     where
-      xo = deriveXOnlyPubKey k
-      ks = Keys k xo True Nothing
+      xo = deriveXOnlyPubKey kp
+      ks = Keys kp xo True Nothing
   CreateAccount ks metadataContent ->
     [ Task $ createAccount requestChannel ks metadataContent ]
   ImportAccount ks metadataContent ->
     [ Task $ importAccount requestChannel ks metadataContent ]
+  LoadImage ->
+    [ Model $ model & currentImage .~ model ^. picture ]
   SetupDone ks md ->
     [ Report $ reportKeys ks md ]
 
@@ -136,8 +142,18 @@ viewSetup wenv model = setupView where
     (textToMaybe $ model ^. displayName)
     (textToMaybe $ model ^. about)
     (textToMaybe $ model ^. picture)
-  ks = fromJust $ model ^. keys
+  ks = model ^. keys
   formLabel t = label t `styleBasic` [ width 150 ]
+  myProfileImage = case model ^. currentImage of
+    "" ->
+      profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 300, height 300 ]
+    pi ->
+      profileImage_ (Just $ model ^. currentImage) xo [ fitEither ] `styleBasic` [ width 300, height 300 ]
+  info = case model ^. currentImage of
+    "" ->
+      label "Robots lovingly delivered by Robohash.org" `styleBasic` [ textSize 8 ]
+    _ ->
+      hstack []
   form = vstack
     [ vstack
         [ bigLabel "Create Account"
@@ -150,7 +166,11 @@ viewSetup wenv model = setupView where
         , spacer
         , hstack [ formLabel "Picture URL", textField picture `nodeKey` "picture" ]
         , spacer
-        , label "Username is a required field" `styleBasic` [ textSize 9 ]
+        , hstack
+            [ label "Username is a required field" `styleBasic` [ textSize 9 ]
+            , filler
+            , button "Load image" LoadImage
+            ]
         ]
         , filler
         , hstack
@@ -164,20 +184,20 @@ viewSetup wenv model = setupView where
                     `nodeEnabled` (model ^. name /= "")
             ]
         , spacer
-        , label "Private Key"
-        , spacer
-        , label (pack $ maybe "" exportXOnlyPubKey xo) `styleBasic` [ textSize 11 ]
-        , spacer
         , label "Public Key"
         , spacer
-        , label (pack $ maybe "" (exportSecKey . deriveSecKey) kp) `styleBasic` [ textSize 11 ]
+        , label (pack $ exportXOnlyPubKey xo) `styleBasic` [ textSize 11 ]
+        , spacer
+        , label "Private Key"
+        , spacer
+        , label (pack $ (exportSecKey . deriveSecKey) kp) `styleBasic` [ textSize 11 ]
     ] `styleBasic` [ paddingL 20 ]
   setupView = vstack
     [ hstack
         [ vstack
-            [ fallbackProfileImage xo Big
+            [ myProfileImage
             , spacer
-            , label "Robots lovingly delivered by Robohash.org" `styleBasic` [ textSize 8 ]
+            , info
             , spacer
             , button "Generate new key pair" GenerateKeyPair
             ]
@@ -194,8 +214,7 @@ viewSetup wenv model = setupView where
         , button "Import" ImportSecKey `nodeEnabled` isValidPrivateKey
         ]
     ] `styleBasic` [ padding 10 ]
-  kp = maybe Nothing (\(Keys kp _ _ _) -> Just kp) (model ^. keys)
-  xo = maybe Nothing (\(Keys _ xo _ _) -> Just xo) (model ^. keys)
+  Keys kp xo _ _ = model ^. keys
   isValidPrivateKey =
     isJust $ maybe Nothing secKey $ decodeHex $ view secretKeyInput model
 

@@ -2,14 +2,16 @@
 
 module Helpers where
 
-import Crypto.Schnorr                 (XOnlyPubKey, exportXOnlyPubKey)
+import Crypto.Schnorr (KeyPair, XOnlyPubKey, decodeHex, exportXOnlyPubKey, secKey, keyPairFromSecKey, xOnlyPubKey)
 import Data.Aeson
+import Data.ByteString (ByteString)
 import Data.DateTime
 import Data.Default
-import Data.List                      (sortBy)
-import Data.Maybe                     (fromMaybe)
-import Data.Text                      (Text, pack)
-import Data.Text.Encoding             (encodeUtf8)
+import Data.List (sortBy)
+import Data.Maybe (fromMaybe)
+import Data.Text (Text, pack)
+import Data.Text.Encoding (encodeUtf8)
+
 import qualified Data.Map             as Map
 import qualified Data.ByteString.Lazy as LazyBytes
 
@@ -18,25 +20,6 @@ import Nostr.Keys
 import Nostr.Kind
 import Nostr.Profile
 import Nostr.Relay
-
--- mainKeys :: [Keys] -> Keys
--- mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
-
-
--- profileDataFromReceivedEvents :: [ReceivedEvent] -> XOnlyPubKey -> Maybe ProfileData
--- profileDataFromReceivedEvents res xo = profileData
---   where
---     relatedEvents = filter
---       (\re ->
---         kind (fst re) == Metadata
---         && pubKey (fst re) == xo
---       ) res
---     profileData = case null relatedEvents of
---       True -> Nothing
---       False -> decode $ LazyBytes.fromStrict $ encodeUtf8 $ content $ fst $ head $ sortBy latestEvent relatedEvents
---
--- latestEvent :: ReceivedEvent -> ReceivedEvent -> Ordering
--- latestEvent a b = compare (created_at $ fst b) (created_at $ fst a)
 
 disableKeys :: [Keys] -> [Keys]
 disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
@@ -60,34 +43,15 @@ shortXOnlyPubKey xo = pack
     part1 = take 4 str
     part2 = take 4 $ reverse str
 
-{-
-extractXOFromProfile :: Profile -> XOnlyPubKey
-extractXOFromProfile (Profile xo _ _) = xo
-
-profileName :: [Profile] -> XOnlyPubKey -> Text
-profileName profiles xo =
-  if null pList
-    then ""
-    else do
-      let (Profile _ _ (ProfileData name _ _ _)) = head pList
-      name
-  where
-    pList = filter (\(Profile xo' _ _) -> xo == xo') profiles
-
-tagsToProfiles :: [Tag] -> [Profile]
-tagsToProfiles ts = map (\t ->
-    Profile (xo t) (fromMaybe "" $ r t) (pd t)
-  ) ts'
-  where
-    ts' = filter (\p -> isPTag p) ts
-    xo (PTag (ValidXOnlyPubKey xo) _ _) = xo
-    xo _ = error "error transforming tags to profiles, invalid XOnlyPubKey"
-    r (PTag _ r _) = r
-    r _ = Nothing
-    pd (PTag _ _ n) = ProfileData (fromMaybe "" n) "" "" ""
-    pd _ = def
-
-isPTag :: Tag -> Bool
-isPTag (PTag (ValidXOnlyPubKey xo) _ _) = True
-isPTag _ = False
--}
+initialKeys :: Keys
+initialKeys = Keys kp xo True Nothing where
+  kp = keyPairFromSecKey $ load "fef52b22d4568d9235ebf8a4f35dac54a4e748781441506e133532099dae0ded" secKey
+  xo = load "134bdeaf23fe7078d94b2836dcb748e762073d4bc274a2c188a44a3fc29df31c" xOnlyPubKey
+  load :: String -> (ByteString -> Maybe a) -> a
+  load s f =
+    case decodeHex s of
+      Just bs ->
+        case f bs of
+          Just b -> b
+          _      -> error "failed to load initial keys"
+      Nothing -> error "failed to load initial keys"
