@@ -4,7 +4,6 @@
 module Widgets.Setup where
 
 import Control.Concurrent.MVar
-import Control.Monad.STM            (atomically)
 import Control.Concurrent.STM.TChan
 import Control.Lens
 import Crypto.Schnorr
@@ -52,13 +51,13 @@ instance Default SetupModel where
 
 data SetupEvent
   = ImportSecKey
-  | SecKeyImported Keys Profile
+  | SecKeyImported Keys Profile DateTime
   | GenerateKeyPair
   | KeyPairGenerated KeyPair
   | CreateAccount Keys Profile
   | ImportAccount Keys Profile
   | LoadImage
-  | SetupDone Keys Profile
+  | SetupDone Keys Profile DateTime
   deriving (Eq, Show)
 
 makeLenses 'SetupModel
@@ -67,7 +66,7 @@ setupWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan Request
   -> MVar RelayPool
-  -> (Keys -> Profile -> ep)
+  -> (Keys -> Profile -> DateTime -> ep)
   -> ALens' sp SetupModel
   -> WidgetNode sp ep
 setupWidget requestChannel poolMVar reportKeys model =
@@ -82,7 +81,7 @@ handleSetupEvent
   :: (WidgetEvent ep)
   => TChan Request
   -> MVar RelayPool
-  -> (Keys -> Profile -> ep)
+  -> (Keys -> Profile -> DateTime -> ep)
   -> SetupWenv
   -> SetupNode
   -> SetupModel
@@ -93,7 +92,7 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
     [ Model $ model
       & keys .~ ks
       & imported .~ True
-    , Task $ loadImportedKeyData requestChannel poolMVar ks
+    , Task $ loadImportedKeyData requestChannel poolMVar ks SecKeyImported
     ]
     where
       kp =
@@ -102,7 +101,7 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
         maybe Nothing secKey $ decodeHex $ model ^. secretKeyInput
       xo = deriveXOnlyPubKey $ kp
       ks = Keys kp xo True Nothing
-  SecKeyImported keys (Profile username' displayName' about' picture') ->
+  SecKeyImported keys (Profile username' displayName' about' picture') _ ->
     [ Model $ model
         & name .~ username'
         & displayName .~ fromMaybe "" displayName'
@@ -117,7 +116,6 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
     ]
   KeyPairGenerated kp ->
     [ Model $ model & keys .~ ks
-    --, Report $ reportKeys ks
     ]
     where
       xo = deriveXOnlyPubKey kp
@@ -128,8 +126,8 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
     [ Task $ importAccount requestChannel ks profile ]
   LoadImage ->
     [ Model $ model & currentImage .~ model ^. picture ]
-  SetupDone ks md ->
-    [ Report $ reportKeys ks md ]
+  SetupDone ks profile datetime ->
+    [ Report $ reportKeys ks profile datetime ]
 
 viewSetup :: SetupWenv -> SetupModel -> SetupNode
 viewSetup wenv model = setupView where
@@ -222,27 +220,6 @@ generateNewKeyPair = do
   kp <- generateKeyPair
   return $ KeyPairGenerated kp
 
-loadImportedKeyData :: TChan Request -> MVar RelayPool -> Keys -> IO SetupEvent
-loadImportedKeyData requestChannel poolMVar keys = do
-  let (Keys kp xo _ _) = keys
-  responseChannel <- atomically newTChan
-  subId <- subscribe poolMVar requestChannel [LoadMetadataFilter xo] responseChannel
-  response <- atomically $ readTChan responseChannel
-  case response of
-    (EventReceived _ event) -> do
-      case kind event of
-        Metadata -> do
-          unsubscribe poolMVar requestChannel subId
-          case readProfile event of
-            Just md -> do
-              putStrLn $ show md
-              return $ SecKeyImported keys md
-            Nothing ->
-              return $ SecKeyImported keys (Profile "" Nothing Nothing Nothing)
-        _ -> error "Unexpected event kind received when loading key data"
-    _ ->
-      error "Unexpected response received when loading key data"
-
 createAccount :: TChan Request -> Keys -> Profile -> IO SetupEvent
 createAccount requestChannel keys profile = do
   let (Keys kp xo _ _) = keys
@@ -250,7 +227,7 @@ createAccount requestChannel keys profile = do
   now <- getCurrentTime
   send requestChannel $ SendEvent $ signEvent (setMetadata profile xo now) kp xo
   send requestChannel $ SendEvent $ signEvent (setContacts [(xo, Just name)] xo (addSeconds 1 now)) kp xo
-  return $ SetupDone (Keys kp xo True (Just name)) profile
+  return $ SetupDone (Keys kp xo True (Just name)) profile now
 
 importAccount :: TChan Request -> Keys -> Profile -> IO SetupEvent
 importAccount requestChannel keys profile = do
@@ -258,4 +235,4 @@ importAccount requestChannel keys profile = do
   let (Profile name _ _ _) = profile
   now <- getCurrentTime
   send requestChannel $ SendEvent $ signEvent (setMetadata profile xo now) kp xo
-  return $ SetupDone (Keys kp xo True (Just name)) profile
+  return $ SetupDone (Keys kp xo True (Just name)) profile now

@@ -38,7 +38,7 @@ instance Default EditProfileModel where
 
 data EditProfileEvent
   = SaveProfile
-  | ProfileSaved Profile
+  | ProfileSaved Keys Profile DateTime
   | LoadImage
   | Back
   deriving (Eq, Show)
@@ -49,7 +49,7 @@ editProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan Request
   -> Keys
-  -> (Profile -> ep)
+  -> (Keys -> Profile -> DateTime -> ep)
   -> ep
   -> ALens' sp EditProfileModel
   -> WidgetNode sp ep
@@ -60,7 +60,7 @@ handleProfileEvent
   :: (WidgetEvent ep)
   => TChan Request
   -> Keys
-  -> (Profile -> ep)
+  -> (Keys -> Profile -> DateTime -> ep)
   -> ep
   -> EditProfileWenv
   -> EditProfileNode
@@ -70,8 +70,8 @@ handleProfileEvent
 handleProfileEvent chan ks profileSaved goHome env node model evt = case evt of
   SaveProfile ->
     [ Task $ saveProfile chan ks model ]
-  ProfileSaved profile ->
-    [ Report $ profileSaved profile ]
+  ProfileSaved keys profile datetime ->
+    [ Report $ profileSaved keys profile datetime ]
   LoadImage ->
     [ Model $ model & currentImage .~ model ^. pictureInput ]
   Back ->
@@ -82,10 +82,10 @@ saveProfile
   -> Keys
   -> EditProfileModel
   -> IO EditProfileEvent
-saveProfile requestChannel (Keys kp xo _ _) model = do
+saveProfile requestChannel (Keys kp xo active name) model = do
   now <- getCurrentTime
   send requestChannel $ SendEvent $ signEvent (setMetadata profile xo now) kp xo
-  return $ ProfileSaved profile
+  return $ ProfileSaved (Keys kp xo active (Just name)) profile now
   where
     name = strip $ model ^. nameInput
     displayName = strip $ model ^. displayNameInput

@@ -94,3 +94,6 @@ textToByteStringType :: Text -> (ByteString -> Maybe a) -> Maybe a
 textToByteStringType t f = case Schnorr.decodeHex t of
   Just bs -> f bs
   Nothing -> Nothing
+
+sameKeys :: Keys -> Keys -> Bool
+sameKeys (Keys _ xo _ _) (Keys _ xo' _ _) = xo == xo'

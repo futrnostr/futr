@@ -2,6 +2,9 @@
 
 module Helpers where
 
+import Control.Concurrent.MVar
+import Control.Monad.STM (atomically)
+import Control.Concurrent.STM.TChan
 import Crypto.Schnorr (KeyPair, XOnlyPubKey, decodeHex, exportXOnlyPubKey, secKey, keyPairFromSecKey, xOnlyPubKey)
 import Data.Aeson
 import Data.ByteString (ByteString)
@@ -11,15 +14,20 @@ import Data.List (sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import Data.Text.Encoding (encodeUtf8)
+import Monomer
 
 import qualified Data.Map             as Map
 import qualified Data.ByteString.Lazy as LazyBytes
 
 import Nostr.Event
+import Nostr.Filter
 import Nostr.Keys
 import Nostr.Kind
 import Nostr.Profile
 import Nostr.Relay
+import Nostr.RelayPool
+import Nostr.Request
+import Nostr.Response
 
 disableKeys :: [Keys] -> [Keys]
 disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
@@ -63,3 +71,29 @@ initialKeys = Keys kp xo True Nothing where
           Just b -> b
           _      -> error "failed to load initial keys"
       Nothing -> error "failed to load initial keys"
+
+loadImportedKeyData
+  :: WidgetEvent ep
+  => TChan Request
+  -> MVar RelayPool
+  -> Keys
+  -> (Keys -> Profile -> DateTime -> ep)
+  -> IO ep
+loadImportedKeyData requestChannel poolMVar keys trigger = do
+  let (Keys kp xo _ _) = keys
+  responseChannel <- atomically newTChan
+  subId <- subscribe poolMVar requestChannel [LoadMetadataFilter xo] responseChannel
+  response <- atomically $ readTChan responseChannel
+  case response of
+    (EventReceived _ event) -> do
+      case kind event of
+        Metadata -> do
+          unsubscribe poolMVar requestChannel subId
+          case readProfile event of
+            Just profile -> do
+              return $ trigger keys profile (created_at event)
+            Nothing ->
+              return $ trigger keys (Profile "" Nothing Nothing Nothing) (created_at event)
+        _ -> error "Unexpected event kind received when loading key data"
+    _ ->
+      error "Unexpected response received when loading key data"

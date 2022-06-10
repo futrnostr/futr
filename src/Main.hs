@@ -90,11 +90,11 @@ handleEvent env wenv node model evt =
       [ Model $ model & currentView .~ SetupView ]
     ErrorReadingKeysFile ->
       [ Model $ model & errorMsg .~ (Just $ pack "Could not read keys file.\nCheck the file permissions. Maybe the file was corrupted.") ]
-    NewKeysCreated ks profile ->
+    NewKeysCreated ks profile datetime ->
       [ Model $ model
           & keys .~ ks : dk
           & myProfile .~ profile
-          & profiles .~ Map.insert xo profile (model ^. profiles)
+          & profiles .~ Map.insert xo (profile, datetime) (model ^. profiles)
           & selectedKeys .~ ks
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
           & currentView .~ BackupKeysView
@@ -123,7 +123,8 @@ handleEvent env wenv node model evt =
     DisconnectRelay r ->
       [ Task $ disconnectRelay env r ]
     RelayConnected r ->
-      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
+      (Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)) :
+        map (\ks -> Task $ loadImportedKeyData (env ^. channel) (env ^. relayPool) ks ProfileUpdated) (model ^. keys)
     RelayDisconnected r ->
       [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
     -- edit profile
@@ -137,23 +138,45 @@ handleEvent env wenv node model evt =
       ]
       where
         Profile name displayName about picture = model ^. myProfile
-    ProfileUpdated profile ->
+    ProfileUpdated ks profile datetime ->
       [ Model $ model
           & currentView .~ HomeView
-          & myProfile .~ profile
-          & homeModel . Home.profileImage .~ fromMaybe "" picture
-          & keys .~ ks' : dk
-          & selectedKeys .~ ks'
-          & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks'
-          & profiles .~ Map.insert xo profile (model ^. profiles)
-      , Task $ saveKeyPairs $ ks' : dk
+          & myProfile .~ (
+            if ks `sameKeys` (model ^. selectedKeys)
+              then profile
+              else ( model ^. myProfile )
+            )
+          & homeModel . Home.profileImage .~ (
+            if ks `sameKeys` (model ^. selectedKeys)
+              then fromMaybe "" picture
+              else model ^. homeModel.profileImage
+            )
+          & keys .~ ks' : newKeyList
+          & selectedKeys .~ (
+            if ks `sameKeys` (model ^. selectedKeys)
+              then ks'
+              else (model ^. selectedKeys)
+            )
+          & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ (
+            if ks `sameKeys` (model ^. selectedKeys)
+              then ks'
+              else (model ^. selectedKeys)
+            )
+          & profiles .~
+            case Map.lookup xo (model ^. profiles) of
+              Nothing ->
+                Map.insert xo (profile, datetime) (model ^. profiles)
+              Just (profile', datetime') ->
+                if datetime > datetime'
+                  then Map.insert xo (profile, datetime) (model ^. profiles)
+                  else model ^. profiles
+      , Task $ saveKeyPairs $ ks' : newKeyList
       ]
       where
         Profile name displayName about picture = profile
-        ks = model ^. selectedKeys
-        (Keys pk xo _ _) = ks
-        ks' = Keys pk xo True (Just name)
-        dk = disableKeys $ filter (\(Keys pk' _ _ _) -> pk' /= pk) $ model ^. keys
+        (Keys pk xo active _) = ks
+        ks' = Keys pk xo active (Just name)
+        newKeyList = filter (\k -> k `sameKeys` ks) (model ^. keys)
 
 loadKeysFromDisk :: IO AppEvent
 loadKeysFromDisk = do

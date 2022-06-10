@@ -64,7 +64,7 @@ instance Default RelayModel where
 data AppModel =
   AppModel
     { _keys              :: [Keys]
-    , _profiles          :: Map XOnlyPubKey Profile
+    , _profiles          :: Map XOnlyPubKey (Profile, DateTime)
     , _selectedKeys      :: Keys
     , _myProfile         :: Profile
     , _relays            :: [Relay]
@@ -95,7 +95,7 @@ data AppEvent
   | KeyPairsLoaded [Keys]
   | NoKeysFound
   | ErrorReadingKeysFile
-  | NewKeysCreated Keys Profile
+  | NewKeysCreated Keys Profile DateTime
   | KeysBackupDone
   | KeysUpdated [Keys]
   -- relays
@@ -105,7 +105,7 @@ data AppEvent
   | RelayDisconnected Relay
   -- profile
   | EditProfile
-  | ProfileUpdated Profile
+  | ProfileUpdated Keys Profile DateTime
   {-
   | ValidateAndAddRelay
   | InvalidRelayURI
