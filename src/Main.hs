@@ -94,6 +94,7 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & keys .~ ks : dk
           & myProfile .~ profile
+          & profiles .~ Map.insert xo profile (model ^. profiles)
           & selectedKeys .~ ks
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
           & currentView .~ BackupKeysView
@@ -103,6 +104,7 @@ handleEvent env wenv node model evt =
       where
         dk = disableKeys $ model ^. keys
         Profile _ _ _ picture = profile
+        Keys _ xo _ _ = ks
     KeysBackupDone ->
       [ Model $ model
           & currentView .~ HomeView
@@ -143,6 +145,7 @@ handleEvent env wenv node model evt =
           & keys .~ ks' : dk
           & selectedKeys .~ ks'
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks'
+          & profiles .~ Map.insert xo profile (model ^. profiles)
       , Task $ saveKeyPairs $ ks' : dk
       ]
       where

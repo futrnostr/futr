@@ -64,6 +64,7 @@ instance Default RelayModel where
 data AppModel =
   AppModel
     { _keys              :: [Keys]
+    , _profiles          :: Map XOnlyPubKey Profile
     , _selectedKeys      :: Keys
     , _myProfile         :: Profile
     , _relays            :: [Relay]
@@ -80,7 +81,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] initialKeys def [] Nothing HomeView def def def def def def
+  def = AppModel [] Map.empty initialKeys def [] Nothing HomeView def def def def def def
 
 data AppEvent
   = NoOp
