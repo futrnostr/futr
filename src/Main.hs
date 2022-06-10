@@ -94,7 +94,7 @@ handleEvent env wenv node model evt =
           & keys .~ ks : dk
           & myMetadataContent .~ Just metadataContent
           & selectedKeys .~ ks
-          & backupKeysModel . BackupKeys.backupKeys .~ ks
+          & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
           & currentView .~ BackupKeysView
           & homeModel . Home.profileImage .~ fromMaybe "" picture
       , Task $ saveKeyPairs $ ks : dk
@@ -141,7 +141,7 @@ handleEvent env wenv node model evt =
           & homeModel . Home.profileImage .~ fromMaybe "" picture
           & keys .~ ks' : dk
           & selectedKeys .~ ks'
-          & backupKeysModel . BackupKeys.backupKeys .~ ks'
+          & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks'
       , Task $ saveKeyPairs $ ks' : dk
       ]
       where

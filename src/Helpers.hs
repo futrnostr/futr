@@ -37,11 +37,19 @@ xTimeAgo old new
 
 shortXOnlyPubKey :: XOnlyPubKey -> Text
 shortXOnlyPubKey xo = pack
-  $ part1 ++ ".." ++ part2
+  $ part1 ++ ".." ++ (reverse part2)
   where
     str = exportXOnlyPubKey xo
     part1 = take 4 str
     part2 = take 4 $ reverse str
+
+middleXOnlyPubKey :: XOnlyPubKey -> Text
+middleXOnlyPubKey xo = pack
+  $ part1 ++ ".." ++ (reverse part2)
+  where
+    str = exportXOnlyPubKey xo
+    part1 = take 8 str
+    part2 = take 8 $ reverse str
 
 initialKeys :: Keys
 initialKeys = Keys kp xo True Nothing where

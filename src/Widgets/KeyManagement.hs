@@ -13,7 +13,7 @@ import Data.DateTime
 import Data.Default
 import Data.Map                     (Map)
 import Data.Maybe
-import Data.Text                    (Text, pack, unpack)
+import Data.Text                    (Text, pack)
 import Monomer
 
 import qualified Data.ByteString.Lazy as LazyBytes
@@ -29,6 +29,7 @@ import Nostr.RelayPool
 import Nostr.Request
 import Nostr.Response
 import UIHelpers
+import Widgets.BackupKeys
 import Widgets.ProfileImage
 
 type KeyManagementWenv = WidgetEnv KeyManagementModel KeyManagementEvent
@@ -36,18 +37,19 @@ type KeyManagementWenv = WidgetEnv KeyManagementModel KeyManagementEvent
 type KeyManagementNode = WidgetNode KeyManagementModel KeyManagementEvent
 
 data KeyManagementModel = KeyManagementModel
-  { _keyList :: [Keys]
-  , _backup  :: Maybe Keys
+  { _keyList         :: [Keys]
+  , _backupKeysModel :: BackupKeysModel
+  , _metadatas       :: [ (XOnlyPubKey, MetadataContent) ]
   } deriving (Eq, Show)
 
 instance Default KeyManagementModel where
-  def = KeyManagementModel [] Nothing
+  def = KeyManagementModel [] def []
 
 data KeyManagementEvent
   = GoSetup
   | BackToHome
   | DeleteKeys Keys
-  | MarkAsMainKey Keys
+  | MarkAsMainKeys Keys
   | BackupKeys Keys
   | BackupDone
   deriving (Eq, Show)
@@ -84,24 +86,38 @@ handleKeyManagementEvent goSetup goHome reportKeys env node model evt = case evt
   BackToHome ->
     [ Report goHome]
   DeleteKeys keys ->
-    [ Model $ model & keyList .~ newKeyList
-    , Report $ reportKeys newKeyList
+    [ Model $ model & keyList .~ newKeyList'
+    , Report $ reportKeys newKeyList'
     ]
     where
       newKeyList = filter (\k -> k /= keys) (model ^. keyList)
-  MarkAsMainKey keys ->
-    [ Model $ model & keyList .~ keys : dk
-    , Report $ reportKeys $ keys : dk
+      newKeyList' = case length newKeyList of
+        0 -> newKeyList
+        1 -> map (\(Keys pk xo _ name) -> Keys pk xo True name) newKeyList
+        _ -> do
+          let firstKeys = head newKeyList
+          let (Keys pk xo _ name) = firstKeys
+          let mainKeys = Keys pk xo True name
+          mainKeys : (tail newKeyList)
+
+  MarkAsMainKeys (Keys kp xo active name) ->
+    [ Model $ model & keyList .~ keys' : dk
+    , Report $ reportKeys $ keys' : dk
     ]
     where
-      dk = disableKeys $ filter (\keys' -> keys' /= keys) $ model ^. keyList
+      keys' = Keys kp xo True name
+      dk = disableKeys $ filter (\(Keys _ xo' _ _) -> xo' /= xo) $ model ^. keyList
   BackupKeys keys ->
-    [ Model $ model & backup .~ (Just keys) ]
+    [ Model $ model & backupKeysModel . backupKeys .~ keys ]
   BackupDone ->
-    [ Model $ model & backup .~ Nothing ]
+    [ Model $ model & backupKeysModel . backupKeys .~ initialKeys ]
 
 viewKeyManagement :: KeyManagementWenv -> KeyManagementModel -> KeyManagementNode
-viewKeyManagement wenv model = keyManagementView where
+viewKeyManagement wenv model =
+  if (model ^. backupKeysModel . backupKeys) == initialKeys
+    then keyManagementView
+    else backupKeysWidget BackupDone (backupKeysModel)
+  where
   {-
   myProfileImage = case model ^. currentImage of
     "" ->
@@ -114,11 +130,36 @@ viewKeyManagement wenv model = keyManagementView where
     _ ->
       hstack []
   -}
-  keysRow idx (Keys pk xo active name) = hstack [ label $ pack $ exportXOnlyPubKey xo ]
+  keysRow idx (Keys pk xo active name) = box $
+    hstack
+      [ hstack
+          [ spacer
+          , profileImage Nothing xo `styleBasic` [ width 40, height 40 ]
+          , spacer
+          , label (fromMaybe "" name) `styleBasic` [ width 200 ]
+          , filler
+          , label $ middleXOnlyPubKey xo
+          , spacer
+          ]
+          `styleBasic`
+            [ border 1 $ rgbHex "#bae3ff"
+            , radius 4
+            , bgColor $ rgbHex "#7e7e7e"
+            ]
+      , filler
+      , vstack [ filler, button "Set Active" (MarkAsMainKeys (Keys pk xo active name)), filler ] `nodeVisible` (active == False)
+      , spacer
+      , vstack [ filler, button "Backup" (BackupKeys (Keys pk xo active name)), filler ]
+      , spacer
+      , vstack [ filler, button "Delete" (DeleteKeys (Keys pk xo active name)), filler ]
+      , spacer
+      ] `styleBasic` [ paddingB 20, height 80 ]
   keyManagementView = vstack
     [ hstack [ button "Back" BackToHome, filler, bigLabel "Key Management", filler ]
-    , filler
-    , vscroll_ [ scrollOverlay ] keys
+    , spacer
+    , hstack [ filler, button "New Account" GoSetup ]
+    , spacer
+    , vscroll_ [ scrollOverlay ] keys `styleBasic` [ paddingT 20 ]
     ] `styleBasic` [ padding 10 ]
     where
       keys = vstack keysRows
@@ -129,4 +170,3 @@ viewKeyManagement wenv model = keyManagementView where
           animRow =
             animFadeOut_ [] item `nodeKey` (pack $ exportXOnlyPubKey xo)
       keysRows = zipWith keysFade [ 0 .. ] (model ^. keyList)
-

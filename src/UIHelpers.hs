@@ -35,24 +35,6 @@ bigLabel :: Text -> WidgetNode s e
 bigLabel text =
   label text `styleBasic` [ textSize 20, textFont "Bold" ]
 
-fallbackProfileImage :: WidgetEvent e => Maybe XOnlyPubKey -> ImageSize -> WidgetNode s e
-fallbackProfileImage xo size = maybe (label "a") img xo where
-  baseUrl = "https://robohash.org/<xo>.png"
-  imgSize = case size of
-    Big   -> [ width 300, height 300 ]
-    Small -> [ width 100, height 100 ]
-    Mini  -> [ width 40, height 40 ]
-  imgUrl x = T.replace "<xo>" (T.pack $ exportXOnlyPubKey x) baseUrl
-  img x = image_ (imgUrl x) [ fitEither ] `styleBasic` imgSize
-
--- profileName :: Map.Map XOnlyPubKey Profile -> XOnlyPubKey -> Text
--- profileName m xo =
---   case Map.lookup xo m of
---     Just (Profile xo' r pd) ->
---       name pd
---     Nothing ->
---       ""
-
 profileBox :: (WidgetModel s, WidgetEvent e) => XOnlyPubKey -> Text -> WidgetNode s e
 profileBox xo name =
   vstack

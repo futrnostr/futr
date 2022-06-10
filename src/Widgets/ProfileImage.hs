@@ -236,7 +236,7 @@ data ImageMessage
 
 -- | Creates an image with the given local path or url.
 profileImage :: WidgetEvent e => Maybe Text -> XOnlyPubKey -> WidgetNode s e
-profileImage picture xo = profileImage_ picture xo def
+profileImage picture xo = profileImage_ picture xo [ fitEither ]
 
 -- | Creates an image with the given local path or url. Accepts config.
 profileImage_ :: WidgetEvent e => Maybe Text -> XOnlyPubKey -> [ImageCfg e] -> WidgetNode s e
