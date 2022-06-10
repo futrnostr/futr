@@ -9,8 +9,11 @@ import Control.Monad.STM            (atomically)
 import Crypto.Schnorr
 import Data.DateTime
 import Data.Default
+import Data.Map (Map)
 import Data.Text
 import Monomer
+
+import qualified Data.Map as Map
 
 import Helpers
 import Nostr.Event
@@ -31,10 +34,11 @@ data EditProfileModel =  EditProfileModel
   , _aboutInput       :: About
   , _pictureInput     :: Picture
   , _currentImage     :: Picture
+  , _epProfiles       :: Map XOnlyPubKey (Profile, DateTime)
   } deriving (Eq, Show)
 
 instance Default EditProfileModel where
-  def = EditProfileModel "" "" "" "" ""
+  def = EditProfileModel "" "" "" "" "" Map.empty
 
 data EditProfileEvent
   = SaveProfile
@@ -104,7 +108,7 @@ viewEditProfile (Keys kp xo _ _) wenv model = editView where
     "" ->
       label "Robots lovingly delivered by Robohash.org" `styleBasic` [ textSize 8 ]
     _ ->
-      hstack []
+      filler
   formLabel t = label t `styleBasic` [ width 150 ]
   form = vstack
     [ vstack

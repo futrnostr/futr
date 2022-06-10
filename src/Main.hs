@@ -74,7 +74,10 @@ handleEvent env wenv node model evt =
           & keyMgmtModel . KeyManagement.kmProfiles .~ model ^. profiles
       ]
     AppTypes.GoSetup ->
-      [ Model $ model & currentView .~ SetupView ]
+      [ Model $ model
+          & currentView .~ SetupView
+          & setupModel .~ def
+      ]
     RelaysInitialized rs ->
       [ Model $ model & relays .~ rs ]
     -- keys
@@ -135,6 +138,15 @@ handleEvent env wenv node model evt =
           & editProfileModel . EditProfile.displayNameInput .~ fromMaybe "" displayName
           & editProfileModel . EditProfile.aboutInput .~ fromMaybe "" about
           & editProfileModel . EditProfile.pictureInput .~ fromMaybe "" picture
+          & editProfileModel . EditProfile.epProfiles .~ model ^. profiles
+          & editProfileModel . EditProfile.currentImage .~
+            case Map.lookup xo (model ^. profiles) of
+              Just ((Profile _ _ _ picture), _) ->
+                case picture of
+                  Just p -> p
+                  Nothing -> ""
+              Nothing ->
+                ""
       ]
       where
         Keys _ xo _ _ = model ^. selectedKeys

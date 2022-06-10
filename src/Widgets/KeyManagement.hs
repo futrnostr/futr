@@ -1,23 +1,25 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
 module Widgets.KeyManagement where
 
 import Control.Concurrent.MVar
-import Control.Monad.STM            (atomically)
+import Control.Monad.STM (atomically)
 import Control.Concurrent.STM.TChan
 import Control.Lens
 import Crypto.Schnorr
 import Data.Aeson
 import Data.DateTime
 import Data.Default
-import Data.Map                     (Map)
+import Data.Map (Map)
 import Data.Maybe
-import Data.Text                    (Text, pack)
+import Data.Text (Text, pack)
 import Monomer
 
 import qualified Data.ByteString.Lazy as LazyBytes
-import qualified Data.Map             as Map
+import qualified Data.Map as Map
+import qualified Monomer.Lens as L
 
 import Helpers
 import Nostr.Event
@@ -41,15 +43,18 @@ data KeyManagementModel = KeyManagementModel
   { _keyList         :: [Keys]
   , _backupKeysModel :: BackupKeysModel
   , _kmProfiles       :: Map XOnlyPubKey (Profile, DateTime)
+  , _keysToDelete      :: Maybe Keys
   } deriving (Eq, Show)
 
 instance Default KeyManagementModel where
-  def = KeyManagementModel [] def Map.empty
+  def = KeyManagementModel [] def Map.empty Nothing
 
 data KeyManagementEvent
   = GoSetup
   | BackToHome
   | DeleteKeys Keys
+  | ConfirmDeleteKeys
+  | CancelDeleteKeys
   | MarkAsMainKeys Keys
   | BackupKeys Keys
   | BackupDone
@@ -87,10 +92,15 @@ handleKeyManagementEvent goSetup goHome reportKeys env node model evt = case evt
   BackToHome ->
     [ Report goHome]
   DeleteKeys keys ->
-    [ Model $ model & keyList .~ newKeyList'
+    [ Model $ model & keysToDelete .~ Just keys ]
+  ConfirmDeleteKeys ->
+    [ Model $ model
+        & keyList .~ newKeyList'
+        & keysToDelete .~ Nothing
     , Report $ reportKeys newKeyList'
     ]
     where
+      keys = fromJust $ model ^. keysToDelete
       newKeyList = filter (\k -> k /= keys) (model ^. keyList)
       newKeyList' = case length newKeyList of
         0 -> newKeyList
@@ -100,7 +110,8 @@ handleKeyManagementEvent goSetup goHome reportKeys env node model evt = case evt
           let (Keys pk xo _ name) = firstKeys
           let mainKeys = Keys pk xo True name
           mainKeys : (tail newKeyList)
-
+  CancelDeleteKeys ->
+    [ Model $ model & keysToDelete .~ Nothing ]
   MarkAsMainKeys (Keys kp xo active name) ->
     [ Model $ model & keyList .~ keys' : dk
     , Report $ reportKeys $ keys' : dk
@@ -157,8 +168,13 @@ viewKeyManagement wenv model =
     , spacer
     , hstack [ filler, button "New Account" GoSetup ]
     , spacer
-    , vscroll_ [ scrollOverlay ] keys `styleBasic` [ paddingT 20 ]
-    ] `styleBasic` [ padding 10 ]
+    , zstack
+        [ vscroll_ [ scrollOverlay ] keys `styleBasic` [ paddingT 20 ]
+        , confirmMsg "Are you sure you want to delete this key?" ConfirmDeleteKeys CancelDeleteKeys
+          `nodeVisible` (model ^. keysToDelete /= Nothing)
+          `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
+        ]
+    ]
     where
       keys = vstack keysRows
       keysFade idx k = animRow
