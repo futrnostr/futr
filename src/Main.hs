@@ -93,7 +93,6 @@ handleEvent env wenv node model evt =
     NewKeysCreated ks profile datetime ->
       [ Model $ model
           & keys .~ ks : dk
-          & myProfile .~ profile
           & profiles .~ Map.insert xo (profile, datetime) (model ^. profiles)
           & selectedKeys .~ ks
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
@@ -137,15 +136,11 @@ handleEvent env wenv node model evt =
           & editProfileModel . EditProfile.pictureInput .~ fromMaybe "" picture
       ]
       where
-        Profile name displayName about picture = model ^. myProfile
+        Keys _ xo _ _ = model ^. selectedKeys
+        Profile name displayName about picture = fst $ fromJust $ Map.lookup xo (model ^. profiles)
     ProfileUpdated ks profile datetime ->
       [ Model $ model
           & currentView .~ HomeView
-          & myProfile .~ (
-            if ks `sameKeys` (model ^. selectedKeys)
-              then profile
-              else ( model ^. myProfile )
-            )
           & homeModel . Home.profileImage .~ (
             if ks `sameKeys` (model ^. selectedKeys)
               then fromMaybe "" picture
@@ -176,7 +171,7 @@ handleEvent env wenv node model evt =
         Profile name displayName about picture = profile
         (Keys pk xo active _) = ks
         ks' = Keys pk xo active (Just name)
-        newKeyList = filter (\k -> k `sameKeys` ks) (model ^. keys)
+        newKeyList = filter (\k -> not $ k `sameKeys` ks') (model ^. keys)
 
 loadKeysFromDisk :: IO AppEvent
 loadKeysFromDisk = do

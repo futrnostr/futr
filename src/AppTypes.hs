@@ -66,7 +66,6 @@ data AppModel =
     { _keys              :: [Keys]
     , _profiles          :: Map XOnlyPubKey (Profile, DateTime)
     , _selectedKeys      :: Keys
-    , _myProfile         :: Profile
     , _relays            :: [Relay]
     , _errorMsg          :: Maybe Text
     -- views
@@ -81,7 +80,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Map.empty initialKeys def [] Nothing HomeView def def def def def def
+  def = AppModel [] Map.empty initialKeys [] Nothing HomeView def def def def def def
 
 data AppEvent
   = NoOp
