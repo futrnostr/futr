@@ -59,17 +59,19 @@ removeResponseChannel poolMVar subId = do
   let responseChannels' = Map.delete subId responseChannels
   putMVar poolMVar (RelayPool relays responseChannels')
 
-addRelay :: MVar RelayPool -> Relay -> IO ()
+addRelay :: MVar RelayPool -> Relay -> IO [Relay]
 addRelay poolMVar relay = do
   (RelayPool relays responseChannels) <- takeMVar poolMVar
   let relays' = relay : (filter (\r -> r `sameRelay` relay) relays)
   putMVar poolMVar (RelayPool relays' responseChannels)
+  return relays'
 
-removeRelay :: MVar RelayPool -> Relay -> IO ()
+removeRelay :: MVar RelayPool -> Relay -> IO [Relay]
 removeRelay poolMVar relay = do
   (RelayPool relays responseChannels) <- takeMVar poolMVar
   let relays' = (filter (\r -> r `sameRelay` relay) relays)
   putMVar poolMVar (RelayPool relays' responseChannels)
+  return relays'
 
 subscribe :: MVar RelayPool -> TChan Request -> [Filter] -> TChan Response -> IO SubscriptionId
 subscribe poolMVar input filters responseChannel = do

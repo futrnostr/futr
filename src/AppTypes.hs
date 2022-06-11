@@ -27,8 +27,9 @@ import Nostr.Request (Request, SubscriptionId)
 import Nostr.Response
 import Widgets.BackupKeys
 import Widgets.EditProfile
-import Widgets.KeyManagement
 import Widgets.Home
+import Widgets.KeyManagement
+import Widgets.RelayManagement
 import Widgets.Setup
 
 type AppWenv = WidgetEnv AppModel AppEvent
@@ -47,19 +48,8 @@ data AppView
     | BackupKeysView
     | EditProfileView
     | KeyManagementView
+    | RelayManagementView
     deriving (Eq, Show)
-
-data RelayModel =
-  RelayModel
-    { _relayURI           :: Text
-    , _relayReadableInput :: Bool
-    , _relayWritableInput :: Bool
-    , _isInvalidInput     :: Bool
-    }
-  deriving (Eq, Show)
-
-instance Default RelayModel where
-  def = RelayModel "wss://" True True False
 
 data AppModel =
   AppModel
@@ -76,11 +66,12 @@ data AppModel =
     , _setupModel        :: SetupModel
     , _backupKeysModel   :: BackupKeysModel
     , _keyMgmtModel      :: KeyManagementModel
+    , _relayMgmtModel    :: RelayManagementModel
     }
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Map.empty initialKeys [] Nothing HomeView def def def def def def
+  def = AppModel [] Map.empty initialKeys [] Nothing HomeView def def def def def def def
 
 data AppEvent
   = NoOp
@@ -89,6 +80,7 @@ data AppEvent
   -- go to
   | GoHome
   | GoKeyManagement
+  | GoRelayManagement
   | GoSetup
   -- keys
   | KeyPairsLoaded [Keys]
@@ -102,14 +94,10 @@ data AppEvent
   | DisconnectRelay Relay
   | RelayConnected Relay
   | RelayDisconnected Relay
+  | RelaysUpdated [Relay]
   -- profile
   | EditProfile
   | ProfileUpdated Keys Profile DateTime
-  {-
-  | ValidateAndAddRelay
-  | InvalidRelayURI
-  | AddRelay Relay
-  -}
   -- keys events
 --  | KeysUpdated [Keys]
 --  | KeysSelected (Keys)

@@ -11,7 +11,6 @@ import Data.List (sort)
 import Data.Maybe
 import Data.Text (Text)
 import Monomer
-import Monomer.Widgets.Single
 
 import qualified Data.Map as Map
 import qualified Monomer.Lens as L
@@ -26,11 +25,12 @@ import Nostr.Request
 import UIHelpers
 import Widgets.ProfileImage
 
-import qualified Widgets.BackupKeys    as BackupKeys
-import qualified Widgets.EditProfile   as EditProfile
-import qualified Widgets.Home          as Home
+import qualified Widgets.BackupKeys as BackupKeys
+import qualified Widgets.EditProfile as EditProfile
+import qualified Widgets.Home as Home
 import qualified Widgets.KeyManagement as KeyManagement
-import qualified Widgets.Setup         as Setup
+import qualified Widgets.RelayManagement as RelayManagement
+import qualified Widgets.Setup as Setup
 
 buildUI :: TChan Request -> MVar RelayPool -> AppWenv -> AppModel -> AppNode
 buildUI channel poolMVar wenv model = widgetTree
@@ -61,14 +61,22 @@ buildUI channel poolMVar wenv model = widgetTree
           GoHome
           KeysUpdated
           keyMgmtModel
+      RelayManagementView ->
+        RelayManagement.relayManagementWidget
+          poolMVar
+          GoHome
+          ConnectRelay
+          DisconnectRelay
+          RelaysUpdated
+          relayMgmtModel
     imageButtonStyling =
-      [ padding 3
-      , width 60
-      , height 40
-      , cursorHand
+      [ cursorHand
       , border 1 $ rgbHex "#bae3ff"
-      , radius 4
       , bgColor $ rgbHex "#7e7e7e"
+      , height 40
+      , padding 3
+      , radius 4
+      , width 60
       ]
     headerTree =
       hstack
@@ -76,14 +84,18 @@ buildUI channel poolMVar wenv model = widgetTree
         , filler
         , hstack
             [ box_
-                [ onClick GoKeyManagement ]
-                (tooltip "Key Management" $ image_ "assets/icons/keys-icon.png" [ fitNone, alignCenter, alignMiddle ]
-                )
+                [ onClick GoRelayManagement ] $
+                tooltip "Relay Management" $ image_ "assets/icons/relay-icon.png" [ fitNone, alignCenter, alignMiddle ]
                 `styleBasic` imageButtonStyling
             , spacer
             , box_
-                [ onClick EditProfile ]
-                (tooltip "My Profile" myProfileImage)
+                [ onClick GoKeyManagement ] $
+                tooltip "Key Management" $ image_ "assets/icons/keys-icon.png" [ fitNone, alignCenter, alignMiddle ]
+                `styleBasic` imageButtonStyling
+            , spacer
+            , box_
+                [ onClick EditProfile ] $
+                tooltip "My Profile" myProfileImage
                 `styleBasic` imageButtonStyling
             ] `nodeVisible` (model ^. currentView == HomeView)
         ] `styleBasic` [ paddingR 10, paddingT 10 ]
@@ -94,9 +106,9 @@ buildUI channel poolMVar wenv model = widgetTree
         connections =
           map
             (\r ->
-              box
-                (tooltip (relayName r) (viewCircle r) `styleBasic`
-                [ cursorIcon CursorHand ])
+              box $
+                tooltip (relayName r) (viewCircle r)
+                `styleBasic` [ cursorIcon CursorHand ]
             )
             (sort $ model ^. relays)
         currentKeyInfo = selectableText accountData `styleBasic` [ textSize 12 ]
@@ -142,38 +154,3 @@ errorLayer errorMsg' =
       , radius 10
       , bgColor darkGray
       ]
-
-viewCircle :: Relay -> WidgetNode AppModel AppEvent
-viewCircle r = defaultWidgetNode "circlesGrid" widget
-  where
-    widget =
-      createSingle () def {singleGetSizeReq = getSizeReq, singleRender = render}
-    getSizeReq wenv node = (fixedSize 20, fixedSize 20)
-    render wenv node renderer = do
-      drawCircle renderer vp r
-      where
-        style = currentStyle wenv node
-        vp = getContentArea node style
-
-drawCircle :: Renderer -> Rect -> Relay -> IO ()
-drawCircle renderer vp r = do
-  let offsetX = -3
-  let offsetY = 0
-  let color =
-        if connected r
-          then paleGreen
-          else orange
-  let colorFill = color & L.a .~ 0.3
-  beginPath renderer
-  setStrokeWidth renderer 2
-  setStrokeColor renderer color
-  setFillColor renderer colorFill
-  renderEllipse renderer (rect offsetX offsetY)
-  fill renderer
-  stroke renderer
-  where
-    size = 15
-    rect ox oy = Rect rx ry size size
-      where
-        rx = vp ^. L.x + vp ^. L.w + ox - size
-        ry = vp ^. L.y + oy

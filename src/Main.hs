@@ -33,6 +33,7 @@ import UIHelpers
 import Widgets.BackupKeys as BackupKeys
 import Widgets.EditProfile as EditProfile
 import Widgets.KeyManagement as KeyManagement
+import Widgets.RelayManagement as RelayManagement
 import Widgets.Home as Home
 
 main :: IO ()
@@ -65,6 +66,9 @@ handleEvent env wenv node model evt =
       , Producer createProfileCacheDir
       , Producer $ initRelays env
       ]
+    RelaysInitialized rs ->
+      [ Model $ model & relays .~ rs ]
+    -- go to
     GoHome ->
       [ Model $ model & currentView .~ HomeView ]
     GoKeyManagement ->
@@ -78,9 +82,11 @@ handleEvent env wenv node model evt =
           & currentView .~ SetupView
           & setupModel .~ def
       ]
-    RelaysInitialized rs ->
-      [ Model $ model & relays .~ rs ]
-    -- keys
+    GoRelayManagement ->
+      [ Model $ model
+          & currentView .~ RelayManagementView
+          & relayMgmtModel . RelayManagement.rmRelays .~ model ^. relays
+      ]
     KeyPairsLoaded ks ->
       [ Model $ model
         & keys .~ ks
@@ -130,6 +136,11 @@ handleEvent env wenv node model evt =
         map (\ks -> Task $ loadImportedKeyData (env ^. channel) (env ^. relayPool) ks ProfileUpdated) (model ^. keys)
     RelayDisconnected r ->
       [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
+    AppTypes.RelaysUpdated rs ->
+      [ Model $ model
+          & relays .~ rs
+          & relayMgmtModel . rmRelays .~ rs
+      ]
     -- edit profile
     EditProfile ->
       [ Model $ model

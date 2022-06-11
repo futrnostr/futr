@@ -1,10 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes       #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 module Nostr.Relay where
 
 import Basement.IntegralConv
 import Control.Lens
+import Data.Default
 import Data.Maybe (fromJust)
 import Data.Text (Text, append, pack)
 import Text.URI (URI, render)
@@ -25,6 +27,20 @@ data Relay = Relay
   , connected :: Bool
   }
   deriving (Eq, Show)
+
+data RelayModel =
+  RelayModel
+    { _relayURI           :: Text
+    , _relayReadableInput :: Bool
+    , _relayWritableInput :: Bool
+    , _isInvalidInput     :: Bool
+    }
+  deriving (Eq, Show)
+
+instance Default RelayModel where
+  def = RelayModel "wss://" True True False
+
+makeLenses 'RelayModel
 
 instance Ord Relay where
   compare (Relay r _ _) (Relay r' _ _) = compare r r'
