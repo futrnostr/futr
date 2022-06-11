@@ -54,7 +54,7 @@ data KeyManagementEvent
   | MarkAsMainKeys Keys
   | BackupKeys Keys
   | BackupDone
-  deriving (Eq, Show)
+  deriving Show
 
 makeLenses 'KeyManagementModel
 

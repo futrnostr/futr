@@ -45,7 +45,7 @@ data EditProfileEvent
   | ProfileSaved Keys Profile DateTime
   | LoadImage
   | Back
-  deriving (Eq, Show)
+  deriving Show
 
 makeLenses 'EditProfileModel
 
@@ -75,7 +75,9 @@ handleProfileEvent chan ks profileSaved goHome env node model evt = case evt of
   SaveProfile ->
     [ Task $ saveProfile chan ks model ]
   ProfileSaved keys profile datetime ->
-    [ Report $ profileSaved keys profile datetime ]
+    [ Report $ profileSaved keys profile datetime
+    , Report goHome
+    ]
   LoadImage ->
     [ Model $ model & currentImage .~ model ^. pictureInput ]
   Back ->

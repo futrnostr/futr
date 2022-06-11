@@ -53,7 +53,7 @@ data ProfileEvent
   | Unfollow
   | ViewPostDetails ReceivedEvent
   | ViewProfile XOnlyPubKey
-  deriving (Eq, Show)
+  deriving Show
 
 makeLenses 'ViewProfileModel
 

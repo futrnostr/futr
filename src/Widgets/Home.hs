@@ -56,7 +56,7 @@ data HomeEvent
   = SendPost
   | ViewPostDetails ReceivedEvent
   | ViewProfile XOnlyPubKey
-  deriving (Eq, Show)
+  deriving Show
 
 makeLenses 'HomeModel
 

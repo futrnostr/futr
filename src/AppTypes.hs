@@ -107,6 +107,7 @@ data AppEvent
   -- | InitSubscribed SubscriptionId
   -- | HomeFilterSubscribed SubscriptionId
   -- | EventAppeared Event Relay
+  deriving Show
 
 makeLenses 'AppEnv
 makeLenses 'RelayModel

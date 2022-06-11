@@ -134,10 +134,15 @@ handleEvent env wenv node model evt =
     DisconnectRelay r ->
       [ Task $ disconnectRelay env r ]
     RelayConnected r ->
-      (Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r)) :
-        map (\ks -> Task $ loadImportedKeyData (env ^. channel) (env ^. relayPool) ks ProfileUpdated) (model ^. keys)
+      (Model $ model
+          & relays .~ r : (removeRelayFromList (model ^. relays) r)
+          & relayMgmtModel . rmRelays .~ r : (removeRelayFromList (model ^. relays) r)
+      ) : map (\ks -> Task $ loadImportedKeyData (env ^. channel) (env ^. relayPool) ks ProfileUpdated) (model ^. keys)
     RelayDisconnected r ->
-      [ Model $ model & relays .~ r : (removeRelayFromList (model ^. relays) r) ]
+      [ Model $ model
+          & relays .~ r : (removeRelayFromList (model ^. relays) r)
+          & relayMgmtModel . rmRelays .~ r : (removeRelayFromList (model ^. relays) r)
+      ]
     AppTypes.RelaysUpdated rs ->
       [ Model $ model
           & relays .~ rs
@@ -166,7 +171,6 @@ handleEvent env wenv node model evt =
         Profile name displayName about picture = fst $ fromJust $ Map.lookup xo (model ^. profiles)
     ProfileUpdated ks profile datetime ->
       [ Model $ model
-          & currentView .~ HomeView
           & homeModel . Home.profileImage .~ (
             if ks `sameKeys` (model ^. selectedKeys)
               then fromMaybe "" picture

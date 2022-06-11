@@ -58,7 +58,7 @@ data SetupEvent
   | ImportAccount Keys Profile
   | LoadImage
   | SetupDone Keys Profile DateTime
-  deriving (Eq, Show)
+  deriving Show
 
 makeLenses 'SetupModel
 

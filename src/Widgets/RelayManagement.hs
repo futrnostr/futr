@@ -58,7 +58,7 @@ data RelayManagementEvent
   | SendConnectRelay Relay
   | SendDisconnectRelay Relay
   | SendRelaysUpdated [Relay]
-  deriving (Eq, Show)
+  deriving Show
 
 makeLenses 'RelayManagementModel
 
@@ -123,6 +123,8 @@ viewRelayManagement wenv model = relaysView where
           , label $ relayName relay
           , filler
           , separatorLine
+          , spacer
+          , spacer
           , vstack
               [ filler
               , label rLabel
@@ -130,7 +132,10 @@ viewRelayManagement wenv model = relaysView where
               , label wLabel
               , filler
               ]
+          , spacer
+          , spacer
           , separatorLine
+          , spacer
           , spacer
           , box $ tooltip iconLabel (viewCircle relay) `styleBasic` [ cursorIcon CursorHand ]
           , spacer
@@ -138,13 +143,15 @@ viewRelayManagement wenv model = relaysView where
           `styleBasic`
             [ border 1 $ rgbHex "#bae3ff"
             , radius 4
-            , bgColor $ rgbHex "#7e7e7e"
+            , padding 10
             ]
-      , filler
-      , vstack [ filler, button doConnectLabel doConnect, filler ]
-      , spacer
-      , vstack [ filler, button "Remove" (RemoveRelay relay), filler ]
-      , spacer
+      , hstack
+          [ filler
+          , vstack [ filler, button doConnectLabel doConnect, filler ]
+          , spacer
+          , vstack [ filler, button "Remove" (RemoveRelay relay), filler ]
+          , spacer
+          ] `styleBasic` [ width 250 ]
       ] `styleBasic` [ paddingB 20, height 80 ]
       where
         iconLabel = if connected relay then "Connected" else "Disconnected"

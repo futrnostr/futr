@@ -83,7 +83,8 @@ receiveWs mvarPool sendMsg msgDisconnected relay conn =
       case msg of
         Left ex    -> do
           liftIO $ putStrLn $ "Connection to " ++ (unpack $ relayName relay) ++ " closed"
-          lift $ sendMsg $ msgDisconnected relay
+          let relay' = relay { connected = False }
+          lift $ sendMsg $ msgDisconnected relay'
           mzero
         Right msg' -> do
           case decode msg' of
