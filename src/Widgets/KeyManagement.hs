@@ -166,9 +166,13 @@ viewKeyManagement wenv model =
     , spacer
     , zstack
         [ vscroll_ [ scrollOverlay ] keys `styleBasic` [ paddingT 20 ]
-        , confirmMsg "Are you sure you want to delete this key?" ConfirmDeleteKeys CancelDeleteKeys
-          `nodeVisible` (model ^. keysToDelete /= Nothing)
-          `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
+        , confirmMsg_
+            "Are you sure you want to delete those keys? If you don't have a backup there is no way to get it back."
+            ConfirmDeleteKeys
+            CancelDeleteKeys
+            [ acceptCaption "Delete keys" ]
+            `nodeVisible` (model ^. keysToDelete /= Nothing)
+            `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
         ]
     ]
     where
