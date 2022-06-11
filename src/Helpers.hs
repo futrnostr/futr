@@ -5,7 +5,7 @@ module Helpers where
 import Control.Concurrent.MVar
 import Control.Monad.STM (atomically)
 import Control.Concurrent.STM.TChan
-import Crypto.Schnorr (KeyPair, XOnlyPubKey, decodeHex, exportXOnlyPubKey, secKey, keyPairFromSecKey, xOnlyPubKey)
+import Crypto.Schnorr (KeyPair, XOnlyPubKey, exportXOnlyPubKey)
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.DateTime
@@ -28,9 +28,6 @@ import Nostr.Relay
 import Nostr.RelayPool
 import Nostr.Request
 import Nostr.Response
-
-disableKeys :: [Keys] -> [Keys]
-disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
 
 xTimeAgo :: DateTime -> DateTime -> Text
 xTimeAgo old new
@@ -58,19 +55,6 @@ middleXOnlyPubKey xo = pack
     str = exportXOnlyPubKey xo
     part1 = take 8 str
     part2 = take 8 $ reverse str
-
-initialKeys :: Keys
-initialKeys = Keys kp xo True Nothing where
-  kp = keyPairFromSecKey $ load "fef52b22d4568d9235ebf8a4f35dac54a4e748781441506e133532099dae0ded" secKey
-  xo = load "134bdeaf23fe7078d94b2836dcb748e762073d4bc274a2c188a44a3fc29df31c" xOnlyPubKey
-  load :: String -> (ByteString -> Maybe a) -> a
-  load s f =
-    case decodeHex s of
-      Just bs ->
-        case f bs of
-          Just b -> b
-          _      -> error "failed to load initial keys"
-      Nothing -> error "failed to load initial keys"
 
 loadImportedKeyData
   :: WidgetEvent ep

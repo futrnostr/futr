@@ -9,6 +9,7 @@ import Control.Monad.STM (atomically)
 import Data.Aeson
 import Data.DateTime
 import Data.Default
+import Data.List (sort)
 import Data.Map (Map)
 import Data.Maybe
 import Data.Text (pack)
@@ -89,12 +90,13 @@ handleEvent env wenv node model evt =
       ]
     KeyPairsLoaded ks ->
       [ Model $ model
-        & keys .~ ks
+        & keys .~ verifyActiveKeys ks
         & selectedKeys .~ mk
         & currentView .~ HomeView
+      , Task $ saveKeyPairs ks (verifyActiveKeys ks)
       ]
       where
-        mk = mainKeys ks
+        mk = mainKeys $ verifyActiveKeys ks
         (Keys _ xo _ _) = mk
     NoKeysFound ->
       [ Model $ model & currentView .~ SetupView ]
@@ -108,7 +110,7 @@ handleEvent env wenv node model evt =
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
           & currentView .~ BackupKeysView
           & homeModel . Home.profileImage .~ fromMaybe "" picture
-      , Task $ saveKeyPairs $ ks : dk
+      , Task $ saveKeyPairs (model ^. keys) (ks : dk)
       ]
       where
         dk = disableKeys $ model ^. keys
@@ -123,7 +125,7 @@ handleEvent env wenv node model evt =
           & keys .~ keysList
           & selectedKeys .~
             if null keysList then initialKeys else head $ filter (\(Keys _ _ active _) -> active == True) keysList
-      , Task $ saveKeyPairs keysList
+      , Task $ saveKeyPairs (model ^. keys) keysList
       , if null keysList then Model $ model & currentView .~ SetupView else Monomer.Event NoOp
       ]
     -- relays
@@ -187,9 +189,9 @@ handleEvent env wenv node model evt =
                 Map.insert xo (profile, datetime) (model ^. profiles)
               Just (profile', datetime') ->
                 if datetime > datetime'
-                  then Map.insert xo (profile, datetime) (model ^. profiles)
+                  then Map.insert xo (profile', datetime) (model ^. profiles)
                   else model ^. profiles
-      , Task $ saveKeyPairs $ ks' : newKeyList
+      , Task $ saveKeyPairs (model ^. keys) (ks' : newKeyList)
       ]
       where
         Profile name displayName about picture = profile
@@ -205,11 +207,11 @@ loadKeysFromDisk = do
   else do
     content <- LazyBytes.readFile fp
     case decode content :: Maybe [Keys] of
-      Just [] -> do
+      Just [] ->
         return NoKeysFound
-      Just ks -> do
+      Just ks ->
         return $ KeyPairsLoaded ks
-      _       -> do
+      _       ->
         return ErrorReadingKeysFile
 
 initRelays :: AppEnv -> (AppEvent -> IO ()) -> IO ()
@@ -230,11 +232,14 @@ disconnectRelay env r = if not $ connected r then return NoOp else do
 mainKeys :: [Keys] -> Keys
 mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
 
-saveKeyPairs :: [Keys] -> IO AppEvent
-saveKeyPairs ks = do
-  LazyBytes.writeFile "keys.ft" $ encode ks
-  putStrLn "KeyPairs saved to disk"
-  return NoOp
+saveKeyPairs :: [Keys] -> [Keys] -> IO AppEvent
+saveKeyPairs oldKeys newKeys =
+  if sort oldKeys == sort newKeys
+    then return NoOp
+    else do
+      LazyBytes.writeFile "keys.ft" $ encode newKeys
+      putStrLn "KeyPairs saved to disk"
+      return NoOp
 
 createProfileCacheDir :: (AppEvent -> IO ()) -> IO ()
 createProfileCacheDir _ = do

@@ -40,7 +40,7 @@ buildUI channel poolMVar wenv model = widgetTree
       Nothing ->
         profileImage_ Nothing xo [ fitEither, alignCenter, alignMiddle ]
       Just ((Profile _ _ _ picture), _) ->
-        profileImage_ picture xo [ fitEither, alignCenter, alignMiddle ]
+        profileImage_ (trace (show picture) picture) xo [ fitEither, alignCenter, alignMiddle ]
     baseLayer = case model ^. currentView of
       HomeView ->
         Home.homeWidget channel homeModel

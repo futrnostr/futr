@@ -2,13 +2,14 @@
 
 module Nostr.Keys where
 
-import           Crypto.Schnorr         (KeyPair, SchnorrSig, XOnlyPubKey)
+import           Crypto.Schnorr         (KeyPair, SchnorrSig, XOnlyPubKey, decodeHex, keyPairFromSecKey, secKey, xOnlyPubKey)
 import qualified Crypto.Schnorr         as Schnorr
 import           Data.Aeson
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import           Data.ByteString.Lazy   (toStrict)
+import           Data.List              (length)
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Vector            as V
@@ -95,5 +96,33 @@ textToByteStringType t f = case Schnorr.decodeHex t of
   Just bs -> f bs
   Nothing -> Nothing
 
+initialKeys :: Keys
+initialKeys = Keys kp xo True Nothing where
+  kp = keyPairFromSecKey $ load "fef52b22d4568d9235ebf8a4f35dac54a4e748781441506e133532099dae0ded" secKey
+  xo = load "134bdeaf23fe7078d94b2836dcb748e762073d4bc274a2c188a44a3fc29df31c" xOnlyPubKey
+  load :: String -> (ByteString -> Maybe a) -> a
+  load s f =
+    case decodeHex s of
+      Just bs ->
+        case f bs of
+          Just b -> b
+          _      -> error "failed to load initial keys"
+      Nothing -> error "failed to load initial keys"
+
 sameKeys :: Keys -> Keys -> Bool
 sameKeys (Keys _ xo _ _) (Keys _ xo' _ _) = xo == xo'
+
+verifyActiveKeys :: [Keys] -> [Keys]
+verifyActiveKeys [] = []
+verifyActiveKeys ks =
+  case length filteredActive of
+    0 -> head filteredInactive : (tail $ filteredInactive)
+    1 -> head filteredActive : filteredInactive
+    _ -> head filteredActive : (disabledActive ++ filteredInactive)
+  where
+    filteredActive = filter (\(Keys _ _ active _) -> active == True) ks
+    filteredInactive = filter (\(Keys _ _ active _) -> active /= True) ks
+    disabledActive = disableKeys $ tail filteredActive
+
+disableKeys :: [Keys] -> [Keys]
+disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
