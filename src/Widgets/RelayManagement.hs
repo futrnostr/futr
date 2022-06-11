@@ -122,15 +122,15 @@ viewRelayManagement wenv model = relaysView where
           [ spacer
           , label $ relayName relay
           , filler
+          , separatorLine
           , vstack
               [ filler
-              , separatorLine
               , label rLabel
               , spacer
               , label wLabel
-              , separatorLine
               , filler
               ]
+          , separatorLine
           , spacer
           , box $ tooltip iconLabel (viewCircle relay) `styleBasic` [ cursorIcon CursorHand ]
           , spacer

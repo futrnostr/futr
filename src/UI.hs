@@ -38,9 +38,9 @@ buildUI channel poolMVar wenv model = widgetTree
     Keys _ xo _ name = model ^. selectedKeys
     myProfileImage = case Map.lookup xo (model ^. profiles) of
       Nothing ->
-        profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
+        profileImage_ Nothing xo [ fitEither, alignCenter, alignMiddle ]
       Just ((Profile _ _ _ picture), _) ->
-        profileImage_ picture xo [ fitEither ] `styleBasic` [ width 40, height 40 ]
+        profileImage_ picture xo [ fitEither, alignCenter, alignMiddle ]
     baseLayer = case model ^. currentView of
       HomeView ->
         Home.homeWidget channel homeModel
@@ -95,7 +95,7 @@ buildUI channel poolMVar wenv model = widgetTree
             , spacer
             , box_
                 [ onClick EditProfile ] $
-                tooltip "My Profile" myProfileImage
+                tooltip "Edit Account" $ myProfileImage
                 `styleBasic` imageButtonStyling
             ] `nodeVisible` (model ^. currentView == HomeView)
         ] `styleBasic` [ paddingR 10, paddingT 10 ]
