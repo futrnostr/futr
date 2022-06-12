@@ -112,7 +112,11 @@ handleRelayManagementEvent
   -> [EventResponse RelayManagementModel RelayManagementEvent sp ep]
 handleRelayManagementEvent poolMVar goHome connectRelay disconnectRelay relaysUpdated env node model evt = case evt of
   BackToHome ->
-    [ Report goHome ]
+    [ Model $ model
+        & relayModel .~ def
+        & displayAddRelay .~ False
+    , Report goHome
+    ]
   ValidateAndAddRelay ->
     [ Task $ validateAndAddRelay (model ^. relayModel) ]
   InvalidRelayURI ->
@@ -122,7 +126,11 @@ handleRelayManagementEvent poolMVar goHome connectRelay disconnectRelay relaysUp
   CancelAddRelay ->
     [ Model $ model & displayAddRelay .~ False ]
   AddRelay relay ->
-    [ Producer $ doAddRelay poolMVar relay ]
+    [ Producer $ doAddRelay poolMVar relay
+    , Model $ model
+        & displayAddRelay .~ False
+        & relayModel .~ def
+    ]
   RemoveRelay relay ->
     [ Model $ model & relayToRemove .~ Just relay ]
   ConfirmRemoveRelay ->
@@ -237,31 +245,33 @@ viewRelayManagement wenv model = relaysView where
     , spacer
     , label "coming soon"
     ]
-  relaysView = vstack
-    [ hstack [ button "Back" BackToHome, filler, bigLabel "Relay Management", filler ]
-    , spacer
-    , hstack [ filler, mainButton "Add Relay" DisplayAddRelay ]
-    , spacer
-    , spacer
-    , zstack
-        [ hstack
-            [ vscroll_ [ scrollOverlay ] relays `styleBasic` [ paddingT 20, width 600 ]
-            , spacer
-            , separatorLine
-            , spacer
-            , recommendedRelays
-            ]
-        , confirmMsg_
-            "Are you sure you want to remove this relay?"
-            ConfirmRemoveRelay
-            CancelRemoveRelay
-            [ acceptCaption "Remove Relay" ]
-            `nodeVisible` (model ^. relayToRemove /= Nothing)
-            `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
-        , box_ [ alignCenter, alignMiddle ] (newRelayDialog model)
-            `nodeVisible` (model ^. displayAddRelay == True)
-        ]
-    ]
+  relaysView =
+    zstack
+      [ vstack
+          [ hstack [ button "Back" BackToHome, filler, bigLabel "Relay Management", filler ]
+          , spacer
+          , hstack [ filler, mainButton "Add Relay" DisplayAddRelay ]
+          , spacer
+          , spacer
+          , hstack
+              [ vscroll_ [ scrollOverlay ] relays `styleBasic` [ paddingT 20, width 600 ]
+              , spacer
+              , separatorLine
+              , spacer
+              , recommendedRelays
+              ]
+          ]
+      , confirmMsg_
+          "Are you sure you want to remove this relay?"
+          ConfirmRemoveRelay
+          CancelRemoveRelay
+          [ acceptCaption "Remove Relay" ]
+          `nodeVisible` (model ^. relayToRemove /= Nothing)
+          `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
+      , box_ [ alignCenter, alignMiddle ] (newRelayDialog model)
+          `nodeVisible` (model ^. displayAddRelay == True)
+          `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
+      ]
     where
       relays = vstack relaysRows
       relaysFade idx r = animRow
