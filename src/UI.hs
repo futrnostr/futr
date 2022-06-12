@@ -63,11 +63,10 @@ buildUI channel poolMVar wenv model = widgetTree
           keyMgmtModel
       RelayManagementView ->
         RelayManagement.relayManagementWidget
+          channel
           poolMVar
           GoHome
-          ConnectRelay
-          DisconnectRelay
-          RelaysUpdated
+          AppTypes.RelaysUpdated
           relayMgmtModel
     imageButtonStyling =
       [ cursorHand

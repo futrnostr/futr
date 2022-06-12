@@ -34,8 +34,9 @@ import UIHelpers
 import Widgets.BackupKeys as BackupKeys
 import Widgets.EditProfile as EditProfile
 import Widgets.KeyManagement as KeyManagement
-import Widgets.RelayManagement as RelayManagement
 import Widgets.Home as Home
+
+import qualified Widgets.RelayManagement as RelayManagement
 
 main :: IO ()
 main = do
@@ -131,22 +132,10 @@ handleEvent env wenv node model evt =
     -- relays
     ConnectRelay relay ->
       [ Producer $ connectRelay env relay ]
-    DisconnectRelay r ->
-      [ Task $ disconnectRelay env r ]
-    RelayConnected r ->
-      (Model $ model
-          & relays .~ r : (removeRelayFromList (model ^. relays) r)
-          & relayMgmtModel . rmRelays .~ r : (removeRelayFromList (model ^. relays) r)
-      ) : map (\ks -> Task $ loadImportedKeyData (env ^. channel) (env ^. relayPool) ks ProfileUpdated) (model ^. keys)
-    RelayDisconnected r ->
-      [ Model $ model
-          & relays .~ r : (removeRelayFromList (model ^. relays) r)
-          & relayMgmtModel . rmRelays .~ r : (removeRelayFromList (model ^. relays) r)
-      ]
     AppTypes.RelaysUpdated rs ->
       [ Model $ model
           & relays .~ rs
-          & relayMgmtModel . rmRelays .~ rs
+          & relayMgmtModel . RelayManagement.rmRelays .~ rs
       ]
     -- edit profile
     EditProfile ->
@@ -226,12 +215,7 @@ initRelays env sendMsg = do
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env relay sendMsg =
-  connect (env ^. channel) (env ^. relayPool) sendMsg RelayConnected RelayDisconnected relay
-
-disconnectRelay :: AppEnv -> Relay -> IO AppEvent
-disconnectRelay env r = if not $ connected r then return NoOp else do
-  atomically $ writeTChan (env ^. channel) $ Disconnect r
-  return NoOp
+  connect (env ^. channel) (env ^. relayPool) sendMsg RelaysUpdated relay
 
 mainKeys :: [Keys] -> Keys
 mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks

@@ -2,11 +2,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
+
 module Widgets.RelayManagement where
 
 import Control.Concurrent.MVar
+import Control.Concurrent.STM.TChan
 import Control.Exception
 import Control.Lens
+import Control.Monad.STM (atomically)
 import Crypto.Schnorr
 import Data.DateTime
 import Data.Default
@@ -28,6 +31,7 @@ import Nostr.Keys
 import Nostr.Kind
 import Nostr.Profile
 import Nostr.Relay
+import Nostr.RelayConnection
 import Nostr.RelayPool
 import Nostr.Request
 import Nostr.Response
@@ -72,9 +76,9 @@ data RelayManagementEvent
   | ConfirmRemoveRelay
   | CancelRemoveRelay
   -- connection
-  | SendConnectRelay Relay
-  | SendDisconnectRelay Relay
-  | SendRelaysUpdated [Relay]
+  | ConnectRelay Relay
+  | DisconnectRelay Relay
+  | RelaysUpdated [Relay]
   deriving Show
 
 makeLenses 'RelayModel
@@ -82,80 +86,88 @@ makeLenses 'RelayManagementModel
 
 relayManagementWidget
   :: (WidgetModel sp, WidgetEvent ep)
-  => MVar RelayPool
+  => TChan Request
+  -> MVar RelayPool
   -> ep
-  -> (Relay -> ep)
-  -> (Relay -> ep)
   -> ([Relay] -> ep)
   -> ALens' sp RelayManagementModel
   -> WidgetNode sp ep
-relayManagementWidget poolMVar goHome connectRelay disconnectRelay relaysUpdated model =
+relayManagementWidget channel poolMVar goHome relaysUpdated model =
   composite
     "RelayManagementWidget"
     model
     buildUI
-    (handleRelayManagementEvent poolMVar goHome connectRelay disconnectRelay relaysUpdated)
+    (handleRelayManagementEvent channel poolMVar goHome relaysUpdated)
 
 handleRelayManagementEvent
   :: (WidgetEvent ep)
-  => MVar RelayPool
+  => TChan Request
+  -> MVar RelayPool
   -> ep
-  -> (Relay -> ep)
-  -> (Relay -> ep)
   -> ([Relay] -> ep)
   -> RelayManagementWenv
   -> RelayManagementNode
   -> RelayManagementModel
   -> RelayManagementEvent
   -> [EventResponse RelayManagementModel RelayManagementEvent sp ep]
-handleRelayManagementEvent poolMVar goHome connectRelay disconnectRelay relaysUpdated env node model evt = case evt of
-  BackToHome ->
-    [ Model $ model
-        & relayModel .~ def
-        & displayAddRelay .~ False
-    , Report goHome
-    ]
-  ValidateAndAddRelay ->
-    [ Task $ validateAndAddRelay (model ^. relayModel) ]
-  InvalidRelayURI ->
-    [ Model $ model & relayModel . isInvalidInput .~ True ]
-  DisplayAddRelay ->
-    [ Model $ model & displayAddRelay .~ True ]
-  CancelAddRelay ->
-    [ Model $ model & displayAddRelay .~ False ]
-  AddRelay relay ->
-    [ Producer $ doAddRelay poolMVar relay
-    , Model $ model
-        & displayAddRelay .~ False
-        & relayModel .~ def
-    ]
-  RemoveRelay relay ->
-    [ Model $ model & relayToRemove .~ Just relay ]
-  ConfirmRemoveRelay ->
-    [ Producer $ doRemoveRelay poolMVar (fromJust $ model ^. relayToRemove)
-    , Model $ model & relayToRemove .~ Nothing
-    ]
-  CancelRemoveRelay ->
-    [ Model $ model & relayToRemove .~ Nothing ]
-  SendConnectRelay relay ->
-    [ Report $ connectRelay relay ]
-  SendDisconnectRelay relay ->
-    [ Report $ disconnectRelay relay ]
-  SendRelaysUpdated relays ->
-    [ Report $ relaysUpdated relays ]
+handleRelayManagementEvent channel poolMVar goHome relaysUpdated env node model evt =
+  case evt of
+    BackToHome ->
+      [ Model $ model
+          & relayModel .~ def
+          & displayAddRelay .~ False
+      , Report goHome
+      ]
+    ValidateAndAddRelay ->
+      [ Task $ validateAndAddRelay (model ^. relayModel) ]
+    InvalidRelayURI ->
+      [ Model $ model & relayModel . isInvalidInput .~ True ]
+    DisplayAddRelay ->
+      [ Model $ model & displayAddRelay .~ True ]
+    CancelAddRelay ->
+      [ Model $ model & displayAddRelay .~ False ]
+    AddRelay relay ->
+      [ Producer $ doAddRelay channel poolMVar relay
+      , Model $ model
+          & displayAddRelay .~ False
+          & relayModel .~ def
+      ]
+    RemoveRelay relay ->
+      [ Model $ model & relayToRemove .~ Just relay ]
+    ConfirmRemoveRelay ->
+      [ Producer $ doRemoveRelay channel poolMVar (fromJust $ model ^. relayToRemove)
+      , Model $ model & relayToRemove .~ Nothing
+      ]
+    CancelRemoveRelay ->
+      [ Model $ model & relayToRemove .~ Nothing ]
+    ConnectRelay relay ->
+      [ Producer $ connectRelay channel poolMVar relay ]
+    DisconnectRelay relay ->
+      [ Producer $ disconnectRelay channel relay ]
+    RelaysUpdated relays ->
+      [ Report $ relaysUpdated relays
+      , Model $ model & rmRelays .~ relays
+      ]
 
-doAddRelay :: MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
-doAddRelay poolMVar relay sendMsg = do
+connectRelay :: TChan Request -> MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
+connectRelay channel poolMVar relay sendMsg =
+  connect channel poolMVar sendMsg RelaysUpdated relay
+
+disconnectRelay :: TChan Request -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
+disconnectRelay channel relay _ =
+  atomically $ writeTChan channel $ Disconnect relay
+
+doAddRelay :: TChan Request -> MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
+doAddRelay channel poolMVar relay sendMsg = do
   newRelays <- addRelay poolMVar relay
-  putStrLn $ show newRelays
-  sendMsg $ SendRelaysUpdated newRelays
-  sendMsg $ SendConnectRelay relay
+  sendMsg $ RelaysUpdated newRelays
+  connect channel poolMVar sendMsg RelaysUpdated relay
 
-doRemoveRelay :: MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
-doRemoveRelay poolMVar relay sendMsg = do
-  sendMsg $ SendDisconnectRelay relay
+doRemoveRelay :: TChan Request -> MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
+doRemoveRelay channel poolMVar relay sendMsg = do
+  disconnectRelay channel relay sendMsg
   newRelays <- removeRelay poolMVar relay
-  sendMsg $ SendRelaysUpdated newRelays
+  sendMsg $ RelaysUpdated newRelays
 
 validateAndAddRelay :: RelayModel -> IO RelayManagementEvent
 validateAndAddRelay model = do
@@ -233,7 +245,7 @@ buildUI wenv model = relaysView where
       ] `styleBasic` [ paddingB 20, height 80 ]
       where
         iconLabel = if connected relay then "Disconnect" else "Connected"
-        doConnect = if connected relay then SendDisconnectRelay relay else SendConnectRelay relay
+        doConnect = if connected relay then DisconnectRelay relay else ConnectRelay relay
         doConnectLabel = if connected relay then "Disconnect" else "Connect"
         rLabel = if readable $ info relay then "readable" else "not readable"
         wLabel = if writable $ info relay then "writable" else "not writable"

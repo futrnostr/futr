@@ -40,18 +40,18 @@ connect
   => TChan Request
   -> MVar RelayPool
   -> (e -> IO ())
-  -> (Relay -> e)
-  -> (Relay -> e)
+  -> ([Relay] -> e)
   -> Relay
   -> IO ()
-connect channel relayPool sendMsg msgConnected msgDisconnected relay = do
+connect channel relayPoolMVar sendMsg msgRelaysUpdated relay = do
   putStrLn $ "trying to connect to " ++ (unpack $ relayName relay) ++ " ..."
   start $ \conn -> do
     let relay' = relay { connected = True }
     putStrLn $ "Connected to " ++ (unpack $ relayName relay)
-    sendMsg $ msgConnected relay'
-    receiveWs relayPool sendMsg msgDisconnected relay' conn
-    sendWs channel sendMsg msgDisconnected relay' conn
+    relays <- updateRelayPool relayPoolMVar relay True
+    sendMsg $ msgRelaysUpdated relays
+    receiveWs relayPoolMVar sendMsg msgRelaysUpdated relay' conn
+    sendWs channel relayPoolMVar sendMsg msgRelaysUpdated relay' conn
   where
     host = unpack $ extractHostname relay
     port = extractPort relay
@@ -71,11 +71,11 @@ receiveWs
   :: WidgetEvent e
   => MVar RelayPool
   -> (e -> IO ())
-  -> (Relay -> e)
+  -> ([Relay] -> e)
   -> Relay
   -> WS.Connection
   -> IO ()
-receiveWs mvarPool sendMsg msgDisconnected relay conn =
+receiveWs relayPoolMVar sendMsg msgRelaysUpdated relay conn =
   if not $ readable $ info relay
     then return ()
     else void . forkIO $ void . runMaybeT $ forever $ do
@@ -83,13 +83,13 @@ receiveWs mvarPool sendMsg msgDisconnected relay conn =
       case msg of
         Left ex    -> do
           liftIO $ putStrLn $ "Connection to " ++ (unpack $ relayName relay) ++ " closed"
-          let relay' = relay { connected = False }
-          lift $ sendMsg $ msgDisconnected relay'
+          relays <- liftIO $ updateRelayPool relayPoolMVar relay False
+          lift $ sendMsg $ msgRelaysUpdated relays
           mzero
         Right msg' -> do
           case decode msg' of
             Just (EventReceived subId event) -> do
-              (RelayPool _ handlers) <- lift $ readMVar mvarPool
+              (RelayPool _ handlers) <- lift $ readMVar relayPoolMVar
               case Map.lookup subId handlers of
                 Just responseChannel ->
                   lift $ atomically $ writeTChan responseChannel $ EventReceived subId event
@@ -103,12 +103,13 @@ receiveWs mvarPool sendMsg msgDisconnected relay conn =
 sendWs
   :: WidgetEvent e
   => TChan Request
+  -> MVar RelayPool
   -> (e -> IO ())
-  -> (Relay -> e)
+  -> ([Relay] -> e)
   -> Relay
   -> WS.Connection
   -> IO ()
-sendWs broadcastChannel sendMsg msgDisconnected relay conn =
+sendWs broadcastChannel relayPoolMVar sendMsg msgRelaysUpdated relay conn =
   if not $ writable $ info relay
     then return ()
     else do
@@ -116,7 +117,10 @@ sendWs broadcastChannel sendMsg msgDisconnected relay conn =
       forever $ do
         msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException Request)
         case msg of
-          Left ex -> sendMsg $ msgDisconnected relay
+          Left ex -> do
+            relays <- liftIO $ updateRelayPool relayPoolMVar relay False
+            liftIO $ sendMsg $ msgRelaysUpdated relays
+            mzero
           Right msg' -> case msg' of
             Disconnect relay' ->
               if relay `sameRelay` relay' then do
@@ -124,3 +128,10 @@ sendWs broadcastChannel sendMsg msgDisconnected relay conn =
               else return ()
             _ ->
               WS.sendTextData conn $ encode msg'
+
+updateRelayPool :: MVar RelayPool -> Relay -> Bool -> IO [Relay]
+updateRelayPool relayPoolMVar relay isConnected = do
+  (RelayPool relays responseChannels) <- takeMVar relayPoolMVar
+  let relays' = map (\r -> if r `sameRelay` relay then r { connected = isConnected } else r) relays
+  putMVar relayPoolMVar (RelayPool relays' responseChannels)
+  return relays'

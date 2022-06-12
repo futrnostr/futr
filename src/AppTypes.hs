@@ -91,9 +91,6 @@ data AppEvent
   | KeysUpdated [Keys]
   -- relays
   | ConnectRelay Relay
-  | DisconnectRelay Relay
-  | RelayConnected Relay
-  | RelayDisconnected Relay
   | RelaysUpdated [Relay]
   -- profile
   | EditProfile

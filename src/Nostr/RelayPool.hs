@@ -8,6 +8,7 @@ import Control.Concurrent.STM.TChan
 import Control.Monad.STM (atomically)
 import Crypto.Random.DRBG (CtrDRBG, genBytes, newGen, newGenIO)
 import Data.Default
+import Data.List (sort)
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Typeable (Typeable)
@@ -62,16 +63,14 @@ removeResponseChannel poolMVar subId = do
 addRelay :: MVar RelayPool -> Relay -> IO [Relay]
 addRelay poolMVar relay = do
   (RelayPool relays responseChannels) <- takeMVar poolMVar
-  putStrLn "current relays"
-  putStrLn $ show relays
-  let relays' = relay : (filter (\r -> r `sameRelay` relay) relays)
+  let relays' = sort $ relay : (filter (\r -> not $ r `sameRelay` relay) relays)
   putMVar poolMVar (RelayPool relays' responseChannels)
   return relays'
 
 removeRelay :: MVar RelayPool -> Relay -> IO [Relay]
 removeRelay poolMVar relay = do
   (RelayPool relays responseChannels) <- takeMVar poolMVar
-  let relays' = (filter (\r -> r `sameRelay` relay) relays)
+  let relays' = filter (\r -> not $ r `sameRelay` relay) relays
   putMVar poolMVar (RelayPool relays' responseChannels)
   return relays'
 
