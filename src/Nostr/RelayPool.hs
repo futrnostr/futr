@@ -62,6 +62,8 @@ removeResponseChannel poolMVar subId = do
 addRelay :: MVar RelayPool -> Relay -> IO [Relay]
 addRelay poolMVar relay = do
   (RelayPool relays responseChannels) <- takeMVar poolMVar
+  putStrLn "current relays"
+  putStrLn $ show relays
   let relays' = relay : (filter (\r -> r `sameRelay` relay) relays)
   putMVar poolMVar (RelayPool relays' responseChannels)
   return relays'

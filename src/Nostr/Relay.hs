@@ -28,31 +28,11 @@ data Relay = Relay
   }
   deriving (Eq, Show)
 
-data RelayModel =
-  RelayModel
-    { _relayURI           :: Text
-    , _relayReadableInput :: Bool
-    , _relayWritableInput :: Bool
-    , _isInvalidInput     :: Bool
-    }
-  deriving (Eq, Show)
-
-instance Default RelayModel where
-  def = RelayModel "wss://" True True False
-
-makeLenses 'RelayModel
-
 instance Ord Relay where
   compare (Relay r _ _) (Relay r' _ _) = compare r r'
 
 relayName :: Relay -> Text
 relayName r = render $ uri r
-
-isValidRelayURI :: URI -> Bool
-isValidRelayURI u =
-  case u ^. uriScheme of
-    (Just s) -> if (URI.unRText s) `elem` ["ws", "wss"] then True else False
-    _            -> False
 
 extractScheme :: Relay -> Text
 extractScheme r = URI.unRText scheme

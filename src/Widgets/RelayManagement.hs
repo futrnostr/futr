@@ -5,6 +5,7 @@
 module Widgets.RelayManagement where
 
 import Control.Concurrent.MVar
+import Control.Exception
 import Control.Lens
 import Crypto.Schnorr
 import Data.DateTime
@@ -38,28 +39,47 @@ type RelayManagementWenv = WidgetEnv RelayManagementModel RelayManagementEvent
 
 type RelayManagementNode = WidgetNode RelayManagementModel RelayManagementEvent
 
+data RelayModel =
+  RelayModel
+    { _relayURI           :: Text
+    , _relayReadableInput :: Bool
+    , _relayWritableInput :: Bool
+    , _isInvalidInput     :: Bool
+    }
+  deriving (Eq, Show)
+
+instance Default RelayModel where
+  def = RelayModel "wss://" True True False
+
 data RelayManagementModel = RelayManagementModel
-  { _rmRelays      :: [Relay]
-  , _relayToRemove :: Maybe Relay
-  , _relayModel    :: RelayModel
+  { _rmRelays        :: [Relay]
+  , _relayToRemove   :: Maybe Relay
+  , _relayModel      :: RelayModel
+  , _displayAddRelay :: Bool
   } deriving (Eq, Show)
 
 instance Default RelayManagementModel where
-  def = RelayManagementModel [] Nothing def
+  def = RelayManagementModel [] Nothing def False
 
 data RelayManagementEvent
   = BackToHome
-  | ValidateRelay Relay
+  -- add
+  | DisplayAddRelay
+  | CancelAddRelay
+  | ValidateAndAddRelay
   | InvalidRelayURI
   | AddRelay Relay
+  -- remove
   | RemoveRelay Relay
   | ConfirmRemoveRelay
   | CancelRemoveRelay
+  -- connection
   | SendConnectRelay Relay
   | SendDisconnectRelay Relay
   | SendRelaysUpdated [Relay]
   deriving Show
 
+makeLenses 'RelayModel
 makeLenses 'RelayManagementModel
 
 relayManagementWidget
@@ -93,10 +113,14 @@ handleRelayManagementEvent
 handleRelayManagementEvent poolMVar goHome connectRelay disconnectRelay relaysUpdated env node model evt = case evt of
   BackToHome ->
     [ Report goHome ]
-  ValidateRelay relay ->
-    [ Task $ validateRelay (model ^. relayModel) ]
+  ValidateAndAddRelay ->
+    [ Task $ validateAndAddRelay (model ^. relayModel) ]
   InvalidRelayURI ->
     [ Model $ model & relayModel . isInvalidInput .~ True ]
+  DisplayAddRelay ->
+    [ Model $ model & displayAddRelay .~ True ]
+  CancelAddRelay ->
+    [ Model $ model & displayAddRelay .~ False ]
   AddRelay relay ->
     [ Producer $ doAddRelay poolMVar relay ]
   RemoveRelay relay ->
@@ -113,6 +137,47 @@ handleRelayManagementEvent poolMVar goHome connectRelay disconnectRelay relaysUp
     [ Report $ disconnectRelay relay ]
   SendRelaysUpdated relays ->
     [ Report $ relaysUpdated relays ]
+
+doAddRelay :: MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
+doAddRelay poolMVar relay sendMsg = do
+  newRelays <- addRelay poolMVar relay
+  putStrLn $ show newRelays
+  sendMsg $ SendRelaysUpdated newRelays
+  sendMsg $ SendConnectRelay relay
+
+doRemoveRelay :: MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
+doRemoveRelay poolMVar relay sendMsg = do
+  sendMsg $ SendDisconnectRelay relay
+  newRelays <- removeRelay poolMVar relay
+  sendMsg $ SendRelaysUpdated newRelays
+
+validateAndAddRelay :: RelayModel -> IO RelayManagementEvent
+validateAndAddRelay model = do
+  uriE <- try $ URI.mkURI $ model ^. relayURI :: IO (Either URI.ParseException URI.URI)
+  case uriE of
+    Right uri -> do
+      return $ if isValidRelayURI uri
+        then do
+          let info = RelayInfo (model ^. relayReadableInput) (model ^. relayWritableInput)
+          AddRelay (Relay uri info False)
+        else
+          InvalidRelayURI
+    Left err ->
+      return $ InvalidRelayURI
+
+isValidRelayURI :: URI.URI -> Bool
+isValidRelayURI u =
+  case u ^. uriScheme of
+    (Just s) -> if (URI.unRText s) `elem` ["ws", "wss"]
+      then validateAuthority u
+      else False
+    _        -> False
+
+validateAuthority :: URI.URI -> Bool
+validateAuthority u = host /= "" where
+  host = case u ^. uriAuthority of
+    Right (URI.Authority _ host' _) -> URI.unRText host'
+    _ -> ""
 
 viewRelayManagement :: RelayManagementWenv -> RelayManagementModel -> RelayManagementNode
 viewRelayManagement wenv model = relaysView where
@@ -137,7 +202,21 @@ viewRelayManagement wenv model = relaysView where
           , separatorLine
           , spacer
           , spacer
-          , box $ tooltip iconLabel (viewCircle relay) `styleBasic` [ cursorIcon CursorHand ]
+          , vstack
+              [ filler
+              , box_ [ onClick doConnect ] $ tooltip iconLabel (viewCircle relay)
+                  `styleBasic` [ cursorIcon CursorHand ]
+              , filler
+              ] `styleBasic` [ paddingT 5 ]
+          , spacer
+          , vstack
+              [ filler
+              , box_ [ onClick (RemoveRelay relay) ]
+                  $ tooltip "Remove Relay"
+                  $ icon_ IconClose [ width 2 ]
+                      & L.info . L.style .~ collectTheme wenv L.dialogCloseIconStyle
+              , filler
+              ]
           , spacer
           ]
           `styleBasic`
@@ -145,30 +224,42 @@ viewRelayManagement wenv model = relaysView where
             , radius 4
             , padding 10
             ]
-      , hstack
-          [ filler
-          , vstack [ filler, button doConnectLabel doConnect, filler ]
-          , spacer
-          , vstack [ filler, button "Remove" (RemoveRelay relay), filler ]
-          , spacer
-          ] `styleBasic` [ width 250 ]
       ] `styleBasic` [ paddingB 20, height 80 ]
       where
-        iconLabel = if connected relay then "Connected" else "Disconnected"
+        iconLabel = if connected relay then "Disconnect" else "Connected"
         doConnect = if connected relay then SendDisconnectRelay relay else SendConnectRelay relay
         doConnectLabel = if connected relay then "Disconnect" else "Connect"
         rLabel = if readable $ info relay then "readable" else "not readable"
         wLabel = if writable $ info relay then "writable" else "not writable"
+  recommendedRelays = vstack
+    [ label "Recommended Relays"
+    , spacer
+    , spacer
+    , label "coming soon"
+    ]
   relaysView = vstack
     [ hstack [ button "Back" BackToHome, filler, bigLabel "Relay Management", filler ]
     , spacer
-    , hstack [ filler, button "Add Relay" BackToHome ]
+    , hstack [ filler, mainButton "Add Relay" DisplayAddRelay ]
+    , spacer
     , spacer
     , zstack
-        [ vscroll_ [ scrollOverlay ] relays `styleBasic` [ paddingT 20 ]
-        , confirmMsg "Are you sure you want to remove this relay?" ConfirmRemoveRelay CancelRemoveRelay
-          `nodeVisible` (model ^. relayToRemove /= Nothing)
-          `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
+        [ hstack
+            [ vscroll_ [ scrollOverlay ] relays `styleBasic` [ paddingT 20, width 600 ]
+            , spacer
+            , separatorLine
+            , spacer
+            , recommendedRelays
+            ]
+        , confirmMsg_
+            "Are you sure you want to remove this relay?"
+            ConfirmRemoveRelay
+            CancelRemoveRelay
+            [ acceptCaption "Remove Relay" ]
+            `nodeVisible` (model ^. relayToRemove /= Nothing)
+            `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
+        , box_ [ alignCenter, alignMiddle ] (newRelayDialog model)
+            `nodeVisible` (model ^. displayAddRelay == True)
         ]
     ]
     where
@@ -180,24 +271,38 @@ viewRelayManagement wenv model = relaysView where
             animFadeOut_ [] item `nodeKey` (relayName r)
       relaysRows = zipWith relaysFade [ 0 .. ] (model ^. rmRelays)
 
-doAddRelay :: MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
-doAddRelay poolMVar relay sendMsg = do
-  newRelays <- addRelay poolMVar relay
-  sendMsg $ SendRelaysUpdated newRelays
-  sendMsg $ SendConnectRelay relay
-
-doRemoveRelay :: MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
-doRemoveRelay poolMVar relay sendMsg = do
-  sendMsg $ SendDisconnectRelay relay
-  newRelays <- removeRelay poolMVar relay
-  sendMsg $ SendRelaysUpdated newRelays
-
-validateRelay :: RelayModel -> IO RelayManagementEvent
-validateRelay model = do
-  uri <- URI.mkURI $ model ^. relayURI
-  return $ if isValidRelayURI uri
-    then do
-      let info = RelayInfo (model ^. relayReadableInput) (model ^. relayWritableInput)
-      AddRelay (Relay uri info False)
-    else
-      InvalidRelayURI
+newRelayDialog :: RelayManagementModel -> RelayManagementNode
+newRelayDialog model = vstack
+  [ hstack
+      [ bigLabel "Add New Relay"
+      , filler
+      , box_ [alignTop, onClick CancelAddRelay ] closeIcon
+      ]
+  , spacer
+  , vstack
+      [ hstack
+          [ label "URI"
+          , spacer
+          , textField (relayModel . relayURI) `nodeKey` "relayURI"
+          ]
+      , spacer
+      , hstack
+          [ label "Readable"
+          , spacer
+          , checkbox (relayModel . relayReadableInput) `nodeKey` "relayReadableCheckbox"
+          ]
+      , spacer
+      , hstack
+          [ label "Writable"
+          , spacer
+          , checkbox (relayModel . relayWritableInput) `nodeKey` "relayWriteableCheckbox"
+          ]
+      , filler `nodeVisible` (model ^. relayModel . isInvalidInput)
+      , label "Invalid Relay URI given" `nodeVisible` (model ^. relayModel . isInvalidInput)
+      , filler
+      , button "Add relay" ValidateAndAddRelay
+      ] `styleBasic` [ padding 10 ]
+  ] `styleBasic` [ width 500, height 250, padding 10, radius 10, bgColor darkGray ]
+  where
+    closeIcon = icon IconClose
+      `styleBasic` [ width 16, height 16, fgColor black, cursorHand ]
