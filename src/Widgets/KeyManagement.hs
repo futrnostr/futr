@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
 module Widgets.KeyManagement where
@@ -97,16 +96,13 @@ handleKeyManagementEvent goSetup goHome reportKeys env node model evt = case evt
     , Report $ reportKeys newKeyList'
     ]
     where
-      keys = fromJust $ model ^. keysToDelete
-      newKeyList = filter (\k -> k /= keys) (model ^. keyList)
+      newKeyList = filter (\k -> k /= (fromJust $ model ^. keysToDelete)) (model ^. keyList)
       newKeyList' = case length newKeyList of
         0 -> newKeyList
         1 -> map (\(Keys pk xo _ name) -> Keys pk xo True name) newKeyList
         _ -> do
-          let firstKeys = head newKeyList
-          let (Keys pk xo _ name) = firstKeys
-          let mainKeys = Keys pk xo True name
-          mainKeys : (tail newKeyList)
+          let (Keys pk xo _ name) = head newKeyList
+          Keys pk xo True name : (tail newKeyList)
   CancelDeleteKeys ->
     [ Model $ model & keysToDelete .~ Nothing ]
   MarkAsMainKeys (Keys kp xo active name) ->
@@ -132,6 +128,7 @@ buildUI wenv model =
       picture
     Nothing ->
       Nothing
+
   keysRow idx (Keys pk xo active name) = box $
     hstack
       [ hstack
@@ -160,6 +157,7 @@ buildUI wenv model =
       , vstack [ filler, button "Delete" (DeleteKeys (Keys pk xo active name)), filler ]
       , spacer
       ] `styleBasic` [ paddingB 20, height 80 ]
+
   keyManagementView = vstack
     [ hstack [ button "Back" BackToHome, filler, bigLabel "Key Management", filler ]
     , spacer
