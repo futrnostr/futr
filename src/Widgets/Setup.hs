@@ -73,7 +73,7 @@ setupWidget requestChannel poolMVar reportKeys model =
   composite_
     "SetupWidget"
     model
-    viewSetup
+    buildUI
     (handleSetupEvent requestChannel poolMVar reportKeys)
     [ onInit GenerateKeyPair ]
 
@@ -129,8 +129,8 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
   SetupDone ks profile datetime ->
     [ Report $ reportKeys ks profile datetime ]
 
-viewSetup :: SetupWenv -> SetupModel -> SetupNode
-viewSetup wenv model = setupView where
+buildUI :: SetupWenv -> SetupModel -> SetupNode
+buildUI wenv model = setupView where
   textToMaybe f = if "" == f
     then Nothing
     else Just $ f

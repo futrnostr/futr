@@ -32,8 +32,6 @@ import Nostr.RelayPool
 import Nostr.Request
 import Nostr.Response
 import UIHelpers
-import Widgets.BackupKeys
-import Widgets.ProfileImage
 
 type RelayManagementWenv = WidgetEnv RelayManagementModel RelayManagementEvent
 
@@ -95,7 +93,7 @@ relayManagementWidget poolMVar goHome connectRelay disconnectRelay relaysUpdated
   composite
     "RelayManagementWidget"
     model
-    viewRelayManagement
+    buildUI
     (handleRelayManagementEvent poolMVar goHome connectRelay disconnectRelay relaysUpdated)
 
 handleRelayManagementEvent
@@ -187,8 +185,8 @@ validateAuthority u = host /= "" where
     Right (URI.Authority _ host' _) -> URI.unRText host'
     _ -> ""
 
-viewRelayManagement :: RelayManagementWenv -> RelayManagementModel -> RelayManagementNode
-viewRelayManagement wenv model = relaysView where
+buildUI :: RelayManagementWenv -> RelayManagementModel -> RelayManagementNode
+buildUI wenv model = relaysView where
   relaysRow idx relay = box $
     hstack
       [ hstack

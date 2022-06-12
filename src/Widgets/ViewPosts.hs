@@ -39,9 +39,9 @@ viewPostsWidget
   -> (XOnlyPubKey -> ep)
   -> WidgetNode sp ep
 viewPostsWidget wenv model eventFilter viewDetailsAction viewProfileAction =
-  composite "ViewPostsWidget" model (viewPosts eventFilter viewDetailsAction viewProfileAction) (\_ _ _ e -> [Report e])
+  composite "ViewPostsWidget" model (buildUI eventFilter viewDetailsAction viewProfileAction) (\_ _ _ e -> [Report e])
 
-viewPosts
+buildUI
   :: (WidgetModel sp, WidgetEvent ep)
   => (ReceivedEvent -> Bool)
   -> (ReceivedEvent -> ep)
@@ -49,7 +49,7 @@ viewPosts
   -> WidgetEnv sp ep
   -> ViewPostsModel
   -> WidgetNode sp ep
-viewPosts eventFilter viewDetailsAction viewProfileAction wenv model =
+buildUI eventFilter viewDetailsAction viewProfileAction wenv model =
     vscroll_ [ scrollOverlay ] posts
   where
     posts = vstack postRows

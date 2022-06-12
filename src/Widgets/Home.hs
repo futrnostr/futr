@@ -65,7 +65,7 @@ homeWidget
   => TChan Request
   -> ALens' sp HomeModel
   -> WidgetNode sp ep
-homeWidget chan model = composite "HomeWidget" model viewHome (handleHomeEvent chan)
+homeWidget chan model = composite "HomeWidget" model buildUI (handleHomeEvent chan)
 
 handleHomeEvent
   :: TChan Request
@@ -98,11 +98,11 @@ sendPost chan model _ = do
   let unsigned = textNote (strip $ model ^. noteInput) xo now;
   atomically $ writeTChan chan $ SendEvent $ signEvent unsigned kp xo
 
-viewHome
+buildUI
   :: HomeWenv
   -> HomeModel
   -> HomeNode
-viewHome wenv model = widgetTree
+buildUI wenv model = widgetTree
   where
     widgetTree =
       vstack

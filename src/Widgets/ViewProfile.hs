@@ -26,9 +26,9 @@ import Nostr.Keys
 import Nostr.Kind
 import Nostr.Request
 import UIHelpers
-import Widgets.ViewPosts
 
 import qualified Nostr.Profile as Profile
+import qualified Widgets.ViewPosts as ViewPosts
 
 type ViewProfileWenv = WidgetEnv ViewProfileModel ProfileEvent
 
@@ -42,7 +42,7 @@ data ViewProfileModel = ViewProfileModel
   , _pictureUrl       :: Text
   , _nip05Identifier  :: Text
   , _following        :: Map.Map XOnlyPubKey [Profile.Profile]
-  , _viewPostsModel   :: ViewPostsModel
+  , _viewPostsModel   :: ViewPosts.ViewPostsModel
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
@@ -114,7 +114,7 @@ viewProfileWidget chan keys viewPostDetailsAction viewProfileAction model =
   composite
     "ViewProfileWidget"
     model
-    viewProfile
+    buildUI
     (handleProfileEvent chan keys viewPostDetailsAction viewProfileAction)
 
 --follow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
@@ -144,11 +144,11 @@ viewProfileWidget chan keys viewPostDetailsAction viewProfileAction model =
 --    oldFollowing = Map.findWithDefault [] xo' (model ^. following)
 --    newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= oldFollow) oldFollowing
 
-viewProfile
+buildUI
   :: ViewProfileWenv
   -> ViewProfileModel
   -> ViewProfileNode
-viewProfile wenv model =
+buildUI wenv model =
   vstack
     [ hstack
         [ vstack
@@ -161,7 +161,7 @@ viewProfile wenv model =
         ]
     , spacer
     , label "Recent posts"  `styleBasic` [ paddingB 10, paddingT 15, borderB 1 rowSepColor ]
-    , viewPostsWidget
+    , ViewPosts.viewPostsWidget
         wenv
         viewPostsModel
         (\re -> kind (fst re) == TextNote && NE.pubKey (fst re) == xo')

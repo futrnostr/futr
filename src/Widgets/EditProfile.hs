@@ -58,7 +58,7 @@ editProfileWidget
   -> ALens' sp EditProfileModel
   -> WidgetNode sp ep
 editProfileWidget chan keys profileSaved goHome field =
-  composite "editProfileWidget" field (viewEditProfile keys) (handleProfileEvent chan keys profileSaved goHome)
+  composite "editProfileWidget" field (buildUI keys) (handleProfileEvent chan keys profileSaved goHome)
 
 handleProfileEvent
   :: (WidgetEvent ep)
@@ -99,8 +99,8 @@ saveProfile requestChannel (Keys kp xo active name) model = do
     picture = strip $ model ^. pictureInput
     profile = Profile name (Just displayName) (Just about) (Just picture)
 
-viewEditProfile :: Keys -> EditProfileWenv -> EditProfileModel -> EditProfileNode
-viewEditProfile (Keys kp xo _ _) wenv model = editView where
+buildUI :: Keys -> EditProfileWenv -> EditProfileModel -> EditProfileNode
+buildUI (Keys kp xo _ _) wenv model = editView where
   myProfileImage = case model ^. currentImage of
     "" ->
       profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 300, height 300 ]

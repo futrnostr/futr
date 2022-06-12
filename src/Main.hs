@@ -41,7 +41,7 @@ main :: IO ()
 main = do
   channel <- atomically newBroadcastTChan
   poolMVar <- newMVar def
-  startApp def (handleEvent $ AppEnv channel poolMVar) (buildUI channel poolMVar) config
+  startApp def (handleEvent $ AppEnv channel poolMVar) (UI.buildUI channel poolMVar) config
   where
     config =
       [ appWindowTitle "FuTr"

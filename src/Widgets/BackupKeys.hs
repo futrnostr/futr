@@ -32,16 +32,16 @@ backupKeysWidget done model =
   composite
     "BackupKeysWidget"
     model
-    (viewBackupKeys done)
+    (buildUI done)
     (\_ _ _ e -> [Report e])
 
-viewBackupKeys
+buildUI
   :: (WidgetModel sp, WidgetEvent ep)
   => ep
   -> WidgetEnv sp ep
   -> BackupKeysModel
   -> WidgetNode sp ep
-viewBackupKeys done wenv model =
+buildUI done wenv model =
   vstack
     [ hstack
         [ filler

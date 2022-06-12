@@ -28,8 +28,9 @@ import Nostr.RelayPool
 import Nostr.Request
 import Nostr.Response
 import UIHelpers
-import Widgets.BackupKeys
 import Widgets.ProfileImage
+
+import qualified Widgets.BackupKeys as BackupKeys
 
 type KeyManagementWenv = WidgetEnv KeyManagementModel KeyManagementEvent
 
@@ -37,7 +38,7 @@ type KeyManagementNode = WidgetNode KeyManagementModel KeyManagementEvent
 
 data KeyManagementModel = KeyManagementModel
   { _keyList         :: [Keys]
-  , _backupKeysModel :: BackupKeysModel
+  , _backupKeysModel :: BackupKeys.BackupKeysModel
   , _kmProfiles       :: Map XOnlyPubKey (Profile, DateTime)
   , _keysToDelete      :: Maybe Keys
   } deriving (Eq, Show)
@@ -69,7 +70,7 @@ keyManagementWidget goSetup goHome reportKeys model =
   composite
     "KeyManagementWidget"
     model
-    viewKeyManagement
+    buildUI
     (handleKeyManagementEvent goSetup goHome reportKeys)
 
 handleKeyManagementEvent
@@ -116,15 +117,15 @@ handleKeyManagementEvent goSetup goHome reportKeys env node model evt = case evt
       keys' = Keys kp xo True name
       dk = disableKeys $ filter (\(Keys _ xo' _ _) -> xo' /= xo) $ model ^. keyList
   BackupKeys keys ->
-    [ Model $ model & backupKeysModel . backupKeys .~ keys ]
+    [ Model $ model & backupKeysModel . BackupKeys.backupKeys .~ keys ]
   BackupDone ->
-    [ Model $ model & backupKeysModel . backupKeys .~ initialKeys ]
+    [ Model $ model & backupKeysModel . BackupKeys.backupKeys .~ initialKeys ]
 
-viewKeyManagement :: KeyManagementWenv -> KeyManagementModel -> KeyManagementNode
-viewKeyManagement wenv model =
-  if (model ^. backupKeysModel . backupKeys) == initialKeys
+buildUI :: KeyManagementWenv -> KeyManagementModel -> KeyManagementNode
+buildUI wenv model =
+  if (model ^. backupKeysModel . BackupKeys.backupKeys) == initialKeys
     then keyManagementView
-    else backupKeysWidget BackupDone (backupKeysModel)
+    else BackupKeys.backupKeysWidget BackupDone (backupKeysModel)
   where
   pictureUrl xo = case Map.lookup xo (model ^. kmProfiles) of
     Just ((Profile _ _ _ picture), _) ->
