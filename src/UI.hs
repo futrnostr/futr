@@ -79,7 +79,7 @@ buildUI channel poolMVar wenv model = widgetTree
       ]
     headerTree =
       hstack
-        [ bigLabel "FuTr - nostr client" `styleBasic` [ padding 10 ]
+        [ bigLabel "futr - nostr client" `styleBasic` [ padding 10 ]
         , filler
         , hstack
             [ box_

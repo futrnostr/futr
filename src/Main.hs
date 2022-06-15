@@ -46,7 +46,7 @@ main = do
   startApp def (handleEvent $ AppEnv channel poolMVar) (UI.buildUI channel poolMVar) config
   where
     config =
-      [ appWindowTitle "FuTr"
+      [ appWindowTitle "futr - nostr client"
       , appTheme customDarkTheme
       , appFontDef "Regular" "./assets/fonts/Roboto-Regular.ttf"
       , appFontDef "Bold" "./assets/fonts/Roboto-Bold.ttf"
