@@ -12,6 +12,7 @@ import Data.Aeson
 import Data.Default
 import Data.Maybe (fromJust)
 import Data.Text (Text, append, pack)
+import GHC.Exts (fromList)
 import GHC.Generics
 import Text.URI (URI, mkURI, render)
 import Text.URI.Lens
@@ -23,14 +24,14 @@ data RelayInfo = RelayInfo
   { readable  :: Bool
   , writable  :: Bool
   }
-  deriving (Eq, Show, Generic, ToJSON, FromJSON)
+  deriving (Eq, Show, Generic, FromJSON, ToJSON)
 
 data Relay = Relay
   { uri       :: URI
   , info      :: RelayInfo
   , connected :: Bool
   }
-  deriving (Eq, Show, Generic, ToJSON, FromJSON)
+  deriving (Eq, Show)
 
 instance FromJSON URI where
   parseJSON = withText "RelayURI" $ \u -> do
@@ -43,6 +44,18 @@ instance ToJSON URI where
 
 instance Ord Relay where
   compare (Relay r _ _) (Relay r' _ _) = compare r r'
+
+instance FromJSON Relay where
+  parseJSON = withObject "Relay" $ \r -> do
+    uri'  <- r .: "uri"
+    info' <- r .: "info"
+    return $ Relay uri' info' False
+
+instance ToJSON Relay where
+  toJSON r = object $ fromList
+    [ ( "uri", String $ render $ uri r)
+    , ( "info", toJSON $ info r)
+    ]
 
 defaultRelays :: [Relay]
 defaultRelays =
