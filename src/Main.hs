@@ -41,7 +41,8 @@ import qualified Widgets.RelayManagement as RelayManagement
 main :: IO ()
 main = do
   channel <- atomically newBroadcastTChan
-  poolMVar <- newMVar def
+  relays <- loadRelaysFromDisk
+  poolMVar <- newMVar $ RelayPool relays Map.empty
   startApp def (handleEvent $ AppEnv channel poolMVar) (UI.buildUI channel poolMVar) config
   where
     config =
@@ -146,18 +147,15 @@ handleEvent env wenv node model evt =
           & editProfileModel . EditProfile.aboutInput .~ fromMaybe "" about
           & editProfileModel . EditProfile.pictureInput .~ fromMaybe "" picture
           & editProfileModel . EditProfile.epProfiles .~ model ^. profiles
-          & editProfileModel . EditProfile.currentImage .~
-            case Map.lookup xo (model ^. profiles) of
-              Just ((Profile _ _ _ picture), _) ->
-                case picture of
-                  Just p -> p
-                  Nothing -> ""
-              Nothing ->
-                ""
+          & editProfileModel . EditProfile.currentImage .~ fromMaybe "" pic
       ]
       where
         Keys _ xo _ _ = model ^. selectedKeys
         Profile name displayName about picture = fst $ fromJust $ Map.lookup xo (model ^. profiles)
+        pic = do
+          ((Profile _ _ _ picture), _) <- Map.lookup xo (model ^. profiles)
+          p <- picture
+          return p
     ProfileUpdated ks profile datetime ->
       [ Model $ model
           & homeModel . Home.profileImage .~ (
@@ -206,6 +204,21 @@ loadKeysFromDisk = do
         return $ KeyPairsLoaded ks
       _       ->
         return ErrorReadingKeysFile
+
+loadRelaysFromDisk :: IO [Relay]
+loadRelaysFromDisk = do
+  let fp = "relays.ft"
+  fe <- doesFileExist fp
+  if not fe then return defaultRelays
+  else do
+    content <- LazyBytes.readFile fp
+    case decode content :: Maybe [Relay] of
+      Just [] ->
+        return defaultRelays
+      Just relays ->
+        return relays
+      _       ->
+        return defaultRelays
 
 initRelays :: AppEnv -> (AppEvent -> IO ()) -> IO ()
 initRelays env sendMsg = do

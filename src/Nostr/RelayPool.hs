@@ -7,6 +7,7 @@ import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Monad.STM (atomically)
 import Crypto.Random.DRBG (CtrDRBG, genBytes, newGen, newGenIO)
+import Data.Aeson (encode)
 import Data.Default
 import Data.List (sort)
 import Data.Map (Map)
@@ -16,6 +17,7 @@ import Monomer
 import Wuss
 
 import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString.Lazy as LazyBytes
 import qualified Data.Map as Map
 import qualified Text.URI.QQ as QQ
 
@@ -26,27 +28,6 @@ import Nostr.Request
 import Nostr.Response
 
 data RelayPool = RelayPool [Relay] (Map SubscriptionId (TChan Response))
-
-instance Default RelayPool where
-  def =
-    RelayPool
-      [
-      --   Relay
-      --   { host = "nostr-pub.wellorder.net"
-      --   , port = 443
-      --   , secure = True
-      --   , readable = True
-      --   , writable = True
-      --   , connected = False
-      --   }
-      -- ,
-        Relay
-        { uri = [QQ.uri|ws://localhost:2700|]
-        , info = RelayInfo True True
-        , connected = False
-        }
-      ]
-      Map.empty
 
 registerResponseChannel :: MVar RelayPool -> SubscriptionId -> TChan Response -> IO ()
 registerResponseChannel poolMVar subId responseChannel = do
@@ -65,6 +46,8 @@ addRelay poolMVar relay = do
   (RelayPool relays responseChannels) <- takeMVar poolMVar
   let relays' = sort $ relay : (filter (\r -> not $ r `sameRelay` relay) relays)
   putMVar poolMVar (RelayPool relays' responseChannels)
+  LazyBytes.writeFile "relays.ft" $ encode relays'
+  putStrLn "Relays saved to disk"
   return relays'
 
 removeRelay :: MVar RelayPool -> Relay -> IO [Relay]
@@ -72,6 +55,8 @@ removeRelay poolMVar relay = do
   (RelayPool relays responseChannels) <- takeMVar poolMVar
   let relays' = filter (\r -> not $ r `sameRelay` relay) relays
   putMVar poolMVar (RelayPool relays' responseChannels)
+  LazyBytes.writeFile "relays.ft" $ encode relays'
+  putStrLn "Relays saved to disk"
   return relays'
 
 subscribe :: MVar RelayPool -> TChan Request -> [Filter] -> TChan Response -> IO SubscriptionId

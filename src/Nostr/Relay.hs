@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE TemplateHaskell   #-}
@@ -6,10 +8,12 @@ module Nostr.Relay where
 
 import Basement.IntegralConv
 import Control.Lens
+import Data.Aeson
 import Data.Default
 import Data.Maybe (fromJust)
 import Data.Text (Text, append, pack)
-import Text.URI (URI, render)
+import GHC.Generics
+import Text.URI (URI, mkURI, render)
 import Text.URI.Lens
 
 import qualified Text.URI as URI
@@ -19,17 +23,45 @@ data RelayInfo = RelayInfo
   { readable  :: Bool
   , writable  :: Bool
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, ToJSON, FromJSON)
 
 data Relay = Relay
   { uri       :: URI
   , info      :: RelayInfo
   , connected :: Bool
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, ToJSON, FromJSON)
+
+instance FromJSON URI where
+  parseJSON = withText "RelayURI" $ \u -> do
+    case mkURI u of
+      Just u' -> return u'
+      Nothing -> fail "invalid relay URI"
+
+instance ToJSON URI where
+  toJSON u = String $ render u
 
 instance Ord Relay where
   compare (Relay r _ _) (Relay r' _ _) = compare r r'
+
+defaultRelays :: [Relay]
+defaultRelays =
+  [
+  --   Relay
+  --   { host = "nostr-pub.wellorder.net"
+  --   , port = 443
+  --   , secure = True
+  --   , readable = True
+  --   , writable = True
+  --   , connected = False
+  --   }
+  -- ,
+    Relay
+    { uri = [QQ.uri|ws://localhost:2700|]
+    , info = RelayInfo True True
+    , connected = False
+    }
+  ]
 
 relayName :: Relay -> Text
 relayName r = render $ uri r
