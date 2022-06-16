@@ -94,6 +94,7 @@ handleEvent env wenv node model evt =
       [ Model $ model
         & keys .~ verifyActiveKeys ks
         & selectedKeys .~ mk
+        & homeModel . myKeys .~ mk
         & currentView .~ HomeView
       , Task $ saveKeyPairs ks (verifyActiveKeys ks)
       ]
@@ -109,6 +110,7 @@ handleEvent env wenv node model evt =
           & keys .~ ks : dk
           & profiles .~ Map.insert xo (profile, datetime) (model ^. profiles)
           & selectedKeys .~ ks
+          & homeModel . myKeys .~ ks
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
           & currentView .~ BackupKeysView
           & homeModel . Home.profileImage .~ fromMaybe "" picture
@@ -125,11 +127,13 @@ handleEvent env wenv node model evt =
     KeysUpdated keysList ->
       [ Model $ model
           & keys .~ keysList
-          & selectedKeys .~
-            if null keysList then initialKeys else head $ filter (\(Keys _ _ active _) -> active == True) keysList
+          & selectedKeys .~ ks
+          & homeModel . myKeys .~ ks
       , Task $ saveKeyPairs (model ^. keys) keysList
       , if null keysList then Model $ model & currentView .~ SetupView else Monomer.Event NoOp
       ]
+      where
+        ks = if null keysList then initialKeys else head $ filter (\(Keys _ _ active _) -> active == True) keysList
     -- relays
     ConnectRelay relay ->
       [ Producer $ connectRelay env relay ]
@@ -165,6 +169,11 @@ handleEvent env wenv node model evt =
             )
           & keys .~ ks' : newKeyList
           & selectedKeys .~ (
+            if ks `sameKeys` (model ^. selectedKeys)
+              then ks'
+              else (model ^. selectedKeys)
+            )
+          & homeModel . myKeys .~ (
             if ks `sameKeys` (model ^. selectedKeys)
               then ks'
               else (model ^. selectedKeys)

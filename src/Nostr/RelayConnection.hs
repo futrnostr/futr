@@ -80,6 +80,8 @@ receiveWs relayPoolMVar sendMsg msgRelaysUpdated relay conn =
     then return ()
     else void . forkIO $ void . runMaybeT $ forever $ do
       msg <- lift (Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString))
+      liftIO $ putStrLn "msg received"
+      liftIO $ putStrLn $ show msg
       case msg of
         Left ex    -> do
           liftIO $ putStrLn $ "Connection to " ++ (unpack $ relayName relay) ++ " closed"
@@ -116,6 +118,8 @@ sendWs broadcastChannel relayPoolMVar sendMsg msgRelaysUpdated relay conn =
       channel <- atomically $ dupTChan broadcastChannel
       forever $ do
         msg <- Exception.try $ liftIO . atomically $ readTChan channel :: IO (Either WS.ConnectionException Request)
+        liftIO $ putStrLn "send msg"
+        liftIO $ putStrLn $ show msg
         case msg of
           Left ex -> do
             relays <- liftIO $ updateRelayPool relayPoolMVar relay False

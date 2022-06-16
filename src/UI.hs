@@ -43,7 +43,7 @@ buildUI channel poolMVar wenv model = widgetTree
         profileImage_ picture xo [ fitEither, alignCenter, alignMiddle ]
     baseLayer = case model ^. currentView of
       HomeView ->
-        Home.homeWidget channel homeModel
+        Home.homeWidget channel poolMVar homeModel
       SetupView ->
         Setup.setupWidget channel poolMVar NewKeysCreated setupModel
       BackupKeysView ->

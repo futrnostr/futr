@@ -4,6 +4,7 @@
 module Widgets.Home where
 
 import Control.Concurrent           (forkIO, threadDelay)
+import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Lens
 import Control.Monad                (forever, void)
@@ -13,6 +14,7 @@ import Data.Aeson
 import Data.DateTime
 import Data.Default
 import Data.List                    (find, sortBy)
+import Data.Map (Map)
 import Data.Maybe
 import Data.Text                    (Text, strip)
 import Data.Text.Encoding           (encodeUtf8)
@@ -27,8 +29,11 @@ import Nostr.Keys
 import Nostr.Kind
 import Nostr.Profile
 import Nostr.Relay
+import Nostr.RelayPool
 import Nostr.Request
+import Nostr.Response
 
+import qualified Data.Map as Map
 import qualified Widgets.EditProfile  as EditProfile
 import qualified Widgets.ViewPosts    as ViewPosts
 
@@ -41,7 +46,7 @@ data HomeModel = HomeModel
   , _profileImage     :: Text
   , _time             :: DateTime
   , _events           :: [ReceivedEvent]
-  , _contacts         :: [Profile]
+  , _contacts         :: Map XOnlyPubKey (Profile, DateTime)
   , _noteInput        :: Text
   , _isInitialized    :: Bool
   , _homeSub          :: SubscriptionId
@@ -50,10 +55,14 @@ data HomeModel = HomeModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel initialKeys "" (fromSeconds 0) [] [] "" False "" "" def
+  def = HomeModel initialKeys "" (fromSeconds 0) [] Map.empty "" False "" "" def
 
 data HomeEvent
-  = SendPost
+  -- subscriptions
+  = LoadContacts
+  | ContactsLoaded (Map XOnlyPubKey (Profile, DateTime))
+  -- actions
+  | SendPost
   | ViewPostDetails ReceivedEvent
   | ViewProfile XOnlyPubKey
   deriving Show
@@ -63,18 +72,24 @@ makeLenses 'HomeModel
 homeWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan Request
+  -> MVar RelayPool
   -> ALens' sp HomeModel
   -> WidgetNode sp ep
-homeWidget chan model = composite "HomeWidget" model buildUI (handleHomeEvent chan)
+homeWidget chan poolMVar model = composite_ "HomeWidget" model buildUI (handleHomeEvent chan poolMVar) [ onInit LoadContacts ]
 
 handleHomeEvent
   :: TChan Request
+  -> MVar RelayPool
   -> HomeWenv
   -> HomeNode
   -> HomeModel
   -> HomeEvent
   -> [EventResponse HomeModel HomeEvent sp ep]
-handleHomeEvent chan env node model evt = case evt of
+handleHomeEvent chan poolMVar env node model evt = case evt of
+  LoadContacts ->
+    [ Producer $ loadContacts chan poolMVar model ]
+  ContactsLoaded cs ->
+    [ Model $ model & contacts .~ cs ]
   SendPost ->
     [ Model $ model
         & noteInput .~ ""
@@ -84,6 +99,35 @@ handleHomeEvent chan env node model evt = case evt of
     []
   ViewProfile xo ->
     []
+
+loadContacts :: TChan Request -> MVar RelayPool -> HomeModel -> (HomeEvent -> IO ()) -> IO ()
+loadContacts requestChannel poolMVar model sendMsg = do
+  hasActiveConnections <- hasActiveConnections poolMVar
+  if not $ hasActiveConnections
+    then do
+      putStrLn "waiting for active relay connection..."
+      threadDelay 1000000
+      sendMsg $ LoadContacts
+    else do
+      responseChannel <- atomically newTChan
+      subId <- subscribe poolMVar requestChannel [ ContactsFilter [ xo ] ] responseChannel
+      response <- atomically $ readTChan responseChannel
+      case response of
+        (EventReceived _ event) -> do
+          case kind event of
+            Contacts -> do
+              unsubscribe poolMVar requestChannel subId
+              let contacts = Map.fromList $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
+              sendMsg $ ContactsLoaded contacts
+            _ -> error "Unexpected event kind received when loading contacts"
+        _ ->
+          error "Unexpected response received when loading contacts"
+  where
+    (Keys _ xo _ _) = model ^. myKeys
+
+tagToProfile :: DateTime -> Tag -> Maybe (XOnlyPubKey, (Profile, DateTime))
+tagToProfile datetime (PTag (ValidXOnlyPubKey xo) _ name) = Just (xo,  ( Profile (fromMaybe "" name) Nothing Nothing Nothing, datetime))
+tagToProfile _ _ = Nothing
 
 --addContact :: [Profile] -> Event -> [Profile]
 --addContact profiles e = profiles ++ newProfiles

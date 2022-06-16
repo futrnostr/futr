@@ -76,3 +76,9 @@ unsubscribe poolMVar channel subId = do
 send :: TChan Request -> Request -> IO ()
 send channel request =
   atomically $ writeTChan channel $ request
+
+hasActiveConnections :: MVar RelayPool -> IO Bool
+hasActiveConnections poolMVar = do
+  (RelayPool relays responseChannels) <- readMVar poolMVar
+  let relays' = filter connected relays
+  return $ length relays' > 0

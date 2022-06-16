@@ -4,6 +4,7 @@
 module Widgets.Setup where
 
 import Control.Concurrent.MVar
+import Control.Monad.STM (atomically)
 import Control.Concurrent.STM.TChan
 import Control.Lens
 import Crypto.Schnorr
@@ -92,7 +93,7 @@ handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case ev
     [ Model $ model
       & keys .~ ks
       & imported .~ True
-    , Task $ loadImportedKeyData requestChannel poolMVar ks SecKeyImported
+    , Task $ loadImportedKeyData requestChannel poolMVar ks
     ]
     where
       kp =
@@ -236,3 +237,27 @@ importAccount requestChannel keys profile = do
   now <- getCurrentTime
   send requestChannel $ SendEvent $ signEvent (setMetadata profile xo now) kp xo
   return $ SetupDone (Keys kp xo True (Just name)) profile now
+
+loadImportedKeyData
+  :: TChan Request
+  -> MVar RelayPool
+  -> Keys
+  -> IO SetupEvent
+loadImportedKeyData requestChannel poolMVar keys = do
+  let (Keys kp xo _ _) = keys
+  responseChannel <- atomically newTChan
+  subId <- subscribe poolMVar requestChannel [LoadMetadataFilter xo] responseChannel
+  response <- atomically $ readTChan responseChannel
+  case response of
+    (EventReceived _ event) -> do
+      case kind event of
+        Metadata -> do
+          unsubscribe poolMVar requestChannel subId
+          case readProfile event of
+            Just profile -> do
+              return $ SecKeyImported keys profile (created_at event)
+            Nothing ->
+              return $ SecKeyImported keys (Profile "" Nothing Nothing Nothing) (created_at event)
+        _ -> error "Unexpected event kind received when loading key data"
+    _ ->
+      error "Unexpected response received when loading key data"
