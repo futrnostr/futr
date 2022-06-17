@@ -142,6 +142,12 @@ buildUI channel poolMVar wenv model = widgetTree
             , label "Waiting for relay connections to become available..."
             , filler
             ]
+        , spacer
+        , hstack
+            [ filler
+            , label "Check your internet connection or try to reconnect manually in the Relay Management"
+            , filler
+            ]
         , filler
         ]
 
