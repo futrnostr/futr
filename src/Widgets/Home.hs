@@ -152,9 +152,9 @@ initSubscriptions request pool (Keys _ xo _ _) contacts sendMsg = do
             case parseProfiles event of
               Just p -> sendMsg $ ContactsReceived [ p ]
               Nothing -> return ()
-          _ -> putStrLn "Unexpected event kind received when loading contacts" -- @todo handle differently
+          _ -> putStrLn "Unexpected event kind received" -- @todo handle differently
 
-      _ -> mzero
+      _ -> putStrLn "Unexpected data received" -- @todo handle differently
     where
       initialFilters = [ MetadataFilter contacts, TextNoteFilter contacts ]
       parseProfiles e = case readProfile e of
