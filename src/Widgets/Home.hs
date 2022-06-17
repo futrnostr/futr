@@ -44,7 +44,6 @@ type HomeNode = WidgetNode HomeModel HomeEvent
 data HomeModel = HomeModel
   { _myKeys           :: Keys
   , _profileImage     :: Text
-  , _time             :: DateTime
   , _events           :: [ReceivedEvent]
   , _contacts         :: Map XOnlyPubKey (Profile, DateTime)
   , _noteInput        :: Text
@@ -54,7 +53,7 @@ data HomeModel = HomeModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel initialKeys "" (fromSeconds 0) [] Map.empty "" "" "" def
+  def = HomeModel initialKeys "" [] Map.empty "" "" "" def
 
 data HomeEvent
   -- subscriptions

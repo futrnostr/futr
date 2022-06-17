@@ -2,9 +2,11 @@
 
 module Main where
 
+import Control.Concurrent (forkIO, threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Lens
+import Control.Monad (forever, void)
 import Control.Monad.STM (atomically)
 import Data.Aeson
 import Data.DateTime
@@ -31,12 +33,13 @@ import Nostr.RelayPool
 import Nostr.Request  as Request
 import UI
 import UIHelpers
-import Widgets.BackupKeys as BackupKeys
-import Widgets.EditProfile as EditProfile
-import Widgets.KeyManagement as KeyManagement
-import Widgets.Home as Home
 
+import qualified Widgets.BackupKeys as BackupKeys
+import qualified Widgets.EditProfile as EditProfile
+import qualified Widgets.KeyManagement as KeyManagement
+import qualified Widgets.Home as Home
 import qualified Widgets.RelayManagement as RelayManagement
+import qualified Widgets.ViewPosts as ViewPosts
 
 main :: IO ()
 main = do
@@ -68,12 +71,15 @@ handleEvent env wenv node model evt =
       [ Task loadKeysFromDisk
       , Producer createProfileCacheDir
       , Producer $ initRelays $ env ^. relayPool
+      , Producer $ timerLoop
       ]
     RelaysInitialized rs ->
       [ Model $ model
           & relays .~ rs
           & waitingForConns .~ not (or (map connected rs))
       ]
+    TimerTick now ->
+      [ Model $ model & homeModel . Home.viewPostsModel . ViewPosts.time .~ now ]
     -- go to
     GoHome ->
       [ Model $ model & currentView .~ HomeView ]
@@ -97,7 +103,7 @@ handleEvent env wenv node model evt =
       [ Model $ model
         & keys .~ verifyActiveKeys ks
         & selectedKeys .~ mk
-        & homeModel . myKeys .~ mk
+        & homeModel . Home.myKeys .~ mk
         & currentView .~ HomeView
       , Task $ saveKeyPairs ks (verifyActiveKeys ks)
       ]
@@ -113,7 +119,7 @@ handleEvent env wenv node model evt =
           & keys .~ ks : dk
           & profiles .~ Map.insert xo (profile, datetime) (model ^. profiles)
           & selectedKeys .~ ks
-          & homeModel . myKeys .~ ks
+          & homeModel . Home.myKeys .~ ks
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
           & currentView .~ BackupKeysView
           & homeModel . Home.profileImage .~ fromMaybe "" picture
@@ -131,7 +137,7 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & keys .~ keysList
           & selectedKeys .~ ks
-          & homeModel . myKeys .~ ks
+          & homeModel . Home.myKeys .~ ks
       , Task $ saveKeyPairs (model ^. keys) keysList
       , if null keysList then Model $ model & currentView .~ SetupView else Monomer.Event NoOp
       ]
@@ -169,7 +175,7 @@ handleEvent env wenv node model evt =
           & homeModel . Home.profileImage .~ (
             if ks `sameKeys` (model ^. selectedKeys)
               then fromMaybe "" picture
-              else model ^. homeModel.profileImage
+              else model ^. homeModel . Home.profileImage
             )
           & keys .~ ks' : newKeyList
           & selectedKeys .~ (
@@ -177,7 +183,7 @@ handleEvent env wenv node model evt =
               then ks'
               else (model ^. selectedKeys)
             )
-          & homeModel . myKeys .~ (
+          & homeModel . Home.myKeys .~ (
             if ks `sameKeys` (model ^. selectedKeys)
               then ks'
               else (model ^. selectedKeys)
@@ -263,3 +269,9 @@ createProfileCacheDir _ = do
   if dirExists
     then return ()
     else createDirectory "profiles"
+
+timerLoop :: (AppEvent -> IO ()) -> IO ()
+timerLoop sendMsg = void . forkIO $ void $ forever $ do
+  now <- getCurrentTime
+  sendMsg $ TimerTick now
+  threadDelay 1000000

@@ -78,6 +78,7 @@ data AppEvent
   = NoOp
   | AppInit
   | RelaysInitialized [Relay]
+  | TimerTick DateTime
   -- go to
   | GoHome
   | GoKeyManagement
