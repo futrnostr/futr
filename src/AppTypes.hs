@@ -58,6 +58,7 @@ data AppModel =
     , _selectedKeys      :: Keys
     , _relays            :: [Relay]
     , _errorMsg          :: Maybe Text
+    , _waitingForConns   :: Bool
     -- views
     , _currentView       :: AppView
     , _editProfileModel  :: EditProfileModel
@@ -71,7 +72,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Map.empty initialKeys [] Nothing HomeView def def def def def def def
+  def = AppModel [] Map.empty initialKeys [] Nothing True HomeView def def def def def def def
 
 data AppEvent
   = NoOp

@@ -43,15 +43,15 @@ connect
   -> ([Relay] -> e)
   -> Relay
   -> IO ()
-connect channel relayPoolMVar sendMsg msgRelaysUpdated relay = do
+connect channel pool sendMsg msgRelaysUpdated relay = do
   putStrLn $ "trying to connect to " ++ (unpack $ relayName relay) ++ " ..."
   start $ \conn -> do
     let relay' = relay { connected = True }
     putStrLn $ "Connected to " ++ (unpack $ relayName relay)
-    relays <- updateRelayPool relayPoolMVar relay True
+    relays <- updateRelayPool pool relay True
     sendMsg $ msgRelaysUpdated relays
-    receiveWs relayPoolMVar sendMsg msgRelaysUpdated relay' conn
-    sendWs channel relayPoolMVar sendMsg msgRelaysUpdated relay' conn
+    receiveWs pool sendMsg msgRelaysUpdated relay' conn
+    sendWs channel pool sendMsg msgRelaysUpdated relay' conn
   where
     host = unpack $ extractHostname relay
     port = extractPort relay
@@ -75,7 +75,7 @@ receiveWs
   -> Relay
   -> WS.Connection
   -> IO ()
-receiveWs relayPoolMVar sendMsg msgRelaysUpdated relay conn =
+receiveWs pool sendMsg msgRelaysUpdated relay conn =
   if not $ readable $ info relay
     then return ()
     else void . forkIO $ void . runMaybeT $ forever $ do
@@ -85,20 +85,24 @@ receiveWs relayPoolMVar sendMsg msgRelaysUpdated relay conn =
       case msg of
         Left ex    -> do
           liftIO $ putStrLn $ "Connection to " ++ (unpack $ relayName relay) ++ " closed"
-          relays <- liftIO $ updateRelayPool relayPoolMVar relay False
+          relays <- liftIO $ updateRelayPool pool relay False
           lift $ sendMsg $ msgRelaysUpdated relays
           mzero
         Right msg' -> do
           case decode msg' of
             Just (EventReceived subId event) -> do
-              (RelayPool _ handlers) <- lift $ readMVar relayPoolMVar
+              (RelayPool _ handlers) <- lift $ readMVar pool
               case Map.lookup subId handlers of
                 Just responseChannel ->
                   lift $ atomically $ writeTChan responseChannel $ EventReceived subId event
                 Nothing ->
                   lift $ putStrLn $ "No event handler found for subscription " ++ unpack subId
-            Just (Notice notice) ->
+            Just (Notice notice) -> do
               lift $ putStrLn $ "Notice: " ++ unpack notice
+              (RelayPool _ handlers) <- lift $ readMVar pool
+              mapM_
+                (\responseChannel -> lift $ atomically $ writeTChan responseChannel $ Notice notice)
+                (Map.elems handlers)
             Nothing -> do
               lift $ putStrLn $ "Could not decode server response: " ++ show msg'
 
@@ -107,11 +111,11 @@ sendWs
   => TChan Request
   -> MVar RelayPool
   -> (e -> IO ())
-  -> ([Relay] -> e)
+  -> ([Relay] -> e) -- @todo add msg to send when all relays disconnected
   -> Relay
   -> WS.Connection
   -> IO ()
-sendWs broadcastChannel relayPoolMVar sendMsg msgRelaysUpdated relay conn =
+sendWs broadcastChannel pool sendMsg msgRelaysUpdated relay conn =
   if not $ writable $ info relay
     then return ()
     else do
@@ -122,7 +126,7 @@ sendWs broadcastChannel relayPoolMVar sendMsg msgRelaysUpdated relay conn =
         liftIO $ putStrLn $ show msg
         case msg of
           Left ex -> do
-            relays <- liftIO $ updateRelayPool relayPoolMVar relay False
+            relays <- liftIO $ updateRelayPool pool relay False
             liftIO $ sendMsg $ msgRelaysUpdated relays
             mzero
           Right msg' -> case msg' of
@@ -134,8 +138,8 @@ sendWs broadcastChannel relayPoolMVar sendMsg msgRelaysUpdated relay conn =
               WS.sendTextData conn $ encode msg'
 
 updateRelayPool :: MVar RelayPool -> Relay -> Bool -> IO [Relay]
-updateRelayPool relayPoolMVar relay isConnected = do
-  (RelayPool relays responseChannels) <- takeMVar relayPoolMVar
+updateRelayPool pool relay isConnected = do
+  (RelayPool relays responseChannels) <- takeMVar pool
   let relays' = map (\r -> if r `sameRelay` relay then r { connected = isConnected } else r) relays
-  putMVar relayPoolMVar (RelayPool relays' responseChannels)
+  putMVar pool (RelayPool relays' responseChannels)
   return relays'

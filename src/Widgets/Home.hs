@@ -7,7 +7,7 @@ import Control.Concurrent           (forkIO, threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Lens
-import Control.Monad                (forever, void)
+import Control.Monad                (forever, mzero, void)
 import Control.Monad.STM            (atomically)
 import Crypto.Schnorr               (XOnlyPubKey)
 import Data.Aeson
@@ -48,18 +48,17 @@ data HomeModel = HomeModel
   , _events           :: [ReceivedEvent]
   , _contacts         :: Map XOnlyPubKey (Profile, DateTime)
   , _noteInput        :: Text
-  , _isInitialized    :: Bool
   , _homeSub          :: SubscriptionId
   , _initSub          :: SubscriptionId
   , _viewPostsModel   :: ViewPosts.ViewPostsModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel initialKeys "" (fromSeconds 0) [] Map.empty "" False "" "" def
+  def = HomeModel initialKeys "" (fromSeconds 0) [] Map.empty "" "" "" def
 
 data HomeEvent
   -- subscriptions
-  = LoadContacts
+  = LoadContacts -- @todo: add waiting for relay connection loading indicator
   | ContactsLoaded (Map XOnlyPubKey (Profile, DateTime))
   -- actions
   | SendPost
@@ -75,7 +74,7 @@ homeWidget
   -> MVar RelayPool
   -> ALens' sp HomeModel
   -> WidgetNode sp ep
-homeWidget chan poolMVar model = composite_ "HomeWidget" model buildUI (handleHomeEvent chan poolMVar) [ onInit LoadContacts ]
+homeWidget channel pool model = composite_ "HomeWidget" model buildUI (handleHomeEvent channel pool) [ onInit LoadContacts ]
 
 handleHomeEvent
   :: TChan Request
@@ -85,43 +84,56 @@ handleHomeEvent
   -> HomeModel
   -> HomeEvent
   -> [EventResponse HomeModel HomeEvent sp ep]
-handleHomeEvent chan poolMVar env node model evt = case evt of
+handleHomeEvent channel pool env node model evt = case evt of
   LoadContacts ->
-    [ Producer $ loadContacts chan poolMVar model ]
+    [ Producer $ loadContacts channel pool model ]
   ContactsLoaded cs ->
-    [ Model $ model & contacts .~ cs ]
+    [ Model $ model & contacts .~ cs
+    , Producer $ initSubscriptions channel pool model
+    ]
   SendPost ->
     [ Model $ model
         & noteInput .~ ""
-    , Producer $ sendPost chan model
+    , Producer $ sendPost channel model
     ]
   ViewPostDetails re ->
     []
   ViewProfile xo ->
     []
 
+initSubscriptions :: TChan Request -> MVar RelayPool -> HomeModel -> (HomeEvent -> IO ()) -> IO ()
+initSubscriptions request pool model sendMsg = do
+  response <- atomically newTChan
+  subId <- subscribe pool request response initialFilters
+  void . forkIO $ void . forever $ do
+    msg <- atomically $ readTChan response
+    case msg of
+      (EventReceived _ event) -> do
+        case kind event of
+          Contacts -> do
+            let contacts = Map.fromList $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
+            return ()
+          _ -> putStrLn "Unexpected event kind received when loading contacts" -- @todo handle differently
+
+      _ -> mzero
+    where
+      (Keys _ xo _ _) = model ^. myKeys
+      initialFilters = [ ContactsFilter [ xo ] ] -- @todo update this list
+
 loadContacts :: TChan Request -> MVar RelayPool -> HomeModel -> (HomeEvent -> IO ()) -> IO ()
-loadContacts requestChannel poolMVar model sendMsg = do
-  hasActiveConnections <- hasActiveConnections poolMVar
-  if not $ hasActiveConnections
-    then do
-      putStrLn "waiting for active relay connection..."
-      threadDelay 1000000
-      sendMsg $ LoadContacts
-    else do
-      responseChannel <- atomically newTChan
-      subId <- subscribe poolMVar requestChannel [ ContactsFilter [ xo ] ] responseChannel
-      response <- atomically $ readTChan responseChannel
-      case response of
-        (EventReceived _ event) -> do
-          case kind event of
-            Contacts -> do
-              unsubscribe poolMVar requestChannel subId
-              let contacts = Map.fromList $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
-              sendMsg $ ContactsLoaded contacts
-            _ -> error "Unexpected event kind received when loading contacts"
-        _ ->
-          error "Unexpected response received when loading contacts"
+loadContacts request pool model sendMsg = do
+  response <- atomically newTChan
+  subId <- subscribe pool request response [ ContactsFilter [ xo ] ]
+  msg <- atomically $ readTChan response
+  case msg of
+    (EventReceived _ event) -> do
+      case kind event of
+        Contacts -> do
+          unsubscribe pool request subId
+          let contacts = Map.fromList $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
+          sendMsg $ ContactsLoaded contacts
+        _ -> putStrLn "Unexpected event kind received when loading contacts" -- @todo handle differently
+    _ -> mzero
   where
     (Keys _ xo _ _) = model ^. myKeys
 
@@ -136,11 +148,11 @@ tagToProfile _ _ = Nothing
 --    newProfiles' = filter (\p -> not $ p `elem` profiles)
 
 sendPost :: TChan Request -> HomeModel -> (HomeEvent -> IO ()) -> IO ()
-sendPost chan model _ = do
+sendPost channel model _ = do
   now <- getCurrentTime
   let (Keys kp xo _ _) = model ^. myKeys
   let unsigned = textNote (strip $ model ^. noteInput) xo now;
-  atomically $ writeTChan chan $ SendEvent $ signEvent unsigned kp xo
+  atomically $ writeTChan channel $ SendEvent $ signEvent unsigned kp xo
 
 buildUI
   :: HomeWenv

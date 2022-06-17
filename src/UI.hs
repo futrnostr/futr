@@ -43,9 +43,13 @@ buildUI channel poolMVar wenv model = widgetTree
         profileImage_ picture xo [ fitEither, alignCenter, alignMiddle ]
     baseLayer = case model ^. currentView of
       HomeView ->
-        Home.homeWidget channel poolMVar homeModel
+        if model ^. waitingForConns
+          then waitingForConnectionsTree
+          else Home.homeWidget channel poolMVar homeModel
       SetupView ->
-        Setup.setupWidget channel poolMVar NewKeysCreated setupModel
+        if model ^. waitingForConns
+          then waitingForConnectionsTree
+          else Setup.setupWidget channel poolMVar NewKeysCreated setupModel
       BackupKeysView ->
         BackupKeys.backupKeysWidget KeysBackupDone backupKeysModel
       EditProfileView ->
@@ -93,7 +97,7 @@ buildUI channel poolMVar wenv model = widgetTree
                 `styleBasic` imageButtonStyling
             , spacer
             , box_
-                [ onClick EditProfile ] $
+                [ onClick $ if model ^. waitingForConns then NoOp else EditProfile ] $
                 tooltip "Edit Account" $ myProfileImage
                 `styleBasic` imageButtonStyling
             ] `nodeVisible` (model ^. currentView == HomeView)
@@ -129,6 +133,16 @@ buildUI channel poolMVar wenv model = widgetTree
         , box_ [ alignCenter, alignMiddle ] (errorLayer $ model ^. errorMsg)
           `nodeVisible` (model ^. errorMsg /= Nothing)
           `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
+        ]
+    waitingForConnectionsTree =
+      vstack
+        [ filler
+        , hstack
+            [ filler
+            , label "Waiting for relay connections to become available..."
+            , filler
+            ]
+        , filler
         ]
 
 errorLayer :: Maybe Text -> AppNode

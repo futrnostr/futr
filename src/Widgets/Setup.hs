@@ -243,16 +243,16 @@ loadImportedKeyData
   -> MVar RelayPool
   -> Keys
   -> IO SetupEvent
-loadImportedKeyData requestChannel poolMVar keys = do
+loadImportedKeyData request pool keys = do
   let (Keys kp xo _ _) = keys
-  responseChannel <- atomically newTChan
-  subId <- subscribe poolMVar requestChannel [LoadMetadataFilter xo] responseChannel
-  response <- atomically $ readTChan responseChannel
-  case response of
+  response <- atomically newTChan
+  subId <- subscribe pool request response [LoadMetadataFilter xo]
+  msg <- atomically $ readTChan response
+  case msg of
     (EventReceived _ event) -> do
       case kind event of
         Metadata -> do
-          unsubscribe poolMVar requestChannel subId
+          unsubscribe pool request subId
           case readProfile event of
             Just profile -> do
               return $ SecKeyImported keys profile (created_at event)

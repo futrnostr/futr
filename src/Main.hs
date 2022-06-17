@@ -67,10 +67,13 @@ handleEvent env wenv node model evt =
     AppInit ->
       [ Task loadKeysFromDisk
       , Producer createProfileCacheDir
-      , Producer $ initRelays env
+      , Producer $ initRelays $ env ^. relayPool
       ]
     RelaysInitialized rs ->
-      [ Model $ model & relays .~ rs ]
+      [ Model $ model
+          & relays .~ rs
+          & waitingForConns .~ not (or (map connected rs))
+      ]
     -- go to
     GoHome ->
       [ Model $ model & currentView .~ HomeView ]
@@ -141,6 +144,7 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & relays .~ rs
           & relayMgmtModel . RelayManagement.rmRelays .~ rs
+          & waitingForConns .~ not (or (map connected rs))
       ]
     -- edit profile
     EditProfile ->
@@ -155,7 +159,7 @@ handleEvent env wenv node model evt =
       ]
       where
         Keys _ xo _ _ = model ^. selectedKeys
-        Profile name displayName about picture = fst $ fromJust $ Map.lookup xo (model ^. profiles)
+        Profile name displayName about picture = fst $ fromMaybe (def, fromSeconds 0) $ Map.lookup xo (model ^. profiles)
         pic = do
           ((Profile _ _ _ picture), _) <- Map.lookup xo (model ^. profiles)
           p <- picture
@@ -229,11 +233,13 @@ loadRelaysFromDisk = do
       _       ->
         return defaultRelays
 
-initRelays :: AppEnv -> (AppEvent -> IO ()) -> IO ()
-initRelays env sendMsg = do
-  (RelayPool relays _) <- readMVar $ env ^. relayPool
+initRelays :: MVar RelayPool -> (AppEvent -> IO ()) -> IO ()
+initRelays pool sendMsg = do
+  (RelayPool relays _) <- readMVar pool
   mapM_ (\relay -> sendMsg $ ConnectRelay relay) relays
-  sendMsg $ RelaysInitialized relays
+  waitForActiveConnections  pool (3 * (10 ^ 6)) -- wait 3 secs to get some initial connections
+  (RelayPool relays' _) <- readMVar pool
+  sendMsg $ RelaysInitialized relays'
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
 connectRelay env relay sendMsg =

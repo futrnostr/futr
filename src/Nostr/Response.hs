@@ -14,17 +14,19 @@ import Nostr.Request
 data Response
   = EventReceived SubscriptionId Event
   | Notice Text
+  | Closed SubscriptionId
   deriving (Eq, Show)
 
 instance FromJSON Response where
   parseJSON = withArray "ServerResponse" $ \arr -> do
-    t <- parseJSON $ arr V.! 0
-    s <- parseJSON $ arr V.! 1
-    case t of
+    type' <- parseJSON $ arr V.! 0
+    param <- parseJSON $ arr V.! 1
+    case type' of
       String "EVENT"  -> do
-        e <- parseJSON $ arr V.! 2
-        return $ EventReceived s e
-      String "NOTICE" ->
-        return $ Notice s
+        event <- parseJSON $ arr V.! 2
+        return $ EventReceived param event
+      String "NOTICE" -> return $ Notice param
+      String "CLOSE" -> return $ Closed param
       _ ->
         mzero
+

@@ -3,6 +3,7 @@
 
 module Nostr.RelayPool where
 
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Monad.STM (atomically)
@@ -59,13 +60,13 @@ removeRelay poolMVar relay = do
   putStrLn "Relays saved to disk"
   return relays'
 
-subscribe :: MVar RelayPool -> TChan Request -> [Filter] -> TChan Response -> IO SubscriptionId
-subscribe poolMVar input filters responseChannel = do
+subscribe :: MVar RelayPool -> TChan Request -> TChan Response -> [Filter] -> IO SubscriptionId
+subscribe poolMVar request response filters = do
   gen <- newGenIO :: IO CtrDRBG
   let Right (randomBytes, newGen) = genBytes 16 gen
   let subId = B16.encodeBase16 randomBytes
-  registerResponseChannel poolMVar subId responseChannel
-  send input $ Subscribe $ Subscription filters subId
+  registerResponseChannel poolMVar subId response
+  send request $ Subscribe $ Subscription filters subId
   return subId
 
 unsubscribe :: MVar RelayPool -> TChan Request -> SubscriptionId -> IO ()
@@ -77,8 +78,11 @@ send :: TChan Request -> Request -> IO ()
 send channel request =
   atomically $ writeTChan channel $ request
 
-hasActiveConnections :: MVar RelayPool -> IO Bool
-hasActiveConnections poolMVar = do
-  (RelayPool relays responseChannels) <- readMVar poolMVar
-  let relays' = filter connected relays
-  return $ length relays' > 0
+waitForActiveConnections :: MVar RelayPool -> Int -> IO ()
+waitForActiveConnections pool timeout = do
+  (RelayPool relays responseChannels) <- readMVar pool
+  if and (map connected relays) || timeout <= 0
+    then return ()
+    else do
+      threadDelay 100000
+      waitForActiveConnections pool (timeout - 100000)
