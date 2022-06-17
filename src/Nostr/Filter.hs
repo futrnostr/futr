@@ -14,25 +14,18 @@ import Nostr.Kind
 import Nostr.Profile
 
 data Filter
-  = LoadMetadataFilter XOnlyPubKey
---  | InitialFilter XOnlyPubKey
+  = MetadataFilter [XOnlyPubKey]
   | ContactsFilter [XOnlyPubKey]
   | TextNoteFilter [XOnlyPubKey]
   deriving (Eq, Show)
 
 instance ToJSON Filter where
-  toJSON (LoadMetadataFilter xo) =
+  toJSON (MetadataFilter xos) =
     object $ fromList
       [ ( "kinds", toJSON [ Metadata ] )
-      , ( "authors", toJSON [ xo ] )
+      , ( "authors", toJSON xos )
       , ( "limit", Number 1 )
       ]
---  toJSON (InitialFilter xo) =
---    object $ fromList
---      [ ( "kinds", toJSON [ Contacts, Metadata] )
---      , ( "authors", toJSON [ xo ] )
---      , ( "limit", Number 2 )
---      ]
   toJSON (ContactsFilter xos) =
     object $ fromList
       [ ( "kinds", toJSON [ Contacts ] )

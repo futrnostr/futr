@@ -244,12 +244,11 @@ loadImportedKeyData
   -> Keys
   -> IO SetupEvent
 loadImportedKeyData request pool keys = do
-  let (Keys kp xo _ _) = keys
   response <- atomically newTChan
-  subId <- subscribe pool request response [LoadMetadataFilter xo]
+  subId <- subscribe pool request response [ MetadataFilter [ xo ] ]
   msg <- atomically $ readTChan response
   case msg of
-    (EventReceived _ event) -> do
+    (EventReceived _ event, _) -> do
       case kind event of
         Metadata -> do
           unsubscribe pool request subId
@@ -261,3 +260,5 @@ loadImportedKeyData request pool keys = do
         _ -> error "Unexpected event kind received when loading key data"
     _ ->
       error "Unexpected response received when loading key data"
+  where
+    (Keys kp xo _ _) = keys

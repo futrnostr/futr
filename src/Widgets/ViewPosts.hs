@@ -20,8 +20,8 @@ import Nostr.Profile
 import UIHelpers
 
 data ViewPostsModel = ViewPostsModel
-  { _time             :: DateTime
-  , _contacts         :: [Profile]
+  { _time     :: DateTime
+  , _contacts :: [Profile]
   , _events   :: [ReceivedEvent]
   } deriving (Eq, Show)
 

@@ -28,9 +28,9 @@ import Nostr.Relay
 import Nostr.Request
 import Nostr.Response
 
-data RelayPool = RelayPool [Relay] (Map SubscriptionId (TChan Response))
+data RelayPool = RelayPool [Relay] (Map SubscriptionId (TChan (Response, Relay)))
 
-registerResponseChannel :: MVar RelayPool -> SubscriptionId -> TChan Response -> IO ()
+registerResponseChannel :: MVar RelayPool -> SubscriptionId -> TChan (Response, Relay) -> IO ()
 registerResponseChannel poolMVar subId responseChannel = do
   (RelayPool relays responseChannels) <- takeMVar poolMVar
   let responseChannels' = Map.insert subId responseChannel responseChannels
@@ -60,7 +60,7 @@ removeRelay poolMVar relay = do
   putStrLn "Relays saved to disk"
   return relays'
 
-subscribe :: MVar RelayPool -> TChan Request -> TChan Response -> [Filter] -> IO SubscriptionId
+subscribe :: MVar RelayPool -> TChan Request -> TChan (Response, Relay) -> [Filter] -> IO SubscriptionId
 subscribe poolMVar request response filters = do
   gen <- newGenIO :: IO CtrDRBG
   let Right (randomBytes, newGen) = genBytes 16 gen

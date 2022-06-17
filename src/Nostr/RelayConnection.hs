@@ -94,14 +94,14 @@ receiveWs pool sendMsg msgRelaysUpdated relay conn =
               (RelayPool _ handlers) <- lift $ readMVar pool
               case Map.lookup subId handlers of
                 Just responseChannel ->
-                  lift $ atomically $ writeTChan responseChannel $ EventReceived subId event
+                  lift $ atomically $ writeTChan responseChannel $ (EventReceived subId event, relay)
                 Nothing ->
                   lift $ putStrLn $ "No event handler found for subscription " ++ unpack subId
             Just (Notice notice) -> do
               lift $ putStrLn $ "Notice: " ++ unpack notice
               (RelayPool _ handlers) <- lift $ readMVar pool
               mapM_
-                (\responseChannel -> lift $ atomically $ writeTChan responseChannel $ Notice notice)
+                (\responseChannel -> lift $ atomically $ writeTChan responseChannel $ (Notice notice, relay))
                 (Map.elems handlers)
             Nothing -> do
               lift $ putStrLn $ "Could not decode server response: " ++ show msg'
