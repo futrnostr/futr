@@ -47,8 +47,6 @@ import qualified Network.Wreq.Session as Sess
 import qualified Monomer.Lens as L
 import qualified System.Directory as Directory
 
-import Debug.Trace
-
 data ImageFit
   = FitNone
   | FitFill

@@ -95,7 +95,9 @@ handleHomeEvent channel pool env node model evt = case evt of
   SubscriptionStarted subId ->
     [ Model $ model & homeSubId .~ Just subId ]
   ContactsReceived cs ->
-    [ Model $ model & contacts .~ updateContacts (model ^. contacts) cs
+    [ Model $ model
+        & contacts .~ updateContacts (model ^. contacts) cs
+        & viewPostsModel . ViewPosts.contacts .~ updateContacts (model ^. contacts) cs
     ]
   TextNoteReceived event relay ->
     [ Model $ model

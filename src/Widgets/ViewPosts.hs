@@ -7,7 +7,8 @@ import Control.Lens
 import Crypto.Schnorr
 import Data.DateTime
 import Data.Default
-import Data.Text        (Text, strip)
+import Data.Map (Map)
+import Data.Text (Text, strip)
 import Monomer
 
 import qualified Data.Map     as Map
@@ -17,16 +18,17 @@ import qualified Monomer.Lens as L
 import Helpers
 import Nostr.Event            as NE
 import Nostr.Profile
+import Widgets.ProfileImage
 import UIHelpers
 
 data ViewPostsModel = ViewPostsModel
   { _time     :: DateTime
-  , _contacts :: [Profile]
+  , _contacts :: Map XOnlyPubKey (Profile, DateTime)
   , _events   :: [ReceivedEvent]
   } deriving (Eq, Show)
 
 instance Default ViewPostsModel where
-  def = ViewPostsModel (fromSeconds 0) [] []
+  def = ViewPostsModel (fromSeconds 0) Map.empty []
 
 makeLenses 'ViewPostsModel
 
@@ -64,7 +66,7 @@ buildUI eventFilter viewDetailsAction viewProfileAction wenv model =
 postRow
   :: (WidgetModel s, WidgetEvent e)
   => WidgetEnv s e
-  -> [Profile]
+  -> Map XOnlyPubKey (Profile, DateTime)
   -> Int
   -> ReceivedEvent
   -> DateTime
@@ -75,11 +77,17 @@ postRow wenv contacts idx re time viewDetailsAction viewProfileAction = row
   where
     event = fst re
     xo = NE.pubKey event
+    (profileName, pictureUrl) = case Map.lookup xo contacts of
+      Just ((Profile name _ _ pictureUrl), _) ->
+        (name, pictureUrl)
+      Nothing ->
+        ("", Nothing)
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
     profileBox =
       hstack
-        [ -- label ( profileName contacts xo) `styleBasic` [ textFont "Bold", textUnderline ]
-         spacer
+        [ profileImage pictureUrl xo `styleBasic` [ width 40, height 40 ]
+        , label profileName `styleBasic` [ textFont "Bold", textUnderline ]
+        , spacer
         , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
         ]
     row =
