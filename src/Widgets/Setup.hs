@@ -144,9 +144,9 @@ buildUI wenv model = setupView where
   formLabel t = label t `styleBasic` [ width 150 ]
   myProfileImage = case model ^. currentImage of
     "" ->
-      profileImage_ Nothing xo [ fitEither ] `styleBasic` [ width 300, height 300 ]
+      profileImage Nothing xo `styleBasic` [ width 300, height 300 ]
     pi ->
-      profileImage_ (Just $ model ^. currentImage) xo [ fitEither ] `styleBasic` [ width 300, height 300 ]
+      profileImage (Just $ model ^. currentImage) xo `styleBasic` [ width 300, height 300 ]
   info = case model ^. currentImage of
     "" ->
       label "Robots lovingly delivered by Robohash.org" `styleBasic` [ textSize 8 ]

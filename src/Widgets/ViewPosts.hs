@@ -86,9 +86,12 @@ postRow wenv contacts idx re time viewDetailsAction viewProfileAction = row
     profileBox =
       hstack
         [ profileImage pictureUrl xo `styleBasic` [ width 40, height 40 ]
-        , label profileName `styleBasic` [ textFont "Bold", textUnderline ]
         , spacer
-        , (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
+        , vstack
+            [ (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]
+            , spacer
+            , label profileName `styleBasic` [ textFont "Bold", textUnderline ]
+            ]
         ]
     row =
       vstack
@@ -101,7 +104,7 @@ postRow wenv contacts idx re time viewDetailsAction viewProfileAction = row
             ] `styleBasic` [ paddingB 10 ]
         , box_ [ onClick $ viewDetailsAction re ] $
             hstack
-              [ label_ (content event) [ multiline, ellipsis ]
+              [ label_ (content event) [ multiline, ellipsis ] `styleBasic` [ paddingL 50 ]
               , filler
               ] `styleBasic` [ cursorHand ]
         ] `styleBasic` [ paddingT 15, paddingR 20, borderB 1 rowSepColor ]

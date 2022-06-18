@@ -38,9 +38,9 @@ buildUI channel poolMVar wenv model = widgetTree
     Keys _ xo _ name = model ^. selectedKeys
     myProfileImage = case Map.lookup xo (model ^. profiles) of
       Nothing ->
-        profileImage_ Nothing xo [ fitEither, alignCenter, alignMiddle ]
+        profileImage Nothing xo
       Just ((Profile _ _ _ picture), _) ->
-        profileImage_ picture xo [ fitEither, alignCenter, alignMiddle ]
+        profileImage picture xo
     baseLayer = case model ^. currentView of
       HomeView ->
         if model ^. waitingForConns
