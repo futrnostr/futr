@@ -2,6 +2,8 @@
 
 module UI where
 
+import Debug.Trace
+
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Lens
@@ -33,23 +35,19 @@ import qualified Widgets.RelayManagement as RelayManagement
 import qualified Widgets.Setup as Setup
 
 buildUI :: TChan Request -> MVar RelayPool -> AppWenv -> AppModel -> AppNode
-buildUI channel poolMVar wenv model = widgetTree
+buildUI channel pool wenv model = widgetTree
   where
     Keys _ xo _ name = model ^. selectedKeys
-    myProfileImage = case Map.lookup xo (model ^. profiles) of
-      Nothing ->
-        profileImage Nothing xo
-      Just ((Profile _ _ _ picture), _) ->
-        profileImage picture xo
+    pImage = Map.lookup xo (model ^. profiles) >>= (\((Profile _ _ _ p), _) -> p)
     baseLayer = case model ^. currentView of
       HomeView ->
         if model ^. waitingForConns
           then waitingForConnectionsTree
-          else Home.homeWidget channel poolMVar homeModel
+          else Home.homeWidget pool channel homeModel
       SetupView ->
         if model ^. waitingForConns
           then waitingForConnectionsTree
-          else Setup.setupWidget channel poolMVar NewKeysCreated setupModel
+          else Setup.setupWidget pool channel  NewKeysCreated setupModel
       BackupKeysView ->
         BackupKeys.backupKeysWidget KeysBackupDone backupKeysModel
       EditProfileView ->
@@ -68,7 +66,7 @@ buildUI channel poolMVar wenv model = widgetTree
       RelayManagementView ->
         RelayManagement.relayManagementWidget
           channel
-          poolMVar
+          pool
           GoHome
           AppTypes.RelaysUpdated
           relayMgmtModel
@@ -98,7 +96,7 @@ buildUI channel poolMVar wenv model = widgetTree
             , spacer
             , box_
                 [ onClick $ if model ^. waitingForConns then NoOp else EditProfile ] $
-                tooltip "Edit Account" $ myProfileImage
+                tooltip "Edit Account" $ profileImage pImage xo
                 `styleBasic` imageButtonStyling
             ] `nodeVisible` (model ^. currentView == HomeView)
         ] `styleBasic` [ paddingR 10, paddingT 10 ]

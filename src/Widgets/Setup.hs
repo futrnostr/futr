@@ -65,35 +65,35 @@ makeLenses 'SetupModel
 
 setupWidget
   :: (WidgetModel sp, WidgetEvent ep)
-  => TChan Request
-  -> MVar RelayPool
+  => MVar RelayPool
+  -> TChan Request
   -> (Keys -> Profile -> DateTime -> ep)
   -> ALens' sp SetupModel
   -> WidgetNode sp ep
-setupWidget requestChannel poolMVar reportKeys model =
+setupWidget pool requestChannel reportKeys model =
   composite_
     "SetupWidget"
     model
     buildUI
-    (handleSetupEvent requestChannel poolMVar reportKeys)
+    (handleSetupEvent pool requestChannel reportKeys)
     [ onInit GenerateKeyPair ]
 
 handleSetupEvent
   :: (WidgetEvent ep)
-  => TChan Request
-  -> MVar RelayPool
+  => MVar RelayPool
+  -> TChan Request
   -> (Keys -> Profile -> DateTime -> ep)
   -> SetupWenv
   -> SetupNode
   -> SetupModel
   -> SetupEvent
   -> [EventResponse SetupModel SetupEvent sp ep]
-handleSetupEvent requestChannel poolMVar reportKeys env node model evt = case evt of
+handleSetupEvent pool requestChannel reportKeys env node model evt = case evt of
   ImportSecKey ->
     [ Model $ model
       & keys .~ ks
       & imported .~ True
-    , Task $ loadImportedKeyData requestChannel poolMVar ks
+    , Task $ loadImportedKeyData pool requestChannel ks
     ]
     where
       kp =
@@ -239,11 +239,11 @@ importAccount requestChannel keys profile = do
   return $ SetupDone (Keys kp xo True (Just name)) profile now
 
 loadImportedKeyData
-  :: TChan Request
-  -> MVar RelayPool
+  :: MVar RelayPool
+  -> TChan Request
   -> Keys
   -> IO SetupEvent
-loadImportedKeyData request pool keys = do
+loadImportedKeyData pool request keys = do
   response <- atomically newTChan
   subId <- subscribe pool request response [ MetadataFilter [ xo ] ]
   msg <- atomically $ readTChan response

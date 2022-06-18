@@ -385,6 +385,8 @@ showImage
   -> IO ()
 showImage renderer imgPath imgFlags imgSize vp rect radius alpha =
   when (isJust targetRect) $ do
+    --putStrLn "show image called"
+    --putStrLn $ show imgPath
     beginPath renderer
     setFillImagePattern renderer imgPath topLeft size angle alpha
     drawRoundedRect renderer (fromJust targetRect) (fromMaybe def radius)
@@ -496,6 +498,8 @@ prefix = "profiles/"
 loadLocal :: Text -> IO (Either ImageLoadError ByteString)
 loadLocal name = do
   let path = T.unpack name
+  --putStrLn "load local called"
+  --putStrLn path
   content <- BS.readFile path
 
   if BS.length content == 0
@@ -511,6 +515,9 @@ loadRemote sess name = do
     then loadLocal $ T.pack filename
     else do
       eresp <- try $ getUrl path
+
+      --putStrLn "load remote called"
+      --putStrLn path
 
       case eresp of
         Left e -> return $ remoteException path e

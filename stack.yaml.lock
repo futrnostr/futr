@@ -63,11 +63,11 @@ packages:
     git: https://github.com/fjvallarino/monomer.git
     pantry-tree:
       size: 17335
-      sha256: 7dd6911949262ac7dee285c0dbb4db49397d4311b421fc13e6ac8cb309f1d54d
-    commit: fa526493c192101204756b82f8e8aebb719f4fcd
+      sha256: 9b64ea3e11b14d315979f6181ffa59a7900d7eb0c80303bcff77e2cf3a0d7e77
+    commit: 88c9766f04b94fee9dc7017e7b7129a30cedc1e3
   original:
     git: https://github.com/fjvallarino/monomer.git
-    commit: fa526493c192101204756b82f8e8aebb719f4fcd
+    commit: 88c9766f04b94fee9dc7017e7b7129a30cedc1e3
 snapshots:
 - completed:
     size: 586292

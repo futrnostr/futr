@@ -60,6 +60,7 @@ data HomeEvent
   | SubscriptionStarted SubscriptionId
   | ContactsReceived [(XOnlyPubKey, (Profile, DateTime))]
   | TextNoteReceived Event Relay
+  | Dispose
   -- actions
   | SendPost
   | ViewPostDetails ReceivedEvent
@@ -70,27 +71,29 @@ makeLenses 'HomeModel
 
 homeWidget
   :: (WidgetModel sp, WidgetEvent ep)
-  => TChan Request
-  -> MVar RelayPool
+  => MVar RelayPool
+  -> TChan Request
   -> ALens' sp HomeModel
   -> WidgetNode sp ep
-homeWidget channel pool model = composite_ "HomeWidget" model buildUI (handleHomeEvent channel pool) [ onInit Initialize ]
+homeWidget pool request model = composite_ "HomeWidget" model buildUI (handleHomeEvent pool request) [ onInit Initialize, onDispose Dispose ]
 
 handleHomeEvent
-  :: TChan Request
-  -> MVar RelayPool
+  :: MVar RelayPool
+  -> TChan Request
   -> HomeWenv
   -> HomeNode
   -> HomeModel
   -> HomeEvent
   -> [EventResponse HomeModel HomeEvent sp ep]
-handleHomeEvent channel pool env node model evt = case evt of
+handleHomeEvent pool request env node model evt = case evt of
   -- subscriptions
   Initialize ->
-    [ Producer $ loadContacts channel pool model ]
+    [ Producer $ loadContacts pool request model ]
   Initialized cs ->
-    [ Model $ model & contacts .~ cs
-    , Producer $ initSubscriptions channel pool (model ^. myKeys) (Map.keys cs)
+    [ Model $ model
+        & contacts .~ cs
+        & homeSubId .~ Nothing
+    , Producer $ initSubscriptions pool request (model ^. myKeys) (Map.keys cs)
     ]
   SubscriptionStarted subId ->
     [ Model $ model & homeSubId .~ Just subId ]
@@ -106,10 +109,12 @@ handleHomeEvent channel pool env node model evt = case evt of
     ]
     where
       newEvents = addEvent (model ^. events) event relay
+  Dispose ->
+    [ Producer $ closeSubscriptions pool request (model ^. homeSubId) ]
   SendPost ->
     [ Model $ model
         & noteInput .~ ""
-    , Producer $ sendPost channel model
+    , Producer $ sendPost request model
     ]
   ViewPostDetails re ->
     []
@@ -132,14 +137,22 @@ checkContactIsNewer original (xo, (p, d)) =
         then Just (xo, (p', d'))
         else Nothing
 
+closeSubscriptions :: MVar RelayPool -> TChan Request -> Maybe SubscriptionId -> (HomeEvent -> IO ()) -> IO ()
+closeSubscriptions pool request subId sendMsg = do
+  case subId of
+    Just subId' ->
+      unsubscribe pool request subId'
+    Nothing ->
+      return ()
+
 initSubscriptions
-  :: TChan Request
-  -> MVar RelayPool
+  :: MVar RelayPool
+  -> TChan Request
   -> Keys
   -> [XOnlyPubKey]
   -> (HomeEvent -> IO ())
   -> IO ()
-initSubscriptions request pool (Keys _ xo _ _) contacts sendMsg = do
+initSubscriptions pool request (Keys _ xo _ _) contacts sendMsg = do
   response <- atomically newTChan
   subId <- subscribe pool request response initialFilters
   sendMsg $ SubscriptionStarted subId
@@ -166,12 +179,12 @@ initSubscriptions request pool (Keys _ xo _ _) contacts sendMsg = do
       Nothing -> Nothing
 
 loadContacts
-  :: TChan Request
-  -> MVar RelayPool
+  :: MVar RelayPool
+  -> TChan Request
   -> HomeModel
   -> (HomeEvent -> IO ())
   -> IO ()
-loadContacts request pool model sendMsg = do
+loadContacts pool request model sendMsg = do
   if not $ null $ model ^. contacts
   then return ()
   else do
@@ -195,11 +208,11 @@ tagToProfile datetime (PTag (ValidXOnlyPubKey xo) _ name) = Just (xo,  ( Profile
 tagToProfile _ _ = Nothing
 
 sendPost :: TChan Request -> HomeModel -> (HomeEvent -> IO ()) -> IO ()
-sendPost channel model _ = do
+sendPost request model _ = do
   now <- getCurrentTime
   let (Keys kp xo _ _) = model ^. myKeys
   let unsigned = textNote (strip $ model ^. noteInput) xo now;
-  atomically $ writeTChan channel $ SendEvent $ signEvent unsigned kp xo
+  atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo
 
 buildUI
   :: HomeWenv
