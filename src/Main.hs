@@ -122,7 +122,6 @@ handleEvent env wenv node model evt =
           & homeModel . Home.myKeys .~ ks
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
           & currentView .~ BackupKeysView
-          & homeModel . Home.profileImage .~ fromMaybe "" picture
       , Task $ saveKeyPairs (model ^. keys) (ks : dk)
       ]
       where
@@ -172,11 +171,6 @@ handleEvent env wenv node model evt =
           return p
     ProfileUpdated ks profile datetime ->
       [ Model $ model
-          & homeModel . Home.profileImage .~ (
-            if ks `sameKeys` (model ^. selectedKeys)
-              then fromMaybe "" picture
-              else model ^. homeModel . Home.profileImage
-            )
           & keys .~ ks' : newKeyList
           & selectedKeys .~ (
             if ks `sameKeys` (model ^. selectedKeys)
@@ -271,7 +265,7 @@ createProfileCacheDir _ = do
     else createDirectory "profiles"
 
 timerLoop :: (AppEvent -> IO ()) -> IO ()
-timerLoop sendMsg = void . forkIO $ void $ forever $ do
+timerLoop sendMsg = void $ forever $ do
   now <- getCurrentTime
   sendMsg $ TimerTick now
   threadDelay 1000000

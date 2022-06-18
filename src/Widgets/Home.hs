@@ -43,17 +43,14 @@ type HomeNode = WidgetNode HomeModel HomeEvent
 
 data HomeModel = HomeModel
   { _myKeys           :: Keys
-  , _profileImage     :: Text
   , _events           :: [ReceivedEvent]
   , _contacts         :: Map XOnlyPubKey (Profile, DateTime)
   , _noteInput        :: Text
-  , _homeSub          :: SubscriptionId
-  , _initSub          :: SubscriptionId
   , _viewPostsModel   :: ViewPosts.ViewPostsModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel initialKeys "" [] Map.empty "" "" "" def
+  def = HomeModel initialKeys [] Map.empty "" def
 
 data HomeEvent
   -- subscriptions
@@ -139,12 +136,13 @@ initSubscriptions
 initSubscriptions request pool (Keys _ xo _ _) contacts sendMsg = do
   response <- atomically newTChan
   subId <- subscribe pool request response initialFilters
-  void . forkIO $ void . forever $ do
+  void . forever $ do
     msg <- atomically $ readTChan response
     case msg of
       (EventReceived _ event, relay) -> do
         case kind event of
           TextNote -> do
+            putStrLn "send this now"
             sendMsg $ TextNoteReceived event relay
           Contacts -> do
             sendMsg $ ContactsReceived $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
@@ -155,11 +153,11 @@ initSubscriptions request pool (Keys _ xo _ _) contacts sendMsg = do
           _ -> putStrLn "Unexpected event kind received" -- @todo handle differently
 
       _ -> putStrLn "Unexpected data received" -- @todo handle differently
-    where
-      initialFilters = [ MetadataFilter contacts, TextNoteFilter contacts ]
-      parseProfiles e = case readProfile e of
-        Just p -> Just (pubKey e, (p, created_at e))
-        Nothing -> Nothing
+  where
+    initialFilters = [ MetadataFilter contacts, TextNoteFilter contacts ]
+    parseProfiles e = case readProfile e of
+      Just p -> Just (pubKey e, (p, created_at e))
+      Nothing -> Nothing
 
 loadContacts
   :: TChan Request

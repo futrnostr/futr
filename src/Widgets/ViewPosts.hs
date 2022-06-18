@@ -50,7 +50,7 @@ buildUI
   -> ViewPostsModel
   -> WidgetNode sp ep
 buildUI eventFilter viewDetailsAction viewProfileAction wenv model =
-    vscroll_ [ scrollOverlay ] posts
+  vscroll_ [ scrollOverlay ] posts
   where
     posts = vstack postRows
     filteredEvents = filter eventFilter (model ^. events)
