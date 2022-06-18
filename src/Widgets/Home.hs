@@ -43,6 +43,7 @@ type HomeNode = WidgetNode HomeModel HomeEvent
 
 data HomeModel = HomeModel
   { _myKeys           :: Keys
+  , _homeSubId        :: Maybe SubscriptionId
   , _events           :: [ReceivedEvent]
   , _contacts         :: Map XOnlyPubKey (Profile, DateTime)
   , _noteInput        :: Text
@@ -50,12 +51,13 @@ data HomeModel = HomeModel
   } deriving (Eq, Show)
 
 instance Default HomeModel where
-  def = HomeModel initialKeys [] Map.empty "" def
+  def = HomeModel initialKeys Nothing [] Map.empty "" def
 
 data HomeEvent
   -- subscriptions
   = Initialize
   | Initialized (Map XOnlyPubKey (Profile, DateTime))
+  | SubscriptionStarted SubscriptionId
   | ContactsReceived [(XOnlyPubKey, (Profile, DateTime))]
   | TextNoteReceived Event Relay
   -- actions
@@ -85,11 +87,13 @@ handleHomeEvent
 handleHomeEvent channel pool env node model evt = case evt of
   -- subscriptions
   Initialize ->
-    [ Producer $ loadContacts channel pool (model ^. myKeys) ]
+    [ Producer $ loadContacts channel pool model ]
   Initialized cs ->
     [ Model $ model & contacts .~ cs
     , Producer $ initSubscriptions channel pool (model ^. myKeys) (Map.keys cs)
     ]
+  SubscriptionStarted subId ->
+    [ Model $ model & homeSubId .~ Just subId ]
   ContactsReceived cs ->
     [ Model $ model & contacts .~ updateContacts (model ^. contacts) cs
     ]
@@ -136,13 +140,13 @@ initSubscriptions
 initSubscriptions request pool (Keys _ xo _ _) contacts sendMsg = do
   response <- atomically newTChan
   subId <- subscribe pool request response initialFilters
+  sendMsg $ SubscriptionStarted subId
   void . forever $ do
     msg <- atomically $ readTChan response
     case msg of
       (EventReceived _ event, relay) -> do
         case kind event of
           TextNote -> do
-            putStrLn "send this now"
             sendMsg $ TextNoteReceived event relay
           Contacts -> do
             sendMsg $ ContactsReceived $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
@@ -162,23 +166,27 @@ initSubscriptions request pool (Keys _ xo _ _) contacts sendMsg = do
 loadContacts
   :: TChan Request
   -> MVar RelayPool
-  -> Keys
+  -> HomeModel
   -> (HomeEvent -> IO ())
   -> IO ()
-loadContacts request pool (Keys _ xo _ _) sendMsg = do
-  response <- atomically newTChan
-  subId <- subscribe pool request response [ ContactsFilter [ xo ] ]
-  msg <- atomically $ readTChan response
-  case msg of
-    (EventReceived _ event, _) -> do
-      case kind event of
-        Contacts -> do
-          unsubscribe pool request subId
-          let contacts = Map.fromList $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
-          sendMsg $ Initialized contacts
-        _ -> putStrLn "Unexpected event kind received when loading contacts" -- @todo handle differently
-    _ -> mzero
+loadContacts request pool model sendMsg = do
+  if not $ null $ model ^. contacts
+  then return ()
+  else do
+    response <- atomically newTChan
+    subId <- subscribe pool request response [ ContactsFilter [ xo ] ]
+    msg <- atomically $ readTChan response
+    case msg of
+      (EventReceived _ event, _) -> do
+        case kind event of
+          Contacts -> do
+            unsubscribe pool request subId
+            let contacts = Map.fromList $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
+            sendMsg $ Initialized contacts
+          _ -> putStrLn "Unexpected event kind received when loading contacts" -- @todo handle differently
+      _ -> mzero
   where
+    (Keys _ xo _ _) = model ^. myKeys
 
 tagToProfile :: DateTime -> Tag -> Maybe (XOnlyPubKey, (Profile, DateTime))
 tagToProfile datetime (PTag (ValidXOnlyPubKey xo) _ name) = Just (xo,  ( Profile (fromMaybe "" name) Nothing Nothing Nothing, datetime))

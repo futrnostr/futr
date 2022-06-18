@@ -14,7 +14,6 @@ import Nostr.Request
 data Response
   = EventReceived SubscriptionId Event
   | Notice Text
-  | Closed SubscriptionId
   deriving (Eq, Show)
 
 instance FromJSON Response where
@@ -26,7 +25,6 @@ instance FromJSON Response where
         event <- parseJSON $ arr V.! 2
         return $ EventReceived param event
       String "NOTICE" -> return $ Notice param
-      String "CLOSE" -> return $ Closed param
       _ ->
         mzero
 

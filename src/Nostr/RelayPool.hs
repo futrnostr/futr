@@ -31,48 +31,51 @@ import Nostr.Response
 data RelayPool = RelayPool [Relay] (Map SubscriptionId (TChan (Response, Relay)))
 
 registerResponseChannel :: MVar RelayPool -> SubscriptionId -> TChan (Response, Relay) -> IO ()
-registerResponseChannel poolMVar subId responseChannel = do
-  (RelayPool relays responseChannels) <- takeMVar poolMVar
+registerResponseChannel pool subId responseChannel = do
+  (RelayPool relays responseChannels) <- takeMVar pool
   let responseChannels' = Map.insert subId responseChannel responseChannels
-  putMVar poolMVar (RelayPool relays responseChannels')
+  putMVar pool (RelayPool relays responseChannels')
 
 removeResponseChannel :: MVar RelayPool -> SubscriptionId -> IO ()
-removeResponseChannel poolMVar subId = do
-  (RelayPool relays responseChannels) <- takeMVar poolMVar
+removeResponseChannel pool subId = do
+  (RelayPool relays responseChannels) <- takeMVar pool
   let responseChannels' = Map.delete subId responseChannels
-  putMVar poolMVar (RelayPool relays responseChannels')
+  putMVar pool (RelayPool relays responseChannels')
 
 addRelay :: MVar RelayPool -> Relay -> IO [Relay]
-addRelay poolMVar relay = do
-  (RelayPool relays responseChannels) <- takeMVar poolMVar
-  let relays' = sort $ relay : (filter (\r -> not $ r `sameRelay` relay) relays)
-  putMVar poolMVar (RelayPool relays' responseChannels)
-  LazyBytes.writeFile "relays.ft" $ encode relays'
-  putStrLn "Relays saved to disk"
-  return relays'
+addRelay pool relay = do
+  updateRelays pool relays
+  return relays
+  where
+    relays = sort $ relay : (filter (\r -> not $ r `sameRelay` relay) relays)
 
 removeRelay :: MVar RelayPool -> Relay -> IO [Relay]
-removeRelay poolMVar relay = do
-  (RelayPool relays responseChannels) <- takeMVar poolMVar
-  let relays' = filter (\r -> not $ r `sameRelay` relay) relays
-  putMVar poolMVar (RelayPool relays' responseChannels)
-  LazyBytes.writeFile "relays.ft" $ encode relays'
+removeRelay pool relay = do
+  updateRelays pool relays
+  return relays
+  where
+    relays = filter (\r -> not $ r `sameRelay` relay) relays
+
+updateRelays :: MVar RelayPool -> [Relay] -> IO ()
+updateRelays pool relays = do
+  (RelayPool relays responseChannels) <- takeMVar pool
+  putMVar pool (RelayPool relays responseChannels)
+  LazyBytes.writeFile "relays.ft" $ encode relays
   putStrLn "Relays saved to disk"
-  return relays'
 
 subscribe :: MVar RelayPool -> TChan Request -> TChan (Response, Relay) -> [Filter] -> IO SubscriptionId
-subscribe poolMVar request response filters = do
+subscribe pool request response filters = do
   gen <- newGenIO :: IO CtrDRBG
   let Right (randomBytes, newGen) = genBytes 16 gen
   let subId = B16.encodeBase16 randomBytes
-  registerResponseChannel poolMVar subId response
+  registerResponseChannel pool subId response
   send request $ Subscribe $ Subscription filters subId
   return subId
 
 unsubscribe :: MVar RelayPool -> TChan Request -> SubscriptionId -> IO ()
-unsubscribe poolMVar channel subId = do
+unsubscribe pool channel subId = do
   send channel $ Close subId
-  removeResponseChannel poolMVar subId
+  removeResponseChannel pool subId
 
 send :: TChan Request -> Request -> IO ()
 send channel request =
