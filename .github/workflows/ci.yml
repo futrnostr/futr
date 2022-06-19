@@ -51,6 +51,43 @@ jobs:
           fi
         shell: bash
 
+      - name: Fetch secp256k1 sources
+        uses: sudosubin/git-clone-action@v1
+        with:
+          repository: 'bitcoin-core/secp256k1'
+          platform: 'github'
+
+#      - name: Install Linux distribution for the Windows Subsystem for Linux
+#        uses: Vampire/setup-wsl@v1
+
+      - name: Install secp256k1
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+               sudo apt-get install make autoconf
+               cd bitcoin-core/secp256k1
+               ./autogen.sh
+               ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental
+               make
+               sudo make install
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+               brew install make autoconf
+               sudo apt-get install make git autoconf
+               cd bitcoin-core/secp256k1
+               ./autogen.sh
+               ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental
+               make
+               sudo make install
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+               sudo apt update
+               sudo apt upgrade
+               sudo apt install build-essential libtool autotools-dev automake pkg-config bsdmainutils curl git make autoconf
+               cd bitcoin-core/secp256k1
+               ./autogen.sh
+               ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental
+               make
+               sudo make install
+          fi
+
       - name: Install dependencies
         run: |
           stack build --system-ghc --test --bench --no-run-tests --no-run-benchmarks --only-dependencies
