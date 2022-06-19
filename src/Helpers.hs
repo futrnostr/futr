@@ -5,6 +5,10 @@ module Helpers where
 import Crypto.Schnorr (XOnlyPubKey, exportXOnlyPubKey)
 import Data.DateTime
 import Data.Text (Text, pack)
+import Monomer
+
+voidTask :: IO () -> EventResponse s e sp ep
+voidTask action = Producer (const action)
 
 xTimeAgo :: DateTime -> DateTime -> Text
 xTimeAgo old new

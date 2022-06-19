@@ -69,7 +69,6 @@ handleEvent env wenv node model evt =
     NoOp -> []
     AppInit ->
       [ Task loadKeysFromDisk
-      , Producer createProfileCacheDir
       , Producer $ initRelays $ env ^. relayPool
       , Producer $ timerLoop
       ]
@@ -256,13 +255,6 @@ saveKeyPairs oldKeys newKeys =
       LazyBytes.writeFile "keys.ft" $ encode newKeys
       putStrLn "KeyPairs saved to disk"
       return NoOp
-
-createProfileCacheDir :: (AppEvent -> IO ()) -> IO ()
-createProfileCacheDir _ = do
-  dirExists <- doesDirectoryExist "profiles"
-  if dirExists
-    then return ()
-    else createDirectory "profiles"
 
 timerLoop :: (AppEvent -> IO ()) -> IO ()
 timerLoop sendMsg = void $ forever $ do

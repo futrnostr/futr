@@ -19,9 +19,6 @@ import Helpers
 import Nostr.Profile
 import Nostr.Relay
 
-voidTask :: IO () -> EventResponse s e sp ep
-voidTask action = Producer (const action)
-
 selectableText :: WidgetEvent e => Text -> WidgetNode s e
 selectableText t =
   textFieldD_ (WidgetValue t) [ readOnly ]

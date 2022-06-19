@@ -110,7 +110,7 @@ handleHomeEvent pool request env node model evt = case evt of
     where
       newEvents = addEvent (model ^. events) event relay
   Dispose ->
-    [ Producer $ closeSubscriptions pool request (model ^. homeSubId) ]
+    [ voidTask $ closeSubscriptions pool request (model ^. homeSubId) ]
   SendPost ->
     [ Model $ model
         & noteInput .~ ""
@@ -137,8 +137,8 @@ checkContactIsNewer original (xo, (p, d)) =
         then Just (xo, (p', d'))
         else Nothing
 
-closeSubscriptions :: MVar RelayPool -> TChan Request -> Maybe SubscriptionId -> (HomeEvent -> IO ()) -> IO ()
-closeSubscriptions pool request subId sendMsg = do
+closeSubscriptions :: MVar RelayPool -> TChan Request -> Maybe SubscriptionId -> IO ()
+closeSubscriptions pool request subId = do
   case subId of
     Just subId' ->
       unsubscribe pool request subId'
