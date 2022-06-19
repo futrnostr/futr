@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [synchronize, opened, reopened]
+  push:
+    branches: [master]
+  schedule:
+    # additionally run once per week (At 00:00 on Sunday) to maintain cache
+    - cron: '0 0 * * 0'
+
+jobs:
+  stack:
+    name: ${{ matrix.os }} / ghc ${{ matrix.ghc }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        stack: ["2.7.3"]
+        ghc: ["8.10.7"]
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: haskell/actions/setup@v1.2
+        name: Setup Haskell Stack
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          stack-version: ${{ matrix.stack }}
+
+      - uses: actions/cache@v2
+        name: Cache ~/.stack
+        with:
+          path: ~/.stack
+          key: ${{ runner.os }}-${{ matrix.ghc }}-stack
+
+      - name: Install dependencies
+        run: |
+          stack build --system-ghc --test --bench --no-run-tests --no-run-benchmarks --only-dependencies
+
+      - name: Build
+        run: |
+          stack build --system-ghc --test --bench --no-run-tests --no-run-benchmarks
+
+      - name: Test
+        run: |
+          stack test --system-ghc
