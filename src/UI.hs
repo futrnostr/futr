@@ -34,8 +34,8 @@ import qualified Widgets.KeyManagement as KeyManagement
 import qualified Widgets.RelayManagement as RelayManagement
 import qualified Widgets.Setup as Setup
 
-buildUI :: TChan Request -> MVar RelayPool -> AppWenv -> AppModel -> AppNode
-buildUI channel pool wenv model = widgetTree
+buildUI :: MVar RelayPool -> TChan Request -> AppWenv -> AppModel -> AppNode
+buildUI pool channel wenv model = widgetTree
   where
     Keys _ xo _ name = model ^. selectedKeys
     pImage = Map.lookup xo (model ^. profiles) >>= (\((Profile _ _ _ p), _) -> p)
@@ -96,7 +96,7 @@ buildUI channel pool wenv model = widgetTree
             , spacer
             , box_
                 [ onClick $ if model ^. waitingForConns then NoOp else EditProfile ] $
-                tooltip "Edit Account" $ profileImage pImage xo
+                tooltip "Edit Account" $ profileImage pImage xo Small
                 `styleBasic` imageButtonStyling
             ] `nodeVisible` (model ^. currentView == HomeView)
         ] `styleBasic` [ paddingR 10, paddingT 10 ]

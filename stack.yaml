@@ -49,7 +49,7 @@ extra-deps:
 - git: https://github.com/prolic/secp256k1-schnorr.git
   commit: bdfb38a9cf170e95c373ceb564f7c5e5232b6542
 - git: https://github.com/fjvallarino/monomer.git
-  commit: 88c9766f04b94fee9dc7017e7b7129a30cedc1e3
+  commit: 84e37dcbfa33a63179e338cbce80de1760fddb38
 
 # Override default flag values for local packages and extra-deps
 flags:

@@ -135,7 +135,7 @@ buildUI wenv model =
           [ spacer
           , vstack
               [ filler
-              , profileImage (pictureUrl xo) xo `styleBasic` [ width 40, height 40 ]
+              , profileImage (pictureUrl xo) xo Small
               , filler
               ]
           , spacer

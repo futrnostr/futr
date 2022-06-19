@@ -45,8 +45,8 @@ main :: IO ()
 main = do
   channel <- atomically newBroadcastTChan
   relays <- loadRelaysFromDisk
-  poolMVar <- newMVar $ RelayPool relays Map.empty
-  startApp def (handleEvent $ AppEnv channel poolMVar) (UI.buildUI channel poolMVar) config
+  pool <- newMVar $ RelayPool relays Map.empty
+  startApp def (handleEvent $ AppEnv pool channel) (UI.buildUI pool channel) config
   where
     config =
       [ appWindowTitle "futr - nostr client"

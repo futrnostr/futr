@@ -38,8 +38,8 @@ type AppNode = WidgetNode AppModel AppEvent
 
 data AppEnv =
   AppEnv
-    { _channel   :: TChan Request
-    , _relayPool :: MVar RelayPool
+    { _relayPool :: MVar RelayPool
+    , _channel   :: TChan Request
     }
 
 data AppView

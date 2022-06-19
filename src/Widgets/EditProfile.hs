@@ -101,11 +101,7 @@ saveProfile requestChannel (Keys kp xo active name) model = do
 
 buildUI :: Keys -> EditProfileWenv -> EditProfileModel -> EditProfileNode
 buildUI (Keys kp xo _ _) wenv model = editView where
-  myProfileImage = case model ^. currentImage of
-    "" ->
-      profileImage Nothing xo `styleBasic` [ width 300, height 300 ]
-    pi ->
-      profileImage (Just $ model ^. currentImage) xo `styleBasic` [ width 300, height 300 ]
+  picture = if model ^. currentImage == "" then Nothing else Just $ model ^. currentImage
   info = case model ^. currentImage of
     "" ->
       label "Robots lovingly delivered by Robohash.org" `styleBasic` [ textSize 8 ]
@@ -148,7 +144,7 @@ buildUI (Keys kp xo _ _) wenv model = editView where
     [ hstack
         [ vstack
             [ hstack [ button "Back" Back, filler ]
-            , myProfileImage
+            , profileImage picture xo Big
             , spacer
             , info
             ]

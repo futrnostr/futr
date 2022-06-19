@@ -8,6 +8,7 @@ import Data.DateTime
 import Data.Default
 import Data.Text (Text, strip)
 import Monomer
+import Monomer
 import Monomer.Widgets.Single
 
 import qualified Data.Text    as T
@@ -18,8 +19,8 @@ import Helpers
 import Nostr.Profile
 import Nostr.Relay
 
-data ImageSize = Big | Small | Mini
-  deriving (Eq)
+voidTask :: IO () -> EventResponse s e sp ep
+voidTask action = Producer (const action)
 
 selectableText :: WidgetEvent e => Text -> WidgetNode s e
 selectableText t =

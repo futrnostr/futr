@@ -85,7 +85,7 @@ postRow wenv contacts idx re time viewDetailsAction viewProfileAction = row
     rowBg = wenv ^. L.theme . L.userColorMap . at "rowBg" . non def
     profileBox =
       hstack
-        [ profileImage pictureUrl xo `styleBasic` [ width 40, height 40 ]
+        [ profileImage pictureUrl xo Small
         , spacer
         , vstack
             [ (label $ shortXOnlyPubKey xo) `styleBasic` [ textSize 10 ]

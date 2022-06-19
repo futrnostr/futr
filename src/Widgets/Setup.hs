@@ -142,11 +142,7 @@ buildUI wenv model = setupView where
     (textToMaybe $ model ^. picture)
   ks = model ^. keys
   formLabel t = label t `styleBasic` [ width 150 ]
-  myProfileImage = case model ^. currentImage of
-    "" ->
-      profileImage Nothing xo `styleBasic` [ width 300, height 300 ]
-    pi ->
-      profileImage (Just $ model ^. currentImage) xo `styleBasic` [ width 300, height 300 ]
+  myPicture = if model ^. currentImage == "" then Nothing else Just $ model ^. currentImage
   info = case model ^. currentImage of
     "" ->
       label "Robots lovingly delivered by Robohash.org" `styleBasic` [ textSize 8 ]
@@ -193,7 +189,7 @@ buildUI wenv model = setupView where
   setupView = vstack
     [ hstack
         [ vstack
-            [ myProfileImage
+            [ profileImage myPicture xo Big
             , spacer
             , info
             , spacer
