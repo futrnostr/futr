@@ -49,6 +49,7 @@ jobs:
                stack exec -- pacman -S mingw-w64-x86_64-freeglut
                stack exec -- pacman -S mingw-w64-x86_64-glew
           fi
+        shell: bash
 
       - name: Install dependencies
         run: |
