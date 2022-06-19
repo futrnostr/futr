@@ -42,7 +42,7 @@ jobs:
           elif [ "$RUNNER_OS" == "macOS" ]; then
                brew install sdl2
                brew install glew
-          else [ "$RUNNER_OS" == "Windows" ]; then
+          elif [ "$RUNNER_OS" == "Windows" ]; then
                stack setup
                stack exec -- pacman -S mingw-w64-x86_64-pkg-config
                stack exec -- pacman -S mingw-w64-x86_64-SDL2
