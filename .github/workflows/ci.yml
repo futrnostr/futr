@@ -35,6 +35,21 @@ jobs:
           path: ~/.stack
           key: ${{ runner.os }}-${{ matrix.ghc }}-stack
 
+      - name: Install SDL2 + Glew for UI
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+               sudo apt-get install libsdl2-dev libglew-dev
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+               brew install sdl2
+               brew install glew
+          else [ "$RUNNER_OS" == "Windows" ]; then
+               stack setup
+               stack exec -- pacman -S mingw-w64-x86_64-pkg-config
+               stack exec -- pacman -S mingw-w64-x86_64-SDL2
+               stack exec -- pacman -S mingw-w64-x86_64-freeglut
+               stack exec -- pacman -S mingw-w64-x86_64-glew
+          fi
+
       - name: Install dependencies
         run: |
           stack build --system-ghc --test --bench --no-run-tests --no-run-benchmarks --only-dependencies
