@@ -99,21 +99,14 @@ handleEvent env wenv node model evt =
     SubscriptionStarted subId ->
       [ Model $ model & subscriptionId .~ Just subId ]
     ContactsReceived cs ->
-      [ Model $ model
-          & futr . contacts .~ updateContacts (model ^. futr . contacts) cs
-      ]
+      [ Model $ model & futr . contacts .~ updateContacts (model ^. futr . contacts) cs ]
     TextNoteReceived event relay ->
-      [ Model $ model
-          & futr . events .~ newEvents
-      ]
-      where
-        newEvents = addEvent (model ^. futr .  events) event relay
+      [ Model $ model & futr . events .~ addEvent (model ^. futr .  events) event relay ]
     Dispose ->
       [ voidTask $ closeSubscriptions (env ^. pool) (env ^. channel) (model ^. subscriptionId) ]
     -- actions
     SendPost ->
-      [ Model $ model
-          & inputField .~ ""
+      [ Model $ model & inputField .~ ""
       , voidTask $ sendPost (env ^. channel) (model ^. futr) (model ^. inputField)
       ]
     -- go to
