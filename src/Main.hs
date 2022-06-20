@@ -147,7 +147,7 @@ handleEvent env wenv node model evt =
           & keys .~ ks : dk
           & futr . profiles .~ Map.insert xo (profile, datetime) (model ^. futr . profiles)
           & futr . selectedKeys .~ ks
-          & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ ks
+          & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ Just ks
           & currentView .~ BackupKeysView
       , Task $ saveKeyPairs (model ^. keys) (ks : dk)
       ]
@@ -206,8 +206,8 @@ handleEvent env wenv node model evt =
             )
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ (
             if ks `sameKeys` (model ^. futr . selectedKeys)
-              then ks'
-              else (model ^. futr . selectedKeys)
+              then Just ks'
+              else Just (model ^. futr . selectedKeys)
             )
           & futr . profiles .~
             case Map.lookup xo (model ^. futr . profiles) of

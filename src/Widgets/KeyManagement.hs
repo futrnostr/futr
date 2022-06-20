@@ -38,12 +38,13 @@ type KeyManagementNode = WidgetNode KeyManagementModel KeyManagementEvent
 data KeyManagementModel = KeyManagementModel
   { _keyList         :: [Keys]
   , _backupKeysModel :: BackupKeys.BackupKeysModel
-  , _kmProfiles       :: Map XOnlyPubKey (Profile, DateTime)
-  , _keysToDelete      :: Maybe Keys
+  , _kmProfiles      :: Map XOnlyPubKey (Profile, DateTime)
+  , _keysToDelete    :: Maybe Keys
+  , _displayBackup   :: Bool
   } deriving (Eq, Show)
 
 instance Default KeyManagementModel where
-  def = KeyManagementModel [] def Map.empty Nothing
+  def = KeyManagementModel [] def Map.empty Nothing False
 
 data KeyManagementEvent
   = GoSetup
@@ -113,15 +114,21 @@ handleKeyManagementEvent goSetup goHome reportKeys env node model evt = case evt
       keys' = Keys kp xo True name
       dk = disableKeys $ filter (\(Keys _ xo' _ _) -> xo' /= xo) $ model ^. keyList
   BackupKeys keys ->
-    [ Model $ model & backupKeysModel . BackupKeys.backupKeys .~ keys ]
+    [ Model $ model
+        & backupKeysModel . BackupKeys.backupKeys .~ Just keys
+        & displayBackup .~ True
+    ]
   BackupDone ->
-    [ Model $ model & backupKeysModel . BackupKeys.backupKeys .~ initialKeys ]
+    [ Model $ model
+        & backupKeysModel . BackupKeys.backupKeys .~ Nothing
+        & displayBackup .~ False
+    ]
 
 buildUI :: KeyManagementWenv -> KeyManagementModel -> KeyManagementNode
 buildUI wenv model =
-  if (model ^. backupKeysModel . BackupKeys.backupKeys) == initialKeys
-    then keyManagementView
-    else BackupKeys.backupKeysWidget BackupDone (backupKeysModel)
+  if model ^. displayBackup
+    then BackupKeys.backupKeysWidget BackupDone backupKeysModel
+    else keyManagementView
   where
   pictureUrl xo = case Map.lookup xo (model ^. kmProfiles) of
     Just ((Profile _ _ _ picture), _) ->

@@ -15,11 +15,11 @@ import Nostr.Keys
 import UIHelpers
 
 data BackupKeysModel = BackupKeysModel
-  { _backupKeys :: Keys
+  { _backupKeys :: Maybe Keys
   } deriving (Eq, Show)
 
 instance Default BackupKeysModel where
-  def = BackupKeysModel initialKeys
+  def = BackupKeysModel Nothing
 
 makeLenses 'BackupKeysModel
 
@@ -42,29 +42,42 @@ buildUI
   -> BackupKeysModel
   -> WidgetNode sp ep
 buildUI done wenv model =
-  vstack
-    [ hstack
-        [ filler
-        , bigLabel "Backup your keys"
+  case model ^. backupKeys of
+    Just b ->
+      vstack
+        [ hstack
+            [ filler
+            , bigLabel "Backup your keys"
+            , filler
+            ]
         , filler
-        ]
-    , filler
-    , label "Your public key"
-    , spacer
-    , selectableText $ pack $ exportXOnlyPubKey $ xo
-    , spacer
-    , label "Share your public key with your friends, so they can find you."
-    , filler
-    , separatorLine
-    , filler
-    , label "Your private key"
-    , spacer
-    , selectableText $ pack $ exportSecKey $ deriveSecKey $ kp
-    , spacer
-    , label "Make sure you backup your private key, don't give it to anyone!"
-    , filler
-    , mainButton "OK" done
-    , filler
-    ] `styleBasic` [ padding 20 ]
-    where
-      Keys kp xo _ _ = model ^. backupKeys
+        , label "Your public key"
+        , spacer
+        , selectableText $ pack $ exportXOnlyPubKey $ xo
+        , spacer
+        , label "Share your public key with your friends, so they can find you."
+        , filler
+        , separatorLine
+        , filler
+        , label "Your private key"
+        , spacer
+        , selectableText $ pack $ exportSecKey $ deriveSecKey $ kp
+        , spacer
+        , label "Make sure you backup your private key, don't give it to anyone!"
+        , filler
+        , mainButton "OK" done
+        , filler
+        ] `styleBasic` [ padding 20 ]
+        where
+          Keys kp xo _ _ = b
+    Nothing ->
+      vstack
+        [ hstack
+            [ filler
+            , bigLabel "Backup your keys"
+            , filler
+            , mainButton "OK" done
+            , spacer
+            ]
+        , filler
+        ] `styleBasic` [ padding 20 ]
