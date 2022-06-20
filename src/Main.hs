@@ -294,22 +294,6 @@ timerLoop sendMsg = void $ forever $ do
 
 -- subscriptions
 
-updateContacts :: Map XOnlyPubKey (Profile, DateTime) -> [(XOnlyPubKey, (Profile, DateTime))] -> Map XOnlyPubKey (Profile, DateTime)
-updateContacts original new =
-  Map.union newContacts original
-  where
-    newContacts = Map.fromList $ catMaybes $ map (checkContactIsNewer original) new
-
-checkContactIsNewer :: Map XOnlyPubKey (Profile, DateTime) -> (XOnlyPubKey, (Profile, DateTime)) -> Maybe (XOnlyPubKey, (Profile, DateTime))
-checkContactIsNewer original (xo, (p, d)) =
-  case Map.lookup xo original of
-    Nothing ->
-      Just (xo, (p, d))
-    Just (p', d') ->
-      if d' > d
-        then Just (xo, (p', d'))
-        else Nothing
-
 closeSubscriptions :: MVar RelayPool -> TChan Request -> Maybe SubscriptionId -> IO ()
 closeSubscriptions pool request subId = do
   case subId of
@@ -379,16 +363,6 @@ loadContacts pool request model sendMsg = do
 tagToProfile :: DateTime -> Tag -> Maybe (XOnlyPubKey, (Profile, DateTime))
 tagToProfile datetime (PTag (ValidXOnlyPubKey xo) _ name) = Just (xo,  ( Profile (fromMaybe "" name) Nothing Nothing Nothing, datetime))
 tagToProfile _ _ = Nothing
-
-addEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]
-addEvent re e r = sortBy sortByDate $ addedEvent : newList
-  where
-    addedEvent = case find (dupEvent e) re of
-      Just (e', rs) -> (e', r : filter (\r' -> not $ r `sameRelay` r') rs)
-      _             -> (e, [r])
-    newList = filter (not . dupEvent e) re
-    dupEvent e' re' = e' == fst re'
-    sortByDate a b = compare (created_at $ fst b) (created_at $ fst a)
 
 sendPost :: TChan Request -> FutrModel -> Text -> IO ()
 sendPost request model post = do
