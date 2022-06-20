@@ -38,9 +38,8 @@ import qualified Widgets.ViewPosts as ViewPosts
 buildUI :: MVar RelayPool -> TChan Request -> AppWenv -> AppModel -> AppNode
 buildUI pool channel wenv model = widgetTree
   where
+    isLoggedIn = isJust $ model ^. futr . selectedKeys
     futrChanged wenv old new = old ^. futr /= new ^. futr
-    Keys _ xo _ name = model ^. futr . selectedKeys
-    pImage = Map.lookup xo (model ^. futr . profiles) >>= (\((Profile _ _ _ p), _) -> p)
     baseLayer = case model ^. currentView of
       HomeView ->
         if model ^. waitingForConns
@@ -55,7 +54,7 @@ buildUI pool channel wenv model = widgetTree
       EditProfileView ->
         EditProfile.editProfileWidget
           channel
-          (model ^. futr . selectedKeys)
+          (fromJust $ model ^. futr . selectedKeys)
           ProfileUpdated
           GoHome
           editProfileModel
@@ -96,11 +95,19 @@ buildUI pool channel wenv model = widgetTree
                 tooltip "Key Management" $ image_ "assets/icons/keys-icon.png" [ fitNone, alignCenter, alignMiddle ]
                 `styleBasic` imageButtonStyling
             , spacer
-            , box_
-                [ onClick $ if model ^. waitingForConns then NoOp else EditProfile
-                , mergeRequired futrChanged] $
-                tooltip "Edit Account" $ profileImage pImage xo Small
-                `styleBasic` imageButtonStyling
+            , case model ^. futr . selectedKeys of
+                Nothing ->
+                  box_ [ mergeRequired futrChanged ] $
+                    tooltip "Edit Account" $ label "N/A"
+                    `styleBasic` imageButtonStyling
+                Just (Keys _ xo _ _) ->
+                  box_
+                    [ onClick $ if model ^. waitingForConns then NoOp else EditProfile
+                    , mergeRequired futrChanged] $
+                    tooltip "Edit Account" $ profileImage pImage xo Small
+                    `styleBasic` imageButtonStyling
+                  where
+                    pImage = Map.lookup xo (model ^. futr . profiles) >>= (\((Profile _ _ _ p), _) -> p)
             ] `nodeVisible` (model ^. currentView == HomeView)
         ] `styleBasic` [ paddingR 10, paddingT 10 ]
     footerTree =
@@ -117,11 +124,13 @@ buildUI pool channel wenv model = widgetTree
             (sort $ model ^. relays)
         currentKeyInfo = selectableText accountData `styleBasic` [ textSize 12 ]
           where
-            accountData = case name of
-              Just n ->
-                n `T.append` " - PubKey: " `T.append` (T.pack $ exportXOnlyPubKey xo)
-              Nothing ->
-                "PubKey: " `T.append` (T.pack $ exportXOnlyPubKey xo)
+            accountData = fromMaybe "Not logged in" $ do
+              (Keys _ xo _ name) <- model ^. futr . selectedKeys
+              case name of
+                Just n ->
+                  return $ n `T.append` " - PubKey: " `T.append` (T.pack $ exportXOnlyPubKey xo)
+                Nothing ->
+                  return $ "PubKey: " `T.append` (T.pack $ exportXOnlyPubKey xo)
     widgetTree =
       zstack
         [ vstack

@@ -83,7 +83,9 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & relays .~ rs
           & waitingForConns .~ not (or (map connected rs))
-      , Monomer.Event InitSubscriptions
+      , case model ^. futr . selectedKeys of
+          Just ks -> Monomer.Event InitSubscriptions
+          Nothing -> Monomer.Event NoOp
       ]
     TimerTick now ->
       [ Model $ model & futr . time .~ now ]
@@ -94,7 +96,7 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & futr . contacts .~ cs
           & subscriptionId .~ Nothing
-      , Producer $ initSubscriptions (env ^. pool) (env ^. channel) (model ^. futr . selectedKeys) (Map.keys cs)
+      , Producer $ initSubscriptions (env ^. pool) (env ^. channel) (fromJust $ model ^. futr . selectedKeys) (Map.keys cs)
       ]
     SubscriptionStarted subId ->
       [ Model $ model & subscriptionId .~ Just subId ]
@@ -131,7 +133,7 @@ handleEvent env wenv node model evt =
     KeyPairsLoaded ks ->
       [ Model $ model
         & keys .~ verifyActiveKeys ks
-        & futr . selectedKeys .~ mk
+        & futr . selectedKeys .~ Just mk
         & currentView .~ HomeView
       , Task $ saveKeyPairs ks (verifyActiveKeys ks)
       ]
@@ -146,10 +148,11 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & keys .~ ks : dk
           & futr . profiles .~ Map.insert xo (profile, datetime) (model ^. futr . profiles)
-          & futr . selectedKeys .~ ks
+          & futr . selectedKeys .~ Just ks
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ Just ks
           & currentView .~ BackupKeysView
       , Task $ saveKeyPairs (model ^. keys) (ks : dk)
+      , Monomer.Event InitSubscriptions
       ]
       where
         dk = disableKeys $ model ^. keys
@@ -162,7 +165,7 @@ handleEvent env wenv node model evt =
     KeysUpdated keysList ->
       [ Model $ model
           & keys .~ keysList
-          & futr . selectedKeys .~ ks
+          & futr . selectedKeys .~ Just ks
       , Task $ saveKeyPairs (model ^. keys) keysList
       , if null keysList then Model $ model & currentView .~ SetupView else Monomer.Event NoOp
       ]
@@ -189,7 +192,7 @@ handleEvent env wenv node model evt =
           & editProfileModel . EditProfile.currentImage .~ fromMaybe "" pic
       ]
       where
-        Keys _ xo _ _ = model ^. futr . selectedKeys
+        Keys _ xo _ _ = fromJust $ model ^. futr . selectedKeys
         Profile name displayName about picture = fst $ fromMaybe (def, fromSeconds 0)
           $ Map.lookup xo (model ^. futr . profiles)
         pic = do
@@ -200,14 +203,9 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & keys .~ ks' : newKeyList
           & futr . selectedKeys .~ (
-            if ks `sameKeys` (model ^. futr . selectedKeys)
-              then ks'
-              else (model ^. futr . selectedKeys)
-            )
-          & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ (
-            if ks `sameKeys` (model ^. futr . selectedKeys)
+            if ks `sameKeys` (fromJust $ model ^. futr . selectedKeys)
               then Just ks'
-              else Just (model ^. futr . selectedKeys)
+              else (model ^. futr . selectedKeys)
             )
           & futr . profiles .~
             case Map.lookup xo (model ^. futr . profiles) of
@@ -351,7 +349,7 @@ loadContacts pool request model sendMsg = do
           _ -> putStrLn "Unexpected event kind received when loading contacts" -- @todo handle differently
       _ -> mzero
   where
-    (Keys _ xo _ _) = model ^. futr . selectedKeys
+    (Keys _ xo _ _) = fromJust $ model ^. futr . selectedKeys
 
 tagToProfile :: DateTime -> Tag -> Maybe (XOnlyPubKey, (Profile, DateTime))
 tagToProfile datetime (PTag (ValidXOnlyPubKey xo) _ name) = Just (xo,  ( Profile (fromMaybe "" name) Nothing Nothing Nothing, datetime))
@@ -359,7 +357,10 @@ tagToProfile _ _ = Nothing
 
 sendPost :: TChan Request -> FutrModel -> Text -> IO ()
 sendPost request model post = do
-  now <- getCurrentTime
-  let (Keys kp xo _ _) = model ^. selectedKeys
-  let unsigned = textNote (strip post) xo now;
-  atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo
+  case model ^. selectedKeys of
+    Nothing ->
+      putStrLn "Cannot post message, so keys available"
+    Just (Keys kp xo _ _) -> do
+      now <- getCurrentTime
+      let unsigned = textNote (strip post) xo now;
+      atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo

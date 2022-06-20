@@ -20,7 +20,7 @@ import Nostr.Relay
 
 data FutrModel = FutrModel
   { _time             :: DateTime
-  , _selectedKeys     :: Keys
+  , _selectedKeys     :: Maybe Keys
   -- nostr data
   , _contacts         :: Map XOnlyPubKey (Profile, DateTime)
   , _events           :: [ReceivedEvent]
@@ -29,7 +29,7 @@ data FutrModel = FutrModel
   deriving (Eq, Show)
 
 instance Default FutrModel where
-  def = FutrModel (fromSeconds 0) initialKeys Map.empty [] Map.empty
+  def = FutrModel (fromSeconds 0) Nothing Map.empty [] Map.empty
 
 makeLenses 'FutrModel
 
