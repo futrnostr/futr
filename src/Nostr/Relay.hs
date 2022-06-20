@@ -59,21 +59,16 @@ instance ToJSON Relay where
 
 defaultRelays :: [Relay]
 defaultRelays =
-  [
-  --   Relay
-  --   { host = "nostr-pub.wellorder.net"
-  --   , port = 443
-  --   , secure = True
-  --   , readable = True
-  --   , writable = True
-  --   , connected = False
-  --   }
-  -- ,
-    Relay
-    { uri = [QQ.uri|ws://localhost:2700|]
-    , info = RelayInfo True True
-    , connected = False
-    }
+  [ Relay
+      { uri = [QQ.uri|wss://nostr-pub.wellorder.net|]
+      , info = RelayInfo True True
+      , connected = False
+      }
+  , Relay
+      { uri = [QQ.uri|ws://localhost:2700|]
+      , info = RelayInfo True True
+      , connected = False
+      }
   ]
 
 relayName :: Relay -> Text
