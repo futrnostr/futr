@@ -8,8 +8,6 @@ import Crypto.Schnorr (XOnlyPubKey, exportXOnlyPubKey)
 import Data.Text (Text)
 import Monomer
 
-import Debug.Trace
-
 import qualified Data.Text as T
 
 data ImageSize
@@ -17,7 +15,7 @@ data ImageSize
   | Small
 
 profileImage :: WidgetEvent e => Maybe Text -> XOnlyPubKey -> ImageSize -> WidgetNode s e
-profileImage picture xo size = image_ (trace (show path) path) [ fitEither ]
+profileImage picture xo size = image_ path [ fitEither ]
   where
   path = case picture of
     Just p ->

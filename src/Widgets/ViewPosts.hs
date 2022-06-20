@@ -15,43 +15,22 @@ import qualified Data.Map     as Map
 import qualified Data.Text    as T
 import qualified Monomer.Lens as L
 
+import Futr
 import Helpers
 import Nostr.Event            as NE
 import Nostr.Profile
 import Widgets.ProfileImage
 import UIHelpers
 
-data ViewPostsModel = ViewPostsModel
-  { _time     :: DateTime
-  , _contacts :: Map XOnlyPubKey (Profile, DateTime)
-  , _events   :: [ReceivedEvent]
-  } deriving (Eq, Show)
-
-instance Default ViewPostsModel where
-  def = ViewPostsModel (fromSeconds 0) Map.empty []
-
-makeLenses 'ViewPostsModel
-
-viewPostsWidget
-  :: (WidgetModel sp, WidgetEvent ep)
-  => WidgetEnv sp ep
-  -> ALens' sp ViewPostsModel
-  -> (ReceivedEvent -> Bool)
-  -> (ReceivedEvent -> ep)
-  -> (XOnlyPubKey -> ep)
-  -> WidgetNode sp ep
-viewPostsWidget wenv model eventFilter viewDetailsAction viewProfileAction =
-  composite "ViewPostsWidget" model (buildUI eventFilter viewDetailsAction viewProfileAction) (\_ _ _ e -> [Report e])
-
-buildUI
+viewPosts
   :: (WidgetModel sp, WidgetEvent ep)
   => (ReceivedEvent -> Bool)
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
   -> WidgetEnv sp ep
-  -> ViewPostsModel
+  -> FutrModel
   -> WidgetNode sp ep
-buildUI eventFilter viewDetailsAction viewProfileAction wenv model =
+viewPosts eventFilter viewDetailsAction viewProfileAction wenv model =
   vscroll_ [ scrollOverlay ] posts
   where
     posts = vstack postRows

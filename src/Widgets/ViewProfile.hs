@@ -20,6 +20,7 @@ import qualified Data.Map             as Map
 import qualified Data.ByteString.Lazy as LazyBytes
 import qualified Monomer.Lens         as L
 
+import Futr
 import Helpers
 import Nostr.Event             as NE
 import Nostr.Keys
@@ -42,11 +43,10 @@ data ViewProfileModel = ViewProfileModel
   , _pictureUrl       :: Text
   , _nip05Identifier  :: Text
   , _following        :: Map.Map XOnlyPubKey [Profile.Profile]
-  , _viewPostsModel   :: ViewPosts.ViewPostsModel
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel initialKeys Nothing "" "" "" "" Map.empty def
+  def = ViewProfileModel initialKeys Nothing "" "" "" "" Map.empty
 
 data ProfileEvent
   = Follow
@@ -60,6 +60,7 @@ makeLenses 'ViewProfileModel
 handleProfileEvent
   :: TChan Request
   -> Keys
+  -> FutrModel
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
   -> ViewProfileWenv
@@ -67,7 +68,7 @@ handleProfileEvent
   -> ViewProfileModel
   -> ProfileEvent
   -> [EventResponse ViewProfileModel ProfileEvent sp ep]
-handleProfileEvent chan ks viewPostDetailsAction viewProfileAction env node model evt = case evt of
+handleProfileEvent chan ks futr viewPostDetailsAction viewProfileAction env node model evt = case evt of
 --  Follow ->
 --    [ Producer $ follow chan ks model
 --    , Model $ model
@@ -106,16 +107,17 @@ viewProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan Request
   -> Keys
+  -> FutrModel
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
   -> ALens' sp ViewProfileModel
   -> WidgetNode sp ep
-viewProfileWidget chan keys viewPostDetailsAction viewProfileAction model =
+viewProfileWidget chan keys futr viewPostDetailsAction viewProfileAction model =
   composite
     "ViewProfileWidget"
     model
     buildUI
-    (handleProfileEvent chan keys viewPostDetailsAction viewProfileAction)
+    (handleProfileEvent chan keys futr viewPostDetailsAction viewProfileAction)
 
 --follow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 --follow chan (Keys kp xo' _ _) model sendMsg = do
@@ -161,12 +163,12 @@ buildUI wenv model =
         ]
     , spacer
     , label "Recent posts"  `styleBasic` [ paddingB 10, paddingT 15, borderB 1 rowSepColor ]
-    , ViewPosts.viewPostsWidget
+    {-, ViewPosts.viewPostsWidget
         wenv
         viewPostsModel
         (\re -> kind (fst re) == TextNote && NE.pubKey (fst re) == xo')
         ViewPostDetails
-        ViewProfile
+        ViewProfile -}
     ]
   where
     (Keys _ user _ _) = model ^. myKeys

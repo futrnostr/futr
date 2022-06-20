@@ -16,6 +16,7 @@ import           Monomer                              (WidgetEnv, WidgetNode)
 import qualified Network.WebSockets                   as WS
 import           Network.Socket
 
+import Futr
 import Helpers
 import Nostr.Event
 import Nostr.Filter
@@ -27,7 +28,6 @@ import Nostr.Request (Request, SubscriptionId)
 import Nostr.Response
 import Widgets.BackupKeys
 import Widgets.EditProfile
-import Widgets.Home
 import Widgets.KeyManagement
 import Widgets.RelayManagement
 import Widgets.Setup
@@ -38,8 +38,8 @@ type AppNode = WidgetNode AppModel AppEvent
 
 data AppEnv =
   AppEnv
-    { _relayPool :: MVar RelayPool
-    , _channel   :: TChan Request
+    { _pool    :: MVar RelayPool
+    , _channel :: TChan Request
     }
 
 data AppView
@@ -54,15 +54,15 @@ data AppView
 data AppModel =
   AppModel
     { _keys              :: [Keys]
-    , _profiles          :: Map XOnlyPubKey (Profile, DateTime)
-    , _selectedKeys      :: Keys
+    , _futr              :: FutrModel
+    , _inputField        :: Text
     , _relays            :: [Relay]
+    , _subscriptionId    :: Maybe SubscriptionId
     , _errorMsg          :: Maybe Text
     , _waitingForConns   :: Bool
     -- views
     , _currentView       :: AppView
     , _editProfileModel  :: EditProfileModel
-    , _homeModel         :: HomeModel
     , _relayModel        :: RelayModel
     , _setupModel        :: SetupModel
     , _backupKeysModel   :: BackupKeysModel
@@ -72,13 +72,24 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] Map.empty initialKeys [] Nothing True HomeView def def def def def def def
+  def = AppModel [] def "" [] Nothing Nothing True HomeView def def def def def def
 
 data AppEvent
   = NoOp
   | AppInit
   | RelaysInitialized [Relay]
   | TimerTick DateTime
+  -- subscriptions
+  | InitSubscriptions
+  | SubscriptionsInitialized (Map XOnlyPubKey (Profile, DateTime))
+  | SubscriptionStarted SubscriptionId
+  | ContactsReceived [(XOnlyPubKey, (Profile, DateTime))]
+  | TextNoteReceived Event Relay
+  | Dispose
+  -- actions
+  | SendPost
+  | ViewPostDetails ReceivedEvent
+  | ViewProfile XOnlyPubKey
   -- go to
   | GoHome
   | GoKeyManagement
@@ -97,15 +108,6 @@ data AppEvent
   -- profile
   | EditProfile
   | ProfileUpdated Keys Profile DateTime
-  -- keys events
---  | KeysUpdated [Keys]
---  | KeysSelected (Keys)
-  -- relay connection
-  -- | TimerTick DateTime
-  -- | Initialize
-  -- | InitSubscribed SubscriptionId
-  -- | HomeFilterSubscribed SubscriptionId
-  -- | EventAppeared Event Relay
   deriving Show
 
 makeLenses 'AppEnv

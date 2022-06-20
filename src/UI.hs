@@ -11,7 +11,7 @@ import Crypto.Schnorr (exportXOnlyPubKey)
 import Data.Default
 import Data.List (sort)
 import Data.Maybe
-import Data.Text (Text)
+import Data.Text (Text, strip)
 import Monomer
 
 import qualified Data.Map as Map
@@ -19,6 +19,7 @@ import qualified Monomer.Lens as L
 import qualified Data.Text as T
 
 import AppTypes
+import Futr
 import Nostr.Keys
 import Nostr.Profile
 import Nostr.Relay
@@ -29,31 +30,32 @@ import Widgets.ProfileImage
 
 import qualified Widgets.BackupKeys as BackupKeys
 import qualified Widgets.EditProfile as EditProfile
-import qualified Widgets.Home as Home
 import qualified Widgets.KeyManagement as KeyManagement
 import qualified Widgets.RelayManagement as RelayManagement
 import qualified Widgets.Setup as Setup
+import qualified Widgets.ViewPosts as ViewPosts
 
 buildUI :: MVar RelayPool -> TChan Request -> AppWenv -> AppModel -> AppNode
 buildUI pool channel wenv model = widgetTree
   where
-    Keys _ xo _ name = model ^. selectedKeys
-    pImage = Map.lookup xo (model ^. profiles) >>= (\((Profile _ _ _ p), _) -> p)
+    futrChanged wenv old new = old ^. futr /= new ^. futr
+    Keys _ xo _ name = model ^. futr . selectedKeys
+    pImage = Map.lookup xo (model ^. futr . profiles) >>= (\((Profile _ _ _ p), _) -> p)
     baseLayer = case model ^. currentView of
       HomeView ->
         if model ^. waitingForConns
           then waitingForConnectionsTree
-          else Home.homeWidget pool channel homeModel
+          else homeUI wenv model
       SetupView ->
         if model ^. waitingForConns
           then waitingForConnectionsTree
-          else Setup.setupWidget pool channel  NewKeysCreated setupModel
+          else Setup.setupWidget pool channel NewKeysCreated setupModel
       BackupKeysView ->
         BackupKeys.backupKeysWidget KeysBackupDone backupKeysModel
       EditProfileView ->
         EditProfile.editProfileWidget
           channel
-          (model ^. selectedKeys)
+          (model ^. futr . selectedKeys)
           ProfileUpdated
           GoHome
           editProfileModel
@@ -95,7 +97,8 @@ buildUI pool channel wenv model = widgetTree
                 `styleBasic` imageButtonStyling
             , spacer
             , box_
-                [ onClick $ if model ^. waitingForConns then NoOp else EditProfile ] $
+                [ onClick $ if model ^. waitingForConns then NoOp else EditProfile
+                , mergeRequired futrChanged] $
                 tooltip "Edit Account" $ profileImage pImage xo Small
                 `styleBasic` imageButtonStyling
             ] `nodeVisible` (model ^. currentView == HomeView)
@@ -171,3 +174,27 @@ errorLayer errorMsg' =
       , radius 10
       , bgColor darkGray
       ]
+
+homeUI :: AppWenv -> AppModel -> WidgetNode AppModel AppEvent
+homeUI wenv model =
+  vstack
+    [ label "New Post"
+    , spacer
+    , vstack
+        [ hstack
+            [ textArea (inputField)
+              `nodeKey` "noteInput"
+              `styleBasic` [ height 50 ]
+            , filler
+            , button "Post" SendPost
+              `nodeEnabled` ((strip $ model ^. inputField) /= "")
+            ]
+        ]
+    , spacer
+    , ViewPosts.viewPosts
+        (\_ -> True)
+        ViewPostDetails
+        ViewProfile
+        wenv
+        (model ^. futr)
+    ]

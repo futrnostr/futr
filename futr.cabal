@@ -21,6 +21,7 @@ executable futr
   other-modules:
       AppTypes
       DebugJSON
+      Futr
       Helpers
       Nostr.Event
       Nostr.Filter
@@ -36,7 +37,6 @@ executable futr
       UIHelpers
       Widgets.BackupKeys
       Widgets.EditProfile
-      Widgets.Home
       Widgets.KeyManagement
       Widgets.ProfileImage
       Widgets.RelayManagement
