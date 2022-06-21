@@ -31,6 +31,7 @@ import Widgets.EditProfile
 import Widgets.KeyManagement
 import Widgets.RelayManagement
 import Widgets.Setup
+import Widgets.ViewProfile
 
 type AppWenv = WidgetEnv AppModel AppEvent
 
@@ -49,6 +50,8 @@ data AppView
     | EditProfileView
     | KeyManagementView
     | RelayManagementView
+    | PostDetailsView
+    | ProfileView
     deriving (Eq, Show)
 
 data AppModel =
@@ -63,6 +66,7 @@ data AppModel =
     -- views
     , _currentView       :: AppView
     , _editProfileModel  :: EditProfileModel
+    , _viewProfileModel  :: ViewProfileModel
     , _relayModel        :: RelayModel
     , _setupModel        :: SetupModel
     , _backupKeysModel   :: BackupKeysModel
@@ -72,7 +76,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] def "" [] Nothing Nothing True HomeView def def def def def def
+  def = AppModel [] def "" [] Nothing Nothing True HomeView def def def def def def def
 
 data AppEvent
   = NoOp

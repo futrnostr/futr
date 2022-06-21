@@ -12,10 +12,11 @@ import qualified Data.Text as T
 
 data ImageSize
   = Big
+  | Medium
   | Small
 
 profileImage :: WidgetEvent e => Maybe Text -> XOnlyPubKey -> ImageSize -> WidgetNode s e
-profileImage picture xo size = image_ path [ fitEither ]
+profileImage picture xo size = image_ path [ fitEither ] `styleBasic` (dimensions size)
   where
   path = case picture of
     Just p ->
@@ -28,4 +29,9 @@ profileImage picture xo size = image_ path [ fitEither ]
 
 imageSize :: ImageSize -> String
 imageSize Big = "?size=300x300"
+imageSize Medium = "?size=150x150"
 imageSize Small = "?size=40x40"
+
+dimensions Big = [ height 300, width 300 ]
+dimensions Medium = [ height 150, width 150 ]
+dimensions Small = [ height 40, width 40 ]

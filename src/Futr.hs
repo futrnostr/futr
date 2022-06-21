@@ -58,3 +58,8 @@ addEvent re e r = sortBy sortByDate $ addedEvent : newList
     newList = filter (not . dupEvent e) re
     dupEvent e' re' = e' == fst re'
     sortByDate a b = compare (created_at $ fst b) (created_at $ fst a)
+
+pictureUrl :: Map XOnlyPubKey (Profile, DateTime) -> XOnlyPubKey -> Maybe Text
+pictureUrl profiles xo = do
+  ((Profile _ _ _ p), _) <- Map.lookup xo profiles
+  p

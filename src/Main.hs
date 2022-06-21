@@ -46,6 +46,7 @@ import qualified Widgets.EditProfile as EditProfile
 import qualified Widgets.KeyManagement as KeyManagement
 import qualified Widgets.RelayManagement as RelayManagement
 import qualified Widgets.ViewPosts as ViewPosts
+import qualified Widgets.ViewProfile as ViewProfile
 
 main :: IO ()
 main = do
@@ -110,6 +111,13 @@ handleEvent env wenv node model evt =
     SendPost ->
       [ Model $ model & inputField .~ ""
       , voidTask $ sendPost (env ^. channel) (model ^. futr) (model ^. inputField)
+      ]
+    ViewPostDetails re ->
+      [ Model $ model & currentView .~ PostDetailsView ]
+    ViewProfile xo' ->
+      [ Model $ model
+          & viewProfileModel . ViewProfile.xo .~ Just xo'
+          & currentView .~ ProfileView
       ]
     -- go to
     GoHome ->

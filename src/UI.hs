@@ -34,6 +34,7 @@ import qualified Widgets.KeyManagement as KeyManagement
 import qualified Widgets.RelayManagement as RelayManagement
 import qualified Widgets.Setup as Setup
 import qualified Widgets.ViewPosts as ViewPosts
+import qualified Widgets.ViewProfile as ViewProfile
 
 buildUI :: MVar RelayPool -> TChan Request -> AppWenv -> AppModel -> AppNode
 buildUI pool channel wenv model = widgetTree
@@ -71,6 +72,16 @@ buildUI pool channel wenv model = widgetTree
           GoHome
           AppTypes.RelaysUpdated
           relayMgmtModel
+      PostDetailsView ->
+        vstack [] -- @todo
+      ProfileView ->
+        ViewProfile.viewProfileWidget
+          channel
+          (model ^. futr)
+          GoHome
+          ViewPostDetails
+          ViewProfile
+          viewProfileModel
     imageButtonStyling =
       [ cursorHand
       , border 1 $ rgbHex "#bae3ff"

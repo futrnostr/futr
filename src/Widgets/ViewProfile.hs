@@ -27,6 +27,7 @@ import Nostr.Keys
 import Nostr.Kind
 import Nostr.Request
 import UIHelpers
+import Widgets.ProfileImage
 
 import qualified Nostr.Profile as Profile
 import qualified Widgets.ViewPosts as ViewPosts
@@ -36,7 +37,7 @@ type ViewProfileWenv = WidgetEnv ViewProfileModel ProfileEvent
 type ViewProfileNode = WidgetNode ViewProfileModel ProfileEvent
 
 data ViewProfileModel = ViewProfileModel
-  { _myKeys           :: Keys
+  { _futr             :: FutrModel
   , _xo               :: Maybe XOnlyPubKey
   , _name             :: Text
   , _about            :: Text
@@ -46,21 +47,22 @@ data ViewProfileModel = ViewProfileModel
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel initialKeys Nothing "" "" "" "" Map.empty
+  def = ViewProfileModel def Nothing "" "" "" "" Map.empty
 
 data ProfileEvent
   = Follow
   | Unfollow
   | ViewPostDetails ReceivedEvent
   | ViewProfile XOnlyPubKey
+  | Back
   deriving Show
 
 makeLenses 'ViewProfileModel
 
 handleProfileEvent
   :: TChan Request
-  -> Keys
   -> FutrModel
+  -> ep
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
   -> ViewProfileWenv
@@ -68,7 +70,7 @@ handleProfileEvent
   -> ViewProfileModel
   -> ProfileEvent
   -> [EventResponse ViewProfileModel ProfileEvent sp ep]
-handleProfileEvent chan ks futr viewPostDetailsAction viewProfileAction env node model evt = case evt of
+handleProfileEvent chan futr back viewPostDetails viewProfile env node model evt = case evt of
 --  Follow ->
 --    [ Producer $ follow chan ks model
 --    , Model $ model
@@ -99,25 +101,27 @@ handleProfileEvent chan ks futr viewPostDetailsAction viewProfileAction env node
 --      newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= xo') oldFollowing
 --      newFollowing' = Map.insert xo' newFollowing (model ^. following)
   ViewPostDetails re ->
-    [ Report $ viewPostDetailsAction re ]
+    [ Report $ viewPostDetails re ]
   ViewProfile xo ->
-    [ Report $ viewProfileAction xo ]
+    [ Report $ viewProfile xo ]
+  Back ->
+    [ Report $ back ]
 
 viewProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan Request
-  -> Keys
   -> FutrModel
+  -> (ep)
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
   -> ALens' sp ViewProfileModel
   -> WidgetNode sp ep
-viewProfileWidget chan keys futr viewPostDetailsAction viewProfileAction model =
+viewProfileWidget chan futr back viewPostDetailsAction viewProfileAction model =
   composite
     "ViewProfileWidget"
     model
     buildUI
-    (handleProfileEvent chan keys futr viewPostDetailsAction viewProfileAction)
+    (handleProfileEvent chan futr back viewPostDetailsAction viewProfileAction)
 
 --follow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 --follow chan (Keys kp xo' _ _) model sendMsg = do
@@ -153,7 +157,13 @@ buildUI
 buildUI wenv model =
   vstack
     [ hstack
-        [ vstack
+        [ vstack [ button "Back" Back ]
+        , spacer
+        , profileImage
+            (Futr.pictureUrl (model ^. futr. profiles) (fromJust $ model ^. xo))
+            (fromJust $ model ^. xo)
+            Medium
+        , vstack
             [ (selectableText $ model ^. name) `styleBasic` [ textSize 22 ]
             , (selectableText $ pack $ exportXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
             , selectableText $ model ^. about
@@ -171,7 +181,8 @@ buildUI wenv model =
         ViewProfile -}
     ]
   where
-    (Keys _ user _ _) = model ^. myKeys
+
+    (Keys _ user _ _) = fromJust $ model ^. futr . selectedKeys
     xo' = fromJust $ model ^. xo
 --    currentlyFollowing = Map.findWithDefault [] user (model ^. following)
 --    currentlyFollowing' = List.map extractXOFromProfile currentlyFollowing
