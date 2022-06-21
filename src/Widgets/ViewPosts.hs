@@ -37,7 +37,7 @@ viewPosts eventFilter viewDetailsAction viewProfileAction wenv model =
     filteredEvents = filter eventFilter (model ^. events)
     postFade idx ev = animRow
       where
-        item = postRow wenv (model ^. contacts) idx ev (model ^. time) viewDetailsAction viewProfileAction
+        item = postRow wenv (model ^. profiles) idx ev (model ^. time) viewDetailsAction viewProfileAction
         animRow =
           animFadeOut_ [] item `nodeKey` (T.pack $ exportEventId $ eventId $ fst ev)
     postRows = zipWith postFade [ 0 .. ] filteredEvents

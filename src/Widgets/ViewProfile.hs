@@ -40,14 +40,14 @@ data ViewProfileModel = ViewProfileModel
   { _futr             :: FutrModel
   , _xo               :: Maybe XOnlyPubKey
   , _name             :: Text
+  , _displayName      :: Text
   , _about            :: Text
   , _pictureUrl       :: Text
-  , _nip05Identifier  :: Text
   , _following        :: Map.Map XOnlyPubKey [Profile.Profile]
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel def Nothing "" "" "" "" Map.empty
+  def = ViewProfileModel def Nothing  "" "" "" "" Map.empty
 
 data ProfileEvent
   = Follow
@@ -173,15 +173,14 @@ buildUI wenv model =
         ]
     , spacer
     , label "Recent posts"  `styleBasic` [ paddingB 10, paddingT 15, borderB 1 rowSepColor ]
-    {-, ViewPosts.viewPostsWidget
-        wenv
-        viewPostsModel
+    , ViewPosts.viewPosts
         (\re -> kind (fst re) == TextNote && NE.pubKey (fst re) == xo')
         ViewPostDetails
-        ViewProfile -}
+        ViewProfile
+        wenv
+        (model ^. futr)
     ]
   where
-
     (Keys _ user _ _) = fromJust $ model ^. futr . selectedKeys
     xo' = fromJust $ model ^. xo
 --    currentlyFollowing = Map.findWithDefault [] user (model ^. following)

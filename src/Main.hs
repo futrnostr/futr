@@ -95,14 +95,18 @@ handleEvent env wenv node model evt =
       [ Producer $ loadContacts (env ^. pool) (env ^. channel) model ]
     SubscriptionsInitialized cs ->
       [ Model $ model
-          & futr . contacts .~ cs
+          & futr . contacts .~ Map.keys cs
+          & futr . profiles .~ cs
           & subscriptionId .~ Nothing
       , Producer $ initSubscriptions (env ^. pool) (env ^. channel) (fromJust $ model ^. futr . selectedKeys) (Map.keys cs)
       ]
     SubscriptionStarted subId ->
       [ Model $ model & subscriptionId .~ Just subId ]
     ContactsReceived cs ->
-      [ Model $ model & futr . contacts .~ updateContacts (model ^. futr . contacts) cs ]
+      [ Model $ model
+          & futr. contacts .~ updateContacts (model ^. futr . contacts) cs
+          & futr . profiles .~ updateProfiles (model ^. futr . profiles) cs
+      ]
     TextNoteReceived event relay ->
       [ Model $ model & futr . events .~ addEvent (model ^. futr .  events) event relay ]
     Dispose ->
@@ -118,7 +122,13 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & viewProfileModel . ViewProfile.xo .~ Just xo'
           & currentView .~ ProfileView
+          & viewProfileModel . ViewProfile.name .~ name
+          & viewProfileModel . ViewProfile.displayName .~ fromMaybe "" displayName
+          & viewProfileModel . ViewProfile.about .~ fromMaybe "" about
+          & viewProfileModel . ViewProfile.pictureUrl .~ fromMaybe "" pictureUrl
       ]
+      where
+        ((Profile name displayName about pictureUrl), _) = fromMaybe (def, fromSeconds 0) (Map.lookup xo' (model ^. futr . profiles))
     -- go to
     GoHome ->
       [ Model $ model & currentView .~ HomeView ]

@@ -7,7 +7,7 @@ import Control.Lens
 import Crypto.Schnorr (XOnlyPubKey)
 import Data.DateTime
 import Data.Default
-import Data.List (find, sortBy)
+import Data.List (find, nub, sortBy)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
@@ -22,25 +22,30 @@ data FutrModel = FutrModel
   { _time             :: DateTime
   , _selectedKeys     :: Maybe Keys
   -- nostr data
-  , _contacts         :: Map XOnlyPubKey (Profile, DateTime)
   , _events           :: [ReceivedEvent]
+  , _contacts         :: [XOnlyPubKey]
   , _profiles         :: Map XOnlyPubKey (Profile, DateTime)
   }
   deriving (Eq, Show)
 
 instance Default FutrModel where
-  def = FutrModel (fromSeconds 0) Nothing Map.empty [] Map.empty
+  def = FutrModel (fromSeconds 0) Nothing [] [] Map.empty
 
 makeLenses 'FutrModel
 
-updateContacts :: Map XOnlyPubKey (Profile, DateTime) -> [(XOnlyPubKey, (Profile, DateTime))] -> Map XOnlyPubKey (Profile, DateTime)
-updateContacts original new =
+updateContacts :: [XOnlyPubKey] -> [(XOnlyPubKey, (Profile, DateTime))] -> [XOnlyPubKey]
+updateContacts oldContacts newContactData = nub $ oldContacts ++ newContacts
+  where
+    newContacts = map (\(xo, _) -> xo) newContactData
+
+updateProfiles :: Map XOnlyPubKey (Profile, DateTime) -> [(XOnlyPubKey, (Profile, DateTime))] -> Map XOnlyPubKey (Profile, DateTime)
+updateProfiles original new =
   Map.union newContacts original
   where
-    newContacts = Map.fromList $ catMaybes $ map (checkContactIsNewer original) new
+    newContacts = Map.fromList $ catMaybes $ map (checkProfileIsNewer original) new
 
-checkContactIsNewer :: Map XOnlyPubKey (Profile, DateTime) -> (XOnlyPubKey, (Profile, DateTime)) -> Maybe (XOnlyPubKey, (Profile, DateTime))
-checkContactIsNewer original (xo, (p, d)) =
+checkProfileIsNewer :: Map XOnlyPubKey (Profile, DateTime) -> (XOnlyPubKey, (Profile, DateTime)) -> Maybe (XOnlyPubKey, (Profile, DateTime))
+checkProfileIsNewer original (xo, (p, d)) =
   case Map.lookup xo original of
     Nothing ->
       Just (xo, (p, d))
