@@ -21,6 +21,7 @@ import Nostr.Event            as NE
 import Nostr.Profile
 import Widgets.ProfileImage
 import UIHelpers
+import Debug.Trace
 
 viewPosts
   :: (WidgetModel sp, WidgetEvent ep)
@@ -52,11 +53,11 @@ postRow
   -> (ReceivedEvent -> e)
   -> (XOnlyPubKey -> e)
   -> WidgetNode s e
-postRow wenv contacts idx re time viewDetailsAction viewProfileAction = row
+postRow wenv profiles idx re time viewDetailsAction viewProfileAction = row
   where
     event = fst re
     xo = NE.pubKey event
-    (profileName, pictureUrl) = case Map.lookup xo contacts of
+    (profileName, pictureUrl) = case Map.lookup xo profiles of
       Just ((Profile name _ _ pictureUrl), _) ->
         (name, pictureUrl)
       Nothing ->

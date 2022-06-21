@@ -20,6 +20,7 @@ import Wuss
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Lazy as LazyBytes
 import qualified Data.Map as Map
+import qualified Data.Text as T
 import qualified Text.URI.QQ as QQ
 
 import Nostr.Event
@@ -66,7 +67,7 @@ updateRelays pool relays = do
 subscribe :: MVar RelayPool -> TChan Request -> TChan (Response, Relay) -> [Filter] -> IO SubscriptionId
 subscribe pool request response filters = do
   gen <- newGenIO :: IO CtrDRBG
-  let Right (randomBytes, newGen) = genBytes 16 gen
+  let Right (randomBytes, newGen) = genBytes 6 gen
   let subId = B16.encodeBase16 randomBytes
   registerResponseChannel pool subId response
   send request $ Subscribe $ Subscription filters subId

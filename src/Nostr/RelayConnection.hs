@@ -94,7 +94,7 @@ receiveWs pool sendMsg msgRelaysUpdated relay conn =
                 Just responseChannel ->
                   lift $ atomically $ writeTChan responseChannel $ (EventReceived subId event, relay)
                 Nothing ->
-                  lift $ putStrLn $ "No event handler found for subscription " ++ unpack subId
+                  return ()
             Just (Notice notice) -> do
               lift $ putStrLn $ "Notice: " ++ unpack notice
               (RelayPool _ handlers) <- lift $ readMVar pool

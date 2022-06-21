@@ -73,7 +73,8 @@ handleEvent
   -> AppEvent
   -> [AppEventResponse AppModel AppEvent]
 handleEvent env wenv node model evt =
-  case trace (show evt) evt of
+  --case trace (show evt) evt of
+  case evt of
     NoOp -> []
     AppInit ->
       [ Task loadKeysFromDisk
@@ -299,7 +300,7 @@ timerLoop :: (AppEvent -> IO ()) -> IO ()
 timerLoop sendMsg = void $ forever $ do
   now <- getCurrentTime
   sendMsg $ TimerTick now
-  threadDelay 1000000
+  threadDelay 5000000
 
 -- subscriptions
 

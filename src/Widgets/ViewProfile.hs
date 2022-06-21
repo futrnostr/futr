@@ -3,6 +3,8 @@
 
 module Widgets.ViewProfile where
 
+import Debug.Trace
+
 import Control.Concurrent.STM.TChan
 import Control.Lens
 import Control.Monad.STM              (atomically)
@@ -37,8 +39,7 @@ type ViewProfileWenv = WidgetEnv ViewProfileModel ProfileEvent
 type ViewProfileNode = WidgetNode ViewProfileModel ProfileEvent
 
 data ViewProfileModel = ViewProfileModel
-  { _futr             :: FutrModel
-  , _xo               :: Maybe XOnlyPubKey
+  { _xo               :: Maybe XOnlyPubKey
   , _name             :: Text
   , _displayName      :: Text
   , _about            :: Text
@@ -47,7 +48,7 @@ data ViewProfileModel = ViewProfileModel
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel def Nothing  "" "" "" "" Map.empty
+  def = ViewProfileModel Nothing  "" "" "" "" Map.empty
 
 data ProfileEvent
   = Follow
@@ -120,7 +121,7 @@ viewProfileWidget chan futr back viewPostDetailsAction viewProfileAction model =
   composite
     "ViewProfileWidget"
     model
-    buildUI
+    (buildUI futr)
     (handleProfileEvent chan futr back viewPostDetailsAction viewProfileAction)
 
 --follow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
@@ -151,16 +152,17 @@ viewProfileWidget chan futr back viewPostDetailsAction viewProfileAction model =
 --    newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= oldFollow) oldFollowing
 
 buildUI
-  :: ViewProfileWenv
+  ::  FutrModel
+  -> ViewProfileWenv
   -> ViewProfileModel
   -> ViewProfileNode
-buildUI wenv model =
+buildUI futr wenv model =
   vstack
     [ hstack
         [ vstack [ button "Back" Back ]
         , spacer
         , profileImage
-            (Futr.pictureUrl (model ^. futr. profiles) (fromJust $ model ^. xo))
+            (Futr.pictureUrl (futr ^. profiles) (fromJust $ model ^. xo))
             (fromJust $ model ^. xo)
             Medium
         , vstack
@@ -178,10 +180,10 @@ buildUI wenv model =
         ViewPostDetails
         ViewProfile
         wenv
-        (model ^. futr)
+        futr
     ]
   where
-    (Keys _ user _ _) = fromJust $ model ^. futr . selectedKeys
+    (Keys _ user _ _) = fromJust $ futr ^. selectedKeys
     xo' = fromJust $ model ^. xo
 --    currentlyFollowing = Map.findWithDefault [] user (model ^. following)
 --    currentlyFollowing' = List.map extractXOFromProfile currentlyFollowing
