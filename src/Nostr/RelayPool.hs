@@ -45,22 +45,22 @@ removeResponseChannel pool subId = do
 
 addRelay :: MVar RelayPool -> Relay -> IO [Relay]
 addRelay pool relay = do
-  updateRelays pool relays
-  return relays
-  where
-    relays = sort $ relay : (filter (\r -> not $ r `sameRelay` relay) relays)
+  (RelayPool relays responseChannels) <- takeMVar pool
+  let relays' = sort $ relay : (filter (\r -> not $ r `sameRelay` relay) relays)
+  putMVar pool (RelayPool relays' responseChannels)
+  saveRelays relays'
+  return relays'
 
 removeRelay :: MVar RelayPool -> Relay -> IO [Relay]
 removeRelay pool relay = do
-  updateRelays pool relays
-  return relays
-  where
-    relays = filter (\r -> not $ r `sameRelay` relay) relays
-
-updateRelays :: MVar RelayPool -> [Relay] -> IO ()
-updateRelays pool relays = do
   (RelayPool relays responseChannels) <- takeMVar pool
-  putMVar pool (RelayPool relays responseChannels)
+  let relays' = filter (\r -> not $ r `sameRelay` relay) relays
+  putMVar pool (RelayPool relays' responseChannels)
+  saveRelays relays'
+  return relays'
+
+saveRelays :: [Relay] -> IO ()
+saveRelays relays = do
   LazyBytes.writeFile "relays.ft" $ encode relays
   putStrLn "Relays saved to disk"
 

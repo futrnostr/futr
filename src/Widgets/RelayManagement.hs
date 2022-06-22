@@ -2,7 +2,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
-
 module Widgets.RelayManagement where
 
 import Control.Concurrent.MVar
@@ -143,7 +142,7 @@ handleRelayManagementEvent channel poolMVar goHome relaysUpdated env node model 
     ConnectRelay relay ->
       [ Producer $ connectRelay channel poolMVar relay ]
     DisconnectRelay relay ->
-      [ Producer $ disconnectRelay channel relay ]
+      [ voidTask $ disconnectRelay channel relay ]
     RelaysUpdated relays ->
       [ Report $ relaysUpdated relays
       , Model $ model & rmRelays .~ relays
@@ -153,8 +152,8 @@ connectRelay :: TChan Request -> MVar RelayPool -> Relay -> (RelayManagementEven
 connectRelay channel poolMVar relay sendMsg =
   connect channel poolMVar sendMsg RelaysUpdated relay
 
-disconnectRelay :: TChan Request -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
-disconnectRelay channel relay _ =
+disconnectRelay :: TChan Request -> Relay -> IO ()
+disconnectRelay channel relay =
   atomically $ writeTChan channel $ Disconnect relay
 
 doAddRelay :: TChan Request -> MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
@@ -165,9 +164,9 @@ doAddRelay channel poolMVar relay sendMsg = do
 
 doRemoveRelay :: TChan Request -> MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
 doRemoveRelay channel poolMVar relay sendMsg = do
-  disconnectRelay channel relay sendMsg
   newRelays <- removeRelay poolMVar relay
   sendMsg $ RelaysUpdated newRelays
+  disconnectRelay channel relay
 
 validateAndAddRelay :: RelayModel -> IO RelayManagementEvent
 validateAndAddRelay model = do

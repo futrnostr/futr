@@ -61,12 +61,6 @@ connect channel pool sendMsg msgRelaysUpdated relay = do
       "ws"  -> WS.runClient host port path
       _     -> error "Wrong websocket scheme"
 
-disconnect :: TChan Request -> Relay -> IO ()
-disconnect channel relay =
-  if not $ connected relay
-    then return ()
-    else atomically $ writeTChan channel $ Disconnect relay
-
 receiveWs
   :: WidgetEvent e
   => MVar RelayPool
