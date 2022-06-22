@@ -121,12 +121,8 @@ handleEvent env wenv node model evt =
       [ Model $ model & currentView .~ PostDetailsView ]
     ViewProfile xo' ->
       [ Model $ model
-          & viewProfileModel . ViewProfile.xo .~ Just xo'
+          & viewProfileModel . ViewProfile.profile .~ Just xo'
           & currentView .~ ProfileView
-          & viewProfileModel . ViewProfile.name .~ name
-          & viewProfileModel . ViewProfile.displayName .~ fromMaybe "" displayName
-          & viewProfileModel . ViewProfile.about .~ fromMaybe "" about
-          & viewProfileModel . ViewProfile.pictureUrl .~ fromMaybe "" pictureUrl
       ]
       where
         ((Profile name displayName about pictureUrl), _) = fromMaybe (def, fromSeconds 0) (Map.lookup xo' (model ^. futr . profiles))

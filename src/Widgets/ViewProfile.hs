@@ -12,7 +12,7 @@ import Crypto.Schnorr
 import Data.Aeson
 import Data.DateTime
 import Data.Default
-import Data.Maybe                     (fromJust)
+import Data.Maybe                     (fromJust, fromMaybe)
 import Data.Text
 import Data.Text.Encoding             (encodeUtf8)
 import Monomer
@@ -39,7 +39,7 @@ type ViewProfileWenv = WidgetEnv ViewProfileModel ProfileEvent
 type ViewProfileNode = WidgetNode ViewProfileModel ProfileEvent
 
 data ViewProfileModel = ViewProfileModel
-  { _xo               :: Maybe XOnlyPubKey
+  { _profile          :: Maybe XOnlyPubKey
   , _name             :: Text
   , _displayName      :: Text
   , _about            :: Text
@@ -162,29 +162,36 @@ buildUI futr wenv model =
         [ vstack [ button "Back" Back ]
         , spacer
         , profileImage
-            (Futr.pictureUrl (futr ^. profiles) (fromJust $ model ^. xo))
-            (fromJust $ model ^. xo)
+            (Futr.pictureUrl (futr ^. profiles) profileKey)
+            profileKey
             Medium
         , vstack
-            [ (selectableText $ model ^. name) `styleBasic` [ textSize 22 ]
-            , (selectableText $ pack $ exportXOnlyPubKey xo') `styleBasic` [ textSize 10 ]
-            , selectableText $ model ^. about
+            [ (selectableText $ name) `styleBasic` [ textSize 22 ]
+            , (selectableText $ pack $ exportXOnlyPubKey profileKey) `styleBasic` [ textSize 10 ]
+            , selectableText $ fromMaybe "" displayName
+            , selectableText $ pack $ "About: " ++ (unpack $ fromMaybe "" about)
             ]
-        , filler
         --, vstack [ button btnText action ]
+        ]
+    , spacer
+    , hstack
+        [ filler
+        , selectableText $ pack $ "Last updated " ++ (unpack $ xTimeAgo at (futr ^. time))
         ]
     , spacer
     , label "Recent posts"  `styleBasic` [ paddingB 10, paddingT 15, borderB 1 rowSepColor ]
     , ViewPosts.viewPosts
-        (\re -> kind (fst re) == TextNote && NE.pubKey (fst re) == xo')
+        (\re -> kind (fst re) == TextNote && NE.pubKey (fst re) == profileKey)
         ViewPostDetails
         ViewProfile
         wenv
         futr
     ]
   where
-    (Keys _ user _ _) = fromJust $ futr ^. selectedKeys
-    xo' = fromJust $ model ^. xo
+    -- (Keys _ user xo _) = fromJust $ futr ^. selectedKeys
+    profileKey = fromJust $ model ^. profile
+    ((Profile.Profile name displayName about _), at) = fromJust $ Map.lookup profileKey (futr ^. profiles)
+    (year, month, day, hour, min, _) = toGregorian $ at
 --    currentlyFollowing = Map.findWithDefault [] user (model ^. following)
 --    currentlyFollowing' = List.map extractXOFromProfile currentlyFollowing
 --    action = if List.elem xo' currentlyFollowing' then Unfollow else Follow
