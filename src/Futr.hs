@@ -50,8 +50,8 @@ checkProfileIsNewer original (xo, (p, d)) =
     Nothing ->
       Just (xo, (p, d))
     Just (p', d') ->
-      if d' > d
-        then Just (xo, (p', d'))
+      if d > d'
+        then Just (xo, (p, d))
         else Nothing
 
 addEvent :: [ReceivedEvent] -> Event -> Relay -> [ReceivedEvent]

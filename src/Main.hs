@@ -324,11 +324,11 @@ initSubscriptions pool request (Keys _ xo _ _) contacts sendMsg = do
     case msg of
       (EventReceived _ event, relay) -> do
         case kind event of
-          TextNote -> do
+          TextNote ->
             sendMsg $ TextNoteReceived event relay
-          Contacts -> do
+          Contacts ->
             sendMsg $ ContactsReceived $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
-          Metadata -> do
+          Metadata ->
             case parseProfiles event of
               Just p -> sendMsg $ ContactsReceived [ p ]
               Nothing -> return ()
