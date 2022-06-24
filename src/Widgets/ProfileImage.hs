@@ -16,7 +16,7 @@ data ImageSize
   | Small
 
 profileImage :: WidgetEvent e => Maybe Text -> XOnlyPubKey -> ImageSize -> WidgetNode s e
-profileImage picture xo size = image_ path [ fitEither ] `styleBasic` (dimensions size)
+profileImage picture xo size = image_ path [ fitEither, alignCenter ] `styleBasic` (dimensions size)
   where
   path = case picture of
     Just p ->

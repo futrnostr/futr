@@ -88,12 +88,15 @@ data AppEvent
   | SubscriptionsInitialized (Map XOnlyPubKey (Profile, DateTime))
   | SubscriptionStarted SubscriptionId
   | ContactsReceived [(XOnlyPubKey, (Profile, DateTime))]
+  | MetadataReceived (XOnlyPubKey, (Profile, DateTime))
   | TextNoteReceived Event Relay
   | Dispose
   -- actions
   | SendPost
   | ViewPostDetails ReceivedEvent
   | ViewProfile XOnlyPubKey
+  | Follow XOnlyPubKey
+  | Unfollow XOnlyPubKey
   -- go to
   | GoHome
   | GoKeyManagement

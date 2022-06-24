@@ -81,6 +81,8 @@ buildUI pool channel wenv model = widgetTree
           GoHome
           ViewPostDetails
           ViewProfile
+          Follow
+          Unfollow
           viewProfileModel
     imageButtonStyling =
       [ cursorHand
@@ -113,8 +115,7 @@ buildUI pool channel wenv model = widgetTree
                     `styleBasic` imageButtonStyling
                 Just (Keys _ xo _ _) ->
                   box_
-                    [ onClick $ if model ^. waitingForConns then NoOp else EditProfile
-                    , mergeRequired futrChanged] $
+                    [ onClick $ if model ^. waitingForConns then NoOp else EditProfile ] $
                     tooltip "Edit Account" $ profileImage pImage xo Small
                     `styleBasic` imageButtonStyling
                   where

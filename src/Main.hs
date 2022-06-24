@@ -14,7 +14,7 @@ import Crypto.Schnorr (XOnlyPubKey)
 import Data.Aeson
 import Data.DateTime
 import Data.Default
-import Data.List (find, sort, sortBy)
+import Data.List (filter, find, nub, sort, sortBy)
 import Data.Map (Map)
 import Data.Maybe
 import Data.Text (Text, pack, strip)
@@ -108,6 +108,8 @@ handleEvent env wenv node model evt =
           & futr. contacts .~ updateContacts (model ^. futr . contacts) cs
           & futr . profiles .~ updateProfiles (model ^. futr . profiles) cs
       ]
+    MetadataReceived md ->
+      [ Model $ model & futr . profiles .~ updateProfiles (model ^. futr . profiles) [ md ] ]
     TextNoteReceived event relay ->
       [ Model $ model & futr . events .~ addEvent (model ^. futr .  events) event relay ]
     Dispose ->
@@ -126,6 +128,18 @@ handleEvent env wenv node model evt =
       ]
       where
         ((Profile name displayName about pictureUrl), _) = fromMaybe (def, fromSeconds 0) (Map.lookup xo' (model ^. futr . profiles))
+    Follow xo ->
+      [ Model $ model & futr . contacts .~ newContacts
+      , voidTask $ saveContacts (env ^. channel) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
+      ]
+      where
+        newContacts = xo : (nub $ model ^. futr . contacts)
+    Unfollow xo ->
+      [ Model $ model & futr . contacts .~ newContacts
+      , voidTask $ saveContacts (env ^. channel) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
+      ]
+      where
+        newContacts = filter (\xo' -> xo /= xo') (model ^. futr . contacts)
     -- go to
     GoHome ->
       [ Model $ model & currentView .~ HomeView ]
@@ -330,13 +344,13 @@ initSubscriptions pool request (Keys _ xo _ _) contacts sendMsg = do
             sendMsg $ ContactsReceived $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
           Metadata ->
             case parseProfiles event of
-              Just p -> sendMsg $ ContactsReceived [ p ]
+              Just p -> sendMsg $ MetadataReceived p
               Nothing -> return ()
           _ -> putStrLn "Unexpected event kind received" -- @todo handle differently
 
       _ -> putStrLn "Unexpected data received" -- @todo handle differently
   where
-    initialFilters = [ MetadataFilter contacts, TextNoteFilter contacts ]
+    initialFilters = [ MetadataFilter contacts, TextNoteFilter contacts, AllNotes, AllMetadata ]
     parseProfiles e = case readProfile e of
       Just p -> Just (pubKey e, (p, created_at e))
       Nothing -> Nothing
@@ -379,3 +393,9 @@ sendPost request model post = do
       now <- getCurrentTime
       let unsigned = textNote (strip post) xo now;
       atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo
+
+saveContacts :: TChan Request -> Keys -> [(XOnlyPubKey, Maybe Username)] -> IO ()
+saveContacts request (Keys kp xo _ _) contacts = do
+  now <- getCurrentTime
+  let unsigned = setContacts contacts xo now
+  atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo

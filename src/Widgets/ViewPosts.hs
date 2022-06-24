@@ -38,7 +38,7 @@ viewPosts eventFilter viewDetailsAction viewProfileAction wenv model =
     filteredEvents = filter eventFilter (model ^. events)
     postFade idx ev = animRow
       where
-        item = postRow wenv (model ^. profiles) idx ev (model ^. time) viewDetailsAction viewProfileAction
+        item = postRow wenv model idx ev viewDetailsAction viewProfileAction
         animRow =
           animFadeOut_ [] item `nodeKey` (T.pack $ exportEventId $ eventId $ fst ev)
     postRows = zipWith postFade [ 0 .. ] filteredEvents
@@ -46,18 +46,18 @@ viewPosts eventFilter viewDetailsAction viewProfileAction wenv model =
 postRow
   :: (WidgetModel s, WidgetEvent e)
   => WidgetEnv s e
-  -> Map XOnlyPubKey (Profile, DateTime)
+  -> FutrModel
   -> Int
   -> ReceivedEvent
-  -> DateTime
   -> (ReceivedEvent -> e)
   -> (XOnlyPubKey -> e)
   -> WidgetNode s e
-postRow wenv profiles idx re time viewDetailsAction viewProfileAction = row
+postRow wenv model idx re viewDetailsAction viewProfileAction = row
   where
+    futrChanged wenv old new = old /= new
     event = fst re
     xo = NE.pubKey event
-    (profileName, pictureUrl) = case Map.lookup xo profiles of
+    (profileName, pictureUrl) = case Map.lookup xo (model ^. profiles) of
       Just ((Profile name _ _ pictureUrl), _) ->
         (name, pictureUrl)
       Nothing ->
@@ -79,7 +79,7 @@ postRow wenv profiles idx re time viewDetailsAction viewProfileAction = row
             [ box_ [ onClick (viewProfileAction xo) ] profileBox
                 `styleBasic` [ cursorHand ]
             , filler
-            , (label $ xTimeAgo (created_at event) time)
+            , (label $ xTimeAgo (created_at event) (model ^. time))
                 `styleBasic` [ textSize 10 ]
             ] `styleBasic` [ paddingB 10 ]
         , box_ [ onClick $ viewDetailsAction re ] $

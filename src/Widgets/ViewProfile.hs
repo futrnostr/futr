@@ -40,15 +40,11 @@ type ViewProfileNode = WidgetNode ViewProfileModel ProfileEvent
 
 data ViewProfileModel = ViewProfileModel
   { _profile          :: Maybe XOnlyPubKey
-  , _name             :: Text
-  , _displayName      :: Text
-  , _about            :: Text
-  , _pictureUrl       :: Text
   , _following        :: Map.Map XOnlyPubKey [Profile.Profile]
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel Nothing  "" "" "" "" Map.empty
+  def = ViewProfileModel Nothing Map.empty
 
 data ProfileEvent
   = Follow
@@ -60,18 +56,38 @@ data ProfileEvent
 
 makeLenses 'ViewProfileModel
 
+viewProfileWidget
+  :: (WidgetModel sp, WidgetEvent ep)
+  => TChan Request
+  -> FutrModel
+  -> (ep)
+  -> (ReceivedEvent -> ep)
+  -> (XOnlyPubKey -> ep)
+  -> (XOnlyPubKey -> ep)
+  -> (XOnlyPubKey -> ep)
+  -> ALens' sp ViewProfileModel
+  -> WidgetNode sp ep
+viewProfileWidget chan futr back viewPostDetails viewProfile follow unfollow model =
+  composite
+    "ViewProfileWidget"
+    model
+    (buildUI futr)
+    (handleProfileEvent chan futr back viewPostDetails viewProfile follow unfollow)
+
 handleProfileEvent
   :: TChan Request
   -> FutrModel
   -> ep
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
+  -> (XOnlyPubKey -> ep)
+  -> (XOnlyPubKey -> ep)
   -> ViewProfileWenv
   -> ViewProfileNode
   -> ViewProfileModel
   -> ProfileEvent
   -> [EventResponse ViewProfileModel ProfileEvent sp ep]
-handleProfileEvent chan futr back viewPostDetails viewProfile env node model evt = case evt of
+handleProfileEvent chan futr back viewPostDetails viewProfile follow unfollow env node model evt = case evt of
 --  Follow ->
 --    [ Producer $ follow chan ks model
 --    , Model $ model
@@ -101,28 +117,16 @@ handleProfileEvent chan futr back viewPostDetails viewProfile env node model evt
 --      oldFollowing = Map.findWithDefault [] xo' (model ^. following)
 --      newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= xo') oldFollowing
 --      newFollowing' = Map.insert xo' newFollowing (model ^. following)
+  Follow ->
+    [ Report $ follow $ fromJust $ model ^. profile ]
+  Unfollow ->
+    [ Report $ unfollow $ fromJust $ model ^. profile ]
   ViewPostDetails re ->
     [ Report $ viewPostDetails re ]
   ViewProfile xo ->
     [ Report $ viewProfile xo ]
   Back ->
     [ Report $ back ]
-
-viewProfileWidget
-  :: (WidgetModel sp, WidgetEvent ep)
-  => TChan Request
-  -> FutrModel
-  -> (ep)
-  -> (ReceivedEvent -> ep)
-  -> (XOnlyPubKey -> ep)
-  -> ALens' sp ViewProfileModel
-  -> WidgetNode sp ep
-viewProfileWidget chan futr back viewPostDetailsAction viewProfileAction model =
-  composite
-    "ViewProfileWidget"
-    model
-    (buildUI futr)
-    (handleProfileEvent chan futr back viewPostDetailsAction viewProfileAction)
 
 --follow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
 --follow chan (Keys kp xo' _ _) model sendMsg = do
@@ -152,7 +156,7 @@ viewProfileWidget chan futr back viewPostDetailsAction viewProfileAction model =
 --    newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= oldFollow) oldFollowing
 
 buildUI
-  ::  FutrModel
+  :: FutrModel
   -> ViewProfileWenv
   -> ViewProfileModel
   -> ViewProfileNode
@@ -171,7 +175,7 @@ buildUI futr wenv model =
             , selectableText $ fromMaybe "" displayName
             , selectableText $ pack $ "About: " ++ (unpack $ fromMaybe "" about)
             ]
-        --, vstack [ button btnText action ]
+        , if xo /= profileKey then vstack [ button btnText action ] else filler
         ]
     , spacer
     , hstack
@@ -188,11 +192,9 @@ buildUI futr wenv model =
         futr
     ]
   where
-    -- (Keys _ user xo _) = fromJust $ futr ^. selectedKeys
     profileKey = fromJust $ model ^. profile
     ((Profile.Profile name displayName about _), at) = fromJust $ Map.lookup profileKey (futr ^. profiles)
     (year, month, day, hour, min, _) = toGregorian $ at
---    currentlyFollowing = Map.findWithDefault [] user (model ^. following)
---    currentlyFollowing' = List.map extractXOFromProfile currentlyFollowing
---    action = if List.elem xo' currentlyFollowing' then Unfollow else Follow
---    btnText = if List.elem xo' currentlyFollowing' then "Unfollow" else "Follow"
+    (Keys _ xo _ user) = fromJust $ futr ^. selectedKeys
+    action = if List.elem profileKey (futr ^. contacts) then Unfollow else Follow
+    btnText = if List.elem profileKey (futr ^. contacts) then "Unfollow" else "Follow"

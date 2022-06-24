@@ -17,6 +17,8 @@ data Filter
   = MetadataFilter [XOnlyPubKey]
   | ContactsFilter [XOnlyPubKey]
   | TextNoteFilter [XOnlyPubKey]
+  | AllNotes
+  | AllMetadata
   deriving (Eq, Show)
 
 instance ToJSON Filter where
@@ -35,6 +37,16 @@ instance ToJSON Filter where
     object $ fromList
       [ ( "kinds", toJSON [ TextNote ] )
       , ( "authors", toJSON xos )
+      , ( "limit", Number 500 )
+      ]
+  toJSON AllNotes =
+    object $ fromList
+      [ ( "kinds", toJSON [ TextNote ] )
+      , ( "limit", Number 500 )
+      ]
+  toJSON AllMetadata =
+    object $ fromList
+      [ ( "kinds", toJSON [ Metadata ] )
       , ( "limit", Number 500 )
       ]
 
