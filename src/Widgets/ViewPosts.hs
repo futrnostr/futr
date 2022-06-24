@@ -54,7 +54,6 @@ postRow
   -> WidgetNode s e
 postRow wenv model idx re viewDetailsAction viewProfileAction = row
   where
-    futrChanged wenv old new = old /= new
     event = fst re
     xo = NE.pubKey event
     (profileName, pictureUrl) = case Map.lookup xo (model ^. profiles) of

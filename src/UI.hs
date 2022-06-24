@@ -40,7 +40,6 @@ buildUI :: MVar RelayPool -> TChan Request -> AppWenv -> AppModel -> AppNode
 buildUI pool channel wenv model = widgetTree
   where
     isLoggedIn = isJust $ model ^. futr . selectedKeys
-    futrChanged wenv old new = old ^. futr /= new ^. futr
     baseLayer = case model ^. currentView of
       HomeView ->
         if model ^. waitingForConns
@@ -110,9 +109,7 @@ buildUI pool channel wenv model = widgetTree
             , spacer
             , case model ^. futr . selectedKeys of
                 Nothing ->
-                  box_ [ mergeRequired futrChanged ] $
-                    tooltip "Edit Account" $ label "N/A"
-                    `styleBasic` imageButtonStyling
+                  tooltip "Edit Account" $ label "N/A" `styleBasic` imageButtonStyling
                 Just (Keys _ xo _ _) ->
                   box_
                     [ onClick $ if model ^. waitingForConns then NoOp else EditProfile ] $
