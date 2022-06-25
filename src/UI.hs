@@ -44,7 +44,7 @@ buildUI pool channel wenv model = widgetTree
       HomeView ->
         if model ^. waitingForConns
           then waitingForConnectionsTree
-          else homeUI wenv model
+          else box_ [ mergeRequired (\_ old new -> old ^. futr . time /= new ^. futr . time) ] $ homeUI wenv model
       SetupView ->
         if model ^. waitingForConns
           then waitingForConnectionsTree

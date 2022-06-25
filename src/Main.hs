@@ -312,7 +312,7 @@ timerLoop :: (AppEvent -> IO ()) -> IO ()
 timerLoop sendMsg = void $ forever $ do
   now <- getCurrentTime
   sendMsg $ TimerTick now
-  threadDelay 1000000
+  threadDelay 250000
 
 -- subscriptions
 
