@@ -194,12 +194,14 @@ handleEvent env wenv node model evt =
     KeysUpdated keysList ->
       [ Model $ model
           & keys .~ keysList
-          & futr . selectedKeys .~ Just ks
+          & futr .~ newFutr
       , Task $ saveKeyPairs (model ^. keys) keysList
-      , if null keysList then Model $ model & currentView .~ SetupView else Monomer.Event NoOp
+      , if null keysList then Model $ model & currentView .~ SetupView else Monomer.Event InitSubscriptions
       ]
       where
         ks = if null keysList then initialKeys else head $ filter (\(Keys _ _ active _) -> active == True) keysList
+        newFutr = def { _selectedKeys = Just ks}
+
     -- relays
     ConnectRelay relay ->
       [ Producer $ connectRelay env relay ]
