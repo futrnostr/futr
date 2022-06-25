@@ -88,35 +88,6 @@ handleProfileEvent
   -> ProfileEvent
   -> [EventResponse ViewProfileModel ProfileEvent sp ep]
 handleProfileEvent chan futr back viewPostDetails viewProfile follow unfollow env node model evt = case evt of
---  Follow ->
---    [ Producer $ follow chan ks model
---    , Model $ model
---      & following .~ newFollowing'
---    ]
---    where
---      xo' = fromJust $ model ^. xo
---      np = Profile.Profile
---        xo'
---        ""
---        (Profile.ProfileData
---          (model ^. name)
---          (model ^. about)
---          (model ^. pictureUrl)
---          (model ^. nip05Identifier)
---        )
---      oldFollowing = Map.findWithDefault [] xo' (model ^. following)
---      newFollowing = np : oldFollowing
---      newFollowing' = Map.insert xo' newFollowing (model ^. following)
---  Unfollow ->
---    [ Producer $ unfollow chan ks model
---    , Model $ model
---        & following .~ newFollowing'
---    ]
---    where
---      xo' = fromJust $ model ^. xo
---      oldFollowing = Map.findWithDefault [] xo' (model ^. following)
---      newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= xo') oldFollowing
---      newFollowing' = Map.insert xo' newFollowing (model ^. following)
   Follow ->
     [ Report $ follow $ fromJust $ model ^. profile ]
   Unfollow ->
@@ -127,33 +98,6 @@ handleProfileEvent chan futr back viewPostDetails viewProfile follow unfollow en
     [ Report $ viewProfile xo ]
   Back ->
     [ Report $ back ]
-
---follow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
---follow chan (Keys kp xo' _ _) model sendMsg = do
---  now <- getCurrentTime
---  let raw = setContacts (np : oldFollowing) "" xo' now
---  atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo'
---  where
---    oldFollowing = Map.findWithDefault [] xo' (model ^. following)
---    np = Profile.Profile
---      (fromJust $ model ^. xo)
---      ""
---      (Profile.ProfileData
---        (model ^. name)
---        (model ^. about)
---        (model ^. pictureUrl)
---        (model ^. nip05Identifier)
---      )
---
---unfollow :: TChan Request -> Keys -> ViewProfileModel -> (ProfileEvent -> IO ()) -> IO ()
---unfollow chan (Keys kp xo' _ _) model sendMsg = do
---  now <- getCurrentTime
---  let raw = setContacts newFollowing "" xo' now
---  atomically $ writeTChan chan $ SendEvent $ signEvent raw kp xo'
---  where
---    oldFollow = fromJust $ model ^. xo
---    oldFollowing = Map.findWithDefault [] xo' (model ^. following)
---    newFollowing = Prelude.filter (\(Profile.Profile xo'' _ _) -> xo'' /= oldFollow) oldFollowing
 
 buildUI
   :: FutrModel

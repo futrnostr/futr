@@ -60,7 +60,7 @@ instance ToJSON Relay where
 defaultRelays :: [Relay]
 defaultRelays =
   [ Relay
-      { uri = [QQ.uri|wss://nostr-pub.wellorder.net|]
+      { uri = [QQ.uri|wss://nostr.rocks|]
       , info = RelayInfo True True
       , connected = False
       }
