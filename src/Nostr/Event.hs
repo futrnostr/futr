@@ -16,7 +16,7 @@ import qualified Data.ByteString.Base16 as B16
 import           Data.ByteString.Lazy   (fromStrict, toStrict)
 import           Data.DateTime
 import           Data.Default
-import           Data.Maybe             (fromJust)
+import           Data.Maybe             (fromJust, fromMaybe)
 import           Data.Text              (Text, toLower, pack, unpack)
 import           Data.Text.Encoding     (encodeUtf8)
 import qualified Data.Text.Lazy         as LazyText
@@ -114,9 +114,9 @@ instance FromJSON Tag where
    | V.length v > 0 =
        case v V.! 0 of
          String "e" ->
-           ETag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON (v V.! 3)
+           ETag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
          String "p" ->
-           PTag <$> parseJSON (v V.! 1) <*> parseJSON (v V.! 2) <*> parseJSON (v V.! 3)
+           PTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
          _ ->
            return UnknownTag
    | otherwise = return UnknownTag

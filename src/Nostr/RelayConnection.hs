@@ -75,28 +75,27 @@ receiveWs pool sendMsg msgRelaysUpdated relay conn =
     else void . forkIO $ void . runMaybeT $ forever $ do
       msg <- lift (Exception.try $ WS.receiveData conn :: IO (Either WS.ConnectionException LazyBytes.ByteString))
       case msg of
-        Left ex    -> do
+        Left ex -> do
           liftIO $ putStrLn $ "Connection to " ++ (unpack $ relayName relay) ++ " closed"
           relays <- liftIO $ updateRelayPool pool relay False
           lift $ sendMsg $ msgRelaysUpdated relays
           mzero
-        Right msg' -> do
-          case decode msg' of
-            Just (EventReceived subId event) -> do
-              (RelayPool _ handlers) <- lift $ readMVar pool
-              case Map.lookup subId handlers of
-                Just responseChannel ->
-                  lift $ atomically $ writeTChan responseChannel $ (EventReceived subId event, relay)
-                Nothing ->
-                  return ()
-            Just (Notice notice) -> do
-              lift $ putStrLn $ "Notice: " ++ unpack notice
-              (RelayPool _ handlers) <- lift $ readMVar pool
-              mapM_
-                (\responseChannel -> lift $ atomically $ writeTChan responseChannel $ (Notice notice, relay))
-                (Map.elems handlers)
-            Nothing -> do
-              lift $ putStrLn $ "Could not decode server response: " ++ show msg'
+        Right msg' -> case decode msg' of
+          Just (EventReceived subId event) -> do
+            (RelayPool _ handlers) <- lift $ readMVar pool
+            case Map.lookup subId handlers of
+              Just responseChannel ->
+                lift $ atomically $ writeTChan responseChannel $ (EventReceived subId event, relay)
+              Nothing ->
+                return ()
+          Just (Notice notice) -> do
+            lift $ putStrLn $ "Notice: " ++ unpack notice
+            (RelayPool _ handlers) <- lift $ readMVar pool
+            mapM_
+              (\responseChannel -> lift $ atomically $ writeTChan responseChannel $ (Notice notice, relay))
+              (Map.elems handlers)
+          Nothing -> do
+            lift $ putStrLn $ "Could not decode server response: " ++ show msg'
 
 sendWs
   :: WidgetEvent e
