@@ -10,7 +10,7 @@ import Control.Concurrent.STM.TChan
 import Control.Lens
 import Control.Monad (forever, mzero, void)
 import Control.Monad.STM (atomically)
-import Crypto.Schnorr (XOnlyPubKey)
+import Crypto.Schnorr (XOnlyPubKey, decodeHex, xOnlyPubKey)
 import Data.Aeson
 import Data.DateTime
 import Data.Default
@@ -144,6 +144,10 @@ handleEvent env wenv node model evt =
       where
         newContacts = filter (\xo' -> xo /= xo') (model ^. futr . contacts)
         newFutr = model ^. futr & contacts .~ newContacts
+    Search ->
+      [ Model $ model & searchInput .~ ""
+      , Task $ runSearch (model ^. searchInput)
+      ]
     -- go to
     GoHome ->
       [ Model $ model & currentView .~ HomeView ]
@@ -397,3 +401,11 @@ updateFutr model new =
     & futr .~ new
     & viewProfileModel . ViewProfile.futr .~ new
     & postDetailsModel . PostDetails.futr .~ new
+
+runSearch :: Text -> IO AppEvent
+runSearch v = do
+  case maybe Nothing xOnlyPubKey $ decodeHex v of
+    Just xo ->
+      return $ ViewProfile xo
+    _ ->
+      return NoOp

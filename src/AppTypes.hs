@@ -60,6 +60,7 @@ data AppModel =
     { _keys              :: [Keys]
     , _futr              :: FutrModel
     , _inputField        :: Text
+    , _searchInput       :: Text
     , _relays            :: [Relay]
     , _subscriptionId    :: Maybe SubscriptionId
     , _errorMsg          :: Maybe Text
@@ -78,7 +79,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] def "" [] Nothing Nothing True HomeView def def def def def def def def
+  def = AppModel [] def "" "" [] Nothing Nothing True HomeView def def def def def def def def
 
 data AppEvent
   = NoOp
@@ -97,6 +98,7 @@ data AppEvent
   | ViewProfile XOnlyPubKey
   | Follow XOnlyPubKey
   | Unfollow XOnlyPubKey
+  | Search
   -- go to
   | GoHome
   | GoKeyManagement

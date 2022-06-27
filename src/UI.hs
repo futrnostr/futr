@@ -202,7 +202,13 @@ errorLayer errorMsg' =
 homeUI :: AppWenv -> AppModel -> WidgetNode AppModel AppEvent
 homeUI wenv model =
   vstack
-    [ label "New Post"
+    [ hstack
+        [ label "New Post"
+        , filler
+        , textField searchInput `nodeKey` "searchInput" `styleBasic` [ width 250 ]
+        , spacer
+        , button "Search" Search
+        ]
     , spacer
     , vstack
         [ hstack
