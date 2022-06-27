@@ -9,6 +9,7 @@ import           Data.Text              (Text, pack)
 import qualified Data.Vector            as V
 import           GHC.Exts               (fromList)
 
+import Nostr.Event
 import Nostr.Keys
 import Nostr.Kind
 import Nostr.Profile
@@ -17,6 +18,7 @@ data Filter
   = MetadataFilter [XOnlyPubKey] DateTime
   | ContactsFilter [XOnlyPubKey] DateTime
   | TextNoteFilter [XOnlyPubKey] DateTime
+  | LinkedEvents EventId DateTime
   | AllNotes DateTime
   | AllMetadata DateTime
   deriving (Eq, Show)
@@ -41,6 +43,13 @@ instance ToJSON Filter where
       [ ( "kinds", toJSON [ TextNote, Delete ] )
       , ( "authors", toJSON xos )
       , ( "limit", Number 500 )
+      , ( "until", toJSON $ (toSeconds now + 60))
+      ]
+  toJSON (LinkedEvents eid now) =
+    object $ fromList
+      [ ( "kinds", toJSON [ TextNote ] )
+      , ( "limit", Number 500 )
+      , ( "#e", toJSON [ eid ] )
       , ( "until", toJSON $ (toSeconds now + 60))
       ]
   toJSON (AllNotes now) =

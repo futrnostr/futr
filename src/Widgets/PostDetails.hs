@@ -5,8 +5,11 @@ module Widgets.PostDetails where
 
 import Debug.Trace
 
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Lens
+import Control.Monad (forever, void)
 import Control.Monad.STM (atomically)
 import Crypto.Schnorr
 import Data.Aeson
@@ -26,10 +29,13 @@ import qualified Monomer.Lens         as L
 import Futr
 import Helpers
 import Nostr.Event as NE
+import Nostr.Filter
 import Nostr.Keys
 import Nostr.Kind
 import Nostr.Relay
+import Nostr.RelayPool
 import Nostr.Request
+import Nostr.Response
 import UIHelpers
 import Widgets.ProfileImage
 
@@ -46,39 +52,48 @@ data PostDetailsModel = PostDetailsModel
   , _newPostInput :: Text
   , _deleteDialog :: Bool
   , _deleteReason :: Text
+  , _subscription :: Maybe SubscriptionId
   } deriving (Eq, Show)
 
 instance Default PostDetailsModel where
-  def = PostDetailsModel Nothing def "" False ""
+  def = PostDetailsModel Nothing def "" False "" Nothing
 
 data PostDetailsEvent
   = ViewPostDetails ReceivedEvent
   | ViewProfile XOnlyPubKey
   | Back
+  | ReplyToPost
   | ShowDeleteEventDialog
   | CloseDialog
   | DeleteEvent
+  | StartSubscription
+  | SubscriptionStarted SubscriptionId
+  | StopSubscription
+  | NewResponses [(Response, Relay)]
   deriving Show
 
 makeLenses 'PostDetailsModel
 
 postDetailsWidget
   :: (WidgetModel sp, WidgetEvent ep)
-  => TChan Request
+  => MVar RelayPool
+  -> TChan Request
   -> (ep)
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
   -> ALens' sp PostDetailsModel
   -> WidgetNode sp ep
-postDetailsWidget chan back viewPostDetails postDetails model =
-  composite
+postDetailsWidget pool request back viewPostDetails postDetails model =
+  composite_
     "PostDetailsWidget"
     model
     buildUI
-    (handlePostDetailsEvent chan back viewPostDetails postDetails)
+    (handlePostDetailsEvent pool request back viewPostDetails postDetails)
+    [ onInit StartSubscription, onDispose StopSubscription ]
 
 handlePostDetailsEvent
-  :: TChan Request
+  :: MVar RelayPool
+  -> TChan Request
   -> ep
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
@@ -87,13 +102,15 @@ handlePostDetailsEvent
   -> PostDetailsModel
   -> PostDetailsEvent
   -> [EventResponse PostDetailsModel PostDetailsEvent sp ep]
-handlePostDetailsEvent request back viewPostDetails viewProfile env node model evt = case evt of
+handlePostDetailsEvent pool request back viewPostDetails viewProfile env node model evt = case evt of
   ViewPostDetails re ->
     [ Report $ viewPostDetails re ]
   ViewProfile xo ->
     [ Report $ viewProfile xo ]
   Back ->
     [ Report back ]
+  ReplyToPost ->
+    []
   ShowDeleteEventDialog ->
     [ Model $ model & deleteDialog .~ True ]
   CloseDialog ->
@@ -103,6 +120,16 @@ handlePostDetailsEvent request back viewPostDetails viewProfile env node model e
     , voidTask $ deleteEvent request model
     , Report back
     ]
+  StartSubscription ->
+    [ Producer $ startSubscription pool request model ]
+  SubscriptionStarted subId ->
+    [ Model $ model & subscription .~ Just subId ]
+  StopSubscription ->
+    [ Model $ model & subscription .~ Nothing
+    , voidTask $ stopSubscription pool request (model ^. subscription)
+    ]
+  NewResponses responseList ->
+    [ Model $ model & futr .~ newFutr (model ^. futr) responseList ]
 
 deleteEvent :: TChan Request -> PostDetailsModel -> IO ()
 deleteEvent request model = do
@@ -113,6 +140,37 @@ deleteEvent request model = do
     (Keys kp xo _ _) = fromJust $ model ^. futr . selectedKeys
     e = fst $ fromJust $ model ^. event
     reason = model ^. deleteReason
+
+startSubscription
+  :: MVar RelayPool
+  -> TChan Request
+  -> PostDetailsModel
+  -> (PostDetailsEvent -> IO ())
+  -> IO ()
+startSubscription pool request model sendMsg = do
+  now <- getCurrentTime
+  let filters = [ MetadataFilter [ author ] now, LinkedEvents eid now ]
+  response <- atomically newTChan
+  subId <- subscribe pool request response filters
+  sendMsg $ SubscriptionStarted subId
+  void . forever $ do
+    msg <- atomically $ readTChan response
+    msgs <- collectJustM . atomically $ tryReadTChan response
+    sendMsg $ NewResponses (msg : msgs)
+    threadDelay $ 100 * 1000 -- to avoid re-rendering, we only send 10 times per second new data in batches to the UI
+  where
+    (Keys _ xo _ _) = fromJust $ model ^. futr . selectedKeys
+    event' = fst $ fromJust $ model ^. event
+    eid = eventId event'
+    author = NE.pubKey event'
+
+stopSubscription :: MVar RelayPool -> TChan Request -> Maybe SubscriptionId -> IO ()
+stopSubscription pool request subId = do
+  case subId of
+    Just subId' ->
+      unsubscribe pool request subId'
+    Nothing ->
+      return ()
 
 buildUI
   :: PostDetailsWenv
@@ -136,6 +194,7 @@ buildUI wenv model = widgetTree
           , selectableText $ fromMaybe "" displayName
           ]
       ]
+    comments = []
     postInfo =
       vstack
         [ hstack
@@ -155,6 +214,12 @@ buildUI wenv model = widgetTree
                 `nodeVisible` (xo == profileKey)
             ]
         ]
+    commentsSection comments =
+      case length comments of
+        0 -> vstack [ label "No comments yet" ]
+        _ -> vstack
+          [
+          ]
     seenOnTree =
       vstack $
         map (\r -> label $ relayName r) (sort rs)
@@ -168,10 +233,13 @@ buildUI wenv model = widgetTree
                     `nodeKey` "replyPost"
                     `styleBasic` [ height 50 ]
                 , filler
-                --, button "Reply" (ReplyToPost event')
-                  --  `nodeEnabled` (strip (model ^. newPostInput) /= "")
+                , button "Reply" ReplyToPost
+                    `nodeEnabled` (strip (model ^. newPostInput) /= "")
                 ]
             , spacer
+            , label "Comments" `styleBasic` [ paddingB 10, paddingT 15, borderB 1 rowSepColor ]
+            , spacer
+            , vscroll_ [ scrollOverlay ] $ commentsSection comments `styleBasic` [ textTop ]
             , filler
             , label "Seen on"
             , spacer

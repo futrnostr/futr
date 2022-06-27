@@ -75,6 +75,7 @@ buildUI pool request wenv model = widgetTree
           relayMgmtModel
       PostDetailsView ->
         PostDetails.postDetailsWidget
+          pool
           request
           GoHome
           ViewPostDetails
@@ -222,9 +223,9 @@ homeUI wenv model =
         ]
     , spacer
     , ViewPosts.viewPosts
-        (\_ -> True)
         ViewPostDetails
         ViewProfile
         wenv
         (model ^. futr)
+        (model ^. futr . events)
     ]

@@ -25,23 +25,22 @@ import Debug.Trace
 
 viewPosts
   :: (WidgetModel sp, WidgetEvent ep)
-  => (ReceivedEvent -> Bool)
-  -> (ReceivedEvent -> ep)
+  => (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
   -> WidgetEnv sp ep
   -> FutrModel
+  -> [ReceivedEvent]
   -> WidgetNode sp ep
-viewPosts eventFilter viewDetailsAction viewProfileAction wenv model =
+viewPosts viewDetailsAction viewProfileAction wenv model events =
   vscroll_ [ scrollOverlay ] posts
   where
     posts = vstack postRows
-    filteredEvents = filter eventFilter (model ^. events)
     postFade idx ev = animRow
       where
         item = postRow wenv model idx ev viewDetailsAction viewProfileAction
         animRow =
           animFadeOut_ [] item `nodeKey` (T.pack $ exportEventId $ eventId $ fst ev)
-    postRows = zipWith postFade [ 0 .. ] filteredEvents
+    postRows = zipWith postFade [ 0 .. ] events
 
 postRow
   :: (WidgetModel s, WidgetEvent e)

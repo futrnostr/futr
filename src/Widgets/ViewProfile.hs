@@ -7,14 +7,15 @@ import Debug.Trace
 
 import Control.Concurrent.STM.TChan
 import Control.Lens
-import Control.Monad.STM              (atomically)
+import Control.Monad.STM (atomically)
 import Crypto.Schnorr
 import Data.Aeson
 import Data.DateTime
 import Data.Default
-import Data.Maybe                     (fromJust, fromMaybe)
-import Data.Text
-import Data.Text.Encoding             (encodeUtf8)
+import Data.List (filter)
+import Data.Maybe (fromJust, fromMaybe)
+import Data.Text (Text, pack, unpack)
+import Data.Text.Encoding (encodeUtf8)
 import Monomer
 
 import qualified Data.List            as List
@@ -121,16 +122,18 @@ buildUI wenv model =
     , spacer
     , hstack
         [ filler
-        , selectableText $ pack $ "Last updated " ++ (unpack $ xTimeAgo at (model ^. futr . time))
+        , case toSeconds at of
+            0 -> label "No profile data found"
+            _ -> label $ pack $ "Last updated " ++ (unpack $ xTimeAgo at (model ^. futr . time))
         ]
     , spacer
     , label "Recent posts"  `styleBasic` [ paddingB 10, paddingT 15, borderB 1 rowSepColor ]
     , ViewPosts.viewPosts
-        (\re -> kind (fst re) == TextNote && NE.pubKey (fst re) == profileKey)
         ViewPostDetails
         ViewProfile
         wenv
         (model ^. futr)
+        (filter (\re -> kind (fst re) == TextNote && NE.pubKey (fst re) == profileKey) (model ^. futr . events))
     ]
   where
     profileKey = fromJust $ model ^. profile

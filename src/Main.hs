@@ -122,6 +122,7 @@ handleEvent env wenv node model evt =
       [ Model $ model
           & currentView .~ PostDetailsView
           & postDetailsModel . PostDetails.event .~ Just re
+          & postDetailsModel . PostDetails.futr .~ model ^. futr
       ]
     ViewProfile xo' ->
       [ Model $ model
@@ -400,7 +401,6 @@ updateFutr model new =
   model
     & futr .~ new
     & viewProfileModel . ViewProfile.futr .~ new
-    & postDetailsModel . PostDetails.futr .~ new
 
 runSearch :: Text -> IO AppEvent
 runSearch v = do
