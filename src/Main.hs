@@ -9,7 +9,6 @@ import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Lens
 import Control.Monad (forever, mzero, void)
-import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.STM (atomically)
 import Crypto.Schnorr (XOnlyPubKey)
 import Data.Aeson
@@ -91,21 +90,26 @@ handleEvent env wenv node model evt =
           Nothing -> Monomer.Event NoOp
       ]
     TimerTick now ->
-      [ Model $ model & futr . time .~ now ]
+      [ Model $ updateFutr model newFutr ]
+      where
+        newFutr = model ^. futr & time .~ now
     -- subscriptions
     InitSubscriptions ->
       [ Producer $ loadContacts (env ^. pool) (env ^. request) model ]
     SubscriptionsInitialized cs ->
-      [ Model $ model
-          & futr . contacts .~ Map.keys cs
-          & futr . profiles .~ cs
+      [ Model $ newModel
           & subscriptionId .~ Nothing
-      , Producer $ initSubscriptions (env ^. pool) (env ^. request) (fromJust $ model ^. futr . selectedKeys) (Map.keys cs)
+      , Producer $ initSubscriptions (env ^. pool) (env ^. request) (fromJust $ newFutr ^. selectedKeys) (Map.keys cs)
       ]
+      where
+        newFutr = model ^. futr
+          & contacts .~ Map.keys cs
+          & profiles .~ cs
+        newModel = updateFutr model newFutr
     SubscriptionStarted subId ->
       [ Model $ model & subscriptionId .~ Just subId ]
     NewResponses responseList ->
-      [ Model $ model & futr .~ newFutr (model ^. futr) responseList ]
+      [ Model $ updateFutr model (newFutr (model ^. futr) responseList) ]
     Dispose ->
       [ voidTask $ closeSubscriptions (env ^. pool) (env ^. request) (model ^. subscriptionId) ]
     -- actions
@@ -118,23 +122,24 @@ handleEvent env wenv node model evt =
     ViewProfile xo' ->
       [ Model $ model
           & viewProfileModel . ViewProfile.profile .~ Just xo'
-          & viewProfileModel . ViewProfile.futr .~ model ^. futr
           & currentView .~ ProfileView
       ]
       where
         ((Profile name displayName about pictureUrl), _) = fromMaybe (def, fromSeconds 0) (Map.lookup xo' (model ^. futr . profiles))
     Follow xo ->
-      [ Model $ model & futr . contacts .~ newContacts
+      [ Model $ updateFutr model newFutr
       , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
         newContacts = xo : (nub $ model ^. futr . contacts)
+        newFutr = model ^. futr & contacts .~ newContacts
     Unfollow xo ->
-      [ Model $ model & futr . contacts .~ newContacts
+      [ Model $ updateFutr model newFutr
       , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
         newContacts = filter (\xo' -> xo /= xo') (model ^. futr . contacts)
+        newFutr = model ^. futr & contacts .~ newContacts
     -- go to
     GoHome ->
       [ Model $ model & currentView .~ HomeView ]
@@ -155,24 +160,23 @@ handleEvent env wenv node model evt =
           & relayMgmtModel . RelayManagement.rmRelays .~ model ^. relays
       ]
     KeyPairsLoaded ks ->
-      [ Model $ model
-        & keys .~ verifyActiveKeys ks
-        & futr . selectedKeys .~ Just mk
-        & currentView .~ HomeView
+      [ Model $ newModel
+          & keys .~ verifyActiveKeys ks
+          & currentView .~ HomeView
       , Task $ saveKeyPairs ks (verifyActiveKeys ks)
       ]
       where
         mk = mainKeys $ verifyActiveKeys ks
         (Keys _ xo _ _) = mk
+        newFutr = model ^. futr & selectedKeys .~ Just mk
+        newModel = updateFutr model newFutr
     NoKeysFound ->
       [ Model $ model & currentView .~ SetupView ]
     ErrorReadingKeysFile ->
       [ Model $ model & errorMsg .~ (Just $ pack "Could not read keys file.\nCheck the file permissions. Maybe the file was corrupted.") ]
     NewKeysCreated ks profile datetime ->
-      [ Model $ model
+      [ Model $ newModel
           & keys .~ ks : dk
-          & futr . profiles .~ Map.insert xo (profile, datetime) (model ^. futr . profiles)
-          & futr . selectedKeys .~ Just ks
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ Just ks
           & currentView .~ BackupKeysView
       , Task $ saveKeyPairs (model ^. keys) (ks : dk)
@@ -182,20 +186,24 @@ handleEvent env wenv node model evt =
         dk = disableKeys $ model ^. keys
         Profile _ _ _ picture = profile
         Keys _ xo _ _ = ks
+        newFutr = model ^. futr
+          & profiles .~ Map.insert xo (profile, datetime) (model ^. futr . profiles)
+          & selectedKeys .~ Just ks
+        newModel = updateFutr model newFutr
     KeysBackupDone ->
       [ Model $ model
           & currentView .~ HomeView
       ]
     KeysUpdated keysList ->
-      [ Model $ model
+      [ Model $ newModel
           & keys .~ keysList
-          & futr .~ newFutr
       , Task $ saveKeyPairs (model ^. keys) keysList
       , if null keysList then Model $ model & currentView .~ SetupView else Monomer.Event InitSubscriptions
       ]
       where
         ks = if null keysList then initialKeys else head $ filter (\(Keys _ _ active _) -> active == True) keysList
         newFutr = def { _selectedKeys = Just ks}
+        newModel = updateFutr model newFutr
 
     -- relays
     ConnectRelay relay ->
@@ -214,7 +222,6 @@ handleEvent env wenv node model evt =
           & editProfileModel . EditProfile.displayNameInput .~ fromMaybe "" displayName
           & editProfileModel . EditProfile.aboutInput .~ fromMaybe "" about
           & editProfileModel . EditProfile.pictureInput .~ fromMaybe "" picture
-          & editProfileModel . EditProfile.epProfiles .~ model ^. futr . profiles
           & editProfileModel . EditProfile.currentImage .~ fromMaybe "" pic
       ]
       where
@@ -226,21 +233,7 @@ handleEvent env wenv node model evt =
           p <- picture
           return p
     ProfileUpdated ks profile datetime ->
-      [ Model $ model
-          & keys .~ ks' : newKeyList
-          & futr . selectedKeys .~ (
-            if ks `sameKeys` (fromJust $ model ^. futr . selectedKeys)
-              then Just ks'
-              else (model ^. futr . selectedKeys)
-            )
-          & futr . profiles .~
-            case Map.lookup xo (model ^. futr . profiles) of
-              Nothing ->
-                Map.insert xo (profile, datetime) (model ^. futr . profiles)
-              Just (profile', datetime') ->
-                if datetime > datetime'
-                  then Map.insert xo (profile', datetime) (model ^. futr . profiles)
-                  else model ^. futr . profiles
+      [ Model $ newModel & keys .~ ks' : newKeyList
       , Task $ saveKeyPairs (model ^. keys) (ks' : newKeyList)
       ]
       where
@@ -248,6 +241,20 @@ handleEvent env wenv node model evt =
         (Keys pk xo active _) = ks
         ks' = Keys pk xo active (Just name)
         newKeyList = filter (\k -> not $ k `sameKeys` ks') (model ^. keys)
+        newFutr = model ^. futr
+          & selectedKeys .~ (
+            if ks `sameKeys` (fromJust $ model ^. futr . selectedKeys)
+              then Just ks'
+              else (model ^. futr . selectedKeys)
+            )
+          & profiles .~ case Map.lookup xo (model ^. futr . profiles) of
+            Nothing ->
+              Map.insert xo (profile, datetime) (model ^. futr . profiles)
+            Just (profile', datetime') ->
+              if datetime > datetime'
+                then Map.insert xo (profile', datetime) (model ^. futr . profiles)
+                else model ^. futr . profiles
+        newModel = updateFutr model newFutr
 
 loadKeysFromDisk :: IO AppEvent
 loadKeysFromDisk = do
@@ -380,11 +387,8 @@ saveContacts request (Keys kp xo _ _) contacts = do
   let unsigned = setContacts contacts xo now
   atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo
 
-collectJustM :: MonadIO m => m (Maybe a) -> m [a]
-collectJustM action = do
-  x <- action
-  case x of
-    Nothing -> return []
-    Just x -> do
-      xs <- collectJustM action
-      return (x : xs)
+updateFutr :: AppModel -> FutrModel -> AppModel
+updateFutr model new =
+  model
+    & futr .~ new
+    & viewProfileModel . ViewProfile.futr .~ new

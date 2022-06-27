@@ -2,6 +2,7 @@
 
 module Helpers where
 
+import Control.Monad.IO.Class (MonadIO)
 import Crypto.Schnorr (XOnlyPubKey, exportXOnlyPubKey)
 import Data.DateTime
 import Data.Maybe (fromMaybe)
@@ -44,3 +45,12 @@ middleXOnlyPubKey xo = pack
 tagToProfile :: DateTime -> Tag -> Maybe (XOnlyPubKey, (Profile, DateTime))
 tagToProfile datetime (PTag (ValidXOnlyPubKey xo) _ name) = Just (xo,  ( Profile (fromMaybe "" name) Nothing Nothing Nothing, datetime))
 tagToProfile _ _ = Nothing
+
+collectJustM :: MonadIO m => m (Maybe a) -> m [a]
+collectJustM action = do
+  x <- action
+  case x of
+    Nothing -> return []
+    Just x -> do
+      xs <- collectJustM action
+      return (x : xs)

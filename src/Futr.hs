@@ -85,6 +85,7 @@ newFutr model responseList = model
 
 extractContacts :: (Response, Relay) -> [(XOnlyPubKey, (Profile, DateTime))]
 extractContacts (EventReceived _ event, relay) = catMaybes $ map (tagToProfile $ created_at event) (tags event)
+extractContacts _ = error "this should not be possible, contact events are filtered first"
 
 extractProfile :: (Response, Relay) -> Maybe (XOnlyPubKey, (Profile, DateTime))
 extractProfile (EventReceived _ event, relay) = parseProfiles event
@@ -92,9 +93,11 @@ extractProfile (EventReceived _ event, relay) = parseProfiles event
     parseProfiles e = case readProfile e of
       Just p -> Just (pubKey e, (p, created_at e))
       Nothing -> Nothing
+extractProfile _ = error "this should not be possible, contact and metadata events are filtered first"
 
 extractTextNote :: (Response, Relay) -> (Event, Relay)
 extractTextNote (EventReceived _ event, relay) = (event, relay)
+extractTextNote _ = error "this should not be possible, text note events are filtered first"
 
 filterContacts :: (Response, Relay) -> Bool
 filterContacts response =

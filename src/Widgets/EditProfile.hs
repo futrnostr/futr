@@ -9,11 +9,8 @@ import Control.Monad.STM            (atomically)
 import Crypto.Schnorr
 import Data.DateTime
 import Data.Default
-import Data.Map (Map)
 import Data.Text
 import Monomer
-
-import qualified Data.Map as Map
 
 import Helpers
 import Nostr.Event
@@ -34,11 +31,10 @@ data EditProfileModel =  EditProfileModel
   , _aboutInput       :: About
   , _pictureInput     :: Picture
   , _currentImage     :: Picture
-  , _epProfiles       :: Map XOnlyPubKey (Profile, DateTime)
   } deriving (Eq, Show)
 
 instance Default EditProfileModel where
-  def = EditProfileModel "" "" "" "" "" Map.empty
+  def = EditProfileModel "" "" "" "" ""
 
 data EditProfileEvent
   = SaveProfile
