@@ -4,8 +4,12 @@ module Helpers where
 
 import Crypto.Schnorr (XOnlyPubKey, exportXOnlyPubKey)
 import Data.DateTime
+import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import Monomer
+import Nostr.Event
+import Nostr.Keys
+import Nostr.Profile
 
 voidTask :: IO () -> EventResponse s e sp ep
 voidTask action = Producer (const action)
@@ -36,3 +40,7 @@ middleXOnlyPubKey xo = pack
     str = exportXOnlyPubKey xo
     part1 = take 8 str
     part2 = take 8 $ reverse str
+
+tagToProfile :: DateTime -> Tag -> Maybe (XOnlyPubKey, (Profile, DateTime))
+tagToProfile datetime (PTag (ValidXOnlyPubKey xo) _ name) = Just (xo,  ( Profile (fromMaybe "" name) Nothing Nothing Nothing, datetime))
+tagToProfile _ _ = Nothing

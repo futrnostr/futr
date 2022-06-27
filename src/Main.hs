@@ -9,6 +9,7 @@ import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Lens
 import Control.Monad (forever, mzero, void)
+import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.STM (atomically)
 import Crypto.Schnorr (XOnlyPubKey)
 import Data.Aeson
@@ -50,10 +51,10 @@ import qualified Widgets.ViewProfile as ViewProfile
 
 main :: IO ()
 main = do
-  channel <- atomically newBroadcastTChan
   relays <- loadRelaysFromDisk
   pool <- newMVar $ RelayPool relays Map.empty
-  startApp def (handleEvent $ AppEnv pool channel) (UI.buildUI pool channel) config
+  request <- atomically newBroadcastTChan
+  startApp def (handleEvent $ AppEnv pool request) (UI.buildUI pool request) config
   where
     config =
       [ appWindowTitle "futr - nostr client"
@@ -93,31 +94,24 @@ handleEvent env wenv node model evt =
       [ Model $ model & futr . time .~ now ]
     -- subscriptions
     InitSubscriptions ->
-      [ Producer $ loadContacts (env ^. pool) (env ^. channel) model ]
+      [ Producer $ loadContacts (env ^. pool) (env ^. request) model ]
     SubscriptionsInitialized cs ->
       [ Model $ model
           & futr . contacts .~ Map.keys cs
           & futr . profiles .~ cs
           & subscriptionId .~ Nothing
-      , Producer $ initSubscriptions (env ^. pool) (env ^. channel) (fromJust $ model ^. futr . selectedKeys) (Map.keys cs)
+      , Producer $ initSubscriptions (env ^. pool) (env ^. request) (fromJust $ model ^. futr . selectedKeys) (Map.keys cs)
       ]
     SubscriptionStarted subId ->
       [ Model $ model & subscriptionId .~ Just subId ]
-    ContactsReceived cs ->
-      [ Model $ model
-          & futr. contacts .~ updateContacts (model ^. futr . contacts) cs
-          & futr . profiles .~ updateProfiles (model ^. futr . profiles) cs
-      ]
-    MetadataReceived md ->
-      [ Model $ model & futr . profiles .~ updateProfiles (model ^. futr . profiles) [ md ] ]
-    TextNoteReceived event relay ->
-      [ Model $ model & futr . events .~ addEvent (model ^. futr .  events) event relay ]
+    NewResponses responseList ->
+      [ Model $ model & futr .~ newFutr (model ^. futr) responseList ]
     Dispose ->
-      [ voidTask $ closeSubscriptions (env ^. pool) (env ^. channel) (model ^. subscriptionId) ]
+      [ voidTask $ closeSubscriptions (env ^. pool) (env ^. request) (model ^. subscriptionId) ]
     -- actions
     SendPost ->
       [ Model $ model & inputField .~ ""
-      , voidTask $ sendPost (env ^. channel) (model ^. futr) (model ^. inputField)
+      , voidTask $ sendPost (env ^. request) (model ^. futr) (model ^. inputField)
       ]
     ViewPostDetails re ->
       [ Model $ model & currentView .~ PostDetailsView ]
@@ -130,13 +124,13 @@ handleEvent env wenv node model evt =
         ((Profile name displayName about pictureUrl), _) = fromMaybe (def, fromSeconds 0) (Map.lookup xo' (model ^. futr . profiles))
     Follow xo ->
       [ Model $ model & futr . contacts .~ newContacts
-      , voidTask $ saveContacts (env ^. channel) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
+      , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
         newContacts = xo : (nub $ model ^. futr . contacts)
     Unfollow xo ->
       [ Model $ model & futr . contacts .~ newContacts
-      , voidTask $ saveContacts (env ^. channel) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
+      , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
         newContacts = filter (\xo' -> xo /= xo') (model ^. futr . contacts)
@@ -293,8 +287,8 @@ initRelays pool sendMsg = do
   sendMsg $ RelaysInitialized relays'
 
 connectRelay :: AppEnv -> Relay -> (AppEvent -> IO ()) -> IO ()
-connectRelay env relay sendMsg =
-  connect (env ^. channel) (env ^. pool) sendMsg RelaysUpdated relay
+connectRelay env relay sendMsg = do
+  connect (env ^. pool) (env ^. request) sendMsg RelaysUpdated relay
 
 mainKeys :: [Keys] -> Keys
 mainKeys ks = head $ filter (\(Keys _ _ xo _) -> xo == True) ks
@@ -312,7 +306,7 @@ timerLoop :: (AppEvent -> IO ()) -> IO ()
 timerLoop sendMsg = void $ forever $ do
   now <- getCurrentTime
   sendMsg $ TimerTick now
-  threadDelay 250000
+  threadDelay $ 500 * 1000
 
 -- subscriptions
 
@@ -337,25 +331,11 @@ initSubscriptions pool request (Keys _ xo _ _) contacts sendMsg = do
   sendMsg $ SubscriptionStarted subId
   void . forever $ do
     msg <- atomically $ readTChan response
-    case msg of
-      (EventReceived _ event, relay) -> do
-        case kind event of
-          TextNote ->
-            sendMsg $ TextNoteReceived event relay
-          Contacts ->
-            sendMsg $ ContactsReceived $ catMaybes $ map (tagToProfile $ created_at event) (tags event)
-          Metadata ->
-            case parseProfiles event of
-              Just p -> sendMsg $ MetadataReceived p
-              Nothing -> return ()
-          _ -> putStrLn "Unexpected event kind received" -- @todo handle differently
-
-      _ -> putStrLn "Unexpected data received" -- @todo handle differently
+    msgs <- collectJustM . atomically $ tryReadTChan response
+    sendMsg $ NewResponses (msg : msgs)
+    threadDelay $ 100 * 1000 -- to avoid re-rendering, we only send 10 times per second new data in batches to the UI
   where
     initialFilters = [ MetadataFilter contacts, TextNoteFilter contacts, AllNotes, AllMetadata ]
-    parseProfiles e = case readProfile e of
-      Just p -> Just (pubKey e, (p, created_at e))
-      Nothing -> Nothing
 
 loadContacts
   :: MVar RelayPool
@@ -382,10 +362,6 @@ loadContacts pool request model sendMsg = do
   where
     (Keys _ xo _ _) = fromJust $ model ^. futr . selectedKeys
 
-tagToProfile :: DateTime -> Tag -> Maybe (XOnlyPubKey, (Profile, DateTime))
-tagToProfile datetime (PTag (ValidXOnlyPubKey xo) _ name) = Just (xo,  ( Profile (fromMaybe "" name) Nothing Nothing Nothing, datetime))
-tagToProfile _ _ = Nothing
-
 sendPost :: TChan Request -> FutrModel -> Text -> IO ()
 sendPost request model post = do
   case model ^. selectedKeys of
@@ -401,3 +377,12 @@ saveContacts request (Keys kp xo _ _) contacts = do
   now <- getCurrentTime
   let unsigned = setContacts contacts xo now
   atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo
+
+collectJustM :: MonadIO m => m (Maybe a) -> m [a]
+collectJustM action = do
+  x <- action
+  case x of
+    Nothing -> return []
+    Just x -> do
+      xs <- collectJustM action
+      return (x : xs)

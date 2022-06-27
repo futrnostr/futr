@@ -40,7 +40,7 @@ type AppNode = WidgetNode AppModel AppEvent
 data AppEnv =
   AppEnv
     { _pool    :: MVar RelayPool
-    , _channel :: TChan Request
+    , _request :: TChan Request
     }
 
 data AppView
@@ -87,9 +87,7 @@ data AppEvent
   | InitSubscriptions
   | SubscriptionsInitialized (Map XOnlyPubKey (Profile, DateTime))
   | SubscriptionStarted SubscriptionId
-  | ContactsReceived [(XOnlyPubKey, (Profile, DateTime))]
-  | MetadataReceived (XOnlyPubKey, (Profile, DateTime))
-  | TextNoteReceived Event Relay
+  | NewResponses [(Response, Relay)]
   | Dispose
   -- actions
   | SendPost

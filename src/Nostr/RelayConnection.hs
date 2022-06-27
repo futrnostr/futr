@@ -37,13 +37,13 @@ import Nostr.Response
 
 connect
   :: WidgetEvent e
-  => TChan Request
-  -> MVar RelayPool
+  => MVar RelayPool
+  -> TChan Request
   -> (e -> IO ())
   -> ([Relay] -> e)
   -> Relay
   -> IO ()
-connect channel pool sendMsg msgRelaysUpdated relay = do
+connect pool request sendMsg msgRelaysUpdated relay = do
   putStrLn $ "trying to connect to " ++ (unpack $ relayName relay) ++ " ..."
   start $ \conn -> do
     let relay' = relay { connected = True }
@@ -51,7 +51,7 @@ connect channel pool sendMsg msgRelaysUpdated relay = do
     relays <- updateRelayPool pool relay True
     sendMsg $ msgRelaysUpdated relays
     receiveWs pool sendMsg msgRelaysUpdated relay' conn
-    sendWs channel pool sendMsg msgRelaysUpdated relay' conn
+    sendWs pool request sendMsg msgRelaysUpdated relay' conn
   where
     host = unpack $ extractHostname relay
     port = extractPort relay
@@ -99,14 +99,14 @@ receiveWs pool sendMsg msgRelaysUpdated relay conn =
 
 sendWs
   :: WidgetEvent e
-  => TChan Request
-  -> MVar RelayPool
+  => MVar RelayPool
+  -> TChan Request
   -> (e -> IO ())
   -> ([Relay] -> e) -- @todo add msg to send when all relays disconnected
   -> Relay
   -> WS.Connection
   -> IO ()
-sendWs broadcastChannel pool sendMsg msgRelaysUpdated relay conn =
+sendWs pool broadcastChannel sendMsg msgRelaysUpdated relay conn =
   if not $ writable $ info relay
     then return ()
     else do

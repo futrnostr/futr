@@ -20,6 +20,7 @@ import qualified Data.Text as T
 
 import AppTypes
 import Futr
+import Nostr.Event
 import Nostr.Keys
 import Nostr.Profile
 import Nostr.Relay
@@ -37,23 +38,23 @@ import qualified Widgets.ViewPosts as ViewPosts
 import qualified Widgets.ViewProfile as ViewProfile
 
 buildUI :: MVar RelayPool -> TChan Request -> AppWenv -> AppModel -> AppNode
-buildUI pool channel wenv model = widgetTree
+buildUI pool request wenv model = widgetTree
   where
     isLoggedIn = isJust $ model ^. futr . selectedKeys
     baseLayer = case model ^. currentView of
       HomeView ->
         if model ^. waitingForConns
           then waitingForConnectionsTree
-          else box_ [ mergeRequired (\_ old new -> old ^. futr . time /= new ^. futr . time) ] $ homeUI wenv model
+          else homeUI wenv model
       SetupView ->
         if model ^. waitingForConns
           then waitingForConnectionsTree
-          else Setup.setupWidget pool channel NewKeysCreated setupModel
+          else Setup.setupWidget pool request NewKeysCreated setupModel
       BackupKeysView ->
         BackupKeys.backupKeysWidget KeysBackupDone backupKeysModel
       EditProfileView ->
         EditProfile.editProfileWidget
-          channel
+          request
           (fromJust $ model ^. futr . selectedKeys)
           ProfileUpdated
           GoHome
@@ -66,8 +67,8 @@ buildUI pool channel wenv model = widgetTree
           keyMgmtModel
       RelayManagementView ->
         RelayManagement.relayManagementWidget
-          channel
           pool
+          request
           GoHome
           AppTypes.RelaysUpdated
           relayMgmtModel
@@ -75,7 +76,7 @@ buildUI pool channel wenv model = widgetTree
         vstack [] -- @todo
       ProfileView ->
         ViewProfile.viewProfileWidget
-          channel
+          request
           (model ^. futr)
           GoHome
           ViewPostDetails

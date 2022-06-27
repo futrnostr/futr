@@ -85,23 +85,23 @@ makeLenses 'RelayManagementModel
 
 relayManagementWidget
   :: (WidgetModel sp, WidgetEvent ep)
-  => TChan Request
-  -> MVar RelayPool
+  => MVar RelayPool
+  -> TChan Request
   -> ep
   -> ([Relay] -> ep)
   -> ALens' sp RelayManagementModel
   -> WidgetNode sp ep
-relayManagementWidget channel poolMVar goHome relaysUpdated model =
+relayManagementWidget pool request goHome relaysUpdated model =
   composite
     "RelayManagementWidget"
     model
     buildUI
-    (handleRelayManagementEvent channel poolMVar goHome relaysUpdated)
+    (handleRelayManagementEvent pool request goHome relaysUpdated)
 
 handleRelayManagementEvent
   :: (WidgetEvent ep)
-  => TChan Request
-  -> MVar RelayPool
+  => MVar RelayPool
+  -> TChan Request
   -> ep
   -> ([Relay] -> ep)
   -> RelayManagementWenv
@@ -109,7 +109,7 @@ handleRelayManagementEvent
   -> RelayManagementModel
   -> RelayManagementEvent
   -> [EventResponse RelayManagementModel RelayManagementEvent sp ep]
-handleRelayManagementEvent channel poolMVar goHome relaysUpdated env node model evt =
+handleRelayManagementEvent pool request goHome relaysUpdated env node model evt =
   case evt of
     BackToHome ->
       [ Model $ model
@@ -126,7 +126,7 @@ handleRelayManagementEvent channel poolMVar goHome relaysUpdated env node model 
     CancelAddRelay ->
       [ Model $ model & displayAddRelay .~ False ]
     AddRelay relay ->
-      [ Producer $ doAddRelay channel poolMVar relay
+      [ Producer $ doAddRelay pool request relay
       , Model $ model
           & displayAddRelay .~ False
           & relayModel .~ def
@@ -134,39 +134,39 @@ handleRelayManagementEvent channel poolMVar goHome relaysUpdated env node model 
     RemoveRelay relay ->
       [ Model $ model & relayToRemove .~ Just relay ]
     ConfirmRemoveRelay ->
-      [ Producer $ doRemoveRelay channel poolMVar (fromJust $ model ^. relayToRemove)
+      [ Producer $ doRemoveRelay pool request (fromJust $ model ^. relayToRemove)
       , Model $ model & relayToRemove .~ Nothing
       ]
     CancelRemoveRelay ->
       [ Model $ model & relayToRemove .~ Nothing ]
     ConnectRelay relay ->
-      [ Producer $ connectRelay channel poolMVar relay ]
+      [ Producer $ connectRelay pool request relay ]
     DisconnectRelay relay ->
-      [ voidTask $ disconnectRelay channel relay ]
+      [ voidTask $ disconnectRelay request relay ]
     RelaysUpdated relays ->
       [ Report $ relaysUpdated relays
       , Model $ model & rmRelays .~ relays
       ]
 
-connectRelay :: TChan Request -> MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
-connectRelay channel poolMVar relay sendMsg =
-  connect channel poolMVar sendMsg RelaysUpdated relay
+connectRelay :: MVar RelayPool -> TChan Request -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
+connectRelay pool request relay sendMsg =
+  connect pool request sendMsg RelaysUpdated relay
 
 disconnectRelay :: TChan Request -> Relay -> IO ()
-disconnectRelay channel relay =
-  atomically $ writeTChan channel $ Disconnect relay
+disconnectRelay request relay =
+  atomically $ writeTChan request $ Disconnect relay
 
-doAddRelay :: TChan Request -> MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
-doAddRelay channel poolMVar relay sendMsg = do
-  newRelays <- addRelay poolMVar relay
+doAddRelay :: MVar RelayPool -> TChan Request -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
+doAddRelay pool request relay sendMsg = do
+  newRelays <- addRelay pool relay
   sendMsg $ RelaysUpdated newRelays
-  connect channel poolMVar sendMsg RelaysUpdated relay
+  connect pool request sendMsg RelaysUpdated relay
 
-doRemoveRelay :: TChan Request -> MVar RelayPool -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
-doRemoveRelay channel poolMVar relay sendMsg = do
-  newRelays <- removeRelay poolMVar relay
+doRemoveRelay :: MVar RelayPool -> TChan Request -> Relay -> (RelayManagementEvent -> IO ()) -> IO ()
+doRemoveRelay pool request relay sendMsg = do
+  newRelays <- removeRelay pool relay
   sendMsg $ RelaysUpdated newRelays
-  disconnectRelay channel relay
+  disconnectRelay request relay
 
 validateAndAddRelay :: RelayModel -> IO RelayManagementEvent
 validateAndAddRelay model = do
