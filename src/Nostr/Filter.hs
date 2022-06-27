@@ -38,7 +38,7 @@ instance ToJSON Filter where
       ]
   toJSON (TextNoteFilter xos now) =
     object $ fromList
-      [ ( "kinds", toJSON [ TextNote ] )
+      [ ( "kinds", toJSON [ TextNote, Delete ] )
       , ( "authors", toJSON xos )
       , ( "limit", Number 500 )
       , ( "until", toJSON $ (toSeconds now + 60))

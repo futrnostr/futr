@@ -339,7 +339,7 @@ initSubscriptions
   -> IO ()
 initSubscriptions pool request (Keys _ xo _ _) contacts sendMsg = do
   now <- getCurrentTime
-  let initialFilters = [ MetadataFilter contacts now, TextNoteFilter contacts now, AllMetadata now ]
+  let initialFilters = [ MetadataFilter contacts now, TextNoteFilter contacts now]
   response <- atomically newTChan
   subId <- subscribe pool request response initialFilters
   sendMsg $ SubscriptionStarted subId

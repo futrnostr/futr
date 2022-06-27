@@ -3,6 +3,8 @@
 
 module Futr where
 
+import Debug.Trace
+
 import Control.Lens
 import Crypto.Schnorr (XOnlyPubKey)
 import Data.DateTime
@@ -76,11 +78,12 @@ newFutr :: FutrModel -> [(Response, Relay)] -> FutrModel
 newFutr model responseList = model
   & contacts .~ updateContacts (model ^. contacts) newContacts
   & profiles .~ updateProfiles (model ^. profiles) (newContacts ++ newProfiles)
-  & events .~ sortBy sortByDate (addEvents (model ^. events) newTextNotes)
+  & events .~ filter (\(e, _) -> not $ eventId e `elem` deleted) (sortBy sortByDate (addEvents (model ^. events) newTextNotes))
   where
     newContacts = nub $ concat $ map extractContacts $ filter filterContacts responseList
     newProfiles = catMaybes $ map extractProfile $ filter filterMetadata responseList
     newTextNotes = map extractTextNote $ filter filterTextNotes responseList
+    deleted = catMaybes $ map extractDeletedEventId $ filter filterDeleted responseList
     sortByDate a b = compare (created_at $ fst b) (created_at $ fst a)
 
 extractContacts :: (Response, Relay) -> [(XOnlyPubKey, (Profile, DateTime))]
@@ -98,6 +101,14 @@ extractProfile _ = error "this should not be possible, contact and metadata even
 extractTextNote :: (Response, Relay) -> (Event, Relay)
 extractTextNote (EventReceived _ event, relay) = (event, relay)
 extractTextNote _ = error "this should not be possible, text note events are filtered first"
+
+extractDeletedEventId :: (Response, Relay) -> Maybe EventId
+extractDeletedEventId (EventReceived _ event, relay) = case length $ tags event of
+  0 -> Nothing
+  _ -> case head $ tags event of
+    (ETag eid _ _) -> Just eid
+    _ -> Nothing
+extractDeletedEventId _ = error "this should not be possible, delete events are filtered first"
 
 filterContacts :: (Response, Relay) -> Bool
 filterContacts response =
@@ -123,5 +134,14 @@ filterTextNotes response =
     (EventReceived _ event, relay') ->
       case kind event of
         TextNote -> True
+        _ -> False
+    _ -> False
+
+filterDeleted :: (Response, Relay) -> Bool
+filterDeleted response =
+  case response of
+    (EventReceived _ event, relay') ->
+      case kind event of
+        Delete -> True
         _ -> False
     _ -> False

@@ -7,15 +7,15 @@ import Debug.Trace
 
 import Control.Concurrent.STM.TChan
 import Control.Lens
-import Control.Monad.STM              (atomically)
+import Control.Monad.STM (atomically)
 import Crypto.Schnorr
 import Data.Aeson
 import Data.DateTime
 import Data.Default
 import Data.List (sort)
-import Data.Maybe                     (fromJust, fromMaybe)
+import Data.Maybe (fromJust, fromMaybe)
 import Data.Text (Text, pack, strip, unpack)
-import Data.Text.Encoding             (encodeUtf8)
+import Data.Text.Encoding (encodeUtf8)
 import Monomer
 
 import qualified Data.List            as List
@@ -25,7 +25,7 @@ import qualified Monomer.Lens         as L
 
 import Futr
 import Helpers
-import Nostr.Event             as NE
+import Nostr.Event as NE
 import Nostr.Keys
 import Nostr.Kind
 import Nostr.Relay
@@ -87,7 +87,7 @@ handlePostDetailsEvent
   -> PostDetailsModel
   -> PostDetailsEvent
   -> [EventResponse PostDetailsModel PostDetailsEvent sp ep]
-handlePostDetailsEvent chan back viewPostDetails viewProfile env node model evt = case evt of
+handlePostDetailsEvent request back viewPostDetails viewProfile env node model evt = case evt of
   ViewPostDetails re ->
     [ Report $ viewPostDetails re ]
   ViewProfile xo ->
@@ -100,7 +100,19 @@ handlePostDetailsEvent chan back viewPostDetails viewProfile env node model evt 
     [ Model $ model & deleteDialog .~ False ]
   DeleteEvent ->
     [ Model $ model & deleteDialog .~ False
+    , voidTask $ deleteEvent request model
+    , Report back
     ]
+
+deleteEvent :: TChan Request -> PostDetailsModel -> IO ()
+deleteEvent request model = do
+  now <- getCurrentTime
+  let unsigned = deleteEvents [eventId e] reason xo now
+  atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo
+  where
+    (Keys kp xo _ _) = fromJust $ model ^. futr . selectedKeys
+    e = fst $ fromJust $ model ^. event
+    reason = model ^. deleteReason
 
 buildUI
   :: PostDetailsWenv
