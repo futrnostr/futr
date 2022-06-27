@@ -14,39 +14,44 @@ import Nostr.Kind
 import Nostr.Profile
 
 data Filter
-  = MetadataFilter [XOnlyPubKey]
-  | ContactsFilter [XOnlyPubKey]
-  | TextNoteFilter [XOnlyPubKey]
-  | AllNotes
-  | AllMetadata
+  = MetadataFilter [XOnlyPubKey] DateTime
+  | ContactsFilter [XOnlyPubKey] DateTime
+  | TextNoteFilter [XOnlyPubKey] DateTime
+  | AllNotes DateTime
+  | AllMetadata DateTime
   deriving (Eq, Show)
 
 instance ToJSON Filter where
-  toJSON (MetadataFilter xos) =
+  toJSON (MetadataFilter xos now) =
     object $ fromList
       [ ( "kinds", toJSON [ Metadata ] )
       , ( "authors", toJSON xos )
       , ( "limit", Number 1 )
+      , ( "until", toJSON $ (toSeconds now + 60))
       ]
-  toJSON (ContactsFilter xos) =
+  toJSON (ContactsFilter xos now) =
     object $ fromList
       [ ( "kinds", toJSON [ Contacts ] )
       , ( "authors", toJSON xos )
       , ( "limit", Number 500 )
+      , ( "until", toJSON $ (toSeconds now + 60))
       ]
-  toJSON (TextNoteFilter xos) =
+  toJSON (TextNoteFilter xos now) =
     object $ fromList
       [ ( "kinds", toJSON [ TextNote ] )
       , ( "authors", toJSON xos )
       , ( "limit", Number 500 )
+      , ( "until", toJSON $ (toSeconds now + 60))
       ]
-  toJSON AllNotes =
+  toJSON (AllNotes now) =
     object $ fromList
       [ ( "kinds", toJSON [ TextNote ] )
-      , ( "limit", Number 100 )
+      , ( "limit", Number 500 )
+      , ( "until", toJSON $ (toSeconds now + 60))
       ]
-  toJSON AllMetadata =
+  toJSON (AllMetadata now) =
     object $ fromList
       [ ( "kinds", toJSON [ Metadata ] )
-      , ( "limit", Number 100 )
+      , ( "limit", Number 500 )
+      , ( "until", toJSON $ (toSeconds now + 60))
       ]

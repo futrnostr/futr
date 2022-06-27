@@ -41,10 +41,11 @@ type ViewProfileNode = WidgetNode ViewProfileModel ProfileEvent
 data ViewProfileModel = ViewProfileModel
   { _profile          :: Maybe XOnlyPubKey
   , _following        :: Map.Map XOnlyPubKey [Profile.Profile]
+  , _futr             :: FutrModel
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel Nothing Map.empty
+  def = ViewProfileModel Nothing Map.empty def
 
 data ProfileEvent
   = Follow
@@ -59,7 +60,6 @@ makeLenses 'ViewProfileModel
 viewProfileWidget
   :: (WidgetModel sp, WidgetEvent ep)
   => TChan Request
-  -> FutrModel
   -> (ep)
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
@@ -67,16 +67,15 @@ viewProfileWidget
   -> (XOnlyPubKey -> ep)
   -> ALens' sp ViewProfileModel
   -> WidgetNode sp ep
-viewProfileWidget chan futr back viewPostDetails viewProfile follow unfollow model =
+viewProfileWidget chan back viewPostDetails viewProfile follow unfollow model =
   composite
     "ViewProfileWidget"
     model
-    (buildUI futr)
-    (handleProfileEvent chan futr back viewPostDetails viewProfile follow unfollow)
+    buildUI
+    (handleProfileEvent chan back viewPostDetails viewProfile follow unfollow)
 
 handleProfileEvent
   :: TChan Request
-  -> FutrModel
   -> ep
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
@@ -87,7 +86,7 @@ handleProfileEvent
   -> ViewProfileModel
   -> ProfileEvent
   -> [EventResponse ViewProfileModel ProfileEvent sp ep]
-handleProfileEvent chan futr back viewPostDetails viewProfile follow unfollow env node model evt = case evt of
+handleProfileEvent chan back viewPostDetails viewProfile follow unfollow env node model evt = case evt of
   Follow ->
     [ Report $ follow $ fromJust $ model ^. profile ]
   Unfollow ->
@@ -100,17 +99,16 @@ handleProfileEvent chan futr back viewPostDetails viewProfile follow unfollow en
     [ Report $ back ]
 
 buildUI
-  :: FutrModel
-  -> ViewProfileWenv
+  :: ViewProfileWenv
   -> ViewProfileModel
   -> ViewProfileNode
-buildUI futr wenv model =
+buildUI wenv model =
   vstack
     [ hstack
         [ vstack [ button "Back" Back ]
         , spacer
         , profileImage
-            (Futr.pictureUrl (futr ^. profiles) profileKey)
+            (Futr.pictureUrl (model ^. futr . profiles) profileKey)
             profileKey
             Medium
         , vstack
@@ -124,7 +122,7 @@ buildUI futr wenv model =
     , spacer
     , hstack
         [ filler
-        , selectableText $ pack $ "Last updated " ++ (unpack $ xTimeAgo at (futr ^. time))
+        , selectableText $ pack $ "Last updated " ++ (unpack $ xTimeAgo at (model ^. futr . time))
         ]
     , spacer
     , label "Recent posts"  `styleBasic` [ paddingB 10, paddingT 15, borderB 1 rowSepColor ]
@@ -133,12 +131,12 @@ buildUI futr wenv model =
         ViewPostDetails
         ViewProfile
         wenv
-        futr
+        (model ^. futr)
     ]
   where
     profileKey = fromJust $ model ^. profile
-    ((Profile.Profile name displayName about _), at) = fromJust $ Map.lookup profileKey (futr ^. profiles)
+    ((Profile.Profile name displayName about _), at) = fromMaybe (def, fromSeconds 0) $ Map.lookup profileKey (model ^. futr . profiles)
     (year, month, day, hour, min, _) = toGregorian $ at
-    (Keys _ xo _ user) = fromJust $ futr ^. selectedKeys
-    action = if List.elem profileKey (futr ^. contacts) then Unfollow else Follow
-    btnText = if List.elem profileKey (futr ^. contacts) then "Unfollow" else "Follow"
+    (Keys _ xo _ user) = fromJust $ model ^. futr . selectedKeys
+    action = if List.elem profileKey (model ^. futr . contacts) then Unfollow else Follow
+    btnText = if List.elem profileKey (model ^. futr . contacts) then "Unfollow" else "Follow"

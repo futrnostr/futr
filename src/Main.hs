@@ -118,6 +118,7 @@ handleEvent env wenv node model evt =
     ViewProfile xo' ->
       [ Model $ model
           & viewProfileModel . ViewProfile.profile .~ Just xo'
+          & viewProfileModel . ViewProfile.futr .~ model ^. futr
           & currentView .~ ProfileView
       ]
       where
@@ -326,6 +327,8 @@ initSubscriptions
   -> (AppEvent -> IO ())
   -> IO ()
 initSubscriptions pool request (Keys _ xo _ _) contacts sendMsg = do
+  now <- getCurrentTime
+  let initialFilters = [ MetadataFilter contacts now, TextNoteFilter contacts now, AllNotes now, AllMetadata now ]
   response <- atomically newTChan
   subId <- subscribe pool request response initialFilters
   sendMsg $ SubscriptionStarted subId
@@ -334,8 +337,6 @@ initSubscriptions pool request (Keys _ xo _ _) contacts sendMsg = do
     msgs <- collectJustM . atomically $ tryReadTChan response
     sendMsg $ NewResponses (msg : msgs)
     threadDelay $ 100 * 1000 -- to avoid re-rendering, we only send 10 times per second new data in batches to the UI
-  where
-    initialFilters = [ MetadataFilter contacts, TextNoteFilter contacts, AllNotes, AllMetadata ]
 
 loadContacts
   :: MVar RelayPool
@@ -347,8 +348,9 @@ loadContacts pool request model sendMsg = do
   if not $ null $ model ^. futr . contacts
   then return ()
   else do
+    now <- getCurrentTime
     response <- atomically newTChan
-    subId <- subscribe pool request response [ ContactsFilter [ xo ] ]
+    subId <- subscribe pool request response [ ContactsFilter [ xo ] now ]
     msg <- atomically $ readTChan response
     case msg of
       (EventReceived _ event, _) -> do

@@ -240,8 +240,9 @@ loadImportedKeyData
   -> Keys
   -> IO SetupEvent
 loadImportedKeyData pool request keys = do
+  now <- getCurrentTime
   response <- atomically newTChan
-  subId <- subscribe pool request response [ MetadataFilter [ xo ] ]
+  subId <- subscribe pool request response [ MetadataFilter [ xo ] now ]
   msg <- atomically $ readTChan response
   case msg of
     (EventReceived _ event, _) -> do

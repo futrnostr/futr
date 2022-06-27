@@ -77,7 +77,6 @@ buildUI pool request wenv model = widgetTree
       ProfileView ->
         ViewProfile.viewProfileWidget
           request
-          (model ^. futr)
           GoHome
           ViewPostDetails
           ViewProfile
