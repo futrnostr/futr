@@ -44,6 +44,7 @@ import UIHelpers
 import qualified Widgets.BackupKeys as BackupKeys
 import qualified Widgets.EditProfile as EditProfile
 import qualified Widgets.KeyManagement as KeyManagement
+import qualified Widgets.PostDetails as PostDetails
 import qualified Widgets.RelayManagement as RelayManagement
 import qualified Widgets.ViewPosts as ViewPosts
 import qualified Widgets.ViewProfile as ViewProfile
@@ -118,7 +119,10 @@ handleEvent env wenv node model evt =
       , voidTask $ sendPost (env ^. request) (model ^. futr) (model ^. inputField)
       ]
     ViewPostDetails re ->
-      [ Model $ model & currentView .~ PostDetailsView ]
+      [ Model $ model
+          & currentView .~ PostDetailsView
+          & postDetailsModel . PostDetails.event .~ Just re
+      ]
     ViewProfile xo' ->
       [ Model $ model
           & viewProfileModel . ViewProfile.profile .~ Just xo'
@@ -335,7 +339,7 @@ initSubscriptions
   -> IO ()
 initSubscriptions pool request (Keys _ xo _ _) contacts sendMsg = do
   now <- getCurrentTime
-  let initialFilters = [ MetadataFilter contacts now, TextNoteFilter contacts now, AllNotes now, AllMetadata now ]
+  let initialFilters = [ MetadataFilter contacts now, TextNoteFilter contacts now, AllMetadata now ]
   response <- atomically newTChan
   subId <- subscribe pool request response initialFilters
   sendMsg $ SubscriptionStarted subId
@@ -392,3 +396,4 @@ updateFutr model new =
   model
     & futr .~ new
     & viewProfileModel . ViewProfile.futr .~ new
+    & postDetailsModel . PostDetails.futr .~ new

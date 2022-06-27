@@ -32,6 +32,7 @@ import Widgets.ProfileImage
 import qualified Widgets.BackupKeys as BackupKeys
 import qualified Widgets.EditProfile as EditProfile
 import qualified Widgets.KeyManagement as KeyManagement
+import qualified Widgets.PostDetails as PostDetails
 import qualified Widgets.RelayManagement as RelayManagement
 import qualified Widgets.Setup as Setup
 import qualified Widgets.ViewPosts as ViewPosts
@@ -73,7 +74,12 @@ buildUI pool request wenv model = widgetTree
           AppTypes.RelaysUpdated
           relayMgmtModel
       PostDetailsView ->
-        vstack [] -- @todo
+        PostDetails.postDetailsWidget
+          request
+          GoHome
+          ViewPostDetails
+          ViewProfile
+          postDetailsModel
       ProfileView ->
         ViewProfile.viewProfileWidget
           request

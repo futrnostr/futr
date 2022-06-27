@@ -40,12 +40,11 @@ type ViewProfileNode = WidgetNode ViewProfileModel ProfileEvent
 
 data ViewProfileModel = ViewProfileModel
   { _profile          :: Maybe XOnlyPubKey
-  , _following        :: Map.Map XOnlyPubKey [Profile.Profile]
   , _futr             :: FutrModel
   } deriving (Eq, Show)
 
 instance Default ViewProfileModel where
-  def = ViewProfileModel Nothing Map.empty def
+  def = ViewProfileModel Nothing def
 
 data ProfileEvent
   = Follow

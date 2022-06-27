@@ -29,6 +29,7 @@ import Nostr.Response
 import Widgets.BackupKeys
 import Widgets.EditProfile
 import Widgets.KeyManagement
+import Widgets.PostDetails
 import Widgets.RelayManagement
 import Widgets.Setup
 import Widgets.ViewProfile
@@ -67,6 +68,7 @@ data AppModel =
     , _currentView       :: AppView
     , _editProfileModel  :: EditProfileModel
     , _viewProfileModel  :: ViewProfileModel
+    , _postDetailsModel  :: PostDetailsModel
     , _relayModel        :: RelayModel
     , _setupModel        :: SetupModel
     , _backupKeysModel   :: BackupKeysModel
@@ -76,7 +78,7 @@ data AppModel =
   deriving (Eq, Show)
 
 instance Default AppModel where
-  def = AppModel [] def "" [] Nothing Nothing True HomeView def def def def def def def
+  def = AppModel [] def "" [] Nothing Nothing True HomeView def def def def def def def def
 
 data AppEvent
   = NoOp

@@ -38,6 +38,7 @@ executable futr
       Widgets.BackupKeys
       Widgets.EditProfile
       Widgets.KeyManagement
+      Widgets.PostDetails
       Widgets.ProfileImage
       Widgets.RelayManagement
       Widgets.Setup
