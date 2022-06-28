@@ -63,7 +63,6 @@ main = do
       , appFontDef "Bold" "./assets/fonts/Roboto-Bold.ttf"
       , appInitEvent AppInit
       , appDisposeEvent Dispose
-      -- , appDisableAutoScale True
       ]
 
 handleEvent

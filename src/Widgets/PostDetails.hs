@@ -198,7 +198,6 @@ buildUI wenv model = widgetTree
           , selectableText $ fromMaybe "" displayName
           ]
       ]
-    comments = []
     postInfo =
       vstack
         [ hstack
@@ -218,19 +217,13 @@ buildUI wenv model = widgetTree
                 `nodeVisible` (xo == profileKey)
             ]
         ]
-    commentsSection comments =
-      case length comments of
-        0 -> vstack [ label "No comments yet" ]
-        _ -> vstack
-          [
-          ]
     seenOnTree =
       vstack $
         map (\r -> label $ relayName r) (sort rs)
     widgetTree =
       zstack
-        [ vstack
-            [ vscroll_ [ scrollOverlay ] $ postInfo `styleBasic` [ textTop ]
+        [ vscroll_ [ scrollOverlay ] $ vstack
+            [ postInfo `styleBasic` [ textTop ]
             , spacer
             , hstack
                 [ textArea newPostInput
@@ -243,12 +236,17 @@ buildUI wenv model = widgetTree
             , spacer
             , label "Comments" `styleBasic` [ paddingB 10, paddingT 15, borderB 1 rowSepColor ]
             , spacer
-            , vscroll_ [ scrollOverlay ] $ commentsSection comments `styleBasic` [ textTop ]
+            , ViewPosts.viewPosts
+                ViewPostDetails
+                ViewProfile
+                wenv
+                (model ^. futr)
+                (filter (\re -> kind (fst re) == TextNote) (model ^. futr . events))
             , filler
             , label "Seen on"
             , spacer
             , seenOnTree
-            ]
+            ] `styleBasic` [ paddingR 10 ]
         , box_ [ alignCenter, alignMiddle ] (viewDeleteEventDialog event')
             `nodeVisible` (model ^. deleteDialog == True)
             `styleBasic` [ bgColor (gray & L.a .~ 0.8) ]
