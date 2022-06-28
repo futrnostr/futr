@@ -154,9 +154,9 @@ instance ToJSON Tag where
          ValidXOnlyPubKey xo' ->
            toJSON xo'
          InvalidXOnlyPubKey ->
-           Null
-     , toJSON relayURL
-     , toJSON name
+           String ""
+     , maybe (String "") (\r -> String r) relayURL
+     , maybe (String "") (\n -> String n) name
      ]
  toJSON _ = -- @todo implement nonce tag
    Array $ fromList []

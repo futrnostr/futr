@@ -137,24 +137,22 @@ handleEvent env wenv node model evt =
       ]
       where
         ((Profile name displayName about pictureUrl), _) = fromMaybe (def, fromSeconds 0) (Map.lookup xo' (model ^. futr . profiles))
-    Follow xo ->
+    Follow xo -> -- @todo update subscription
       [ Model $ model
-          & futr .~ newFutr
-          & profileModel . Profile.futr .~ newFutr
+          & futr . contacts .~ newContacts
+          & profileModel . Profile.futr . contacts .~ newContacts
       , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
         newContacts = xo : (nub $ model ^. futr . contacts)
-        newFutr = model ^. futr & contacts .~ newContacts
-    Unfollow xo ->
+    Unfollow xo -> -- @todo @todo update subscription
       [ Model $ model
-          & futr .~ newFutr
-          & profileModel . Profile.futr .~ newFutr
+          & futr . contacts .~ newContacts
+          & profileModel . Profile.futr . contacts .~ newContacts
       , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
         newContacts = filter (\xo' -> xo /= xo') (model ^. futr . contacts)
-        newFutr = model ^. futr & contacts .~ newContacts
     Search ->
       [ Model $ model & searchInput .~ ""
       , Task $ runSearch (model ^. searchInput)
