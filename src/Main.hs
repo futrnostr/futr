@@ -90,9 +90,11 @@ handleEvent env wenv node model evt =
           Nothing -> Monomer.Event NoOp
       ]
     TimerTick now ->
-      [ Model $ updateFutr model newFutr ]
-      where
-        newFutr = model ^. futr & time .~ now
+      [ Model $ model
+          & futr . time .~ now
+          & viewProfileModel . ViewProfile.futr . time .~ now
+          & postDetailsModel . PostDetails.futr . time .~ now
+      ]
     -- subscriptions
     InitSubscriptions ->
       [ Producer $ loadContacts (env ^. pool) (env ^. request) model ]
@@ -105,11 +107,11 @@ handleEvent env wenv node model evt =
         newFutr = model ^. futr
           & contacts .~ Map.keys cs
           & profiles .~ cs
-        newModel = updateFutr model newFutr
+        newModel = model & futr .~ newFutr
     SubscriptionStarted subId ->
       [ Model $ model & subscriptionId .~ Just subId ]
     NewResponses responseList ->
-      [ Model $ updateFutr model (newFutr (model ^. futr) responseList) ]
+      [ Model $ model & futr .~ (newFutr (model ^. futr) responseList) ]
     Dispose ->
       [ voidTask $ closeSubscriptions (env ^. pool) (env ^. request) (model ^. subscriptionId) ]
     -- actions
@@ -135,14 +137,14 @@ handleEvent env wenv node model evt =
       where
         ((Profile name displayName about pictureUrl), _) = fromMaybe (def, fromSeconds 0) (Map.lookup xo' (model ^. futr . profiles))
     Follow xo ->
-      [ Model $ updateFutr model newFutr
+      [ Model $ model & futr .~ newFutr
       , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
         newContacts = xo : (nub $ model ^. futr . contacts)
         newFutr = model ^. futr & contacts .~ newContacts
     Unfollow xo ->
-      [ Model $ updateFutr model newFutr
+      [ Model $ model & futr .~ newFutr
       , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
@@ -181,7 +183,7 @@ handleEvent env wenv node model evt =
         mk = mainKeys $ verifyActiveKeys ks
         (Keys _ xo _ _) = mk
         newFutr = model ^. futr & selectedKeys .~ Just mk
-        newModel = updateFutr model newFutr
+        newModel = model & futr .~ newFutr
     NoKeysFound ->
       [ Model $ model & currentView .~ SetupView ]
     ErrorReadingKeysFile ->
@@ -201,7 +203,7 @@ handleEvent env wenv node model evt =
         newFutr = model ^. futr
           & profiles .~ Map.insert xo (profile, datetime) (model ^. futr . profiles)
           & selectedKeys .~ Just ks
-        newModel = updateFutr model newFutr
+        newModel = model & futr .~ newFutr
     KeysBackupDone ->
       [ Model $ model
           & currentView .~ HomeView
@@ -215,7 +217,7 @@ handleEvent env wenv node model evt =
       where
         ks = if null keysList then initialKeys else head $ filter (\(Keys _ _ active _) -> active == True) keysList
         newFutr = def { _selectedKeys = Just ks}
-        newModel = updateFutr model newFutr
+        newModel = model & futr .~ newFutr
 
     -- relays
     ConnectRelay relay ->
@@ -266,7 +268,7 @@ handleEvent env wenv node model evt =
               if datetime > datetime'
                 then Map.insert xo (profile', datetime) (model ^. futr . profiles)
                 else model ^. futr . profiles
-        newModel = updateFutr model newFutr
+        newModel = model & futr .~ newFutr
 
 loadKeysFromDisk :: IO AppEvent
 loadKeysFromDisk = do
@@ -408,12 +410,6 @@ saveContacts request (Keys kp xo _ _) contacts = do
   now <- getCurrentTime
   let unsigned = setContacts contacts xo now
   atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo
-
-updateFutr :: AppModel -> FutrModel -> AppModel
-updateFutr model new =
-  model
-    & futr .~ new
-    & viewProfileModel . ViewProfile.futr .~ new
 
 runSearch :: Text -> IO AppEvent
 runSearch v = do
