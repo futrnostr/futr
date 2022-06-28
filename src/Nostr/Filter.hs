@@ -50,7 +50,6 @@ instance ToJSON Filter where
       [ ( "kinds", toJSON [ TextNote ] )
       , ( "limit", Number 500 )
       , ( "#e", toJSON eids )
-      , ( "until", toJSON $ (toSeconds now + 60))
       ]
   toJSON (AllNotes now) =
     object $ fromList
