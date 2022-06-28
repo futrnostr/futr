@@ -81,14 +81,15 @@ postDetailsWidget
   -> (ep)
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
+  -> (Event -> Text -> ep)
   -> ALens' sp PostDetailsModel
   -> WidgetNode sp ep
-postDetailsWidget pool request back viewPostDetails postDetails model =
+postDetailsWidget pool request back viewPostDetails postDetails replyToPost model =
   composite_
     "PostDetailsWidget"
     model
     buildUI
-    (handlePostDetailsEvent pool request back viewPostDetails postDetails)
+    (handlePostDetailsEvent pool request back viewPostDetails postDetails replyToPost)
     [ onInit StartSubscription, onDispose StopSubscription ]
 
 handlePostDetailsEvent
@@ -97,12 +98,13 @@ handlePostDetailsEvent
   -> ep
   -> (ReceivedEvent -> ep)
   -> (XOnlyPubKey -> ep)
+  -> (Event -> Text -> ep)
   -> PostDetailsWenv
   -> PostDetailsNode
   -> PostDetailsModel
   -> PostDetailsEvent
   -> [EventResponse PostDetailsModel PostDetailsEvent sp ep]
-handlePostDetailsEvent pool request back viewPostDetails viewProfile env node model evt = case evt of
+handlePostDetailsEvent pool request back viewPostDetails viewProfile replyToPost env node model evt = case evt of
   ViewPostDetails re ->
     [ Report $ viewPostDetails re ]
   ViewProfile xo ->
@@ -110,7 +112,9 @@ handlePostDetailsEvent pool request back viewPostDetails viewProfile env node mo
   Back ->
     [ Report back ]
   ReplyToPost ->
-    []
+    [ Model $ model & newPostInput .~ ""
+    , Report $ replyToPost (fst $ fromJust $ model ^. event) (model ^. newPostInput)
+    ]
   ShowDeleteEventDialog ->
     [ Model $ model & deleteDialog .~ True ]
   CloseDialog ->
@@ -149,7 +153,7 @@ startSubscription
   -> IO ()
 startSubscription pool request model sendMsg = do
   now <- getCurrentTime
-  let filters = [ MetadataFilter [ author ] now, LinkedEvents eid now ]
+  let filters = [ MetadataFilter [ author ] now, LinkedEvents [ eid ] now ]
   response <- atomically newTChan
   subId <- subscribe pool request response filters
   sendMsg $ SubscriptionStarted subId

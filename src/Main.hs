@@ -114,9 +114,13 @@ handleEvent env wenv node model evt =
     Dispose ->
       [ voidTask $ closeSubscriptions (env ^. pool) (env ^. request) (model ^. subscriptionId) ]
     -- actions
-    SendPost ->
+    SendPost post ->
       [ Model $ model & inputField .~ ""
-      , voidTask $ sendPost (env ^. request) (model ^. futr) (model ^. inputField)
+      , voidTask $ sendPost (env ^. request) (model ^. futr) post
+      ]
+    ReplyToPost ev post ->
+      [ Model $ model & inputField .~ ""
+      , voidTask $ replyToPost (env ^. request) (model ^. futr) ev post
       ]
     ViewPostDetails re ->
       [ Model $ model
@@ -388,6 +392,16 @@ sendPost request model post = do
     Just (Keys kp xo _ _) -> do
       now <- getCurrentTime
       let unsigned = textNote (strip post) xo now;
+      atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo
+
+replyToPost :: TChan Request -> FutrModel -> Event -> Text -> IO ()
+replyToPost request model ev post = do
+  case model ^. selectedKeys of
+    Nothing ->
+      putStrLn "Cannot post message, so keys available"
+    Just (Keys kp xo _ _) -> do
+      now <- getCurrentTime
+      let unsigned = replyNote ev (strip post) xo now;
       atomically $ writeTChan request $ SendEvent $ signEvent unsigned kp xo
 
 saveContacts :: TChan Request -> Keys -> [(XOnlyPubKey, Maybe Username)] -> IO ()

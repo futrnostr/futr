@@ -80,6 +80,7 @@ buildUI pool request wenv model = widgetTree
           GoHome
           ViewPostDetails
           ViewProfile
+          ReplyToPost
           postDetailsModel
       ProfileView ->
         ViewProfile.viewProfileWidget
@@ -217,7 +218,7 @@ homeUI wenv model =
               `nodeKey` "noteInput"
               `styleBasic` [ height 50 ]
             , filler
-            , button "Post" SendPost
+            , button "Post" (SendPost $ model ^. inputField)
               `nodeEnabled` ((strip $ model ^. inputField) /= "")
             ]
         ]

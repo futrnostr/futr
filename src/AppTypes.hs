@@ -93,7 +93,8 @@ data AppEvent
   | NewResponses [(Response, Relay)]
   | Dispose
   -- actions
-  | SendPost
+  | SendPost Text
+  | ReplyToPost Event Text
   | ViewPostDetails ReceivedEvent
   | ViewProfile XOnlyPubKey
   | Follow XOnlyPubKey

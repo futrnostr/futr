@@ -132,20 +132,20 @@ instance ToJSON Tag where
    Array $ fromList
      [ String "e"
      , String $ B16.encodeBase16 $ getEventId eventId
-     , maybe Null (\r -> String r) relayURL
+     , maybe (String "") (\r -> String r) relayURL
      ]
  toJSON (ETag eventId relayURL marker) =
    Array $ fromList
      [ String "e"
      , String $ B16.encodeBase16 $ getEventId eventId
-     , maybe Null (\r -> String r) relayURL
+     , maybe (String "") (\r -> String r) relayURL
      , case marker of
          Just Reply ->
            String "reply"
          Just Root ->
            String "root"
          Nothing ->
-           Null
+           String ""
      ]
  toJSON (PTag xo relayURL name) =
    Array $ fromList

@@ -18,7 +18,7 @@ data Filter
   = MetadataFilter [XOnlyPubKey] DateTime
   | ContactsFilter [XOnlyPubKey] DateTime
   | TextNoteFilter [XOnlyPubKey] DateTime
-  | LinkedEvents EventId DateTime
+  | LinkedEvents [EventId] DateTime
   | AllNotes DateTime
   | AllMetadata DateTime
   deriving (Eq, Show)
@@ -45,11 +45,11 @@ instance ToJSON Filter where
       , ( "limit", Number 500 )
       , ( "until", toJSON $ (toSeconds now + 60))
       ]
-  toJSON (LinkedEvents eid now) =
+  toJSON (LinkedEvents eids now) =
     object $ fromList
       [ ( "kinds", toJSON [ TextNote ] )
       , ( "limit", Number 500 )
-      , ( "#e", toJSON [ eid ] )
+      , ( "#e", toJSON eids )
       , ( "until", toJSON $ (toSeconds now + 60))
       ]
   toJSON (AllNotes now) =
