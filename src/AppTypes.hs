@@ -32,7 +32,7 @@ import Widgets.KeyManagement
 import Widgets.PostDetails
 import Widgets.RelayManagement
 import Widgets.Setup
-import Widgets.ViewProfile
+import Widgets.Profile
 
 type AppWenv = WidgetEnv AppModel AppEvent
 
@@ -68,7 +68,7 @@ data AppModel =
     -- views
     , _currentView       :: AppView
     , _editProfileModel  :: EditProfileModel
-    , _viewProfileModel  :: ViewProfileModel
+    , _profileModel      :: ProfileModel
     , _postDetailsModel  :: PostDetailsModel
     , _relayModel        :: RelayModel
     , _setupModel        :: SetupModel

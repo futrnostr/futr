@@ -36,7 +36,7 @@ import qualified Widgets.PostDetails as PostDetails
 import qualified Widgets.RelayManagement as RelayManagement
 import qualified Widgets.Setup as Setup
 import qualified Widgets.ViewPosts as ViewPosts
-import qualified Widgets.ViewProfile as ViewProfile
+import qualified Widgets.Profile as Profile
 
 buildUI :: MVar RelayPool -> TChan Request -> AppWenv -> AppModel -> AppNode
 buildUI pool request wenv model = widgetTree
@@ -83,14 +83,15 @@ buildUI pool request wenv model = widgetTree
           ReplyToPost
           postDetailsModel
       ProfileView ->
-        ViewProfile.viewProfileWidget
+        Profile.profileWidget
+          pool
           request
           GoHome
           ViewPostDetails
           ViewProfile
           Follow
           Unfollow
-          viewProfileModel
+          profileModel
     imageButtonStyling =
       [ cursorHand
       , border 1 $ rgbHex "#bae3ff"

@@ -39,11 +39,11 @@ executable futr
       Widgets.EditProfile
       Widgets.KeyManagement
       Widgets.PostDetails
+      Widgets.Profile
       Widgets.ProfileImage
       Widgets.RelayManagement
       Widgets.Setup
       Widgets.ViewPosts
-      Widgets.ViewProfile
       Paths_futr
   hs-source-dirs:
       src

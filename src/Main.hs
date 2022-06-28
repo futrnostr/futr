@@ -47,7 +47,7 @@ import qualified Widgets.KeyManagement as KeyManagement
 import qualified Widgets.PostDetails as PostDetails
 import qualified Widgets.RelayManagement as RelayManagement
 import qualified Widgets.ViewPosts as ViewPosts
-import qualified Widgets.ViewProfile as ViewProfile
+import qualified Widgets.Profile as Profile
 
 main :: IO ()
 main = do
@@ -92,22 +92,22 @@ handleEvent env wenv node model evt =
     TimerTick now ->
       [ Model $ model
           & futr . time .~ now
-          & viewProfileModel . ViewProfile.futr . time .~ now
+          & profileModel . Profile.futr . time .~ now
           & postDetailsModel . PostDetails.futr . time .~ now
       ]
     -- subscriptions
     InitSubscriptions ->
       [ Producer $ loadContacts (env ^. pool) (env ^. request) model ]
     SubscriptionsInitialized cs ->
-      [ Model $ newModel
+      [ Model $ model
           & subscriptionId .~ Nothing
+          & futr .~ newFutr
       , Producer $ initSubscriptions (env ^. pool) (env ^. request) (fromJust $ newFutr ^. selectedKeys) (Map.keys cs)
       ]
       where
         newFutr = model ^. futr
           & contacts .~ Map.keys cs
           & profiles .~ cs
-        newModel = model & futr .~ newFutr
     SubscriptionStarted subId ->
       [ Model $ model & subscriptionId .~ Just subId ]
     NewResponses responseList ->
@@ -131,20 +131,25 @@ handleEvent env wenv node model evt =
       ]
     ViewProfile xo' ->
       [ Model $ model
-          & viewProfileModel . ViewProfile.profile .~ Just xo'
+          & profileModel . Profile.profile .~ Just xo'
           & currentView .~ ProfileView
+          & profileModel . Profile.futr .~ (model ^. futr)
       ]
       where
         ((Profile name displayName about pictureUrl), _) = fromMaybe (def, fromSeconds 0) (Map.lookup xo' (model ^. futr . profiles))
     Follow xo ->
-      [ Model $ model & futr .~ newFutr
+      [ Model $ model
+          & futr .~ newFutr
+          & profileModel . Profile.futr .~ newFutr
       , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
         newContacts = xo : (nub $ model ^. futr . contacts)
         newFutr = model ^. futr & contacts .~ newContacts
     Unfollow xo ->
-      [ Model $ model & futr .~ newFutr
+      [ Model $ model
+          & futr .~ newFutr
+          & profileModel . Profile.futr .~ newFutr
       , voidTask $ saveContacts (env ^. request) (fromJust $ model ^. futr . selectedKeys) (map (\c -> (c, Nothing)) newContacts)
       ]
       where
@@ -174,25 +179,29 @@ handleEvent env wenv node model evt =
           & relayMgmtModel . RelayManagement.rmRelays .~ model ^. relays
       ]
     KeyPairsLoaded ks ->
-      [ Model $ newModel
+      [ Model $ model
           & keys .~ verifyActiveKeys ks
           & currentView .~ HomeView
+          & futr . selectedKeys .~ Just mk
+          & profileModel . Profile.futr . selectedKeys .~ Just mk
+          & postDetailsModel . PostDetails.futr . selectedKeys .~ Just mk
       , Task $ saveKeyPairs ks (verifyActiveKeys ks)
       ]
       where
         mk = mainKeys $ verifyActiveKeys ks
         (Keys _ xo _ _) = mk
-        newFutr = model ^. futr & selectedKeys .~ Just mk
-        newModel = model & futr .~ newFutr
     NoKeysFound ->
       [ Model $ model & currentView .~ SetupView ]
     ErrorReadingKeysFile ->
       [ Model $ model & errorMsg .~ (Just $ pack "Could not read keys file.\nCheck the file permissions. Maybe the file was corrupted.") ]
     NewKeysCreated ks profile datetime ->
-      [ Model $ newModel
+      [ Model $ model
           & keys .~ ks : dk
           & AppTypes.backupKeysModel . BackupKeys.backupKeys .~ Just ks
           & currentView .~ BackupKeysView
+          & futr .~ newFutr
+          & profileModel . Profile.futr .~ newFutr
+          & postDetailsModel . PostDetails.futr .~ newFutr
       , Task $ saveKeyPairs (model ^. keys) (ks : dk)
       , Monomer.Event InitSubscriptions
       ]
@@ -203,21 +212,22 @@ handleEvent env wenv node model evt =
         newFutr = model ^. futr
           & profiles .~ Map.insert xo (profile, datetime) (model ^. futr . profiles)
           & selectedKeys .~ Just ks
-        newModel = model & futr .~ newFutr
     KeysBackupDone ->
       [ Model $ model
           & currentView .~ HomeView
       ]
     KeysUpdated keysList ->
-      [ Model $ newModel
+      [ Model $ model
           & keys .~ keysList
+          & futr .~ newFutr
+          & profileModel . Profile.futr .~ newFutr
+          & postDetailsModel . PostDetails.futr .~ newFutr
       , Task $ saveKeyPairs (model ^. keys) keysList
       , if null keysList then Model $ model & currentView .~ SetupView else Monomer.Event InitSubscriptions
       ]
       where
         ks = if null keysList then initialKeys else head $ filter (\(Keys _ _ active _) -> active == True) keysList
         newFutr = def { _selectedKeys = Just ks}
-        newModel = model & futr .~ newFutr
 
     -- relays
     ConnectRelay relay ->
@@ -247,7 +257,11 @@ handleEvent env wenv node model evt =
           p <- picture
           return p
     ProfileUpdated ks profile datetime ->
-      [ Model $ newModel & keys .~ ks' : newKeyList
+      [ Model $ model
+          & keys .~ ks' : newKeyList
+          & futr .~ newFutr
+          & profileModel . Profile.futr .~ newFutr
+          & postDetailsModel . PostDetails.futr .~ newFutr
       , Task $ saveKeyPairs (model ^. keys) (ks' : newKeyList)
       ]
       where
@@ -268,7 +282,6 @@ handleEvent env wenv node model evt =
               if datetime > datetime'
                 then Map.insert xo (profile', datetime) (model ^. futr . profiles)
                 else model ^. futr . profiles
-        newModel = model & futr .~ newFutr
 
 loadKeysFromDisk :: IO AppEvent
 loadKeysFromDisk = do
