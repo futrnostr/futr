@@ -9,6 +9,12 @@
     flake-utils.url = "github:numtide/flake-utils";
     haskell-nix.url = "github:input-output-hk/haskell.nix";
     nixpkgs.follows = "haskell-nix/nixpkgs-unstable";
+
+    GLEW.url = "github:nigels-com/glew";
+    GLEW.inputs.nixpkgs.follows = "nixpkgs";
+
+    SDL.url = "github:libsdl-org/SDL";
+    SDL.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = inputs:
