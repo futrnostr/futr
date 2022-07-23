@@ -44,15 +44,17 @@ jobs:
         with:
           repository: 'bitcoin-core/secp256k1'
           platform: 'github'
+          path: secp256k1
 
       - name: Install secp256k1
         run: |
              sudo apt-get install make autoconf
-             cd bitcoin-core/secp256k1
+             cd secp256k1
              ./autogen.sh
              ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental
              make
              sudo make install
+             cd ..
 
       - name: Install dependencies
         run: |
