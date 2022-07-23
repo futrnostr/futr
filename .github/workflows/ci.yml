@@ -40,7 +40,7 @@ jobs:
         shell: sh
 
       - name: Fetch secp256k1 sources
-        uses: sudosubin/git-clone-action@v1
+        uses: sudosubin/git-clone-action@v1.0.1
         with:
           repository: 'bitcoin-core/secp256k1'
           platform: 'github'
