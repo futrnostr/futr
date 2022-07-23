@@ -55,6 +55,7 @@ jobs:
              make
              sudo make install
              cd ..
+             sudo ln -s /usr/local/lib/libsecp256k1.so.0 /usr/lib/libsecp256k1.so.0
 
       - name: Install dependencies
         run: |
