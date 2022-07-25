@@ -35,28 +35,6 @@ jobs:
           path: ~/.stack
           key: ${{ runner.os }}-${{ matrix.ghc }}-stack
 
-      - name: Install SDL2 + Glew for UI
-        run: sudo apt-get install libsdl2-dev libglew-dev
-        shell: sh
-
-      - name: Fetch secp256k1 sources
-        uses: sudosubin/git-clone-action@v1.0.1
-        with:
-          repository: 'bitcoin-core/secp256k1'
-          platform: 'github'
-          path: secp256k1
-
-      - name: Install secp256k1
-        run: |
-             sudo apt-get install make autoconf
-             cd secp256k1
-             ./autogen.sh
-             ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental
-             make
-             sudo make install
-             cd ..
-             sudo ln -s /usr/local/lib/libsecp256k1.so.0 /usr/lib/libsecp256k1.so.0
-
       - name: Install dependencies
         run: |
           stack build --system-ghc --test --bench --no-run-tests --no-run-benchmarks --only-dependencies
