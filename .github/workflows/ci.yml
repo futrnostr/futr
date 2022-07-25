@@ -50,3 +50,7 @@ jobs:
           options: -v ${{ github.workspace }}:/app -w /app
           run: ./build-appimage.sh
 
+      - uses: actions/upload-artifact@v2
+        with:
+          name: AppImage
+          path: './*.AppImage*'
