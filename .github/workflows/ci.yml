@@ -66,5 +66,5 @@ jobs:
           stack build --system-ghc --test --bench --no-run-tests --no-run-benchmarks --copy-bins --local-bin-path futr.AppDir/usr/bin
 
       - name: Create AppImage
-        run: ./build-appimage.sh
+        run: docker run -it --rm -v ${PWD}:/app -w /app prolic/futr-dev ./build-appimage.sh
 

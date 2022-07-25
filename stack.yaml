@@ -58,7 +58,7 @@ flags:
 
 docker:
   enable: true
-  image: "futr-dev"
+  repo: "prolic/futr-dev:latest"
 
 # Extra package databases containing global packages
 # extra-package-dbs: []
