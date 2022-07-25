@@ -1,6 +1,5 @@
 #!/bin/sh
-
-PATH="$(dirname "$(readlink -f "${0}")")"
-EXEC="${PATH}/usr/bin/futr"
-
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+EXEC="${HERE}/usr/bin/futr"
 exec "${EXEC}"
