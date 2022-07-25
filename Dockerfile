@@ -29,5 +29,7 @@ RUN ln -s /usr/local/lib/libsecp256k1.so.0 /usr/lib/libsecp256k1.so.0
 
 RUN wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage && \
     chmod +x linuxdeploy-x86_64.AppImage                                                                     && \
+    mv linuxdeploy-x86_64.AppImage /usr/bin                                                                  && \
     wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage   && \
-    chmod +x appimagetool-x86_64.AppImage
+    chmod +x appimagetool-x86_64.AppImage                                                                    && \
+    mv appimagetool-x86_64.AppImage /usr/bin
