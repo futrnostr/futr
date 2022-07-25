@@ -56,6 +56,10 @@ flags:
   nanovg:
     stb_truetype: true
 
+docker:
+  enable: true
+  image: "futr-dev"
+
 # Extra package databases containing global packages
 # extra-package-dbs: []
 
