@@ -63,4 +63,12 @@ jobs:
 
       - name: Build
         run: |
-          stack build --system-ghc --test --bench --no-run-tests --no-run-benchmarks
+          stack build --system-ghc --test --bench --no-run-tests --no-run-benchmarks --copy-bins --local-bin-path build
+
+      - name: Get AppImage tools
+        run: |
+          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
+      - name: Create AppImage
+        run: ./build-appimage.sh
