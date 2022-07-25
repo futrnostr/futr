@@ -43,6 +43,10 @@ jobs:
         run: |
           stack build --system-ghc --test --bench --no-run-tests --no-run-benchmarks --copy-bins --local-bin-path futr.AppDir/usr/bin
 
-      - name: Create AppImage
-        run: docker run -it --rm -v ${PWD}:/app -w /app prolic/futr-dev ./build-appimage.sh
+      - uses: addnab/docker-run-action@v3
+        name: Create AppImage
+        with:
+          image: prolic/futr-dev:latest
+          options: -v ${{ github.workspace }}:/app -w /app
+          run: ./build-appimage.sh
 
