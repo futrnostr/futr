@@ -23,6 +23,7 @@ dependencies:
   - data-default
   - datetime
   - directory
+  - filepath
   - http-client
   - JuicyPixels
   - lens

@@ -67,6 +67,7 @@ executable futr
     , data-default
     , datetime
     , directory
+    , filepath
     , http-client
     , lens
     , modern-uri

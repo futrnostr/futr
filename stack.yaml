@@ -56,6 +56,10 @@ flags:
   nanovg:
     stb_truetype: true
 
+docker:
+  enable: true
+  repo: "prolic/futr-dev:latest"
+
 # Extra package databases containing global packages
 # extra-package-dbs: []
 

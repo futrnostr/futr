@@ -12,4 +12,6 @@ dist-docs.*/
 *.ser
 cabal.project.local*
 *.ft
-profiles/
+build/
+futr-x86_64.AppImage
+futr.AppDir/

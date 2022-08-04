@@ -17,10 +17,12 @@ import Data.Default
 import Data.List (filter, find, nub, sort, sortBy)
 import Data.Map (Map)
 import Data.Maybe
-import Data.Text (Text, pack, strip)
+import Data.Text (Text, append, pack, strip)
 import Monomer
 import Monomer.Widgets.Single
-import System.Directory (createDirectory, doesDirectoryExist, doesFileExist)
+import System.Directory (createDirectory, doesDirectoryExist, doesFileExist, getAppUserDataDirectory)
+import System.Environment (getExecutablePath)
+import System.FilePath (takeDirectory)
 
 import qualified Data.ByteString.Lazy as LazyBytes
 import qualified Data.Map as Map
@@ -51,16 +53,19 @@ import qualified Widgets.Profile as Profile
 
 main :: IO ()
 main = do
+  storage <- getAppUserDataDirectory "futr"
+  executablePath <- getExecutablePath
+  let appDir = pack $ takeDirectory executablePath
   relays <- loadRelaysFromDisk
   pool <- newMVar $ RelayPool relays Map.empty
   request <- atomically newBroadcastTChan
-  startApp def (handleEvent $ AppEnv pool request) (UI.buildUI pool request) config
+  startApp def (handleEvent $ AppEnv pool request) (UI.buildUI appDir pool request) (config appDir)
   where
-    config =
+    config appDir =
       [ appWindowTitle "futr - nostr client"
       , appTheme customDarkTheme
-      , appFontDef "Regular" "./assets/fonts/Roboto-Regular.ttf"
-      , appFontDef "Bold" "./assets/fonts/Roboto-Bold.ttf"
+      , appFontDef "Regular" (appDir `append` "/assets/fonts/Roboto-Regular.ttf")
+      , appFontDef "Bold" (appDir `append` "/assets/fonts/Roboto-Bold.ttf")
       , appInitEvent AppInit
       , appDisposeEvent Dispose
       ]

@@ -11,7 +11,7 @@ import Crypto.Schnorr (exportXOnlyPubKey)
 import Data.Default
 import Data.List (sort)
 import Data.Maybe
-import Data.Text (Text, strip)
+import Data.Text (Text, append, strip)
 import Monomer
 
 import qualified Data.Map as Map
@@ -38,8 +38,8 @@ import qualified Widgets.Setup as Setup
 import qualified Widgets.ViewPosts as ViewPosts
 import qualified Widgets.Profile as Profile
 
-buildUI :: MVar RelayPool -> TChan Request -> AppWenv -> AppModel -> AppNode
-buildUI pool request wenv model = widgetTree
+buildUI :: Text -> MVar RelayPool -> TChan Request -> AppWenv -> AppModel -> AppNode
+buildUI appDir pool request wenv model = widgetTree
   where
     isLoggedIn = isJust $ model ^. futr . selectedKeys
     baseLayer = case model ^. currentView of
@@ -108,12 +108,12 @@ buildUI pool request wenv model = widgetTree
         , hstack
             [ box_
                 [ onClick GoRelayManagement ] $
-                tooltip "Relay Management" $ image_ "assets/icons/relay-icon.png" [ fitNone, alignCenter, alignMiddle ]
+                tooltip "Relay Management" $ image_ (appDir `append` "/assets/icons/relay-icon.png") [ fitNone, alignCenter, alignMiddle ]
                 `styleBasic` imageButtonStyling
             , spacer
             , box_
                 [ onClick GoKeyManagement ] $
-                tooltip "Key Management" $ image_ "assets/icons/keys-icon.png" [ fitNone, alignCenter, alignMiddle ]
+                tooltip "Key Management" $ image_ (appDir `append` "/assets/icons/keys-icon.png") [ fitNone, alignCenter, alignMiddle ]
                 `styleBasic` imageButtonStyling
             , spacer
             , case model ^. futr . selectedKeys of
