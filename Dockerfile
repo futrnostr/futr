@@ -27,9 +27,14 @@ RUN git clone https://github.com/bitcoin-core/secp256k1 && \
 
 RUN ln -s /usr/local/lib/libsecp256k1.so.0 /usr/lib/libsecp256k1.so.0
 
-RUN wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage && \
-    chmod +x linuxdeploy-x86_64.AppImage                                                                     && \
-    mv linuxdeploy-x86_64.AppImage /usr/bin                                                                  && \
-    wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage   && \
-    chmod +x appimagetool-x86_64.AppImage                                                                    && \
-    mv appimagetool-x86_64.AppImage /usr/bin
+# install linuxdeploy and workaround AppImage issues with docker
+RUN wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -O /opt/linuxdeploy-x86_64.AppImage                  && \
+    cd /opt/; chmod +x linuxdeploy-x86_64.AppImage; sed -i 's|AI\x02|\x00\x00\x00|' linuxdeploy-x86_64.AppImage; ./linuxdeploy-x86_64.AppImage --appimage-extract && \
+    mv /opt/squashfs-root /opt/linuxdeploy-x86_64.AppImage.AppDir                                                                                                 && \
+    ln -s /opt/linuxdeploy-x86_64.AppImage.AppDir/AppRun /usr/bin/linuxdeploy-x86_64.AppImage
+
+# install appimagetool and workaround AppImage issues with docker
+RUN wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /opt/appimagetool-x86_64.AppImage                  && \
+    cd /opt/; chmod +x appimagetool-x86_64.AppImage; sed -i 's|AI\x02|\x00\x00\x00|' appimagetool-x86_64.AppImage; ./appimagetool-x86_64.AppImage --appimage-extract && \
+    mv /opt/squashfs-root /opt/appimagetool-x86_64.AppImage.AppDir                                                                                                 && \
+    ln -s /opt/appimagetool-x86_64.AppImage.AppDir/AppRun /usr/bin/appimagetool-x86_64.AppImage
