@@ -1,5 +1,2 @@
 packages:
     ./
-
-package nanovg
-    flags: +stb_truetype

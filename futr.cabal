@@ -1,16 +1,12 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
---
--- see: https://github.com/sol/hpack
-
 name:           futr
 version:        0.1.0.0
 homepage:       https://github.com/prolic/futr#readme
 author:         Sascha-Oliver Prolic
 maintainer:     saschaprolic@googlemail.com
-copyright:      2022 Sascha-Oliver Prolic
-license:        MIT
+copyright:      2024 Sascha-Oliver Prolic
+license:        LGPL-3
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
@@ -18,72 +14,36 @@ extra-source-files:
 
 executable futr
   main-is: Main.hs
-  other-modules:
-      AppTypes
-      DebugJSON
-      Futr
-      Helpers
-      Nostr.Event
-      Nostr.Filter
-      Nostr.Keys
-      Nostr.Kind
-      Nostr.Profile
-      Nostr.Relay
-      Nostr.RelayConnection
-      Nostr.RelayPool
-      Nostr.Request
-      Nostr.Response
-      UI
-      UIHelpers
-      Widgets.BackupKeys
-      Widgets.EditProfile
-      Widgets.KeyManagement
-      Widgets.PostDetails
-      Widgets.Profile
-      Widgets.ProfileImage
-      Widgets.RelayManagement
-      Widgets.Setup
-      Widgets.ViewPosts
-      Paths_futr
   hs-source-dirs:
       src
-  ghc-options: -fwarn-incomplete-patterns -threaded
+  ghc-options: -Wall -Wcompat -Wincomplete-uni-patterns -Wincomplete-record-updates -Werror
+  -- -Wredundant-constraints
   extra-lib-dirs:
       /usr/local/lib
   extra-libraries:
       secp256k1
   build-depends:
-      DRBG >=0.5.5 && <0.6
-    , JuicyPixels
-    , aeson
-    , base >=4.9 && <5
-    , base16 >=0.3.0.1
-    , basement
-    , bytestring >=0.10.8 && <0.11
-    , bytestring-to-vector
-    , connection
+    aeson
+    , base
+    , base16-bytestring
+    , base58-bytestring
+    , bech32
+    , binary
+    , bitcoin-hash
+    , bytestring
     , containers
-    , cryptohash-sha256
-    , data-default
-    , datetime
-    , directory
-    , filepath
-    , http-client
-    , lens
-    , modern-uri
-    , monomer
-    , mtl
-    , network
-    , parallel-io
-    , req
-    , secp256k1-schnorr
+    , crypton
+    , entropy
+    , haskoin-core
+    , libsecp256k1
+    , memory
+    , MissingH
+    , random
+    , secp256k1-haskell
     , stm
+    , string-conversions
     , text
-    , text-show
-    , transformers
-    , utf8-string
     , vector
-    , websockets
-    , wreq
-    , wuss
+  other-modules:
+    Nostr.Keys
   default-language: Haskell2010

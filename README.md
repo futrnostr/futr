@@ -39,3 +39,16 @@ Feel free to copy this file into any directory that is part of your $PATH (f.e. 
 #### Windows
 
 @todo
+
+
+```bash
+
+RUN git clone https://github.com/bitcoin-core/secp256k1 && \
+    cd secp256k1 && \
+    ./autogen.sh && \
+    ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+    make && \
+    make install && \
+    cd ..
+
+```
