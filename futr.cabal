@@ -28,7 +28,6 @@ executable futr
     , base16-bytestring
     , bech32
     , binary
-    , bitcoin-hash
     , bytestring
     , entropy
     , haskoin-core
