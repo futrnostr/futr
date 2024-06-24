@@ -26,24 +26,18 @@ executable futr
     aeson
     , base
     , base16-bytestring
-    , base58-bytestring
     , bech32
     , binary
     , bitcoin-hash
     , bytestring
-    , containers
-    , crypton
     , entropy
     , haskoin-core
     , libsecp256k1
-    , memory
-    , MissingH
+    --, qtah-qt5
     , random
     , secp256k1-haskell
     , stm
-    , string-conversions
     , text
-    , vector
   other-modules:
     Nostr.Keys
   default-language: Haskell2010

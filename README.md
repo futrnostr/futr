@@ -8,38 +8,19 @@ The name 'futr' was chosen from respect for the honorable Canadians.
 
 ### Linux
 
-You need to have docker installed, alternatively see the Dockerfile itself for how to setup your local system.
-
-First you need to grab the "The Haskell Tool Stack"
+#### GHCUp
 
 ```bash
-curl -sSL https://get.haskellstack.org/ | sh
+curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+ghcup install ghc 9.4.8
+ghcup set ghc 9.4.8
 ```
 
-Build the project (only changed files are re-compiled)
+#### For QT:
 
-Note: The very fist compilation takes a while, after that it goes fairly quick.
+`sudo apt-get install qtdeclarative5-dev libqt5quick5`
 
-```bash
-./devbuild.sh
-```
-
-Execute the newly created binary
-
-```bash
-./futr-x86_64.AppImage
-```
-
-Feel free to copy this file into any directory that is part of your $PATH (f.e. /usr/bin).
-
-### MacOS
-
-@todo
-
-#### Windows
-
-@todo
-
+#### For secp256k1
 
 ```bash
 
@@ -52,3 +33,17 @@ RUN git clone https://github.com/bitcoin-core/secp256k1 && \
     cd ..
 
 ```
+
+### MacOS
+
+@todo
+
+#### Windows
+
+```bash
+Set-ExecutionPolicy Bypass -Scope Process -Force;[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; try { Invoke-Command -ScriptBlock ([ScriptBlock]::Create((Invoke-WebRequest https://www.haskell.org/ghcup/sh/bootstrap-haskell.ps1 -UseBasicParsing))) -ArgumentList $true } catch { Write-Error $_ }
+ghcup install ghc 9.4.8
+ghcup set ghc 9.4.8
+```
+
+@todo
