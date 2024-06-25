@@ -17,7 +17,6 @@ executable futr
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Wincomplete-uni-patterns -Wincomplete-record-updates -Werror
-  -- -Wredundant-constraints
   extra-lib-dirs:
       /usr/local/lib
   extra-libraries:
@@ -32,7 +31,7 @@ executable futr
     , entropy
     , haskoin-core
     , libsecp256k1
-    --, qtah-qt5
+    , qtah
     , random
     , secp256k1-haskell
     , stm
