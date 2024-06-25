@@ -5,15 +5,14 @@ module Main where
 
 import Data.Text (pack, unpack)
 import Nostr.Keys
-    ( derivePubKey,
-      keyPairPubKeyXO,
-      keyPairSecKey,
-      xyToXO,
+    ( derivePublicKeyXO,
+      keyPairToPubKeyXO,
+      keyPairToSecKey,
       createKeyPair,
-      secKeyToBech32,
+      secretKeyToBech32,
       pubKeyXOToBech32,
       bech32ToSecKey,
-      generateMnemonic,
+      createMnemonic,
       mnemonicToKeyPair )
 
 main :: IO ()
@@ -27,12 +26,12 @@ main = do
     putStrLn ""
     putStrLn "Generating new key pair\n"
     kp <- createKeyPair
-    let sk = keyPairSecKey kp
+    let sk = keyPairToSecKey kp
     putStrLn "Secret Key:"
-    putStrLn $ unpack $ secKeyToBech32 sk
+    putStrLn $ unpack $ secretKeyToBech32 sk
     putStrLn ""
     putStrLn "Public Key:"
-    let (pk, _) = keyPairPubKeyXO kp
+    let pk = keyPairToPubKeyXO kp
     putStrLn $ unpack $ pubKeyXOToBech32 pk
     putStrLn ""
     putStrLn "-------------------------"
@@ -44,9 +43,9 @@ main = do
     case nk of
         Just sk' -> do
             putStrLn "Secret Key:"
-            putStrLn $ unpack $ secKeyToBech32 sk'
+            putStrLn $ unpack $ secretKeyToBech32 sk'
             putStrLn $ show sk'
-            let (pk', _) = xyToXO $ derivePubKey sk'
+            let pk' = derivePublicKeyXO sk'
             putStrLn ""
             putStrLn "Public Key:"
             putStrLn $ unpack $ pubKeyXOToBech32 pk'
@@ -59,7 +58,7 @@ main = do
 
     putStrLn "Mnemonic generating...\n"
 
-    m <- generateMnemonic
+    m <- createMnemonic
 
     case m of
         Right m' -> do
@@ -68,11 +67,11 @@ main = do
             mkp <- mnemonicToKeyPair m' ""
             case mkp of
                 Right mkp' -> do
-                    let secKey = keyPairSecKey mkp'
+                    let secKey = keyPairToSecKey mkp'
                     putStrLn "Secret Key:"
-                    putStrLn $ unpack $ secKeyToBech32 secKey
+                    putStrLn $ unpack $ secretKeyToBech32 secKey
                     putStrLn $ show secKey
-                    let (mpk', _) = xyToXO $ derivePubKey secKey
+                    let mpk' = derivePublicKeyXO secKey
                     putStrLn ""
                     putStrLn "Public Key:"
                     putStrLn $ unpack $ pubKeyXOToBech32 mpk'
@@ -83,7 +82,7 @@ main = do
         Left err ->
             putStrLn $ "Error: " ++ err
 
-    putStrLn "\nImporting existing mnemonic\n"
+    putStrLn "\nImporting existing 12 word mnemonic\n"
 
     let mnemonic = pack "leader monkey parrot ring guide accident before fence cannon height naive bean"
 
@@ -92,17 +91,45 @@ main = do
     haha <- mnemonicToKeyPair mnemonic ""
     case haha of
         Right haha' -> do
-            let secKeyH = keyPairSecKey haha'
+            let secKeyH = keyPairToSecKey haha'
             putStrLn "Secret Key:"
-            putStrLn $ unpack $ secKeyToBech32 secKeyH
+            putStrLn $ unpack $ secretKeyToBech32 secKeyH
             putStrLn $ show secKeyH
 
-            let (haha'', _) = xyToXO $ derivePubKey secKeyH
+            let haha'' = derivePublicKeyXO secKeyH
             putStrLn ""
             putStrLn "Public Key:"
             putStrLn $ unpack $ pubKeyXOToBech32 haha''
             putStrLn $ show $ haha''
         Left err ->
             putStrLn $ "Error: " ++ err
+
+    hata <- mnemonicToKeyPair mnemonic "With Password"
+    case hata of
+        Right hata' -> do
+            let secKeyH = keyPairToSecKey hata'
+            putStrLn "Secret Key:"
+            putStrLn $ unpack $ secretKeyToBech32 secKeyH
+            putStrLn $ show secKeyH
+
+            let hata'' = derivePublicKeyXO secKeyH
+            putStrLn ""
+            putStrLn "Public Key:"
+            putStrLn $ unpack $ pubKeyXOToBech32 hata''
+            putStrLn $ show $ hata''
+        Left err ->
+            putStrLn $ "Error: " ++ err
+
+    -- only 11 words
+    let mnemonic2 = pack "monkey parrot ring guide accident before fence cannon height naive bean"
+
+    putStrLn "\n"
+
+    haba <- mnemonicToKeyPair mnemonic2 ""
+    case haba of
+        Right _ ->
+            putStrLn "Should not happen!"
+        Left err ->
+            putStrLn $ "Perfect: " ++ err
 
     putStrLn "\nEnd."

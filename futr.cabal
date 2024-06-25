@@ -31,7 +31,7 @@ executable futr
     , entropy
     , haskoin-core
     , libsecp256k1
-    , qtah
+    --, qtah
     , random
     , secp256k1-haskell
     , stm

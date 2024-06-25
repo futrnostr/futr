@@ -11,24 +11,22 @@ module Nostr.Keys (
     -- * generation
     , createKeyPair
     , createSecretKey
-    , generateMnemonic
+    , createMnemonic
         
     -- * Parsing and Serialization
     , importSecKey
     , exportSecKey
     , importPubKeyXO
     , exportPubKeyXO
-    , secKeyToBech32
+    , secretKeyToBech32
     , pubKeyXOToBech32
     , bech32ToPubKeyXO
     , bech32ToSecKey
     
     -- * Conversions
-    , derivePubKey
-    , keyPairCreate
-    , keyPairSecKey
-    , keyPairPubKeyXO
-    , xyToXO
+    , derivePublicKeyXO
+    , keyPairToSecKey
+    , keyPairToPubKeyXO
     , mnemonicToKeyPair
 
     -- * Schnorr signatures
@@ -60,7 +58,7 @@ import qualified Data.Text as T
 -- | Generate a secret key
 createSecretKey :: IO SecKey
 createSecretKey = do
-    bs <- secKeyGen
+    bs <- secretKeyGen
     maybe (error "Invalid secret key") return $ importSecKey bs
 
 -- | Generate a key pair
@@ -68,8 +66,8 @@ createKeyPair :: IO KeyPair
 createKeyPair = keyPairCreate <$> createSecretKey
 
 -- Bech32 encoding for SecKey
-secKeyToBech32 :: SecKey -> T.Text
-secKeyToBech32 secKey = toBech32 "nsec" (exportSecKey secKey)
+secretKeyToBech32 :: SecKey -> T.Text
+secretKeyToBech32 secKey = toBech32 "nsec" (exportSecKey secKey)
 
 -- Bech32 encoding for PubKeyXO
 pubKeyXOToBech32 :: PubKeyXO -> T.Text
@@ -84,29 +82,46 @@ bech32ToPubKeyXO :: T.Text -> Maybe PubKeyXO
 bech32ToPubKeyXO txt = fromBech32 "npub" txt >>= importPubKeyXO
 
 -- Generate a new mnemonic seed
-generateMnemonic :: IO (Either String Mnemonic)
-generateMnemonic = toMnemonic <$> getEntropy 16
+createMnemonic :: IO (Either String Mnemonic)
+createMnemonic = toMnemonic <$> getEntropy 16
 
--- 
+-- Get the key pair from a mnemonic
 mnemonicToKeyPair :: Mnemonic -> Passphrase -> IO (Either String KeyPair)
-mnemonicToKeyPair m p = do
-    case mnemonicToSeed p m of
-        Left err -> return $ Left err
-        Right seed -> do
-            ctx <- createContext
-            let master = makeXPrvKey seed
-            let XPrvKey _ _ _ _ sk = derivePath ctx nostrAddr master
-            let hexStr = strip $ show sk
-            return $ do
-                bs <- hexToByteString hexStr
-                sk' <- maybe (Left "Error, failed to import sec key") Right (importSecKey bs)
-                return $ keyPairCreate sk'
+mnemonicToKeyPair m p
+    | not (isValid12WordMnemonic m) = return $ Left "Mnemonic must have exactly 12 words."
+    | otherwise = do
+        case mnemonicToSeed p m of
+            Left err -> return $ Left err
+            Right seed -> do
+                ctx <- createContext
+                let master = makeXPrvKey seed
+                let XPrvKey _ _ _ _ sk = derivePath ctx nostrAddr master
+                let hexStr = strip $ show sk
+                return $ do
+                    bs <- hexToByteString hexStr
+                    sk' <- maybe (Left "Error, failed to import sec key") Right (importSecKey bs)
+                    return $ keyPairCreate sk'
+
+-- Get the sec key from a key pair
+keyPairToSecKey :: KeyPair -> SecKey
+keyPairToSecKey = keyPairSecKey
+
+-- Get the pub key XO from a key pair
+keyPairToPubKeyXO :: KeyPair -> PubKeyXO
+keyPairToPubKeyXO kp = p
+    where
+        (p, _) = keyPairPubKeyXO kp
+
+derivePublicKeyXO :: SecKey -> PubKeyXO
+derivePublicKeyXO sk = p
+    where
+        (p, _) = xyToXO $ derivePubKey sk
 
 -- Utility functions
 
 -- | Generate a random byte sequence for a secret key
-secKeyGen :: IO BS.ByteString
-secKeyGen = BS.pack . take 32 . randoms <$> newStdGen
+secretKeyGen :: IO BS.ByteString
+secretKeyGen = BS.pack . take 32 . randoms <$> newStdGen
 
 -- Convert from ByteString to bech32
 toBech32 :: T.Text -> BS.ByteString -> T.Text
@@ -147,3 +162,7 @@ strip :: String -> String
 strip [] = []
 strip [_] = []
 strip xs = tail (init xs)
+
+-- Check if a mnemonic has exactly 12 words
+isValid12WordMnemonic :: Mnemonic -> Bool
+isValid12WordMnemonic mnemonic = length (words $ T.unpack mnemonic) == 12
