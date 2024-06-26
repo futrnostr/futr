@@ -25,17 +25,25 @@ executable futr
     aeson
     , base
     , base16-bytestring
+    , basement
     , bech32
     , binary
     , bytestring
+    , data-default
     , entropy
     , haskoin-core
+    , lens
     , libsecp256k1
+    , modern-uri
     --, qtah
     , random
     , secp256k1-haskell
     , stm
     , text
   other-modules:
+    Nostr.Event
     Nostr.Keys
+    Nostr.Kind
+    Nostr.Profile
+    Nostr.Relay
   default-language: Haskell2010

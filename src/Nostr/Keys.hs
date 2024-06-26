@@ -31,7 +31,7 @@ module Nostr.Keys (
 
     -- * generation
     , createKeyPair
-    , createSecretKey
+    , createSecKey
     , createMnemonic
         
     -- * Parsing and Serialization
@@ -39,7 +39,8 @@ module Nostr.Keys (
     , exportSecKey
     , importPubKeyXO
     , exportPubKeyXO
-    , secretKeyToBech32
+    , exportSignature
+    , secKeyToBech32
     , pubKeyXOToBech32
     , bech32ToPubKeyXO
     , bech32ToSecKey
@@ -77,18 +78,18 @@ import qualified Data.ByteString.Char8 as C
 import qualified Data.Text as T
 
 -- | Generate a secret key
-createSecretKey :: IO SecKey
-createSecretKey = do
-    bs <- secretKeyGen
+createSecKey :: IO SecKey
+createSecKey = do
+    bs <- secKeyGen
     maybe (error "Invalid secret key") return $ importSecKey bs
 
 -- | Generate a key pair
 createKeyPair :: IO KeyPair
-createKeyPair = keyPairCreate <$> createSecretKey
+createKeyPair = keyPairCreate <$> createSecKey
 
 -- | Bech32 encoding for SecKey
-secretKeyToBech32 :: SecKey -> T.Text
-secretKeyToBech32 secKey = toBech32 "nsec" (exportSecKey secKey)
+secKeyToBech32 :: SecKey -> T.Text
+secKeyToBech32 secKey = toBech32 "nsec" (exportSecKey secKey)
 
 -- | Bech32 encoding for PubKeyXO
 pubKeyXOToBech32 :: PubKeyXO -> T.Text
@@ -139,11 +140,17 @@ derivePublicKeyXO sk = p
     where
         (p, _) = xyToXO $ derivePubKey sk
 
+-- | Exports a signature to hex format
+exportSignature :: Signature -> T.Text
+exportSignature sig = T.pack hexStr
+    where
+        hexStr = strip $ show sig
+
 -- Utility functions
 
 -- | Generate a random byte sequence for a secret key
-secretKeyGen :: IO BS.ByteString
-secretKeyGen = BS.pack . take 32 . randoms <$> newStdGen
+secKeyGen :: IO BS.ByteString
+secKeyGen = BS.pack . take 32 . randoms <$> newStdGen
 
 -- | Convert from ByteString to bech32
 toBech32 :: T.Text -> BS.ByteString -> T.Text

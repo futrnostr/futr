@@ -9,7 +9,7 @@ import Nostr.Keys
       keyPairToPubKeyXO,
       keyPairToSecKey,
       createKeyPair,
-      secretKeyToBech32,
+      secKeyToBech32,
       pubKeyXOToBech32,
       bech32ToSecKey,
       createMnemonic,
@@ -28,7 +28,7 @@ main = do
     kp <- createKeyPair
     let sk = keyPairToSecKey kp
     putStrLn "Secret Key:"
-    putStrLn $ unpack $ secretKeyToBech32 sk
+    putStrLn $ unpack $ secKeyToBech32 sk
     putStrLn ""
     putStrLn "Public Key:"
     let pk = keyPairToPubKeyXO kp
@@ -43,7 +43,7 @@ main = do
     case nk of
         Just sk' -> do
             putStrLn "Secret Key:"
-            putStrLn $ unpack $ secretKeyToBech32 sk'
+            putStrLn $ unpack $ secKeyToBech32 sk'
             putStrLn $ show sk'
             let pk' = derivePublicKeyXO sk'
             putStrLn ""
@@ -69,7 +69,7 @@ main = do
                 Right mkp' -> do
                     let secKey = keyPairToSecKey mkp'
                     putStrLn "Secret Key:"
-                    putStrLn $ unpack $ secretKeyToBech32 secKey
+                    putStrLn $ unpack $ secKeyToBech32 secKey
                     putStrLn $ show secKey
                     let mpk' = derivePublicKeyXO secKey
                     putStrLn ""
@@ -93,7 +93,7 @@ main = do
         Right haha' -> do
             let secKeyH = keyPairToSecKey haha'
             putStrLn "Secret Key:"
-            putStrLn $ unpack $ secretKeyToBech32 secKeyH
+            putStrLn $ unpack $ secKeyToBech32 secKeyH
             putStrLn $ show secKeyH
 
             let haha'' = derivePublicKeyXO secKeyH
@@ -109,7 +109,7 @@ main = do
         Right hata' -> do
             let secKeyH = keyPairToSecKey hata'
             putStrLn "Secret Key:"
-            putStrLn $ unpack $ secretKeyToBech32 secKeyH
+            putStrLn $ unpack $ secKeyToBech32 secKeyH
             putStrLn $ show secKeyH
 
             let hata'' = derivePublicKeyXO secKeyH
