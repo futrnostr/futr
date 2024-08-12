@@ -8,7 +8,7 @@ The name 'futr' was chosen from respect for the honorable Canadians.
 
 Released under GPLv3.
 
-See [LICENSE](License File).
+See [License File](LICENSE).
 
 ## For developers
 
@@ -29,8 +29,6 @@ ghcup set cabal 3.12.1.0
 #### For QT:
 
 `sudo apt-get install qtdeclarative5-dev libqt5quick5`
-
-export LD_LIBRARY_PATH=/home/sasa/Qt/qtdesignstudio-2.3.1-community/qt5_design_studio_reduced_version/lib:$LD_LIBRARY_PATH
 
 #### For secp256k1 (from source)
 
