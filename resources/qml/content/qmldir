@@ -1,0 +1,5 @@
+module content
+App 1.0 App.qml
+KeysGeneratedScreen 1.0 KeysGeneratedScreen.ui.qml
+HomeScreen 1.0 HomeScreen.ui.qml
+WelcomeScreen 1.0 WelcomeScreen.ui.qml

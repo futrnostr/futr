@@ -1,3 +1,6 @@
+-- | Module: Nostr.Profile
+-- Defines types and instances for profiles in the Nostr system.
+
 {-# LANGUAGE OverloadedStrings   #-}
 
 module Nostr.Profile where

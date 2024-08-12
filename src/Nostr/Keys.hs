@@ -1,128 +1,202 @@
-{-# LANGUAGE OverloadedStrings   #-}
+-- | Module: Nostr.Keys
+--
+-- This module provides the necessary data types and functions for working with cryptographic keys
+-- in the context of Nostr. It includes the following functionalities:
+--
+-- * Data types:
+--     - 'KeyPair': Represents a public/private key pair.
+--     - 'PubKeyXO': Represents an extended-only public key.
+--     - 'SecKey': Represents a secret key.
+--     - 'Signature': Represents a Schnorr signature.
+--
+-- * Key operations:
+--     - Key generation
+--     - Mnemonic generation and handling
+--     - Key derivation following NIP-06
+--     - Bech32 encoding
+--     - Schnorr signature creation and verification
+--
+-- The functions provided in this module ensure secure and efficient cryptographic operations
+-- for key management and transaction signing in the Nostr network.
 
-module Nostr.Keys where
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports #-}
 
-import           Crypto.Schnorr         (KeyPair, SchnorrSig, XOnlyPubKey, decodeHex, keyPairFromSecKey, secKey, xOnlyPubKey)
-import qualified Crypto.Schnorr         as Schnorr
-import           Data.Aeson
-import           Data.ByteString        (ByteString)
-import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Base16 as B16
-import           Data.ByteString.Lazy   (toStrict)
-import           Data.List              (length)
-import           Data.Text              (Text)
-import qualified Data.Text              as T
-import qualified Data.Vector            as V
-import           GHC.Exts               (fromList)
+module Nostr.Keys ( 
+    -- * Types
+      KeyPair
+    , PubKeyXO
+    , SecKey
+    , Signature
 
-type ProfileName = Text
+    -- * generation
+    , createKeyPair
+    , createSecKey
+    , createMnemonic
+        
+    -- * Parsing and Serialization
+    , importSecKey
+    , exportSecKey
+    , importPubKeyXO
+    , exportPubKeyXO
+    , exportSignature
+    , secKeyToBech32
+    , pubKeyXOToBech32
+    , bech32ToPubKeyXO
+    , bech32ToSecKey
+    
+    -- * Conversions
+    , derivePublicKeyXO
+    , keyPairToSecKey
+    , keyPairToPubKeyXO
+    , mnemonicToKeyPair
+    , secKeyToKeyPair
 
-type CurrentlyActive = Bool
+    -- * Schnorr signatures
+    , schnorrSign
+    , schnorrVerify
+    ) where
 
-data Keys = Keys KeyPair XOnlyPubKey CurrentlyActive (Maybe ProfileName)
-  deriving (Eq, Show)
+import "libsecp256k1" Crypto.Secp256k1
+import Haskoin.Crypto
+    ( Mnemonic
+    , Passphrase
+    , DerivPath
+    , DerivPathI((:/), Deriv, (:|))
+    , XPrvKey(XPrvKey)
+    , createContext
+    , derivePath
+    , makeXPrvKey
+    , mnemonicToSeed
+    , toMnemonic
+    )
+import System.Entropy (getEntropy)
+import System.Random (newStdGen, randoms)
+import qualified Codec.Binary.Bech32 as Bech32
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base16  as B16
+import qualified Data.ByteString.Char8 as C
+import qualified Data.Text as T
 
-data UnknownXOnlyPubKey
-  = ValidXOnlyPubKey XOnlyPubKey
-  | InvalidXOnlyPubKey
-  deriving (Eq, Show)
+-- | Generate a secret key
+createSecKey :: IO SecKey
+createSecKey = do
+    bs <- secKeyGen
+    maybe (error "Invalid secret key") return $ importSecKey bs
 
-instance Ord Keys where
-  compare (Keys a _ _ _) (Keys b _ _ _) =
-    compare (Schnorr.getKeyPair a) (Schnorr.getKeyPair b)
+-- | Generate a key pair
+createKeyPair :: IO KeyPair
+createKeyPair = keyPairCreate <$> createSecKey
 
-instance FromJSON Keys where
-  parseJSON = withArray "Keys" $ \arr -> do
-    kp <- parseJSON $ arr V.! 0
-    xo <- parseJSON $ arr V.! 1
-    a  <- parseJSON $ arr V.! 2
-    n  <- parseJSON $ arr V.! 3
-    return $ Keys kp xo a n
+-- | Bech32 encoding for SecKey
+secKeyToBech32 :: SecKey -> T.Text
+secKeyToBech32 secKey = toBech32 "nsec" (exportSecKey secKey)
 
-instance ToJSON Keys where
-  toJSON (Keys kp xo a n) =
-    Array $ fromList
-      [ toJSON kp
-      , toJSON xo
-      , toJSON a
-      , toJSON n
-      ]
+-- | Bech32 encoding for PubKeyXO
+pubKeyXOToBech32 :: PubKeyXO -> T.Text
+pubKeyXOToBech32 pubKeyXO = toBech32 "npub" (exportPubKeyXO pubKeyXO)
 
-instance FromJSON UnknownXOnlyPubKey where
-  parseJSON = withText "unknown XOnlyPubKey" $ \t -> do
-    case textToByteStringType t Schnorr.xOnlyPubKey of
-      Just xo ->
-        return $ ValidXOnlyPubKey xo
-      Nothing ->
-        return InvalidXOnlyPubKey
+-- | Bech32 decoding to SecKey
+bech32ToSecKey :: T.Text -> Maybe SecKey
+bech32ToSecKey txt = fromBech32 "nsec" txt >>= importSecKey
 
-instance ToJSON UnknownXOnlyPubKey where
-  toJSON (ValidXOnlyPubKey xo) = toJSON xo
-  toJSON _ = String ""
+-- | Bech32 decoding to PubKeyXO
+bech32ToPubKeyXO :: T.Text -> Maybe PubKeyXO
+bech32ToPubKeyXO txt = fromBech32 "npub" txt >>= importPubKeyXO
 
-instance Ord XOnlyPubKey where
-  compare a b =
-    compare (Schnorr.getXOnlyPubKey a) (Schnorr.getXOnlyPubKey b)
+-- | Generate a new mnemonic seed
+createMnemonic :: IO (Either String Mnemonic)
+createMnemonic = toMnemonic <$> getEntropy 16
 
-instance FromJSON XOnlyPubKey where
-  parseJSON = withText "XOnlyPubKey" $ \p -> do
-    case (textToByteStringType p Schnorr.xOnlyPubKey) of
-      Just e -> return e
-      _    -> fail "invalid XOnlyPubKey"
+-- | Get the key pair from a mnemonic
+mnemonicToKeyPair :: Mnemonic -> Passphrase -> IO (Either String KeyPair)
+mnemonicToKeyPair m p
+    | not (isValid12WordMnemonic m) = return $ Left "Mnemonic must have exactly 12 words."
+    | otherwise = do
+        case mnemonicToSeed p m of
+            Left err -> return $ Left err
+            Right seed -> do
+                ctx <- createContext
+                let master = makeXPrvKey seed
+                let XPrvKey _ _ _ _ sk = derivePath ctx nostrAddr master
+                let hexStr = strip $ show sk
+                return $ do
+                    bs <- hexToByteString hexStr
+                    sk' <- maybe (Left "Error, failed to import sec key") Right (importSecKey bs)
+                    return $ keyPairCreate sk'
 
-instance ToJSON XOnlyPubKey where
-  toJSON x = String $ T.pack $ Schnorr.exportXOnlyPubKey x
+-- | Get the sec key from a key pair
+keyPairToSecKey :: KeyPair -> SecKey
+keyPairToSecKey = keyPairSecKey
 
-instance FromJSON KeyPair where
-  parseJSON = withText "KeyPair" $ \k -> do
-    case (textToByteStringType k Schnorr.secKey) of
-      Just k' -> return $ Schnorr.keyPairFromSecKey k'
-      _       -> fail "invalid key pair"
+-- | Get the key pair from a sec key
+secKeyToKeyPair :: SecKey -> KeyPair
+secKeyToKeyPair = keyPairCreate
 
-instance ToJSON KeyPair where
-  toJSON kp = String $ T.pack $ Schnorr.exportSecKey $ Schnorr.deriveSecKey kp
+-- | Get the pub key XO from a key pair
+keyPairToPubKeyXO :: KeyPair -> PubKeyXO
+keyPairToPubKeyXO kp = p
+    where
+        (p, _) = keyPairPubKeyXO kp
 
-instance FromJSON SchnorrSig where
-  parseJSON = withText "SchnorrSig" $ \s -> do
-    case (textToByteStringType s Schnorr.schnorrSig) of
-      Just s' -> return s'
-      _       -> fail "invalid schnorr sig"
+-- | Derive pub key XO from a secret key
+derivePublicKeyXO :: SecKey -> PubKeyXO
+derivePublicKeyXO sk = p
+    where
+        (p, _) = xyToXO $ derivePubKey sk
 
-instance ToJSON SchnorrSig where
-  toJSON s = String $ T.pack $ Schnorr.exportSchnorrSig s
+-- | Exports a signature to hex format
+exportSignature :: Signature -> T.Text
+exportSignature sig = T.pack hexStr
+    where
+        hexStr = strip $ show sig
 
-textToByteStringType :: Text -> (ByteString -> Maybe a) -> Maybe a
-textToByteStringType t f = case Schnorr.decodeHex t of
-  Just bs -> f bs
-  Nothing -> Nothing
+-- Utility functions
 
-initialKeys :: Keys
-initialKeys = Keys kp xo True Nothing where
-  kp = keyPairFromSecKey $ load "fef52b22d4568d9235ebf8a4f35dac54a4e748781441506e133532099dae0ded" secKey
-  xo = load "134bdeaf23fe7078d94b2836dcb748e762073d4bc274a2c188a44a3fc29df31c" xOnlyPubKey
-  load :: String -> (ByteString -> Maybe a) -> a
-  load s f =
-    case decodeHex s of
-      Just bs ->
-        case f bs of
-          Just b -> b
-          _      -> error "failed to load initial keys"
-      Nothing -> error "failed to load initial keys"
+-- | Generate a random byte sequence for a secret key
+secKeyGen :: IO BS.ByteString
+secKeyGen = BS.pack . take 32 . randoms <$> newStdGen
 
-sameKeys :: Keys -> Keys -> Bool
-sameKeys (Keys _ xo _ _) (Keys _ xo' _ _) = xo == xo'
+-- | Convert from ByteString to bech32
+toBech32 :: T.Text -> BS.ByteString -> T.Text
+toBech32 hrpText bs =
+    case Bech32.humanReadablePartFromText hrpText of
+        Left err -> error $ "Invalid HRP: " ++ show err
+        Right hrp ->
+            case Bech32.encode hrp (Bech32.dataPartFromBytes bs) of
+                Left err -> error $ "Bech32 encoding failed: " ++ show err
+                Right txt -> txt
 
-verifyActiveKeys :: [Keys] -> [Keys]
-verifyActiveKeys [] = []
-verifyActiveKeys ks =
-  case length filteredActive of
-    0 -> head filteredInactive : (tail $ filteredInactive)
-    1 -> head filteredActive : filteredInactive
-    _ -> head filteredActive : (disabledActive ++ filteredInactive)
-  where
-    filteredActive = filter (\(Keys _ _ active _) -> active == True) ks
-    filteredInactive = filter (\(Keys _ _ active _) -> active /= True) ks
-    disabledActive = disableKeys $ tail filteredActive
+-- | Convert from bech32 to ByteString
+fromBech32 :: T.Text -> T.Text -> Maybe BS.ByteString
+fromBech32 hrpText txt =
+    case Bech32.humanReadablePartFromText hrpText of
+        Left _ -> Nothing
+        Right hrp ->
+            case Bech32.decode txt of
+                Left _ -> Nothing
+                Right (hrp', dp) ->
+                    if hrp == hrp'
+                    then Bech32.dataPartToBytes dp
+                    else Nothing
 
-disableKeys :: [Keys] -> [Keys]
-disableKeys ks = map (\(Keys kp xo _ n) -> Keys kp xo False n) ks
+-- | Derivation path for Nostr (NIP-06)
+nostrAddr :: DerivPath
+nostrAddr = Deriv :| 44 :| 1237 :| 0 :/ 0 :/ 0
+
+-- | Convert hex string to ByteString
+hexToByteString :: String -> Either String C.ByteString
+hexToByteString str =
+  case B16.decode $ C.pack str of
+    Left err -> Left $ "Decoding error: " ++ err
+    Right bytes -> Right bytes
+
+-- | Strip first and last char of a string
+strip :: String -> String
+strip [] = []
+strip [_] = []
+strip xs = tail (init xs)
+
+-- | Check if a mnemonic has exactly 12 words
+isValid12WordMnemonic :: Mnemonic -> Bool
+isValid12WordMnemonic mnemonic = length (words $ T.unpack mnemonic) == 12
