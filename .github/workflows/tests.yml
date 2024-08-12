@@ -1,0 +1,61 @@
+name: Tests
+on:
+  pull_request:
+  push:
+    branches: ["master"]
+
+jobs:
+  generate-matrix:
+    name: "Generate matrix from cabal"
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract the tested GHC versions
+        id: set-matrix
+        uses: kleidukos/get-tested@v0.1.7.1
+        with:
+          cabal-file: futr.cabal
+          ubuntu-version: latest
+          version: 0.1.7.1
+  tests:
+    name: ${{ matrix.ghc }} on ${{ matrix.os }}
+    needs: generate-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix: ${{ fromJSON(needs.generate-matrix.outputs.matrix) }}
+    steps:
+      - name: Checkout base repo
+        uses: actions/checkout@v4
+      - name: Set up Haskell
+        id: setup-haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: 'latest'
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autogen automake libtool
+      - name: Install Qt5 Dependencies
+        run: |
+          sudo apt-get install -y qtdeclarative5-dev libqt5quick5
+      - name: Install secp256k1 Library
+        run: |
+          git clone https://github.com/bitcoin-core/secp256k1 && \
+          cd secp256k1 && \
+          ./autogen.sh && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+          make && \
+          sudo make install && \
+          cd ..
+      - name: Configure
+        run: cabal configure --enable-tests
+      - name: Cache
+        uses: actions/cache@v4.0.2
+        with:
+          path: ${{ steps.setup-haskell.outputs.cabal-store }}
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-${{ hashFiles('**/plan.json') }}
+          restore-keys: ${{ runner.os }}-ghc-${{ matrix.ghc }}-
+      - name: Build
+        run: cabal build all
