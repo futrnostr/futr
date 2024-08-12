@@ -5,9 +5,6 @@ QtObject {
     readonly property int width: 1280
     readonly property int height: 720
 
-    property alias fontDirectory: directoryFontLoader.fontDirectory
-    property alias relativeFontDirectory: directoryFontLoader.relativeFontDirectory
-
     readonly property font font: Qt.font({
         family: "Arial",
         pixelSize: Qt.application.font.pixelSize,
@@ -22,8 +19,4 @@ QtObject {
     })
 
     readonly property color backgroundColor: "#c2c2c2"
-
-    property DirectoryFontLoader directoryFontLoader: DirectoryFontLoader {
-        id: directoryFontLoader
-    }
 }

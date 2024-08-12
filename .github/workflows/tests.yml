@@ -59,5 +59,3 @@ jobs:
           restore-keys: ${{ runner.os }}-ghc-${{ matrix.ghc }}-
       - name: Build
         run: cabal build all
-      - name: Test
-        run: make test

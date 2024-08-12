@@ -51,7 +51,7 @@ createContext modelVar changeKey = do
     let handleError :: ObjRef() -> String -> IO ()
         handleError obj err = do
             model <- takeMVar modelVar
-            putMVar modelVar model { errorMsg = pack err }
+            putMVar modelVar model { errorMsg = "Error: " <> pack err }
             fireSignal changeKey obj
 
     rootClass <- newClass [            
@@ -162,9 +162,9 @@ main = do
     importPath' <- getDataFileName "resources/qml/content"
     importPath'' <- getDataFileName "resources/qml/imports"
 
-    let qtImportPath = "/home/sasa/Qt/qtdesignstudio-2.3.1-community/qt5_design_studio_reduced_version/qml"
+    --let qtImportPath = "/home/sasa/Qt/qtdesignstudio-2.3.1-community/qt5_design_studio_reduced_version/qml"
 
-    setEnv "QML2_IMPORT_PATH" qtImportPath
+    --setEnv "QML2_IMPORT_PATH" qtImportPath
     setEnv "QT_QUICK_CONTROLS_STYLE" "Material"
     -- QT_QUICK_CONTROLS_CONF: "qtquickcontrols2.conf"
     setEnv "QT_AUTO_SCREEN_SCALE_FACTOR" "1"
@@ -178,6 +178,6 @@ main = do
     runEngineLoop defaultEngineConfig 
         { initialDocument = fileDocument path
         , contextObject = Just $ anyObjRef ctx
-        , importPaths = [importPath, importPath', importPath'', qtImportPath]
+        , importPaths = [importPath, importPath', importPath'']
         --, pluginPaths = ["/home/sasa/Qt/qtdesignstudio-2.3.1-community/qt5_design_studio_reduced_version/plugins"]
         }
