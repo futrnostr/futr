@@ -1,3 +1,0 @@
---command "stack repl --main-is futr:exe:app"
---test ":main"
---restart=package.yaml
