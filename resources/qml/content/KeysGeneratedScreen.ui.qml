@@ -2,96 +2,125 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
-import Futr 1.0
 import QtQuick.Studio.Components 1.0
 
 Rectangle {
     id: keysGeneratedScreen
     width: parent.width * 0.8
-    height: parent.height * 0.6
-    color: "#FFFFFF"
-    radius: 16
-    Material.elevation: 4
-    //elevation: 4  // Material Design elevation for shadow effect
+    height: parent.height * 0.8
     anchors.centerIn: parent
-    visible: true  // Set to false initially and toggle visibility when needed
+    color: "#FFFFFF"
+    border.color: "#6200EA" // Material Design primary color
+    border.width: 4
+    radius: 12
+    Material.elevation: 8 // Adds shadow to create depth
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 24
-        spacing: 16
+        anchors.margins: 20
+        spacing: 20  
+            
+        Text {
+            id: importantText
+            text: "Important: Store your keys securely!"
+            font.pixelSize: 24
+            color: "#000000"
+            font.bold: true
+            wrapMode: Text.WordWrap
+            Layout.alignment: Qt.AlignLeft
+        }
+
+        Image {
+            source: "svg/warning.svg"
+            width: 25
+            height: 25
+        }
 
         Text {
-            id: titleText
-            text: "Important: Backup Your Keys"
-            font.pixelSize: 24
-            color: Material.primaryColor
-            font.bold: true
-            Layout.alignment: Qt.AlignHCenter
+            id: seedPhraseLabel
+            text: "Seed Phrase:"
+            font.pixelSize: 18
+            color: "#000000"
+            horizontalAlignment: Text.AlignLeft
+        }
+
+        TextArea {
+            id: seedPhraseText
+            text: seedphrase
+            readOnly: true
+            wrapMode: Text.Wrap
+            font.pixelSize: 16
+            color: "#000000"
+            padding: 10 // Add padding for margin effect
+            background: Rectangle {
+                color: "#E8EAF6" // Light background color
+                radius: 8
+            }
+        }
+
+        Text {
+            id: privateKeyLabel
+            text: "Private Key (nsec format):"
+            font.pixelSize: 18
+            color: "#000000"
+            horizontalAlignment: Text.AlignLeft
+        }
+
+        TextArea {
+            id: privateKeyText
+            text: nsec
+            readOnly: true
+            wrapMode: Text.Wrap
+            font.pixelSize: 16
+            color: "#000000"
+            padding: 10 // Add padding for margin effect
+            background: Rectangle {
+                color: "#E8EAF6" // Light background color
+                radius: 8
+            }
+        }
+
+        Text {
+            id: publicKeyLabel
+            text: "Public Key (npub format):"
+            font.pixelSize: 18
+            color: "#000000"
+            horizontalAlignment: Text.AlignLeft
+        }
+
+        TextArea {
+            id: publicKeyText
+            text: npub
+            readOnly: true
+            wrapMode: Text.Wrap
+            font.pixelSize: 16
+            color: "#000000"
+            padding: 10 // Add padding for margin effect
+            background: Rectangle {
+                color: "#E8EAF6" // Light background color
+                radius: 8
+            }
         }
 
         Text {
             id: infoText
-            text: "Please write down either your seed phrase or your private key in 'nsec' format. " +
-                  "We recommend using the seed phrase for easier recovery. " +
-                  "Ensure you store this information securely."
+            text: "Please write down either the seed phrase or the private key and store them in a secure place. The seed phrase is easier to remember, but the private key is more secure. Choose based on your preference."
+            font.pixelSize: 14
+            color: "#616161" // Material Design text color
+            horizontalAlignment: Text.AlignCenter
             wrapMode: Text.WordWrap
-            font.pixelSize: 16
-            color: "#555555"
-            Layout.alignment: Qt.AlignHCenter
-        }
-
-        Rectangle {
-            id: seedPhraseContainer
-            width: parent.width
-            height: 100
-            color: "#F5F5F5"
-            radius: 8
-            border.color: Material.primaryColor
-            Layout.alignment: Qt.AlignHCenter
-
-            Text {
-                id: seedPhraseText
-                text: "your seed phrase here"
-                anchors.centerIn: parent
-                wrapMode: Text.WordWrap
-                font.pixelSize: 16
-                color: "#333333"
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-
-        Rectangle {
-            id: privateKeyContainer
-            width: parent.width
-            height: 60
-            color: "#F5F5F5"
-            radius: 8
-            border.color: Material.primaryColor
-            Layout.alignment: Qt.AlignHCenter
-
-            Text {
-                id: privateKeyText
-                text: "nsec_private_key_here"
-                anchors.centerIn: parent
-                wrapMode: Text.WordWrap
-                font.pixelSize: 16
-                color: "#333333"
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
+            Layout.fillWidth: true // Ensures it takes the available width
+            Layout.preferredWidth: parent.width * 0.8 // Ensures wrapping
         }
 
         Button {
-            id: continueButton
-            text: "I've securely stored my keys"
-            Layout.alignment: Qt.AlignHCenter
-            Material.primary: Material.DeepOrange
-
+            text: "I've stored my keys securely, continue"
+            Layout.alignment: Qt.AlignRight
+            anchors.margins: 10
+            highlighted: true
             onClicked: {
-                keysGeneratedScreen.visible = false
-                // Add logic to proceed in the app
+                seedphrase = ""
+                currentScreen = "HomeScreen"
             }
         }
     }

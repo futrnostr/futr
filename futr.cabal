@@ -16,7 +16,7 @@ executable futr
   main-is: Main.hs
   hs-source-dirs:
       src
-  ghc-options: -Wall -Wcompat -Wincomplete-uni-patterns -Wincomplete-record-updates -Werror
+  ghc-options: -threaded -Wall -Wcompat -Wincomplete-uni-patterns -Wincomplete-record-updates -Werror
   extra-lib-dirs:
       /usr/local/lib
   extra-libraries:
@@ -29,21 +29,31 @@ executable futr
     , bech32
     , binary
     , bytestring
+    , containers
+    , cryptohash-sha256
     , data-default
+    , directory
     , entropy
     , haskoin-core
+    , hsqml
     , lens
     , libsecp256k1
     , modern-uri
-    --, qtah
     , random
     , secp256k1-haskell
     , stm
     , text
+    , time
+    , vector
   other-modules:
-    Nostr.Event
     Nostr.Keys
     Nostr.Kind
     Nostr.Profile
     Nostr.Relay
+    Paths_futr
+  data-dir:
+    resources
+  data-files:
+    config.yaml qml/**/*.qml qml/qmlmodules qml/content/qmldir
   default-language: Haskell2010
+  

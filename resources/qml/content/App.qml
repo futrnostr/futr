@@ -20,14 +20,17 @@ ApplicationWindow {
     Material.primary: Material.BlueGrey
 
     WelcomeScreen {
-        id: welcomeScreen
         anchors.fill: parent
         visible: currentScreen == "WelcomeScreen"
-        //visible: false
     }
 
     KeysGeneratedScreen {
+        visible: seedphrase != ""
+    }
 
+    HomeScreen {
+        anchors.fill: parent
+        visible: currentScreen == "HomeScreen"
     }
 
     ErrorScreen {
@@ -49,12 +52,3 @@ ApplicationWindow {
         }
     }
 }
-
-
-
-
-/*##^##
-Designer {
-    D{i:0;formeditorZoom:0.33}D{i:1}D{i:3}D{i:2}
-}
-##^##*/

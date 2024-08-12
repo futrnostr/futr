@@ -3,30 +3,9 @@ packages:
 
 source-repository-package
   type: git
-  location: https://git.sr.ht/~khumba/hoppy
-  tag: e4fc57683a4515a8edac43eeb747dd43e4d7856d
-  subdir: runtime
+  location: https://github.com/haskell-bitcoin/libsecp256k1-haskell
+
 
 source-repository-package
   type: git
-  location: https://git.sr.ht/~khumba/hoppy
-  tag: e4fc57683a4515a8edac43eeb747dd43e4d7856d
-  subdir: generator
-
-source-repository-package
-  type: git
-  location: https://git.sr.ht/~khumba/qtah
-  tag: 136c5970870bcbf130491016bff893ac9106f1cd
-  subdir: qtah
-
-source-repository-package
-  type: git
-  location: https://git.sr.ht/~khumba/qtah
-  tag: 136c5970870bcbf130491016bff893ac9106f1cd
-  subdir: qtah-generator
-
-source-repository-package
-  type: git
-  location: https://git.sr.ht/~khumba/qtah
-  tag: 136c5970870bcbf130491016bff893ac9106f1cd
-  subdir: qtah-cpp
+  location: https://github.com/prolic/HsQML/

@@ -21,6 +21,7 @@ import Nostr.Keys
     , mnemonicToKeyPair
     , pubKeyXOToBech32
     , secKeyToBech32
+    , secKeyToKeyPair
     )
 import Paths_futr (getDataFileName)
 import System.Environment (setEnv)
@@ -33,10 +34,11 @@ data AppScreen
     | RelayScreen
     | CreateAccountScreen
     | HomeScreen
-    deriving (Eq, Show)
+    deriving (Eq, Read, Show)
 
 data AppModel = AppModel
     { keyPair :: Maybe KeyPair
+    , seedphrase :: Text
     , availableKeys :: [PubKeyXO]
     , currentScreen :: AppScreen
     , errorMsg :: Text
@@ -46,7 +48,18 @@ type ModelVar = MVar AppModel
 
 createContext :: ModelVar -> SignalKey (IO ()) -> IO (ObjRef ())
 createContext modelVar changeKey = do
-    rootClass <- newClass [
+    rootClass <- newClass [            
+        defPropertySigRW' "seedphrase" changeKey 
+            (\_ -> do
+                model <- readMVar modelVar
+                return $ seedphrase model)
+            (\obj newSeedphrase -> do
+                modifyMVar_ modelVar $ \model -> return model { seedphrase = newSeedphrase }
+                fireSignal changeKey obj),
+
+        defPropertySigRO' "nsec" changeKey $ \_ -> 
+            fmap (maybe (pack "") (secKeyToBech32 . keyPairToSecKey) . keyPair) (readMVar modelVar),
+
         defPropertySigRO' "npub" changeKey $ \_ -> 
             fmap (maybe (pack "") (pubKeyXOToBech32 . keyPairToPubKeyXO) . keyPair) (readMVar modelVar),
 
@@ -54,9 +67,16 @@ createContext modelVar changeKey = do
             model <- readMVar modelVar
             return $ map pubKeyXOToBech32 (availableKeys model),
 
-        defPropertySigRO' "currentScreen" changeKey $ \_ -> do
-            model <- readMVar modelVar
-            return $ pack $ show $ currentScreen model,
+        defPropertySigRW' "currentScreen" changeKey
+            (\_ -> do
+                model <- readMVar modelVar
+                return $ pack $ show $ currentScreen model)
+            (\obj newScreen -> do
+                case readMaybe (unpack newScreen) :: Maybe AppScreen of
+                    Just s -> do
+                        modifyMVar_ modelVar $ \model -> return model { currentScreen = s }
+                        fireSignal changeKey obj
+                    Nothing -> return ()),
 
         defPropertySigRW' "errorMsg" changeKey 
             (\_ -> do
@@ -67,14 +87,16 @@ createContext modelVar changeKey = do
                 fireSignal changeKey obj),
 
         defMethod' "importSecretKey" $ \this (input :: Text) -> do
-            success <- importSecretKey input
-            if success
-                then
+            mkp <- importSecretKey input
+            case mkp of
+                Just _ -> do
+                    model <- takeMVar modelVar
+                    putMVar modelVar model { keyPair = mkp, currentScreen = HomeScreen }
                     fireSignal changeKey this
-                else do
+                Nothing -> do
                     model <- takeMVar modelVar
                     putMVar modelVar model { errorMsg = "Error: Importing secret key failed" }
-                    fireSignal changeKey this,
+                    fireSignal changeKey this,                    
 
         defMethod' "generateSeedphrase" $ \this -> do
             let handleError :: String -> IO ()
@@ -86,10 +108,13 @@ createContext modelVar changeKey = do
             createMnemonic >>= either handleError (\m' -> do
                 mnemonicToKeyPair m' "" >>= either handleError (\mkp' -> do
                     let secKey = keyPairToSecKey mkp'
-                    importSecretKey (secKeyToBech32 secKey) >>= \success ->
-                        if success
-                            then fireSignal changeKey this
-                            else handleError "Unknown error generating new keys"
+                    importSecretKey (secKeyToBech32 secKey) >>= \mkp ->
+                        case mkp of
+                            Just _ -> do
+                                model <- takeMVar modelVar
+                                putMVar modelVar model { seedphrase = m', keyPair = mkp }
+                                fireSignal changeKey this
+                            Nothing -> handleError "Unknown error generating new keys"
                     )
                 )
 
@@ -99,7 +124,7 @@ createContext modelVar changeKey = do
 
 
 
-importSecretKey :: Text -> IO Bool
+importSecretKey :: Text -> IO (Maybe KeyPair)
 importSecretKey input = do
     let skMaybe = if "nsec" `isPrefixOf` input
                   then bech32ToSecKey input
@@ -109,17 +134,18 @@ importSecretKey input = do
             storageDir <- getXdgDirectory XdgData $ "futrnostr/" ++ (unpack $ pubKeyXOToBech32 pk)
             _ <- createDirectoryIfMissing True storageDir
             _ <- TIO.writeFile (storageDir ++ "/keys.json") content
-            return True
+            return $ Just kp
             where
                 pk = derivePublicKeyXO sk
                 content = "[" <> secKeyToBech32 sk <> ", " <> pubKeyXOToBech32 pk <> "]"
+                kp = secKeyToKeyPair sk
         Nothing ->
-            return False
+            return Nothing
 
 
 main :: IO ()
 main = do
-    modelVar <- newMVar $ AppModel { keyPair = Nothing, availableKeys = [], currentScreen = WelcomeScreen, errorMsg = "" }
+    modelVar <- newMVar $ AppModel { keyPair = Nothing, availableKeys = [], currentScreen = WelcomeScreen, seedphrase = "", errorMsg = "" }
     changeKey <- newSignalKey :: IO (SignalKey (IO ()))
     ctx <- createContext modelVar changeKey
 

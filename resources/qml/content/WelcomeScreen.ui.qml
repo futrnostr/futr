@@ -5,6 +5,7 @@ import Futr 1.0
 import QtQuick.Studio.Components 1.0
 
 Rectangle {
+    id: welcomeScreen
     
     Column {
         width: parent.width
