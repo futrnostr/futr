@@ -34,7 +34,6 @@ ApplicationWindow {
     }
 
     ErrorScreen {
-        id: errorScreen
         visible: errorMsg != ""
     }
 

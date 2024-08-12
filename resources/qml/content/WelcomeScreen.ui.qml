@@ -19,12 +19,12 @@ Rectangle {
             Rectangle {
                 width: parent.parent.width - 20
                 height: 80
-                color: "#f0f0f0" // Light grey background
-                border.color: "#e0e0e0" // Slightly darker grey for border
+                color: "#f0f0f0"
+                border.color: "#e0e0e0"
                 border.width: 2
                 anchors.margins: 10
 
-                radius: 10 // Rounded corners
+                radius: 10
 
                 Column {
                     width: parent.width
@@ -62,10 +62,10 @@ Rectangle {
             Rectangle {
                 width: parent.parent.width * 0.6 - 15
                 height: 400
-                color: "#f0f0f0" // Light grey background
-                border.color: "#e0e0e0" // Slightly darker grey for border
+                color: "#f0f0f0"
+                border.color: "#e0e0e0"
                 border.width: 2
-                radius: 10 // Rounded corners
+                radius: 10
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -151,7 +151,7 @@ Rectangle {
                                 if (radionsec.checked) {
                                     importSecretKey(secretkey.text)
                                 } else if (radioseedphrase.checked) {
-                                    importSeedPhrase(seedphrase.text,
+                                    importSeedphrase(seedphrase.text,
                                                      password.text)
                                 }
                             }
@@ -163,10 +163,10 @@ Rectangle {
             Rectangle {
                 width: parent.parent.width * 0.4 - 15
                 height: 400
-                color: "#f0f0f0" // Light grey background
-                border.color: "#e0e0e0" // Slightly darker grey for border
+                color: "#f0f0f0"
+                border.color: "#e0e0e0"
                 border.width: 2
-                radius: 10 // Rounded corners
+                radius: 10
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -212,12 +212,3 @@ Rectangle {
         }
     }
 }
-
-/*##^##
-Designer {
-    D{i:0;formeditorZoom:0.5}D{i:5}D{i:6}D{i:4}D{i:3}D{i:2}D{i:10}D{i:11}D{i:12}D{i:14}
-D{i:15}D{i:13}D{i:16}D{i:17}D{i:18}D{i:19}D{i:20}D{i:9}D{i:8}D{i:23}D{i:24}D{i:25}
-D{i:26}D{i:27}D{i:22}D{i:21}D{i:7}D{i:1}
-}
-##^##*/
-

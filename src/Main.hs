@@ -48,6 +48,12 @@ type ModelVar = MVar AppModel
 
 createContext :: ModelVar -> SignalKey (IO ()) -> IO (ObjRef ())
 createContext modelVar changeKey = do
+    let handleError :: ObjRef() -> String -> IO ()
+        handleError obj err = do
+            model <- takeMVar modelVar
+            putMVar modelVar model { errorMsg = pack err }
+            fireSignal changeKey obj
+
     rootClass <- newClass [            
         defPropertySigRW' "seedphrase" changeKey 
             (\_ -> do
@@ -82,9 +88,7 @@ createContext modelVar changeKey = do
             (\_ -> do
                 model <- readMVar modelVar
                 return $ errorMsg model)
-            (\obj newErrorMsg -> do
-                modifyMVar_ modelVar $ \model -> return model { errorMsg = newErrorMsg }
-                fireSignal changeKey obj),
+            (\obj newErrorMsg -> handleError obj $ unpack newErrorMsg),
 
         defMethod' "importSecretKey" $ \this (input :: Text) -> do
             mkp <- importSecretKey input
@@ -93,20 +97,25 @@ createContext modelVar changeKey = do
                     model <- takeMVar modelVar
                     putMVar modelVar model { keyPair = mkp, currentScreen = HomeScreen }
                     fireSignal changeKey this
-                Nothing -> do
-                    model <- takeMVar modelVar
-                    putMVar modelVar model { errorMsg = "Error: Importing secret key failed" }
-                    fireSignal changeKey this,                    
+                Nothing -> handleError this "Error: Importing secret key failed",          
+
+        defMethod' "importSeedphrase" $ \this input pwd -> do
+            mkp <- mnemonicToKeyPair input pwd
+            case mkp of
+                Right kp -> do
+                    let secKey = keyPairToSecKey kp
+                    importSecretKey (secKeyToBech32 secKey) >>= \mkp' ->
+                        case mkp' of
+                            Just _ -> do
+                                model <- takeMVar modelVar
+                                putMVar modelVar model { keyPair = mkp', currentScreen = HomeScreen }
+                                fireSignal changeKey this
+                            Nothing -> handleError this "Unknown error generating new keys"
+                Left err -> handleError this err,
 
         defMethod' "generateSeedphrase" $ \this -> do
-            let handleError :: String -> IO ()
-                handleError err = do
-                    model <- takeMVar modelVar
-                    putMVar modelVar model { errorMsg = "Error: " <> pack err }
-                    fireSignal changeKey this
-
-            createMnemonic >>= either handleError (\m' -> do
-                mnemonicToKeyPair m' "" >>= either handleError (\mkp' -> do
+            createMnemonic >>= either (handleError this) (\m' -> do
+                mnemonicToKeyPair m' "" >>= either (handleError this) (\mkp' -> do
                     let secKey = keyPairToSecKey mkp'
                     importSecretKey (secKeyToBech32 secKey) >>= \mkp ->
                         case mkp of
@@ -114,14 +123,13 @@ createContext modelVar changeKey = do
                                 model <- takeMVar modelVar
                                 putMVar modelVar model { seedphrase = m', keyPair = mkp }
                                 fireSignal changeKey this
-                            Nothing -> handleError "Unknown error generating new keys"
+                            Nothing -> handleError this "Unknown error generating new keys"
                     )
                 )
 
         ]
 
     newObject rootClass ()
-
 
 
 importSecretKey :: Text -> IO (Maybe KeyPair)
