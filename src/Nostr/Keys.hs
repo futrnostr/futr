@@ -50,6 +50,7 @@ module Nostr.Keys (
     , keyPairToSecKey
     , keyPairToPubKeyXO
     , mnemonicToKeyPair
+    , secKeyToKeyPair
 
     -- * Schnorr signatures
     , schnorrSign
@@ -127,6 +128,10 @@ mnemonicToKeyPair m p
 -- | Get the sec key from a key pair
 keyPairToSecKey :: KeyPair -> SecKey
 keyPairToSecKey = keyPairSecKey
+
+-- | Get the key pair from a sec key
+secKeyToKeyPair :: SecKey -> KeyPair
+secKeyToKeyPair = keyPairCreate
 
 -- | Get the pub key XO from a key pair
 keyPairToPubKeyXO :: KeyPair -> PubKeyXO
