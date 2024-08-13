@@ -1,0 +1,31 @@
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeFamilies         #-}
+
+module Types where
+
+import Control.Concurrent (MVar)
+import Data.Text (Text)
+import Data.Typeable (Typeable)
+import Nostr.Keys
+    ( PubKeyXO
+    , KeyPair
+    )
+
+data AppScreen
+    = WelcomeScreen
+    | SelectAccountScreen
+    | RelayScreen
+    | CreateAccountScreen
+    | HomeScreen
+    deriving (Eq, Read, Show)
+
+data AppModel = AppModel
+    { keyPair :: Maybe KeyPair
+    , seedphrase :: Text
+    , availableKeys :: [PubKeyXO]
+    , currentScreen :: AppScreen
+    , errorMsg :: Text
+    } deriving (Typeable)
+
+type ModelVar = MVar AppModel

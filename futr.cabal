@@ -54,6 +54,8 @@ executable futr
     Nostr.Kind
     Nostr.Profile
     Nostr.Relay
+    Presentation.WelcomeScreen
+    Types
     Paths_futr
   default-language: Haskell2010
   data-dir: resources

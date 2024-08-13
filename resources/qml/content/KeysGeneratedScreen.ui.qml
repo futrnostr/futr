@@ -45,7 +45,7 @@ Rectangle {
 
         TextArea {
             id: seedPhraseText
-            text: seedphrase
+            text: ctxWelcomeScreen.seedphrase
             readOnly: true
             wrapMode: Text.Wrap
             font.pixelSize: 16
@@ -67,7 +67,7 @@ Rectangle {
 
         TextArea {
             id: privateKeyText
-            text: nsec
+            text: ctxWelcomeScreen.nsec
             readOnly: true
             wrapMode: Text.Wrap
             font.pixelSize: 16
@@ -89,7 +89,7 @@ Rectangle {
 
         TextArea {
             id: publicKeyText
-            text: npub
+            text: ctxWelcomeScreen.npub
             readOnly: true
             wrapMode: Text.Wrap
             font.pixelSize: 16
@@ -118,7 +118,7 @@ Rectangle {
             anchors.margins: 10
             highlighted: true
             onClicked: {
-                seedphrase = ""
+                ctxWelcomeScreen.seedphrase = ""
                 currentScreen = "HomeScreen"
             }
         }

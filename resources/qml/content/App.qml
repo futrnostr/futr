@@ -25,16 +25,12 @@ ApplicationWindow {
     }
 
     KeysGeneratedScreen {
-        visible: seedphrase != ""
+        visible: ctxWelcomeScreen.seedphrase != ""
     }
 
     HomeScreen {
         anchors.fill: parent
         visible: currentScreen == "HomeScreen"
-    }
-
-    ErrorScreen {
-        visible: errorMsg != ""
     }
 
     ToolBar {

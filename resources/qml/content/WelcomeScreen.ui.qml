@@ -97,6 +97,7 @@ Rectangle {
                             id: radionsec
                             checked: true
                             Layout.alignment: Qt.AlignLeft
+                            onClicked: ctxWelcomeScreen.errorMsg = ""
                         }
 
                         RadioButton {
@@ -104,6 +105,7 @@ Rectangle {
                             id: radioseedphrase
                             checked: false
                             Layout.alignment: Qt.AlignRight
+                            onClicked: ctxWelcomeScreen.errorMsg = ""
                         }
                     }
 
@@ -131,6 +133,15 @@ Rectangle {
                         visible: radioseedphrase.checked
                     }
 
+                    Text {
+                        id: errorMessage
+                        text: ctxWelcomeScreen.errorMsg
+                        color: "red"
+                        visible: errorMessage != ""
+                        Layout.alignment: Qt.AlignLeft
+                        Layout.leftMargin: 10
+                    }
+
                     Item {
                         Layout.fillHeight: true
                         Layout.alignment: Qt.AlignTop
@@ -148,9 +159,9 @@ Rectangle {
                             target: importbutton
                             onClicked: function () {
                                 if (radionsec.checked) {
-                                    importSecretKey(secretkey.text)
+                                    ctxWelcomeScreen.importSecretKey(secretkey.text)
                                 } else if (radioseedphrase.checked) {
-                                    importSeedphrase(seedphrase.text,
+                                    ctxWelcomeScreen.importSeedphrase(seedphrase.text,
                                                      password.text)
                                 }
                             }
@@ -203,7 +214,7 @@ Rectangle {
                         Layout.alignment: Qt.AlignRight
                         Layout.margins: 10
                         onClicked: function () {
-                            generateSeedphrase()
+                            ctxWelcomeScreen.generateSeedphrase()
                         }
                     }
                 }
