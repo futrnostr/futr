@@ -161,23 +161,15 @@ main = do
     importPath <- getDataFileName "resources/qml"
     importPath' <- getDataFileName "resources/qml/content"
     importPath'' <- getDataFileName "resources/qml/imports"
+    qtQuickControls <- getDataFileName "resources/qml/qtquickcontrols2.conf"
 
-    --let qtImportPath = "/home/sasa/Qt/qtdesignstudio-2.3.1-community/qt5_design_studio_reduced_version/qml"
-
-    --setEnv "QML2_IMPORT_PATH" qtImportPath
-    setEnv "QT_QUICK_CONTROLS_STYLE" "Material"
-    -- QT_QUICK_CONTROLS_CONF: "qtquickcontrols2.conf"
+    setEnv "QT_QUICK_CONTROLS_CONF" qtQuickControls
     setEnv "QT_AUTO_SCREEN_SCALE_FACTOR" "1"
     setEnv "QT_LOGGING_RULES" "qt.qml.connections=false"
     setEnv "QT_ENABLE_HIGHDPI_SCALING" "1"
-
-    -- @todo this must be setup when installing Qt
-    -- export LD_LIBRARY_PATH=/home/sasa/Qt/qtdesignstudio-2.3.1-community/qt5_design_studio_reduced_version/lib:$LD_LIBRARY_PATH
-
 
     runEngineLoop defaultEngineConfig 
         { initialDocument = fileDocument path
         , contextObject = Just $ anyObjRef ctx
         , importPaths = [importPath, importPath', importPath'']
-        --, pluginPaths = ["/home/sasa/Qt/qtdesignstudio-2.3.1-community/qt5_design_studio_reduced_version/plugins"]
         }
