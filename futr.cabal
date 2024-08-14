@@ -11,7 +11,7 @@ homepage:           https://github.com/futrnostr/futr#readme
 synopsis:           nostr client application
 description:        A nostr client application written in Haskell and Qt5.
 category:           application
-build-type:         Simple
+build-type:         Custom
 extra-source-files: README.md
 data-dir:           resources
 data-files:         qml/main.qml qml/qmlmodules qml/qtquickcontrols2.conf qml/content/qmldir

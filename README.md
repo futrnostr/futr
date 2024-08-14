@@ -28,7 +28,7 @@ ghcup set cabal 3.12.1.0
 
 #### For QT:
 
-`sudo apt-get install qtdeclarative5-dev libqt5quick5`
+`sudo apt-get install qtdeclarative5-dev libqt5quick5 qttools5-dev-tools qtbase5-dev`
 
 #### For secp256k1 (from source)
 
