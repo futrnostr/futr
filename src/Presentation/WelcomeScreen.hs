@@ -52,11 +52,7 @@ createWelcomeScreenCtx modelVar changeKey = do
             fireSignal changeKey obj
 
     contextClass <- newClass [
-        defPropertySigRW' "seedphrase" changeKey
-            (\_ -> fmap seedphrase (readMVar modelVar))
-            (\obj newSeedphrase -> do
-                modifyMVar_ modelVar $ \m -> return m { seedphrase = newSeedphrase }
-                fireSignal changeKey obj),
+        defPropertySigRO' "seedphrase" changeKey $ \_ -> fmap seedphrase (readMVar modelVar),
 
         defPropertySigRW' "errorMsg" changeKey
             (\_ -> fmap errorMsg (readMVar modelVar))

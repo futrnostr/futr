@@ -118,7 +118,6 @@ Rectangle {
             anchors.margins: 10
             highlighted: true
             onClicked: {
-                ctxWelcomeScreen.seedphrase = ""
                 currentScreen = "HomeScreen"
             }
         }
