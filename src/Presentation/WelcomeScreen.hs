@@ -96,7 +96,6 @@ createWelcomeScreenCtx modelVar changeKey = do
                     importSecretKey (secKeyToBech32 secKey) >>= \mkp ->
                         case mkp of
                             Just k -> do
-                                putStrLn $ unpack $ (secKeyToBech32 . keyPairToSecKey) k
                                 modifyMVar_ modelVar $ \m -> return m { seedphrase = m', keyPair = Just k }
                                 fireSignal changeKey this
                             Nothing -> handleError this "Unknown error generating new keys"

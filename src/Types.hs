@@ -7,10 +7,7 @@ module Types where
 import Control.Concurrent (MVar)
 import Data.Text (Text)
 import Data.Typeable (Typeable)
-import Nostr.Keys
-    ( PubKeyXO
-    , KeyPair
-    )
+import Nostr.Keys (KeyPair)
 
 data AppScreen
     = WelcomeScreen
@@ -23,7 +20,6 @@ data AppScreen
 data AppModel = AppModel
     { keyPair :: Maybe KeyPair
     , seedphrase :: Text
-    , availableKeys :: [PubKeyXO]
     , currentScreen :: AppScreen
     , errorMsg :: Text
     } deriving (Typeable)

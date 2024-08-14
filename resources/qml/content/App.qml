@@ -22,28 +22,14 @@ ApplicationWindow {
     WelcomeScreen {
         anchors.fill: parent
         visible: currentScreen == "WelcomeScreen"
-    }
 
-    KeysGeneratedScreen {
-        visible: ctxWelcomeScreen.seedphrase != ""
+        KeysGeneratedScreen {
+            visible: ctxWelcomeScreen.seedphrase != ""
+        }
     }
 
     HomeScreen {
         anchors.fill: parent
         visible: currentScreen == "HomeScreen"
-    }
-
-    ToolBar {
-        id: statusBar
-        anchors.bottom: parent.bottom
-        width: parent.width
-        height: 18
-
-        Label {
-            text: qsTr("Status: Ready")
-            anchors.left: parent.left
-            anchors.leftMargin: 10
-            verticalAlignment: Text.AlignHCenter
-        }
     }
 }

@@ -27,16 +27,6 @@ createContext modelVar changeKey = do
     rootClass <- newClass [
         defPropertyConst' "ctxWelcomeScreen" (\_ -> return welcomeScreenObj),
 
-        defPropertySigRO' "nsec" changeKey $ \_ ->
-            fmap (maybe (pack "") (secKeyToBech32 . keyPairToSecKey) . keyPair) (readMVar modelVar),
-
-        defPropertySigRO' "npub" changeKey $ \_ -> 
-            fmap (maybe (pack "") (pubKeyXOToBech32 . keyPairToPubKeyXO) . keyPair) (readMVar modelVar),
-
-        defPropertySigRO' "availableKeys" changeKey $ \_ -> do
-            model <- readMVar modelVar
-            return $ map pubKeyXOToBech32 (availableKeys model),
-
         defPropertySigRW' "currentScreen" changeKey
             (\_ -> fmap (pack . show . currentScreen) (readMVar modelVar))
             (\obj newScreen -> do
@@ -52,7 +42,7 @@ createContext modelVar changeKey = do
 
 main :: IO ()
 main = do
-    modelVar <- newMVar $ AppModel { keyPair = Nothing, availableKeys = [], currentScreen = WelcomeScreen, seedphrase = "", errorMsg = "" }
+    modelVar <- newMVar $ AppModel { keyPair = Nothing, currentScreen = WelcomeScreen, seedphrase = "", errorMsg = "" }
     changeKey <- newSignalKey :: IO (SignalKey (IO ()))
     ctx <- createContext modelVar changeKey
 
