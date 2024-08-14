@@ -39,7 +39,7 @@ myPreBuild _ _ = do
     then do
         putStrLn "Resource files modified, regenerating .qrc file."
         generateQrcFile resourceDir qrcFile allFilePaths
-        compileToObject
+        rcc
     else
         putStrLn "No resource file changes detected."
 
@@ -53,11 +53,10 @@ generateQrcFile dir qrc files = do
                      "  </qresource>\n</RCC>"
     writeFile qrc qrcContent
 
-compileToObject :: IO ()
-compileToObject = do
+rcc :: IO ()
+rcc = do
     let qrcFile = "resources.qrc"
         cppFile = "resources.cpp"
-        objFile = "resources.o"
 
     putStrLn $ "Compiling " ++ qrcFile ++ " to " ++ cppFile
     exitCode1 <- rawSystem "rcc" ["-name", "resources", "-o", cppFile, qrcFile]
