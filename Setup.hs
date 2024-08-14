@@ -1,44 +1,82 @@
+import Control.Monad (filterM, forM)
+import Data.Time.Clock (UTCTime)
 import Distribution.Simple
-import Distribution.Simple.LocalBuildInfo
-import Distribution.Simple.Setup
-import System.Process
+import Distribution.Simple.Setup (BuildFlags)
+import Distribution.Simple.UserHooks (Args, postBuild, preBuild)
+import Distribution.Types.BuildInfo
+import Distribution.Types.HookedBuildInfo
+import Distribution.Types.LocalBuildInfo
+import Distribution.Types.PackageDescription
+import Distribution.Types.UnqualComponentName
+import System.Process (rawSystem)
+import System.Directory (listDirectory, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getModificationTime)
 import System.Exit
-import System.Directory
+import System.FilePath ((</>), makeRelative, takeExtension)
 
-main :: IO ()
-main = defaultMainWithHooks simpleUserHooks {
-    --hookedPrograms = [simpleProgram "Setup libsec256k1"],
-    preConf = \args flags -> do
-        let repoDir = "secp256k1"
-        repoExists <- doesDirectoryExist repoDir
-        unless repoExists $
-            callProcess "git" ["clone", "https://github.com/bitcoin-core/secp256k1.git"]
-        
-        setCurrentDirectory repoDir
-        
-        callProcess "./autogen.sh" []
-        let prefix = "../vendor/secp256k1"
-        callProcess "./configure" 
-            [ "--prefix=" ++ prefix
-            , "--enable-module-schnorrsig"
-            , "--enable-module-extrakeys"
-            , "--enable-module-ecdh"
-            , "--enable-experimental"
-            , "--enable-module-recovery"
-            ]
-        
-        callProcess "make" []
-        callProcess "make" ["install"]
-        
-        setCurrentDirectory ".."
+main = defaultMainWithHooks simpleUserHooks { preBuild = myPreBuild }
 
-        let pkgConfigPath = "PKG_CONFIG_PATH"
-        pkgConfigValue <- lookupEnv pkgConfigPath
-        let newPkgConfigValue = case pkgConfigValue of
-                                 Nothing -> prefix ++ "/lib/pkgconfig"
-                                 Just val -> prefix ++ "/lib/pkgconfig:" ++ val
-        setEnv pkgConfigPath newPkgConfigValue
+myPreBuild :: Args -> BuildFlags -> IO HookedBuildInfo
+myPreBuild _ _ = do
+    let resourceDir = "resources"
+        qrcFile = "resources.qrc"
 
-        return (Nothing, [])
-    }
-}
+    -- Recursively get all file paths in the resource directory
+    allFiles <- listFilesRecursive resourceDir
+
+    -- Filter out directories (we only want files)
+    let allFilePaths = filter (not . null) allFiles
+
+    -- Check if the .qrc file exists
+    qrcExists <- doesFileExist qrcFile
+
+    rebuildNeeded <- if qrcExists
+                     then do
+                         qrcTime <- getModificationTime qrcFile
+                         anyM (\f -> getModificationTime f >>= \t -> return (t > qrcTime)) allFilePaths
+                     else return True
+
+    if rebuildNeeded
+    then do
+        putStrLn "Resource files modified, regenerating .qrc file."
+        generateQrcFile resourceDir qrcFile allFilePaths
+        compileToObject
+    else
+        putStrLn "No resource file changes detected."
+
+    let buildInfo = emptyBuildInfo { cSources = ["resources.cpp"] }
+    return (Nothing, [(mkUnqualComponentName "futr", buildInfo)])
+
+generateQrcFile :: FilePath -> FilePath -> [FilePath] -> IO ()
+generateQrcFile dir qrc files = do
+    let qrcContent = "<?xml version=\"1.0\"?>\n<RCC>\n  <qresource prefix=\"/\">\n" ++
+                     concatMap (\f -> "    <file>resources/" ++ makeRelative dir f ++ "</file>\n") files ++
+                     "  </qresource>\n</RCC>"
+    writeFile qrc qrcContent
+
+compileToObject :: IO ()
+compileToObject = do
+    let qrcFile = "resources.qrc"
+        cppFile = "resources.cpp"
+        objFile = "resources.o"
+
+    putStrLn $ "Compiling " ++ qrcFile ++ " to " ++ cppFile
+    exitCode1 <- rawSystem "rcc" ["-name", "resources", "-o", cppFile, qrcFile]
+    if exitCode1 /= ExitSuccess
+        then error "Failed to compile .qrc file"
+        else return ()
+
+-- Recursively list all files in a directory
+listFilesRecursive :: FilePath -> IO [FilePath]
+listFilesRecursive dir = do
+    contents <- listDirectory dir
+    paths <- forM contents $ \name -> do
+        let path = dir </> name
+        isDirectory <- doesDirectoryExist path
+        if isDirectory
+            then listFilesRecursive path
+            else return [path]
+    return (concat paths)
+
+-- Utility function to check if any file in a list satisfies a condition
+anyM :: Monad m => (a -> m Bool) -> [a] -> m Bool
+anyM p = fmap or . mapM p

@@ -7,13 +7,6 @@ module Main where
 import Control.Concurrent (modifyMVar_, newMVar, readMVar)
 import Data.Text (pack, unpack)
 import Graphics.QML
-import Nostr.Keys
-    ( keyPairToPubKeyXO
-    , keyPairToSecKey
-    , pubKeyXOToBech32
-    , secKeyToBech32
-    )
-import Paths_futr (getDataFileName)
 import System.Environment (setEnv)
 import Text.Read (readMaybe)
 
@@ -46,11 +39,11 @@ main = do
     changeKey <- newSignalKey :: IO (SignalKey (IO ()))
     ctx <- createContext modelVar changeKey
 
-    path <- getDataFileName "qml/main.qml"
-    importPath <- getDataFileName "qml"
-    importPath' <- getDataFileName "qml/content"
-    importPath'' <- getDataFileName "qml/imports"
-    qtQuickControls <- getDataFileName "qml/qtquickcontrols2.conf"
+    let path = "qrc:/resources/qml/main.qml"
+    let importPath = "qrc:/resources/qml"
+    let importPath' = "qrc:/resources/qml/content"
+    let importPath'' = "qrc:/resources/qml/imports"
+    let qtQuickControls = "resources/qml/qtquickcontrols2.conf" -- @todo move out of the way
 
     setEnv "QT_QUICK_CONTROLS_CONF" qtQuickControls
     setEnv "QT_AUTO_SCREEN_SCALE_FACTOR" "1"
