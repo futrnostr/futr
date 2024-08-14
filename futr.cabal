@@ -1,62 +1,70 @@
-cabal-version:  3.12
-name:           futr
-version:        0.1.0.0
-homepage:       https://github.com/futrnostr/futr#readme
-author:         Sascha-Oliver Prolic
-maintainer:     saschaprolic@googlemail.com
-copyright:      2024 Sascha-Oliver Prolic
-license:        LGPL-3.0-only
-license-file:   LICENSE
-synopsis:       nostr client application
-build-type:     Simple
-tested-with:    GHC ==9.4.8
-extra-source-files:
-    README.md
-
-description:
-  A nostr client application written in Haskell and Qt5.
+cabal-version:      3.12
+name:               futr
+version:            0.1.0.0
+license:            LGPL-3.0-only
+license-file:       LICENSE
+copyright:          2024 Sascha-Oliver Prolic
+maintainer:         saschaprolic@googlemail.com
+author:             Sascha-Oliver Prolic
+tested-with:        ghc ==9.4.8
+homepage:           https://github.com/futrnostr/futr#readme
+synopsis:           nostr client application
+description:        A nostr client application written in Haskell and Qt5.
+category:           application
+build-type:         Simple
+extra-source-files: README.md
+data-dir:           resources
+data-files:         qml/main.qml qml/qmlmodules qml/qtquickcontrols2.conf qml/content/qmldir
+                    qml/content/svg/*.svg qml/content/*.qml qml/content/qmldir
+                    qml/imports/Futr/*.qml qml/imports/Futr/qmldir
 
 executable futr
-  main-is: Main.hs
-  hs-source-dirs:
-      src
-  ghc-options: -threaded -Wall -Wcompat -Wincomplete-uni-patterns -Wincomplete-record-updates -Werror
-  extra-lib-dirs:
-      /usr/local/lib
-  extra-libraries:
-      secp256k1
-  build-depends:
-    aeson
-    , base
-    , base16-bytestring
-    , basement
-    , bech32
-    , binary
-    , bytestring
-    , containers
-    , cryptohash-sha256
-    , data-default
-    , directory
-    , entropy
-    , haskoin-core
-    , hsqml
-    , lens
-    , libsecp256k1
-    , modern-uri
-    , random
-    , secp256k1-haskell
-    , stm
-    , text
-    , time
-    , vector
-  other-modules:
-    Nostr.Keys
-    Nostr.Kind
-    Nostr.Profile
-    Nostr.Relay
-    Presentation.WelcomeScreen
-    Types
-    Paths_futr
-  default-language: Haskell2010
-  data-dir: resources
-  data-files: config.yaml qml/**/*.qml qml/qmlmodules qml/content/qmldir
+    main-is:          Main.hs
+    hs-source-dirs:   src
+
+    other-modules:
+        Nostr.Keys
+        Nostr.Kind
+        Nostr.Profile
+        Nostr.Relay
+        Presentation.WelcomeScreen
+        Types
+        Paths_futr
+
+    autogen-modules:  Paths_futr
+    default-language: Haskell2010
+    extra-libraries:  secp256k1
+    extra-lib-dirs:   /usr/local/lib
+    ghc-options:
+        -threaded -Wall -Wcompat -Wincomplete-uni-patterns
+        -Wincomplete-record-updates
+
+    build-depends:
+        aeson >=2.2.3.0 && <2.3,
+        base >=4.17.2.1 && <4.18,
+        base16-bytestring >=1.0.2.0 && <1.1,
+        basement >=0.0.16 && <0.1,
+        bech32 >=1.1.7 && <1.2,
+        binary >=0.8.9.1 && <0.9,
+        bytestring >=0.11.5.3 && <0.12,
+        containers >=0.6.7 && <0.7,
+        cryptohash-sha256 >=0.11.102.1 && <0.12,
+        data-default >=0.7.1.1 && <0.8,
+        directory >=1.3.7.1 && <1.4,
+        entropy >=0.4.1.10 && <0.5,
+        haskoin-core >=1.1.0 && <1.2,
+        hsqml >=0.3.6.0 && <0.4,
+        lens >=5.3.2 && <5.4,
+        libsecp256k1 >=0.2.1 && <0.3,
+        modern-uri >=0.3.6.1 && <0.4,
+        random >=1.2.1.2 && <1.3,
+        secp256k1-haskell >=1.2.0 && <1.3,
+        stm >=2.5.1.0 && <2.6,
+        text >=2.0.2 && <2.1,
+        time >=1.12.2 && <1.13,
+        vector >=0.13.1.0 && <0.14
+
+source-repository head
+  type: git
+  location: https://github.com/futrnostr/futr/
+  branch: master

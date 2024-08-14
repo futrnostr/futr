@@ -5,7 +5,6 @@ source-repository-package
   type: git
   location: https://github.com/haskell-bitcoin/libsecp256k1-haskell
 
-
 source-repository-package
   type: git
   location: https://github.com/prolic/HsQML/

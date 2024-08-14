@@ -56,11 +56,11 @@ main = do
     changeKey <- newSignalKey :: IO (SignalKey (IO ()))
     ctx <- createContext modelVar changeKey
 
-    path <- getDataFileName "resources/qml/main.qml"
-    importPath <- getDataFileName "resources/qml"
-    importPath' <- getDataFileName "resources/qml/content"
-    importPath'' <- getDataFileName "resources/qml/imports"
-    qtQuickControls <- getDataFileName "resources/qml/qtquickcontrols2.conf"
+    path <- getDataFileName "qml/main.qml"
+    importPath <- getDataFileName "qml"
+    importPath' <- getDataFileName "qml/content"
+    importPath'' <- getDataFileName "qml/imports"
+    qtQuickControls <- getDataFileName "qml/qtquickcontrols2.conf"
 
     setEnv "QT_QUICK_CONTROLS_CONF" qtQuickControls
     setEnv "QT_AUTO_SCREEN_SCALE_FACTOR" "1"
