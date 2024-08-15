@@ -11,14 +11,14 @@ import System.Environment (setEnv)
 import Text.Read (readMaybe)
 
 import Types
-import Presentation.WelcomeScreen
+import Presentation.Welcome
 
 createContext :: ModelVar -> SignalKey (IO ()) -> IO (ObjRef ())
 createContext modelVar changeKey = do
-    welcomeScreenObj <- createWelcomeScreenCtx modelVar changeKey
+    welcomeObj <- createWelcomeCtx modelVar changeKey
 
     rootClass <- newClass [
-        defPropertyConst' "ctxWelcomeScreen" (\_ -> return welcomeScreenObj),
+        defPropertyConst' "ctxWelcome" (\_ -> return welcomeObj),
 
         defPropertySigRW' "currentScreen" changeKey
             (\_ -> fmap (pack . show . currentScreen) (readMVar modelVar))
@@ -35,14 +35,14 @@ createContext modelVar changeKey = do
 
 main :: IO ()
 main = do
-    modelVar <- newMVar $ AppModel { keyPair = Nothing, currentScreen = WelcomeScreen, seedphrase = "", errorMsg = "" }
+    modelVar <- newMVar $ AppModel { keyPair = Nothing, currentScreen = Welcome, seedphrase = "", errorMsg = "" }
     changeKey <- newSignalKey :: IO (SignalKey (IO ()))
     ctx <- createContext modelVar changeKey
 
-    let path = "qrc:/resources/qml/main.qml"
-    let importPath = "qrc:/resources/qml"
-    let importPath' = "qrc:/resources/qml/content"
-    let importPath'' = "qrc:/resources/qml/imports"
+    let path = "qrc:/qml/main.qml"
+    let importPath = "qrc:/qml"
+    let importPath' = "qrc:/qml/content"
+    let importPath'' = "qrc:/qml/imports"
     let qtQuickControls = "resources/qml/qtquickcontrols2.conf" -- @todo move out of the way
 
     setEnv "QT_QUICK_CONTROLS_CONF" qtQuickControls

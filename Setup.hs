@@ -49,7 +49,7 @@ myPreBuild _ _ = do
 generateQrcFile :: FilePath -> FilePath -> [FilePath] -> IO ()
 generateQrcFile dir qrc files = do
     let qrcContent = "<?xml version=\"1.0\"?>\n<RCC>\n  <qresource prefix=\"/\">\n" ++
-                     concatMap (\f -> "    <file>resources/" ++ makeRelative dir f ++ "</file>\n") files ++
+                     concatMap (\f -> "    <file alias=\"" ++ makeRelative dir f ++ "\">resources/" ++ makeRelative dir f ++ "</file>\n") files ++
                      "  </qresource>\n</RCC>"
     writeFile qrc qrcContent
 

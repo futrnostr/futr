@@ -21,15 +21,15 @@ ApplicationWindow {
 
     WelcomeScreen {
         anchors.fill: parent
-        visible: currentScreen == "WelcomeScreen"
+        visible: currentScreen == "Welcome"
 
         KeysGeneratedScreen {
-            visible: ctxWelcomeScreen.seedphrase != ""
+            visible: ctxWelcome.seedphrase != ""
         }
     }
 
     HomeScreen {
         anchors.fill: parent
-        visible: currentScreen == "HomeScreen"
+        visible: currentScreen == "Home"
     }
 }

@@ -32,11 +32,9 @@ executable futr
         Nostr.Kind
         Nostr.Profile
         Nostr.Relay
-        Presentation.WelcomeScreen
+        Presentation.Welcome
         Types
-        Paths_futr
 
-    autogen-modules:  Paths_futr
     default-language: Haskell2010
     extra-libraries:  secp256k1
     extra-lib-dirs:   /usr/local/lib

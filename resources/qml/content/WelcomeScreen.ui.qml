@@ -76,7 +76,7 @@ Rectangle {
                     }
 
                     Image {
-                        source: "svg/account_box.svg"
+                        source: "qrc:/icons/account_box.svg"
                         height: 100
                         width: 100
                         Layout.alignment: Qt.AlignHCenter
@@ -97,7 +97,7 @@ Rectangle {
                             id: radionsec
                             checked: true
                             Layout.alignment: Qt.AlignLeft
-                            onClicked: ctxWelcomeScreen.errorMsg = ""
+                            onClicked: ctxWelcome.errorMsg = ""
                         }
 
                         RadioButton {
@@ -105,7 +105,7 @@ Rectangle {
                             id: radioseedphrase
                             checked: false
                             Layout.alignment: Qt.AlignRight
-                            onClicked: ctxWelcomeScreen.errorMsg = ""
+                            onClicked: ctxWelcome.errorMsg = ""
                         }
                     }
 
@@ -135,7 +135,7 @@ Rectangle {
 
                     Text {
                         id: errorMessage
-                        text: ctxWelcomeScreen.errorMsg
+                        text: ctxWelcome.errorMsg
                         color: "red"
                         visible: errorMessage != ""
                         Layout.alignment: Qt.AlignLeft
@@ -159,9 +159,9 @@ Rectangle {
                             target: importbutton
                             onClicked: function () {
                                 if (radionsec.checked) {
-                                    ctxWelcomeScreen.importSecretKey(secretkey.text)
+                                    ctxWelcome.importSecretKey(secretkey.text)
                                 } else if (radioseedphrase.checked) {
-                                    ctxWelcomeScreen.importSeedphrase(seedphrase.text,
+                                    ctxWelcome.importSeedphrase(seedphrase.text,
                                                      password.text)
                                 }
                             }
@@ -188,7 +188,7 @@ Rectangle {
                     }
 
                     Image {
-                        source: "svg/add.svg"
+                        source: "qrc:/icons/add.svg"
                         height: 100
                         width: 100
                         Layout.alignment: Qt.AlignHCenter
@@ -214,7 +214,7 @@ Rectangle {
                         Layout.alignment: Qt.AlignRight
                         Layout.margins: 10
                         onClicked: function () {
-                            ctxWelcomeScreen.generateSeedphrase()
+                            ctxWelcome.generateSeedphrase()
                         }
                     }
                 }

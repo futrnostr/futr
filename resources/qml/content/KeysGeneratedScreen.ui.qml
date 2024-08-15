@@ -17,7 +17,7 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 20
-        spacing: 20  
+        spacing: 20
             
         Text {
             id: importantText
@@ -30,7 +30,7 @@ Rectangle {
         }
 
         Image {
-            source: "svg/warning.svg"
+            source: "qrc:/icons/warning.svg"
             width: 25
             height: 25
         }
@@ -45,7 +45,7 @@ Rectangle {
 
         TextArea {
             id: seedPhraseText
-            text: ctxWelcomeScreen.seedphrase
+            text: ctxWelcome.seedphrase
             readOnly: true
             wrapMode: Text.Wrap
             font.pixelSize: 16
@@ -67,7 +67,7 @@ Rectangle {
 
         TextArea {
             id: privateKeyText
-            text: ctxWelcomeScreen.nsec
+            text: ctxWelcome.nsec
             readOnly: true
             wrapMode: Text.Wrap
             font.pixelSize: 16
@@ -89,7 +89,7 @@ Rectangle {
 
         TextArea {
             id: publicKeyText
-            text: ctxWelcomeScreen.npub
+            text: ctxWelcome.npub
             readOnly: true
             wrapMode: Text.Wrap
             font.pixelSize: 16
@@ -118,7 +118,7 @@ Rectangle {
             anchors.margins: 10
             highlighted: true
             onClicked: {
-                currentScreen = "HomeScreen"
+                currentScreen = "Home"
             }
         }
     }

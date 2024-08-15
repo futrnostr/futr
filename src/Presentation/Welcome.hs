@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeFamilies         #-}
 
-module Presentation.WelcomeScreen where
+module Presentation.Welcome where
 
 import Control.Concurrent (modifyMVar_, readMVar)
 import Data.Text (Text, isPrefixOf, pack, unpack)
@@ -44,8 +44,8 @@ importSecretKey input = do
             return Nothing
 
 
-createWelcomeScreenCtx :: ModelVar -> SignalKey (IO ()) -> IO (ObjRef ())
-createWelcomeScreenCtx modelVar changeKey = do
+createWelcomeCtx :: ModelVar -> SignalKey (IO ()) -> IO (ObjRef ())
+createWelcomeCtx modelVar changeKey = do
     let handleError :: ObjRef() -> String -> IO ()
         handleError obj err = do
             modifyMVar_ modelVar $ \m -> return m { errorMsg = pack err }
@@ -68,7 +68,7 @@ createWelcomeScreenCtx modelVar changeKey = do
             mkp <- importSecretKey input
             case mkp of
                 Just _ -> do
-                    modifyMVar_ modelVar $ \m -> return m { keyPair = mkp, currentScreen = HomeScreen }
+                    modifyMVar_ modelVar $ \m -> return m { keyPair = mkp, currentScreen = Home }
                     fireSignal changeKey this
                 Nothing -> handleError this "Error: Importing secret key failed",
 
@@ -80,7 +80,7 @@ createWelcomeScreenCtx modelVar changeKey = do
                     importSecretKey (secKeyToBech32 secKey) >>= \mkp' ->
                         case mkp' of
                             Just _ -> do
-                                modifyMVar_ modelVar $ \m -> return m { keyPair = mkp', currentScreen = HomeScreen }
+                                modifyMVar_ modelVar $ \m -> return m { keyPair = mkp', currentScreen = Home }
                                 fireSignal changeKey this
                             Nothing -> handleError this "Unknown error"
                 Left err -> handleError this err,

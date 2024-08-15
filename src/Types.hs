@@ -10,11 +10,10 @@ import Data.Typeable (Typeable)
 import Nostr.Keys (KeyPair)
 
 data AppScreen
-    = WelcomeScreen
-    | SelectAccountScreen
-    | RelayScreen
-    | CreateAccountScreen
-    | HomeScreen
+    = Welcome
+    | Account
+    | Relay
+    | Home
     deriving (Eq, Read, Show)
 
 data AppModel = AppModel
