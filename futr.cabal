@@ -12,7 +12,7 @@ synopsis:           nostr client application
 description:        A nostr client application written in Haskell and Qt5.
 category:           application
 build-type:         Custom
-extra-source-files: README.md
+extra-source-files: README.md build.touch
 
 custom-setup
   setup-depends:
@@ -21,7 +21,8 @@ custom-setup
     directory >= 1.3.7.1 && < 1.4,
     filepath >= 1.4.2 && <1.5,
     process >= 1.6.18.0 && <1.7,
-    time >= 1.12.2 && < 1.13
+    time >= 1.12.2 && < 1.13,
+    unix >= 2.7.3 && < 2.8
 
 executable futr
     main-is:          Main.hs

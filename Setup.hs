@@ -12,6 +12,7 @@ import System.Process (rawSystem)
 import System.Directory (listDirectory, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getModificationTime)
 import System.Exit
 import System.FilePath ((</>), makeRelative, takeExtension)
+import System.Posix.Files (touchFile)
 
 main = defaultMainWithHooks simpleUserHooks { preBuild = myPreBuild }
 
@@ -19,6 +20,7 @@ myPreBuild :: Args -> BuildFlags -> IO HookedBuildInfo
 myPreBuild _ _ = do
     let resourceDir = "resources"
         qrcFile = "resources.qrc"
+        touchFileName = "build.touch"
 
     -- Recursively get all file paths in the resource directory
     allFiles <- listFilesRecursive resourceDir
@@ -42,6 +44,8 @@ myPreBuild _ _ = do
         rcc
     else
         putStrLn "No resource file changes detected."
+
+    touchFile touchFileName
 
     let buildInfo = emptyBuildInfo { cSources = ["resources.cpp"] }
     return (Nothing, [(mkUnqualComponentName "futr", buildInfo)])
