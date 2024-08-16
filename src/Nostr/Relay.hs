@@ -30,7 +30,7 @@ data RelayInfo = RelayInfo
   { readable  :: Bool
   , writable  :: Bool
   }
-  deriving (Eq, Show, Generic, FromJSON, ToJSON)
+  deriving (Eq, Ord, Show, Generic, FromJSON, ToJSON)
 
 -- | Represents a relay entity containing URI, relay information, and connection status.
 data Relay = Relay
@@ -70,18 +70,10 @@ instance ToJSON Relay where
     ]
 
 -- | Provides a default list of relays.
-defaultRelays :: [Relay]
+defaultRelays :: [(RelayURI, RelayInfo)]
 defaultRelays =
-  [ Relay
-      { uri = RelayURI [QQ.uri|wss://nostr.rocks|]
-      , info = RelayInfo True True
-      , connected = False
-      }
-  , Relay
-      { uri = RelayURI [QQ.uri|ws://localhost:2700|]
-      , info = RelayInfo True True
-      , connected = False
-      }
+  [ (RelayURI [QQ.uri|wss://nostr.rocks|], RelayInfo True True)
+  , (RelayURI [QQ.uri|ws://localhost:2700|], RelayInfo True True)
   ]
 
 -- | Retrieves the textual representation of the relay's URI.

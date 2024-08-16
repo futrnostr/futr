@@ -1,11 +1,13 @@
+{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeFamilies         #-}
 
 module Presentation.Welcome where
 
-import Control.Concurrent (modifyMVar_, readMVar)
+import Control.Concurrent (MVar, modifyMVar_, readMVar)
 import Data.Text (Text, isPrefixOf, pack, unpack)
+import Data.Typeable (Typeable)
 import qualified Data.Text.IO as TIO
 import Graphics.QML
 import Nostr.Keys
@@ -23,7 +25,13 @@ import Nostr.Keys
     )
 import System.Directory (XdgDirectory(XdgData), createDirectoryIfMissing, getXdgDirectory)
 import Text.Read (readMaybe)
+
 import Types
+
+data WelcomeModel = WelcomeModel
+    { seedphrase :: Text
+    , errorMsg :: Text
+    } deriving (Typeable)
 
 importSecretKey :: Text -> IO (Maybe KeyPair)
 importSecretKey input = do
@@ -34,18 +42,24 @@ importSecretKey input = do
         Just sk -> do
             storageDir <- getXdgDirectory XdgData $ "futrnostr/" ++ (unpack $ pubKeyXOToBech32 pk)
             _ <- createDirectoryIfMissing True storageDir
-            _ <- TIO.writeFile (storageDir ++ "/keys.json") content
+            _ <- TIO.writeFile (storageDir ++ "/nsec") content
             return $ Just kp
             where
                 pk = derivePublicKeyXO sk
-                content = "[" <> secKeyToBech32 sk <> ", " <> pubKeyXOToBech32 pk <> "]"
+                content = secKeyToBech32 sk
                 kp = secKeyToKeyPair sk
         Nothing ->
             return Nothing
 
 
-createWelcomeCtx :: ModelVar -> SignalKey (IO ()) -> IO (ObjRef ())
-createWelcomeCtx modelVar changeKey = do
+createWelcomeCtx
+    :: MVar WelcomeModel 
+    -> SignalKey (IO ())
+    -> IO (Maybe KeyPair)
+    -> (KeyPair -> IO ())
+    -> (AppScreen -> IO ())
+    -> IO (ObjRef ())
+createWelcomeCtx modelVar changeKey getKeyPair setKeyPair go = do
     let handleError :: ObjRef() -> String -> IO ()
         handleError obj err = do
             modifyMVar_ modelVar $ \m -> return m { errorMsg = pack err }
@@ -58,17 +72,24 @@ createWelcomeCtx modelVar changeKey = do
             (\_ -> fmap errorMsg (readMVar modelVar))
             (\obj newErrorMsg -> handleError obj $ unpack newErrorMsg),
 
-        defPropertySigRO' "nsec" changeKey $ \_ ->
-            fmap (maybe (pack "") (secKeyToBech32 . keyPairToSecKey) . keyPair) (readMVar modelVar),
+        defPropertySigRO' "nsec" changeKey $ \_ -> do
+            mkp <- getKeyPair
+            case mkp of
+                Just kp -> return $ secKeyToBech32 (keyPairToSecKey kp)
+                Nothing -> return $ pack "",
 
-        defPropertySigRO' "npub" changeKey $ \_ ->
-            fmap (maybe (pack "") (pubKeyXOToBech32 . keyPairToPubKeyXO) . keyPair) (readMVar modelVar),
+        defPropertySigRO' "npub" changeKey $ \_ -> do
+            mkp <- getKeyPair
+            case mkp of
+                Just kp -> return $ pubKeyXOToBech32 (keyPairToPubKeyXO kp)
+                Nothing -> return $ pack "",
 
         defMethod' "importSecretKey" $ \this (input :: Text) -> do
             mkp <- importSecretKey input
             case mkp of
-                Just _ -> do
-                    modifyMVar_ modelVar $ \m -> return m { keyPair = mkp, currentScreen = Home }
+                Just kp -> do
+                    setKeyPair kp
+                    go Home
                     fireSignal changeKey this
                 Nothing -> handleError this "Error: Importing secret key failed",
 
@@ -80,7 +101,8 @@ createWelcomeCtx modelVar changeKey = do
                     importSecretKey (secKeyToBech32 secKey) >>= \mkp' ->
                         case mkp' of
                             Just _ -> do
-                                modifyMVar_ modelVar $ \m -> return m { keyPair = mkp', currentScreen = Home }
+                                setKeyPair kp
+                                go Home
                                 fireSignal changeKey this
                             Nothing -> handleError this "Unknown error"
                 Left err -> handleError this err,
@@ -91,8 +113,9 @@ createWelcomeCtx modelVar changeKey = do
                     let secKey = keyPairToSecKey mkp'
                     importSecretKey (secKeyToBech32 secKey) >>= \mkp ->
                         case mkp of
-                            Just k -> do
-                                modifyMVar_ modelVar $ \m -> return m { seedphrase = m', keyPair = Just k }
+                            Just kp -> do
+                                modifyMVar_ modelVar $ \m -> return m { seedphrase = m' }
+                                setKeyPair kp
                                 fireSignal changeKey this
                             Nothing -> handleError this "Unknown error generating new keys"
                     )

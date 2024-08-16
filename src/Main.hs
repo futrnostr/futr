@@ -4,21 +4,47 @@
 
 module Main where
 
-import Control.Concurrent (modifyMVar_, newMVar, readMVar)
+import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar)
+import qualified Data.Map as Map
 import Data.Text (pack, unpack)
+import Data.Typeable (Typeable)
 import Graphics.QML
 import System.Environment (setEnv)
 import Text.Read (readMaybe)
 
-import Types
+import Nostr.Keys (KeyPair, secKeyToKeyPair)
+import Presentation.Accounts
 import Presentation.Welcome
+import Types
 
-createContext :: ModelVar -> SignalKey (IO ()) -> IO (ObjRef ())
+data AppModel = AppModel
+    { keyPair :: Maybe KeyPair
+    , currentScreen :: AppScreen
+    , welcomeModel :: MVar WelcomeModel
+    , accountModel :: MVar AccountModel
+    } deriving (Typeable)
+
+createContext :: MVar AppModel -> SignalKey (IO ()) -> IO (ObjRef ())
 createContext modelVar changeKey = do
-    welcomeObj <- createWelcomeCtx modelVar changeKey
+    appModel <- readMVar modelVar
+
+    let getKeyPair :: IO (Maybe KeyPair)
+        getKeyPair = do
+            appModel' <- readMVar modelVar
+            return (keyPair appModel')
+
+        setKeyPair :: KeyPair -> IO ()
+        setKeyPair kp = modifyMVar_ modelVar $ \m -> return m { keyPair = Just kp }
+
+        setCurrentScreen :: AppScreen -> IO ()
+        setCurrentScreen screen = modifyMVar_ modelVar $ \m -> return m { currentScreen = screen }
+
+    welcomeObj <- createWelcomeCtx (welcomeModel appModel) changeKey getKeyPair setKeyPair setCurrentScreen
+    accountObj <- createAccountCtx (accountModel appModel) changeKey setKeyPair setCurrentScreen
 
     rootClass <- newClass [
         defPropertyConst' "ctxWelcome" (\_ -> return welcomeObj),
+        defPropertyConst' "ctxAccounts" (\_ -> return accountObj),
 
         defPropertySigRW' "currentScreen" changeKey
             (\_ -> fmap (pack . show . currentScreen) (readMVar modelVar))
@@ -35,7 +61,32 @@ createContext modelVar changeKey = do
 
 main :: IO ()
 main = do
-    modelVar <- newMVar $ AppModel { keyPair = Nothing, currentScreen = Welcome, seedphrase = "", errorMsg = "" }
+    accounts <- listAccounts
+
+    welcomeM <- newMVar $ WelcomeModel "" ""
+    accountM <- newMVar $ AccountModel { accountMap = accounts }
+
+    let appModel = case Map.size accounts of
+            0 -> AppModel
+                { keyPair = Nothing
+                , currentScreen = Welcome
+                , accountModel = accountM
+                , welcomeModel = welcomeM
+                }
+            1 -> AppModel
+                { keyPair = Just $ secKeyToKeyPair $ nsec $ snd $ head $ Map.toList accounts
+                , currentScreen = Home
+                , accountModel = accountM
+                , welcomeModel = welcomeM
+                }
+            _ -> AppModel
+                { keyPair = Nothing
+                , currentScreen = Types.Account
+                , accountModel = accountM
+                , welcomeModel = welcomeM
+                }
+
+    modelVar <- newMVar appModel
     changeKey <- newSignalKey :: IO (SignalKey (IO ()))
     ctx <- createContext modelVar changeKey
 

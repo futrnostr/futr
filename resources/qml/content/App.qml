@@ -19,6 +19,15 @@ ApplicationWindow {
     Material.accent: Material.Teal
     Material.primary: Material.BlueGrey
 
+    Text {
+        text: currentScreen
+    }
+
+    AccountScreen {
+        anchors.fill: parent
+        visible: currentScreen == "Account"
+    }
+
     WelcomeScreen {
         anchors.fill: parent
         visible: currentScreen == "Welcome"
