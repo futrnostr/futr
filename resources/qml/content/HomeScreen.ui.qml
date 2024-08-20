@@ -5,6 +5,8 @@ import Futr 1.0
 
 Rectangle {
     id: homeScreen
+    width: parent.width
+    height: parent.height
     
     Column {
         width: parent.width

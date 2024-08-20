@@ -19,26 +19,53 @@ ApplicationWindow {
     Material.accent: Material.Teal
     Material.primary: Material.BlueGrey
 
-    Text {
-        text: currentScreen
-    }
+    Rectangle {
+        width: 900
+        height: parent.height
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.margins: 10
 
-    AccountScreen {
-        anchors.fill: parent
-        visible: currentScreen == "Account"
-    }
-
-    WelcomeScreen {
-        anchors.fill: parent
-        visible: currentScreen == "Welcome"
-
-        KeysGeneratedScreen {
-            visible: ctxWelcome.seedphrase != ""
+        Rectangle {
+            width: 1
+            height: parent.height
+            color: "#000000"
+            anchors.left: parent.left
         }
-    }
 
-    HomeScreen {
-        anchors.fill: parent
-        visible: currentScreen == "Home"
-    }
+        Rectangle {
+            width: 1
+            height: parent.height
+            color: "#000000"
+            anchors.right: parent.right
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.leftMargin: 1
+            anchors.rightMargin: 1
+
+            AccountScreen {
+                anchors.margins: 10
+                anchors.fill: parent
+
+                visible: currentScreen == "Account"
+            }
+
+            WelcomeScreen {
+                anchors.margins: 10
+                anchors.fill: parent
+                visible: currentScreen == "Welcome"
+
+                KeysGeneratedScreen {
+                    visible: ctxWelcome.seedphrase != ""
+                }
+            }
+
+            HomeScreen {
+                anchors.margins: 10
+                anchors.fill: parent
+                visible: currentScreen == "Home"
+            }
+        }
+    }   
 }
