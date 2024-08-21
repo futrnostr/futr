@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
+import HsQML.Clipboard 1.0
 import Futr 1.0
 
 ApplicationWindow {
@@ -14,10 +15,13 @@ ApplicationWindow {
     title: "Futr"
     font: Constants.font
 
-    // Apply the Material theme
     Material.theme: Material.Light
     Material.accent: Material.Teal
     Material.primary: Material.BlueGrey
+
+    ClipboardHelper {
+        id: clipboard
+    }
 
     Rectangle {
         width: 900
@@ -44,21 +48,17 @@ ApplicationWindow {
             anchors.leftMargin: 1
             anchors.rightMargin: 1
 
-            AccountScreen {
+            KeyMgmtScreen {
                 anchors.margins: 10
                 anchors.fill: parent
 
-                visible: currentScreen == "Account"
+                visible: currentScreen == "KeyMgmt"
             }
 
             WelcomeScreen {
                 anchors.margins: 10
                 anchors.fill: parent
                 visible: currentScreen == "Welcome"
-
-                KeysGeneratedScreen {
-                    visible: ctxWelcome.seedphrase != ""
-                }
             }
 
             HomeScreen {

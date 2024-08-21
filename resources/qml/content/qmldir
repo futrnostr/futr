@@ -1,6 +1,6 @@
 module content
-AccountScreen 1.0 AccountScreen.ui.qml
 App 1.0 App.qml
 HomeScreen 1.0 HomeScreen.ui.qml
 KeysGeneratedScreen 1.0 KeysGeneratedScreen.ui.qml
+KeyMgmtScreen 1.0 KeyMgmtScreen.ui.qml
 WelcomeScreen 1.0 WelcomeScreen.ui.qml

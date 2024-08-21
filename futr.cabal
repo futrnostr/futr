@@ -33,7 +33,7 @@ executable futr
         Nostr.Kind
         Nostr.Profile
         Nostr.Relay
-        Presentation.Accounts
+        Presentation.KeyMgmt
         Presentation.Welcome
         Types
 

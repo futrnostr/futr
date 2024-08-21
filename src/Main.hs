@@ -13,7 +13,7 @@ import System.Environment (setEnv)
 import Text.Read (readMaybe)
 
 import Nostr.Keys (KeyPair, secKeyToKeyPair)
-import Presentation.Accounts
+import Presentation.KeyMgmt
 import Presentation.Welcome
 import Types
 
@@ -21,7 +21,7 @@ data AppModel = AppModel
     { keyPair :: Maybe KeyPair
     , currentScreen :: AppScreen
     , welcomeModel :: MVar WelcomeModel
-    , accountModel :: MVar AccountModel
+    , keyMgmtModel :: MVar KeyMgmtModel
     } deriving (Typeable)
 
 createContext :: MVar AppModel -> SignalKey (IO ()) -> IO (ObjRef ())
@@ -37,14 +37,16 @@ createContext modelVar changeKey = do
         setKeyPair kp = modifyMVar_ modelVar $ \m -> return m { keyPair = Just kp }
 
         setCurrentScreen :: AppScreen -> IO ()
-        setCurrentScreen screen = modifyMVar_ modelVar $ \m -> return m { currentScreen = screen }
+        setCurrentScreen screen = do
+            modifyMVar_ modelVar $ \m -> return m { currentScreen = screen }
+            --fireSignal changeKey obj -- @todo fix me
 
     welcomeObj <- createWelcomeCtx (welcomeModel appModel) changeKey getKeyPair setKeyPair setCurrentScreen
-    accountObj <- createAccountCtx (accountModel appModel) changeKey setKeyPair setCurrentScreen
+    keyMgmtObj <- createKeyMgmtCtx (keyMgmtModel appModel) changeKey setKeyPair setCurrentScreen
 
     rootClass <- newClass [
         defPropertyConst' "ctxWelcome" (\_ -> return welcomeObj),
-        defPropertyConst' "ctxAccounts" (\_ -> return accountObj),
+        defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
 
         defPropertySigRW' "currentScreen" changeKey
             (\_ -> fmap (pack . show . currentScreen) (readMVar modelVar))
@@ -56,7 +58,8 @@ createContext modelVar changeKey = do
                     Nothing -> return ())
         ]
 
-    newObject rootClass ()
+    rootObj <- newObject rootClass ()
+    return rootObj
 
 
 main :: IO ()
@@ -64,27 +67,14 @@ main = do
     accounts <- listAccounts
 
     welcomeM <- newMVar $ WelcomeModel "" ""
-    accountM <- newMVar $ AccountModel { accountMap = accounts }
+    keyMgmtM <- newMVar $ KeyMgmtModel { accountMap = accounts }
 
-    let appModel = case Map.size accounts of
-            0 -> AppModel
-                { keyPair = Nothing
-                , currentScreen = Welcome
-                , accountModel = accountM
-                , welcomeModel = welcomeM
-                }
-            1 -> AppModel
-                { keyPair = Just $ secKeyToKeyPair $ nsec $ snd $ head $ Map.toList accounts
-                , currentScreen = Home
-                , accountModel = accountM
-                , welcomeModel = welcomeM
-                }
-            _ -> AppModel
-                { keyPair = Nothing
-                , currentScreen = Types.Account
-                , accountModel = accountM
-                , welcomeModel = welcomeM
-                }
+    let appModel = AppModel
+            { keyPair = Nothing
+            , currentScreen = Types.KeyMgmt
+            , keyMgmtModel = keyMgmtM
+            , welcomeModel = welcomeM
+            }
 
     modelVar <- newMVar appModel
     changeKey <- newSignalKey :: IO (SignalKey (IO ()))
