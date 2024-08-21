@@ -9,7 +9,6 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        Layout.margins: 20
         spacing: 20
 
         Rectangle {
@@ -20,7 +19,7 @@ Rectangle {
             color: "#f0f0f0"
             border.color: "#e0e0e0"
             border.width: 2
-            radius: 10
+            radius: 5
 
             ColumnLayout {
                 anchors.fill: parent
@@ -48,7 +47,6 @@ Rectangle {
             Layout.leftMargin: 10
         }
 
-        // Accounts list
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -73,13 +71,11 @@ Rectangle {
                     height: 80
                     color: mouseHover ? "lightsteelblue" : "#f0f0f0"
                     border.color: "gray"
-                    radius: 10
-                    Layout.alignment: Qt.AlignHCenter
-                    width: parent.width
+                    radius: 5
+                    width: parent ? parent.width : 200
 
                     RowLayout {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
+                        anchors.fill: parent
                         spacing: 5
 
                         Image {
@@ -90,41 +86,76 @@ Rectangle {
                             Layout.preferredHeight: 60
                             smooth: true
                             fillMode: Image.PreserveAspectCrop
+                            Layout.leftMargin: 10
+
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onEntered: parent.parent.parent.mouseHover = true
+                                onExited: parent.parent.parent.mouseHover = false
+
+                                onClicked: {
+                                    ctxAccounts.selectAccount(modelData.npub)
+                                }
+                            }
                         }
 
                         ColumnLayout {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            spacing: 20
+                            Layout.leftMargin: 10
 
                             Text {
                                 font: Constants.largeFont
                                 text: modelData.displayName
                                 elide: Text.ElideRight
                                 wrapMode: Text.NoWrap
-                                Layout.fillWidth: true
                                 clip: true
-                                topPadding: modelData.displayName ? 10 : 0
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.topMargin: 10
+                                Layout.fillWidth: true
                             }
 
                             Text {
                                 text: modelData.npub
                                 elide: Text.ElideRight
                                 wrapMode: Text.NoWrap
-                                Layout.fillWidth: true
                                 clip: true
+                                Layout.alignment: Qt.AlignBottom
+                                Layout.fillWidth: true
+                            }
+
+                            MouseArea {
+                                x: 0
+                                y: 0
+                                width: parent.width
+                                height: parent.height
+                                hoverEnabled: true
+                                onEntered: parent.parent.parent.mouseHover = true
+                                onExited: parent.parent.parent.mouseHover = false
+
+                                onClicked: {
+                                    ctxAccounts.selectAccount(modelData.npub)
+                                }
+                            }
+                        }
+
+                        RoundButton {
+                            width: 10
+                            height: 10
+
+                            icon.source: "qrc:/icons/delete.svg"
+                            icon.width: 12
+                            icon.height: 12
+
+                            Layout.rightMargin: 10
+
+                            onClicked: {
+                                confirmRemoveAccount.accountToRemove = modelData.npub
                             }
                         }
                     }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onEntered: parent.mouseHover = true
-                        onExited: parent.mouseHover = false
-                    }
                 }
-
             }
         }
 
@@ -133,11 +164,30 @@ Rectangle {
             color: "transparent"
         }
 
-        // Instruction text after the accounts list
         Text {
             text: qsTr("Or click here to import another account, or click here to create another account.")
             font: Constants.font
             Layout.alignment: Qt.AlignHCenter
+            Layout.bottomMargin: 10
+        }
+    }
+
+    Dialog {
+        property string accountToRemove: ""
+
+        id: confirmRemoveAccount
+        title: "Are you sure you want to remove this account?"
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        anchors.centerIn: parent
+
+        visible: accountToRemove !== ""
+
+        onAccepted: {
+            ctxAccounts.removeAccount(accountToRemove)
+        }
+
+        onRejected: {
+            accountToRemove = ""
         }
     }
 }

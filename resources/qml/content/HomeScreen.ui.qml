@@ -25,7 +25,7 @@ Rectangle {
                 border.width: 2
                 anchors.margins: 10
 
-                radius: 10 // Rounded corners
+                radius: 5
 
                 Column {
                     width: parent.width

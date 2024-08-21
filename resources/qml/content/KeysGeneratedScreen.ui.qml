@@ -11,7 +11,7 @@ Rectangle {
     color: "#FFFFFF"
     border.color: "#6200EA" // Material Design primary color
     border.width: 4
-    radius: 12
+    radius: 10
     Material.elevation: 8 // Adds shadow to create depth
 
     ColumnLayout {
@@ -53,7 +53,7 @@ Rectangle {
             padding: 10 // Add padding for margin effect
             background: Rectangle {
                 color: "#E8EAF6" // Light background color
-                radius: 8
+                radius: 5
             }
         }
 
@@ -75,7 +75,7 @@ Rectangle {
             padding: 10 // Add padding for margin effect
             background: Rectangle {
                 color: "#E8EAF6" // Light background color
-                radius: 8
+                radius: 5
             }
         }
 
@@ -97,7 +97,7 @@ Rectangle {
             padding: 10 // Add padding for margin effect
             background: Rectangle {
                 color: "#E8EAF6" // Light background color
-                radius: 8
+                radius: 5
             }
         }
 
