@@ -95,7 +95,7 @@ Rectangle {
                                 onExited: parent.parent.parent.mouseHover = false
 
                                 onClicked: {
-                                    ctxKeyMgmt.selectAccount(modelData.npub)
+                                    login(modelData.npub)
                                 }
                             }
                         }
@@ -135,7 +135,7 @@ Rectangle {
                                 onExited: parent.parent.parent.mouseHover = false
 
                                 onClicked: {
-                                    ctxKeyMgmt.selectAccount(modelData.npub)
+                                    login(modelData.npub)
                                 }
                             }
                         }
@@ -191,7 +191,7 @@ Rectangle {
                 Layout.rightMargin: 30
 
                 onClicked: function () {
-                    ctxWelcome.generateSeedphrase()
+                    ctxKeyMgmt.generateSeedphrase()
                     keysGeneratedDialog.visible = true
                 }
             }
@@ -250,7 +250,7 @@ Rectangle {
                         id: radionsec
                         checked: true
                         Layout.alignment: Qt.AlignLeft
-                        onClicked: ctxWelcome.errorMsg = ""
+                        onClicked: ctxKeyMgmt.errorMsg = ""
                     }
 
                     RadioButton {
@@ -258,7 +258,7 @@ Rectangle {
                         id: radioseedphrase
                         checked: false
                         Layout.alignment: Qt.AlignRight
-                        onClicked: ctxWelcome.errorMsg = ""
+                        onClicked: ctxKeyMgmt.errorMsg = ""
                     }
                 }
 
@@ -288,7 +288,7 @@ Rectangle {
 
                 Text {
                     id: errorMessage
-                    text: ctxWelcome.errorMsg
+                    text: ctxKeyMgmt.errorMsg
                     color: "red"
                     visible: errorMessage != ""
                     Layout.alignment: Qt.AlignLeft
@@ -312,10 +312,17 @@ Rectangle {
                         target: importbutton
                         onClicked: function () {
                             if (radionsec.checked) {
-                                ctxWelcome.importSecretKey(secretkey.text)
+                                var res = ctxKeyMgmt.importSecretKey(secretkey.text);
+                                if (res !== null) {
+                                    login(res)
+                                    importAccountDialog.visible = false
+                                }
                             } else if (radioseedphrase.checked) {
-                                ctxWelcome.importSeedphrase(seedphrase.text,
-                                                    password.text)
+                                var res = ctxKeyMgmt.importSeedphrase(seedphrase.text, password.text)
+                                if (res !== null) {
+                                    login(res)
+                                    importAccountDialog.visible = false
+                                }
                             }
                         }
                     }
@@ -386,7 +393,7 @@ Rectangle {
 
                     TextArea {
                         id: seedPhraseText
-                        text: ctxWelcome.seedphrase
+                        text: ctxKeyMgmt.seedphrase
                         Layout.fillWidth: true
                         font: Constants.font
                         readOnly: true
@@ -427,7 +434,7 @@ Rectangle {
 
                     TextArea {
                         id: privateKeyText
-                        text: ctxWelcome.nsec
+                        text: ctxKeyMgmt.nsec
                         Layout.fillWidth: true
                         readOnly: true
                         wrapMode: Text.Wrap
@@ -467,7 +474,7 @@ Rectangle {
                 
                     TextArea {
                         id: publicKeyText
-                        text: ctxWelcome.npub
+                        text: ctxKeyMgmt.npub
                         Layout.fillWidth: true
                         readOnly: true
                         wrapMode: Text.Wrap

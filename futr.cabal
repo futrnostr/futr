@@ -34,7 +34,6 @@ executable futr
         Nostr.Profile
         Nostr.Relay
         Presentation.KeyMgmt
-        Presentation.Welcome
         Types
 
     default-language: Haskell2010

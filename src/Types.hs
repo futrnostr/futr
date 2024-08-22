@@ -5,8 +5,7 @@
 module Types where
 
 data AppScreen
-    = Welcome
-    | KeyMgmt
+    = KeyMgmt
     | Relay
     | Home
     deriving (Eq, Read, Show)

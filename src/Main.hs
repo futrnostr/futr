@@ -14,38 +14,25 @@ import Text.Read (readMaybe)
 
 import Nostr.Keys (KeyPair, secKeyToKeyPair)
 import Presentation.KeyMgmt
-import Presentation.Welcome
 import Types
 
 data AppModel = AppModel
     { keyPair :: Maybe KeyPair
     , currentScreen :: AppScreen
-    , welcomeModel :: MVar WelcomeModel
     , keyMgmtModel :: MVar KeyMgmtModel
     } deriving (Typeable)
 
 createContext :: MVar AppModel -> SignalKey (IO ()) -> IO (ObjRef ())
 createContext modelVar changeKey = do
-    appModel <- readMVar modelVar
-
     let getKeyPair :: IO (Maybe KeyPair)
         getKeyPair = do
             appModel' <- readMVar modelVar
             return (keyPair appModel')
 
-        setKeyPair :: KeyPair -> IO ()
-        setKeyPair kp = modifyMVar_ modelVar $ \m -> return m { keyPair = Just kp }
-
-        setCurrentScreen :: AppScreen -> IO ()
-        setCurrentScreen screen = do
-            modifyMVar_ modelVar $ \m -> return m { currentScreen = screen }
-            --fireSignal changeKey obj -- @todo fix me
-
-    welcomeObj <- createWelcomeCtx (welcomeModel appModel) changeKey getKeyPair setKeyPair setCurrentScreen
-    keyMgmtObj <- createKeyMgmtCtx (keyMgmtModel appModel) changeKey setKeyPair setCurrentScreen
+    appModel <- readMVar modelVar
+    keyMgmtObj <- createKeyMgmtCtx (keyMgmtModel appModel) changeKey getKeyPair
 
     rootClass <- newClass [
-        defPropertyConst' "ctxWelcome" (\_ -> return welcomeObj),
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
 
         defPropertySigRW' "currentScreen" changeKey
@@ -55,7 +42,17 @@ createContext modelVar changeKey = do
                     Just s -> do
                         modifyMVar_ modelVar $ \model -> return model { currentScreen = s }
                         fireSignal changeKey obj
-                    Nothing -> return ())
+                    Nothing -> return ()),
+
+        defMethod' "login" $ \this input -> do
+            appModel <- readMVar modelVar
+            keyMgmtModel' <- readMVar $ keyMgmtModel appModel
+            case Map.lookup (AccountId input) (accountMap keyMgmtModel') of
+                Just a -> do
+                    modifyMVar_ modelVar $ \m -> return m { keyPair = Just $ secKeyToKeyPair $ nsec a, currentScreen = Home }
+                    fireSignal changeKey this
+                Nothing ->
+                    return ()
         ]
 
     rootObj <- newObject rootClass ()
@@ -65,15 +62,12 @@ createContext modelVar changeKey = do
 main :: IO ()
 main = do
     accounts <- listAccounts
-
-    welcomeM <- newMVar $ WelcomeModel "" ""
-    keyMgmtM <- newMVar $ KeyMgmtModel { accountMap = accounts }
+    keyMgmtM <- newMVar $ KeyMgmtModel accounts "" ""
 
     let appModel = AppModel
             { keyPair = Nothing
             , currentScreen = Types.KeyMgmt
             , keyMgmtModel = keyMgmtM
-            , welcomeModel = welcomeM
             }
 
     modelVar <- newMVar appModel

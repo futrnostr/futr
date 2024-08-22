@@ -55,12 +55,6 @@ ApplicationWindow {
                 visible: currentScreen == "KeyMgmt"
             }
 
-            WelcomeScreen {
-                anchors.margins: 10
-                anchors.fill: parent
-                visible: currentScreen == "Welcome"
-            }
-
             HomeScreen {
                 anchors.margins: 10
                 anchors.fill: parent

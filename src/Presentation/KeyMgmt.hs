@@ -14,10 +14,13 @@ import Data.Text (Text, isPrefixOf, pack, strip, unpack)
 import Data.Typeable (Typeable)
 import qualified Data.Text.IO as TIO
 import Graphics.QML
-import System.Directory (XdgDirectory(XdgData), getXdgDirectory, listDirectory, doesDirectoryExist, doesFileExist, removeDirectoryRecursive)
+import System.Directory (XdgDirectory(XdgData), createDirectoryIfMissing,
+                         getXdgDirectory, listDirectory, doesDirectoryExist,
+                         doesFileExist, removeDirectoryRecursive)
 import System.FilePath ((</>), takeFileName)
+import Text.Read (readMaybe)
 
-import Nostr.Keys (KeyPair, PubKeyXO, SecKey, bech32ToPubKeyXO, bech32ToSecKey, pubKeyXOToBech32, secKeyToBech32, secKeyToKeyPair)
+import Nostr.Keys
 import Nostr.Profile
 import Nostr.Relay (RelayInfo, RelayURI, defaultRelays)
 import Types
@@ -32,7 +35,29 @@ data Account = Account
 
 newtype AccountId = AccountId {accountId :: Text} deriving (Eq, Ord, Show, Typeable)
 
-data KeyMgmtModel = KeyMgmtModel { accountMap :: Map AccountId Account }
+data KeyMgmtModel = KeyMgmtModel
+    { accountMap :: Map AccountId Account
+    , seedphrase :: Text
+    , errorMsg :: Text
+    }
+
+importSecretKey :: Text -> IO (Maybe KeyPair)
+importSecretKey input = do
+    let skMaybe = if "nsec" `isPrefixOf` input
+                  then bech32ToSecKey input
+                  else readMaybe (unpack input) :: Maybe SecKey
+    case skMaybe of
+        Just sk -> do
+            storageDir <- getXdgDirectory XdgData $ "futrnostr/" ++ (unpack $ pubKeyXOToBech32 pk)
+            _ <- createDirectoryIfMissing True storageDir
+            _ <- TIO.writeFile (storageDir ++ "/nsec") content
+            return $ Just kp
+            where
+                pk = derivePublicKeyXO sk
+                content = secKeyToBech32 sk
+                kp = secKeyToKeyPair sk
+        Nothing ->
+            return Nothing
 
 listAccounts :: IO (Map AccountId Account)
 listAccounts = do
@@ -98,10 +123,14 @@ readJSONFile path = do
 createKeyMgmtCtx
     :: MVar KeyMgmtModel 
     -> SignalKey (IO ())
-    -> (KeyPair -> IO ())
-    -> (AppScreen -> IO ())
+    -> IO (Maybe KeyPair)
     -> IO (ObjRef ())
-createKeyMgmtCtx modelVar changeKey setKeyPair go = do
+createKeyMgmtCtx modelVar changeKey getKeyPair = do
+    let handleError :: ObjRef() -> String -> IO ()
+        handleError obj err = do
+            modifyMVar_ modelVar $ \m -> return m { errorMsg = pack err }
+            fireSignal changeKey obj
+
     let prop n f = defPropertySigRO' n changeKey (\obj -> do
             model <- readMVar modelVar
             return $ maybe "" f $ Map.lookup (fromObjRef obj) (accountMap model))
@@ -127,19 +156,92 @@ createKeyMgmtCtx modelVar changeKey setKeyPair go = do
             removeAccount input
             fireSignal changeKey this,
 
-        defMethod' "selectAccount" $ \this input -> do
-            model <- readMVar modelVar
-            putStrLn $ show $ unpack input
+        defPropertySigRO' "seedphrase" changeKey $ \_ -> fmap seedphrase (readMVar modelVar),
 
-            case Map.lookup (AccountId input) (accountMap model) of
-                    Just a -> do
-                        setKeyPair $ secKeyToKeyPair $ nsec a
-                        go Home
-                        putStrLn "go home"
-                        fireSignal changeKey this
-                    Nothing ->
-                        return ()
-                
+        defPropertySigRW' "errorMsg" changeKey
+            (\_ -> fmap errorMsg (readMVar modelVar))
+            (\obj newErrorMsg -> handleError obj $ unpack newErrorMsg),
+
+        defPropertySigRO' "nsec" changeKey $ \_ -> do
+            mkp <- getKeyPair
+            case mkp of
+                Just kp -> return $ secKeyToBech32 (keyPairToSecKey kp)
+                Nothing -> return $ pack "",
+
+        defPropertySigRO' "npub" changeKey $ \_ -> do
+            mkp <- getKeyPair
+            case mkp of
+                Just kp -> return $ pubKeyXOToBech32 (keyPairToPubKeyXO kp)
+                Nothing -> return $ pack "",
+
+        defMethod' "importSecretKey" $ \this (input :: Text) -> do
+            mkp <- importSecretKey input
+            case mkp of
+                Just kp -> do
+                    model <- readMVar modelVar
+                    let newMap = Map.insert (AccountId input) (Account 
+                            { nsec = keyPairToSecKey kp
+                            , npub = keyPairToPubKeyXO kp
+                            , relays = defaultRelays
+                            , displayName = ""
+                            , picture = ""
+                            }) (accountMap model)
+                    modifyMVar_ modelVar $ \m -> return m { seedphrase = "", errorMsg = "", accountMap = newMap}
+                    fireSignal changeKey this
+                    return $ Just $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+                Nothing -> do
+                    handleError this "Error: Importing secret key failed"
+                    return Nothing,
+
+        defMethod' "importSeedphrase" $ \this input pwd -> do
+            mkp <- mnemonicToKeyPair input pwd
+            case mkp of
+                Right kp -> do
+                    let secKey = keyPairToSecKey kp
+                    importSecretKey (secKeyToBech32 secKey) >>= \mkp' ->
+                        case mkp' of
+                            Just kp -> do
+                                model <- readMVar modelVar
+                                let newMap = Map.insert (AccountId input) (Account 
+                                        { nsec = keyPairToSecKey kp
+                                        , npub = keyPairToPubKeyXO kp
+                                        , relays = defaultRelays
+                                        , displayName = ""
+                                        , picture = ""
+                                        }) (accountMap model)
+                                modifyMVar_ modelVar $ \m -> return m { seedphrase = "", errorMsg = "", accountMap = newMap}
+                                fireSignal changeKey this
+                                return $ Just $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+                            Nothing -> do
+                                handleError this "Unknown error"
+                                return Nothing
+                Left err -> do
+                    handleError this err
+                    return Nothing,
+
+        defMethod' "generateSeedphrase" $ \this -> do
+            createMnemonic >>= either (\err -> handleError this err >> return False) (\m' -> do
+                mnemonicToKeyPair m' "" >>= either (\err -> handleError this err >> return False) (\mkp' -> do
+                    let secKey = keyPairToSecKey mkp'
+                    importSecretKey (secKeyToBech32 secKey) >>= \mkp ->
+                        case mkp of
+                            Just kp -> do
+                                model <- readMVar modelVar
+                                let newMap = Map.insert (AccountId $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp) (Account 
+                                        { nsec = keyPairToSecKey kp
+                                        , npub = keyPairToPubKeyXO kp
+                                        , relays = defaultRelays
+                                        , displayName = ""
+                                        , picture = ""
+                                        }) (accountMap model)
+                                modifyMVar_ modelVar $ \m -> return m { seedphrase = "", errorMsg = "", accountMap = newMap}
+                                return True
+                            Nothing -> do
+                                handleError this "Unknown error generating new keys"
+                                return False
+                    )
+                )
+
         ]
 
     newObject contextClass ()
