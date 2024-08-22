@@ -120,12 +120,28 @@ readJSONFile path = do
         then eitherDecode <$> BL.readFile path >>= return . either (const Nothing) Just
         else return Nothing
 
+addNewAccount :: MVar KeyMgmtModel -> KeyPair -> IO (Maybe Text)
+addNewAccount modelVar kp = do
+    let newNpub = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+    let newAccountId = AccountId newNpub
+    let newAccount = Account
+            { nsec = keyPairToSecKey kp
+            , npub = keyPairToPubKeyXO kp
+            , relays = defaultRelays
+            , displayName = ""
+            , picture =  pack "https://robohash.org/" <> newNpub <> pack ".png"
+            }
+    modifyMVar_ modelVar $ \m ->
+        return m { seedphrase = "", errorMsg = "", accountMap = Map.insert newAccountId newAccount (accountMap m) }
+    return $ Just newNpub
+
 createKeyMgmtCtx
     :: MVar KeyMgmtModel 
     -> SignalKey (IO ())
     -> IO (Maybe KeyPair)
+    -> (KeyPair -> IO ())
     -> IO (ObjRef ())
-createKeyMgmtCtx modelVar changeKey getKeyPair = do
+createKeyMgmtCtx modelVar changeKey getKeyPair setKeyPair = do
     let handleError :: ObjRef() -> String -> IO ()
         handleError obj err = do
             modifyMVar_ modelVar $ \m -> return m { errorMsg = pack err }
@@ -178,17 +194,9 @@ createKeyMgmtCtx modelVar changeKey getKeyPair = do
             mkp <- importSecretKey input
             case mkp of
                 Just kp -> do
-                    model <- readMVar modelVar
-                    let newMap = Map.insert (AccountId input) (Account 
-                            { nsec = keyPairToSecKey kp
-                            , npub = keyPairToPubKeyXO kp
-                            , relays = defaultRelays
-                            , displayName = ""
-                            , picture = ""
-                            }) (accountMap model)
-                    modifyMVar_ modelVar $ \m -> return m { seedphrase = "", errorMsg = "", accountMap = newMap}
+                    newNpub <- addNewAccount modelVar kp
                     fireSignal changeKey this
-                    return $ Just $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+                    return newNpub
                 Nothing -> do
                     handleError this "Error: Importing secret key failed"
                     return Nothing,
@@ -201,17 +209,9 @@ createKeyMgmtCtx modelVar changeKey getKeyPair = do
                     importSecretKey (secKeyToBech32 secKey) >>= \mkp' ->
                         case mkp' of
                             Just kp -> do
-                                model <- readMVar modelVar
-                                let newMap = Map.insert (AccountId input) (Account 
-                                        { nsec = keyPairToSecKey kp
-                                        , npub = keyPairToPubKeyXO kp
-                                        , relays = defaultRelays
-                                        , displayName = ""
-                                        , picture = ""
-                                        }) (accountMap model)
-                                modifyMVar_ modelVar $ \m -> return m { seedphrase = "", errorMsg = "", accountMap = newMap}
+                                newNpub <- addNewAccount modelVar kp
                                 fireSignal changeKey this
-                                return $ Just $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+                                return newNpub
                             Nothing -> do
                                 handleError this "Unknown error"
                                 return Nothing
@@ -220,25 +220,20 @@ createKeyMgmtCtx modelVar changeKey getKeyPair = do
                     return Nothing,
 
         defMethod' "generateSeedphrase" $ \this -> do
-            createMnemonic >>= either (\err -> handleError this err >> return False) (\m' -> do
-                mnemonicToKeyPair m' "" >>= either (\err -> handleError this err >> return False) (\mkp' -> do
+            createMnemonic >>= either (\err -> handleError this err >> return Nothing) (\m' -> do
+                mnemonicToKeyPair m' "" >>= either (\err -> handleError this err >> return Nothing) (\mkp' -> do
                     let secKey = keyPairToSecKey mkp'
                     importSecretKey (secKeyToBech32 secKey) >>= \mkp ->
                         case mkp of
                             Just kp -> do
-                                model <- readMVar modelVar
-                                let newMap = Map.insert (AccountId $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp) (Account 
-                                        { nsec = keyPairToSecKey kp
-                                        , npub = keyPairToPubKeyXO kp
-                                        , relays = defaultRelays
-                                        , displayName = ""
-                                        , picture = ""
-                                        }) (accountMap model)
-                                modifyMVar_ modelVar $ \m -> return m { seedphrase = "", errorMsg = "", accountMap = newMap}
-                                return True
+                                newNpub <- addNewAccount modelVar kp
+                                setKeyPair kp
+                                modifyMVar_ modelVar $ \m -> return m { seedphrase = m' }
+                                fireSignal changeKey this
+                                return newNpub
                             Nothing -> do
                                 handleError this "Unknown error generating new keys"
-                                return False
+                                return Nothing
                     )
                 )
 

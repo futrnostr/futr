@@ -29,8 +29,11 @@ createContext modelVar changeKey = do
             appModel' <- readMVar modelVar
             return (keyPair appModel')
 
+        setKeyPair :: KeyPair -> IO ()
+        setKeyPair kp = modifyMVar_ modelVar $ \m -> return m { keyPair = Just kp }
+
     appModel <- readMVar modelVar
-    keyMgmtObj <- createKeyMgmtCtx (keyMgmtModel appModel) changeKey getKeyPair
+    keyMgmtObj <- createKeyMgmtCtx (keyMgmtModel appModel) changeKey getKeyPair setKeyPair
 
     rootClass <- newClass [
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),

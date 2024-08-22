@@ -272,7 +272,7 @@ Rectangle {
 
                 TextArea {
                     id: seedphrase
-                    placeholderText: qsTr("Enter seedphrase")
+                    placeholderText: qsTr("Enter seedphrase (no commas)")
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: parent.width - 20
                     visible: radioseedphrase.checked
@@ -314,13 +314,13 @@ Rectangle {
                             if (radionsec.checked) {
                                 var res = ctxKeyMgmt.importSecretKey(secretkey.text);
                                 if (res !== null) {
-                                    login(res)
+                                    importSuccessDialog.visible = true
                                     importAccountDialog.visible = false
                                 }
                             } else if (radioseedphrase.checked) {
                                 var res = ctxKeyMgmt.importSeedphrase(seedphrase.text, password.text)
                                 if (res !== null) {
-                                    login(res)
+                                    importSuccessDialog.visible = true
                                     importAccountDialog.visible = false
                                 }
                             }
@@ -398,11 +398,8 @@ Rectangle {
                         font: Constants.font
                         readOnly: true
                         wrapMode: Text.Wrap
-                        color: "#000000"
-                        background: Rectangle {
-                            color: "#E8EAF6"
-                            radius: 5
-                        }
+                        selectByKeyboard: true
+                        selectByMouse: true
                     }
 
                     Button {
@@ -438,12 +435,8 @@ Rectangle {
                         Layout.fillWidth: true
                         readOnly: true
                         wrapMode: Text.Wrap
-                        color: "#000000"
-                        font: Constants.font
-                        background: Rectangle {
-                            color: "#E8EAF6"
-                            radius: 5
-                        }
+                        selectByKeyboard: true
+                        selectByMouse: true
                     }
 
                     Button {
@@ -478,12 +471,8 @@ Rectangle {
                         Layout.fillWidth: true
                         readOnly: true
                         wrapMode: Text.Wrap
-                        color: "#000000"
-                        font: Constants.font
-                        background: Rectangle {
-                            color: "#E8EAF6"
-                            radius: 5
-                        }
+                        selectByKeyboard: true
+                        selectByMouse: true
                     }
 
                     Button {
@@ -521,7 +510,6 @@ Rectangle {
 
         onAccepted: {
             keysGeneratedDialog.visible = false
-            currentScreen = "Home"
         }
     }
 
@@ -543,5 +531,13 @@ Rectangle {
         onRejected: {
             accountToRemove = ""
         }
+    }
+
+    Dialog {
+        id: importSuccessDialog
+        title: "Nostr account succesfully imported"
+        standardButtons: Dialog.Ok
+        modal: true
+        anchors.centerIn: parent
     }
 }
