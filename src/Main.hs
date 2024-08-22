@@ -48,8 +48,8 @@ createContext modelVar changeKey = do
                     Nothing -> return ()),
 
         defMethod' "login" $ \this input -> do
-            appModel <- readMVar modelVar
-            keyMgmtModel' <- readMVar $ keyMgmtModel appModel
+            appModel' <- readMVar modelVar
+            keyMgmtModel' <- readMVar $ keyMgmtModel appModel'
             case Map.lookup (AccountId input) (accountMap keyMgmtModel') of
                 Just a -> do
                     modifyMVar_ modelVar $ \m -> return m { keyPair = Just $ secKeyToKeyPair $ nsec a, currentScreen = Home }

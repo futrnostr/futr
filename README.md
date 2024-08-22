@@ -16,7 +16,7 @@ See [License File](LICENSE).
 
 #### GHCUp
 
-`sudo apt-get install build-essential`
+`sudo apt-get install build-essential zlib1g-dev`
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh

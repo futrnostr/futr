@@ -23,7 +23,7 @@ import Text.Read (readMaybe)
 import Nostr.Keys
 import Nostr.Profile
 import Nostr.Relay (RelayInfo, RelayURI, defaultRelays)
-import Types
+--import Types
 
 data Account = Account
     { nsec :: SecKey
@@ -102,8 +102,8 @@ loadAccount storageDir npubDir = do
             { nsec = nsecKey
             , npub = pubKeyXO
             , relays = fromMaybe defaultRelays relayList
-            , displayName = maybe "" id (profile >>= \(Profile _ d _ _) -> d)
-            , picture = maybe ("https://robohash.org/" <> pack npubDir <> ".png") id (profile >>= \(Profile _ _ _ p) -> p)
+            , displayName = maybe "" id (profile >>= \(Profile _ d _ _ _) -> d)
+            , picture = maybe ("https://robohash.org/" <> pack npubDir <> ".png") id (profile >>= \(Profile _ _ _ p _) -> p)
             }
 
 readFileMaybe :: FilePath -> IO (Maybe Text)
@@ -208,7 +208,7 @@ createKeyMgmtCtx modelVar changeKey getKeyPair setKeyPair = do
                     let secKey = keyPairToSecKey kp
                     importSecretKey (secKeyToBech32 secKey) >>= \mkp' ->
                         case mkp' of
-                            Just kp -> do
+                            Just _ -> do
                                 newNpub <- addNewAccount modelVar kp
                                 fireSignal changeKey this
                                 return newNpub
