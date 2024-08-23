@@ -57,7 +57,8 @@ module Nostr.Keys (
     , schnorrVerify
     ) where
 
-import "libsecp256k1" Crypto.Secp256k1
+import qualified "libsecp256k1" Crypto.Secp256k1 as S
+import Data.Aeson
 import Haskoin.Crypto
     ( Mnemonic
     , Passphrase
@@ -73,36 +74,86 @@ import Haskoin.Crypto
 import System.Entropy (getEntropy)
 import System.Random (newStdGen, randoms)
 import qualified Codec.Binary.Bech32 as Bech32
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16  as B16
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Text as T
+import Text.Read (readMaybe)
+
+newtype KeyPair = KeyPair { getKeyPair :: S.KeyPair } deriving (Eq)
+newtype SecKey = SecKey { getSecKey :: S.SecKey } deriving (Eq, Read, Show)
+newtype PubKeyXO = PubKeyXO { getPubKeyXO :: S.PubKeyXO } deriving (Eq, Read, Show)
+newtype Signature = Signature { getSignature :: S.Signature } deriving (Eq, Read, Show)
+
+instance FromJSON PubKeyXO where
+  parseJSON = withText "PubKeyXO" $ \t ->
+    case readMaybe (T.unpack t) of
+      Just pk -> return pk
+      Nothing -> fail "Invalid PubKeyXO"
+
+instance ToJSON PubKeyXO where
+  toJSON pk = String . T.pack $ show pk
+
+instance FromJSON Signature where
+  parseJSON = withText "Signature" $ \t ->
+    case readMaybe (T.unpack t) of
+      Just s -> return s
+      Nothing -> fail "Invalid Signature"
+
+instance ToJSON Signature where
+  toJSON s = String . T.pack $ show s
 
 -- | Generate a secret key
 createSecKey :: IO SecKey
 createSecKey = do
     bs <- secKeyGen
-    maybe (error "Invalid secret key") return $ importSecKey bs
+    maybe (error "Unknown error upon sec key generation") (return . SecKey) $ S.importSecKey bs
 
 -- | Generate a key pair
 createKeyPair :: IO KeyPair
-createKeyPair = keyPairCreate <$> createSecKey
+createKeyPair = do
+    bs <- secKeyGen
+    sk <- maybe (error "Unknown error upon key pair generation") return $ S.importSecKey bs
+    return $ KeyPair $ S.keyPairCreate sk
 
 -- | Bech32 encoding for SecKey
 secKeyToBech32 :: SecKey -> T.Text
-secKeyToBech32 secKey = toBech32 "nsec" (exportSecKey secKey)
+secKeyToBech32 secKey = toBech32 "nsec" (S.exportSecKey $ getSecKey secKey)
 
 -- | Bech32 encoding for PubKeyXO
 pubKeyXOToBech32 :: PubKeyXO -> T.Text
-pubKeyXOToBech32 pubKeyXO = toBech32 "npub" (exportPubKeyXO pubKeyXO)
+pubKeyXOToBech32 pubKeyXO = toBech32 "npub" (S.exportPubKeyXO $ getPubKeyXO pubKeyXO)
 
 -- | Bech32 decoding to SecKey
 bech32ToSecKey :: T.Text -> Maybe SecKey
-bech32ToSecKey txt = fromBech32 "nsec" txt >>= importSecKey
+bech32ToSecKey txt = fmap SecKey $ fromBech32 "nsec" txt >>= S.importSecKey
 
 -- | Bech32 decoding to PubKeyXO
 bech32ToPubKeyXO :: T.Text -> Maybe PubKeyXO
-bech32ToPubKeyXO txt = fromBech32 "npub" txt >>= importPubKeyXO
+bech32ToPubKeyXO txt = fmap PubKeyXO $ fromBech32 "npub" txt >>= S.importPubKeyXO
+
+-- | Import byte string and create SecKey
+importSecKey :: ByteString -> Maybe SecKey
+importSecKey = fmap SecKey . S.importSecKey
+
+-- | Export SecKey to byte string
+exportSecKey :: SecKey -> ByteString
+exportSecKey = S.exportSecKey . getSecKey
+
+-- | Import byte string and create PubKeyXO
+importPubKeyXO :: ByteString -> Maybe PubKeyXO
+importPubKeyXO = fmap PubKeyXO . S.importPubKeyXO
+
+-- | Export PubKeyXO to byte string
+exportPubKeyXO :: PubKeyXO -> ByteString
+exportPubKeyXO = S.exportPubKeyXO . getPubKeyXO
+
+schnorrSign :: KeyPair -> ByteString -> Maybe Signature
+schnorrSign (KeyPair kp) msg = fmap Signature $ S.schnorrSign kp msg
+
+schnorrVerify :: PubKeyXO -> ByteString -> Signature -> Bool
+schnorrVerify (PubKeyXO pk) msg (Signature sig) = S.schnorrVerify pk msg sig
 
 -- | Generate a new mnemonic seed
 createMnemonic :: IO (Either String Mnemonic)
@@ -122,28 +173,28 @@ mnemonicToKeyPair m p
                 let hexStr = strip $ show sk
                 return $ do
                     bs <- hexToByteString hexStr
-                    sk' <- maybe (Left "Error, failed to import sec key") Right (importSecKey bs)
-                    return $ keyPairCreate sk'
+                    sk' <- maybe (Left "Error, failed to import sec key") Right (S.importSecKey bs)
+                    return $ KeyPair $ S.keyPairCreate sk'
 
 -- | Get the sec key from a key pair
 keyPairToSecKey :: KeyPair -> SecKey
-keyPairToSecKey = keyPairSecKey
+keyPairToSecKey = SecKey . S.keyPairSecKey . getKeyPair
 
 -- | Get the key pair from a sec key
 secKeyToKeyPair :: SecKey -> KeyPair
-secKeyToKeyPair = keyPairCreate
+secKeyToKeyPair = KeyPair . S.keyPairCreate . getSecKey
 
 -- | Get the pub key XO from a key pair
 keyPairToPubKeyXO :: KeyPair -> PubKeyXO
-keyPairToPubKeyXO kp = p
+keyPairToPubKeyXO kp = PubKeyXO p
     where
-        (p, _) = keyPairPubKeyXO kp
+        (p, _) = S.keyPairPubKeyXO (getKeyPair kp)
 
 -- | Derive pub key XO from a secret key
 derivePublicKeyXO :: SecKey -> PubKeyXO
-derivePublicKeyXO sk = p
+derivePublicKeyXO sk = PubKeyXO p
     where
-        (p, _) = xyToXO $ derivePubKey sk
+        (p, _) = S.xyToXO $ S.derivePubKey (getSecKey sk)
 
 -- | Exports a signature to hex format
 exportSignature :: Signature -> T.Text

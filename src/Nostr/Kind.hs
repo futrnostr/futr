@@ -10,7 +10,7 @@ import Control.Monad (mzero)
 data Kind
   = Metadata        -- NIP-01
   | ShortTextNote   -- NIP-01
-  | Follows         -- NIP-01
+  | FollowList      -- NIP-02
   | EventDeletion   -- NIP-09
   | Repost          -- NIP-18
   | Reaction        -- NIP-25
@@ -24,7 +24,7 @@ instance FromJSON Kind where
   parseJSON = withScientific "kind" $ \k -> case k of
     0  -> return Metadata
     1  -> return ShortTextNote
-    3  -> return Follows
+    3  -> return FollowList
     5  -> return EventDeletion
     6  -> return Repost
     7  -> return Reaction
@@ -37,7 +37,7 @@ instance FromJSON Kind where
 instance ToJSON Kind where
   toJSON Metadata      = Number 0
   toJSON ShortTextNote = Number 1
-  toJSON Follows       = Number 3
+  toJSON FollowList    = Number 3
   toJSON EventDeletion = Number 5
   toJSON Repost        = Number 6
   toJSON Reaction      = Number 7
