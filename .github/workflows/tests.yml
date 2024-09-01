@@ -49,6 +49,8 @@ jobs:
           make && \
           sudo make install && \
           cd ..
+      - name: Set Library Path
+        run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
       - name: Configure
         run: cabal configure --enable-tests
       - name: Cache
