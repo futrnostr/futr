@@ -24,16 +24,16 @@ data AppModel = AppModel
 
 createContext :: MVar AppModel -> SignalKey (IO ()) -> IO (ObjRef ())
 createContext modelVar changeKey = do
-    let getKeyPair :: IO (Maybe KeyPair)
-        getKeyPair = do
+    let getKeyPair' :: IO (Maybe KeyPair)
+        getKeyPair' = do
             appModel' <- readMVar modelVar
             return (keyPair appModel')
 
-        setKeyPair :: KeyPair -> IO ()
-        setKeyPair kp = modifyMVar_ modelVar $ \m -> return m { keyPair = Just kp }
+        setKeyPair' :: KeyPair -> IO ()
+        setKeyPair' kp = modifyMVar_ modelVar $ \m -> return m { keyPair = Just kp }
 
     appModel <- readMVar modelVar
-    keyMgmtObj <- createKeyMgmtCtx (keyMgmtModel appModel) changeKey getKeyPair setKeyPair
+    keyMgmtObj <- createKeyMgmtCtx (keyMgmtModel appModel) changeKey getKeyPair' setKeyPair'
 
     rootClass <- newClass [
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),

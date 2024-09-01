@@ -49,6 +49,8 @@ jobs:
           make && \
           sudo make install && \
           cd ..
+      - name: Set Library Path
+        run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
       - name: Configure
         run: cabal configure --enable-tests
       - name: Cache
@@ -59,3 +61,6 @@ jobs:
           restore-keys: ${{ runner.os }}-ghc-${{ matrix.ghc }}-
       - name: Build
         run: cabal build all
+      - name: Test
+        run: cabal run futr-tests
+

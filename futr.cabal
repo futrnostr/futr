@@ -1,7 +1,7 @@
 cabal-version:      3.12
 name:               futr
 version:            0.1.0.0
-license:            LGPL-3.0-only
+license:            GPL-3.0-only
 license-file:       LICENSE
 copyright:          2024 Sascha-Oliver Prolic
 maintainer:         saschaprolic@googlemail.com
@@ -29,6 +29,7 @@ executable futr
     hs-source-dirs:   src
 
     other-modules:
+        Nostr.Encryption
         Nostr.Event
         Nostr.Keys
         Nostr.Kind
@@ -48,12 +49,15 @@ executable futr
         aeson >=2.2.3.0 && <2.3,
         base >=4.17.2.1 && <4.18,
         base16-bytestring >=1.0.2.0 && <1.1,
+        base64-bytestring >=1.2.1.0 && <1.3,
         basement >=0.0.16 && <0.1,
         bech32 >=1.1.7 && <1.2,
         binary >=0.8.9.1 && <0.9,
         bytestring >=0.11.5.3 && <0.12,
+        byteable >=0.1.1 && < 0.2,
         containers >=0.6.7 && <0.7,
         cryptohash-sha256 >=0.11.102.1 && <0.12,
+        crypton >=1.0 && <1.1,
         data-default >=0.7.1.1 && <0.8,
         directory >=1.3.7.1 && <1.4,
         entropy >=0.4.1.10 && <0.5,
@@ -62,15 +66,54 @@ executable futr
         hsqml >=0.3.6.0 && <0.4,
         lens >=5.3.2 && <5.4,
         libsecp256k1 >=0.2.1 && <0.3,
+        memory >=0.18 && <0.19,
         modern-uri >=0.3.6.1 && <0.4,
         random >=1.2.1.2 && <1.3,
-        secp256k1-haskell >=1.2.0 && <1.3,
+        secp256k1-haskell >=1.4.0 && <1.5,
         stm >=2.5.1.0 && <2.6,
         string-conversions >= 0.4.0.1 && < 0.5,
         text >=2.0.2 && <2.1,
         time >=1.12.2 && <1.13,
         vector >=0.13.1.0 && <0.14,
         wreq >= 0.5.4.3 && < 0.6
+
+test-suite futr-tests
+    type:                 exitcode-stdio-1.0
+    hs-source-dirs:       test, src
+    main-is:              TestMain.hs
+
+    other-modules:
+        Nostr.Encryption
+        Nostr.EncryptionTest
+        Nostr.Keys
+
+    ghc-options:
+        -threaded -Wall -Wcompat -Wincomplete-uni-patterns
+        -Wincomplete-record-updates
+
+    build-depends:
+        aeson >=2.2.3.0 && <2.3,
+        base >=4.17.2.1 && <4.18,
+        base16-bytestring >=1.0.2.0 && <1.1,
+        base64-bytestring,
+        bech32 >=1.1.7 && <1.2,
+        binary >=0.8.9.1 && <0.9,
+        bytestring >=0.11.5.3 && <0.12,
+        crypton >=1.0 && <1.1,
+        directory >=1.3.7.1 && <1.4,
+        entropy >=0.4.1.10 && <0.5,
+        haskoin-core >=1.1.0 && <1.2,
+        libsecp256k1 >=0.2.1 && <0.3,
+        memory >=0.18 && <0.19,
+        secp256k1-haskell >=1.4.0 && <1.5,
+        tasty >=1.3.0.1 && <1.4,
+        tasty-hunit >=0.9 && <0.12,
+        text >=2.0.2 && <2.1,
+        random >=1.2.1.2 && <1.3
+
+    extra-libraries:  secp256k1
+    extra-lib-dirs:   /usr/local/lib
+    default-language:     Haskell2010
 
 source-repository head
   type: git
