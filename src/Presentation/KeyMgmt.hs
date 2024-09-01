@@ -20,7 +20,7 @@ import System.Directory (XdgDirectory(XdgData), createDirectoryIfMissing,
 import System.FilePath ((</>), takeFileName)
 import Text.Read (readMaybe)
 
-import Nostr.Keys
+import Nostr.Keys hiding (getKeyPair)
 import Nostr.Profile
 import Nostr.Relay (RelayInfo, RelayURI, defaultRelays)
 --import Types

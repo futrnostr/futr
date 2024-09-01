@@ -24,10 +24,10 @@
 
 module Nostr.Keys ( 
     -- * Types
-      KeyPair
-    , PubKeyXO
-    , SecKey
-    , Signature
+      KeyPair(..)
+    , PubKeyXO(..)
+    , SecKey(..)
+    , Signature(..)
 
     -- * generation
     , createKeyPair
