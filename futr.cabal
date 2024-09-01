@@ -30,6 +30,7 @@ executable futr
 
     other-modules:
         Nostr.Encryption
+        Nostr.Encryption.Internal
         Nostr.Event
         Nostr.Keys
         Nostr.Kind
@@ -84,6 +85,7 @@ test-suite futr-tests
 
     other-modules:
         Nostr.Encryption
+        Nostr.Encryption.Internal
         Nostr.EncryptionTest
         Nostr.Keys
 

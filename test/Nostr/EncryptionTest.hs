@@ -26,6 +26,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import Nostr.Encryption
+import Nostr.Encryption.Internal
 import Nostr.Keys
 
 -- Define the data structures for different sections of the JSON file
@@ -152,6 +153,7 @@ instance FromJSON InvalidVectors where
 data ValidVectors = ValidVectors
   { validGetConversationKey :: [GetConversationKeyVector]
   , validGetMessageKeys :: MessageKeyVector
+  , calcPaddedLength :: [[Int]]
   , encryptDecrypt :: [EncryptDecryptVector]
   , encryptDecryptLongMsg :: [EncryptDecryptLongMsgVector]
   } deriving (Generic, Show)
@@ -160,6 +162,7 @@ instance FromJSON ValidVectors where
   parseJSON = withObject "ValidVectors" $ \v -> ValidVectors
     <$> v .: "get_conversation_key"
     <*> v .: "get_message_keys"
+    <*> v .: "calc_padded_len"
     <*> v .: "encrypt_decrypt"
     <*> v .: "encrypt_decrypt_long_msg"
 
@@ -223,6 +226,15 @@ testGetMessageKeys tv =
       assertEqual "Chacha key should match" chachaKeyRes (hexToByteString $ chachaKey key)
       assertEqual "Chacha nonce should match" chachaNonceRes (hexToByteString $ chachaNonce key)
       assertEqual "HMAC key should match" hmacKeyRes (hexToByteString $ hmacKey key)
+
+testCalcPaddedLength :: [Int] -> TestTree
+testCalcPaddedLength [len, expected] =
+  testCase "Calc Padded Lengths" $ do
+    case calcPaddedLen len of
+      Left err -> assertFailure $ "Calculation of padding failed: " ++ err
+      Right actual -> assertEqual "Length should match" expected actual
+testCalcPaddedLength _ =
+  testCase "Calc Padded Lengths" $ assertFailure "Invalid input: Expected a list with exactly two integers"
 
 testValidEncryptDecrypt :: EncryptDecryptVector -> TestTree
 testValidEncryptDecrypt tv =
@@ -317,6 +329,7 @@ tests = do
         Right vs -> return $ testGroup "Nostr Encryption Tests"
           [ createTestGroup "Get Conversation Key" (validGetConversationKey $ valid (v2 vs)) testGetConversationKey
           , createTestGroup "Get Message Keys" [validGetMessageKeys $ valid (v2 vs)] testGetMessageKeys
+          , createTestGroup "Calc Padded Length" (calcPaddedLength $ valid (v2 vs)) testCalcPaddedLength
           , createTestGroup "Valid Encrypt / Decrypt" (encryptDecrypt $ valid (v2 vs)) testValidEncryptDecrypt
           , createTestGroup "Valid Encrypt / Decrypt Long Msg" (encryptDecryptLongMsg $ valid (v2 vs)) testValidEncryptDecryptLongMsg
           , createTestGroup "Invalid Message Lengths" (encryptMsgLengths $ invalid (v2 vs)) testInvalidMessageLengths
