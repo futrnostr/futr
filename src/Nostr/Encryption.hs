@@ -41,8 +41,7 @@ encrypt plaintext conversationKey nonce = do
     paddedResult <- padPlaintext plaintext
     ciphertext <- Right (encryptChaCha20 chachaKey chachaNonce paddedResult)
     let mac = calculateHmac hmacKey ciphertext nonce
-    let encoded = B64.encode $ BS.concat [BS.singleton 2, nonce, ciphertext, BA.convert mac]
-    Right (decodeUtf8 encoded)
+    Right $ decodeUtf8 $ B64.encode $ BS.concat [BS.singleton 2, nonce, ciphertext, BA.convert mac]
 
 -- | Decrypts a message
 decrypt :: ByteString -> Text -> Either String Text

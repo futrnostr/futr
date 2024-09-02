@@ -1,18 +1,3 @@
--- | Module: Nostr.Encryption
---
--- This module provides functionalities for encrypting and decrypting messages
--- within the Nostr network. It includes the following features:
---
--- * Encryption and Decryption:
---     - Encrypts and decrypts messages using ChaCha20 encryption and HMAC-SHA256
---
--- * Key Derivation:
---     - Derives a conversation key from a secret key and an extended public key
---     - Utilizes HKDF (HMAC-based Key Derivation Function) for key expansion
---
--- The functions provided in this module ensure secure message encryption and decryption,
--- following the NIP-44 standard for key derivation.
-
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -38,6 +23,12 @@ import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 
 import Nostr.Keys (PubKeyXO(..), exportPubKeyXO)
+
+minPlaintextSize :: Int
+minPlaintextSize = 0x0001
+
+maxPlaintextSize :: Int
+maxPlaintextSize = 0xffff
 
 {-|
   Derives cryptographic keys for message encryption and authentication using a shared conversation key
@@ -68,9 +59,17 @@ getMessageKeys conversationKey nonce = do
       hmacKey = BS.drop 44 expandedKeys
   (chachaKey, chachaNonce, hmacKey)
 
-
-convertToFullPubKey :: PubKeyXO -> Maybe S.PubKeyXY
-convertToFullPubKey pk = S.importPubKeyXY $ BS.cons 0x02 (exportPubKeyXO pk)
+-- | Calculates the padded length based on the given length.
+calcPaddedLen :: Int -> Either String Int
+calcPaddedLen len
+    | len < 1 = Left errMsgSize
+    | len <= 32 = Right 32
+    | otherwise = Right $ chunk * ((len - 1) `div` chunk + 1)
+  where
+    bitShift = ceiling (logBase 2 (fromIntegral (len - 1)) :: Double)
+    nextPower = 1 `shiftL` bitShift
+    chunk = if nextPower <= 256 then 32 else nextPower `div` 8
+    errMsgSize = "invalid plaintext size: must be between 1 and 65535 bytes"
 
 encryptChaCha20 :: ByteString -> ByteString -> ByteString -> ByteString
 encryptChaCha20 key nonce padded =
@@ -95,48 +94,6 @@ calculateHmac key message aad =
       hmacResult = hmac key combined :: HMAC SHA256
   in BA.convert hmacResult
 
-hkdfExpand :: ByteArrayAccess info => PRK SHA256 -> info -> ByteString
-hkdfExpand prk info = expand prk info 76 -- 76 bytes to cover all keys
-
-unpadPlaintext :: ByteString -> Either String Text
-unpadPlaintext padded =
-  if isValidPadding padded
-    then Right $ decodeUtf8 unpadded
-    else Left "invalid padding"
-  where
-    unpaddedLen = fromIntegral $ runGet getWord16be (BSL.fromStrict $ BS.take 2 padded)
-    unpadded = BS.drop 2 $ BS.take (2 + unpaddedLen) padded
-    isValidPadding p = case calcPaddedLen unpaddedLen of
-      Left _ -> False
-      Right pd ->
-        let totalLen = 2 + pd
-        in unpaddedLen >= minPlaintextSize &&
-          unpaddedLen <= maxPlaintextSize &&
-          BS.length unpadded == unpaddedLen &&
-          BS.length p == totalLen
-
-minPlaintextSize :: Int
-minPlaintextSize = 0x0001
-
-maxPlaintextSize :: Int
-maxPlaintextSize = 0xffff
-
--- | Calculates the padded length based on the given length.
-calcPaddedLen :: Int -> Either String Int
-calcPaddedLen len
-    | len < 1 = Left errMsgSize
-    | len <= 32 = Right 32
-    | otherwise = Right $ chunk * ((len - 1) `div` chunk + 1)
-  where
-    bitShift = ceiling (logBase 2 (fromIntegral (len - 1)) :: Double)
-    nextPower = 1 `shiftL` bitShift
-    chunk = if nextPower <= 256 then 32 else nextPower `div` 8
-    errMsgSize = "invalid plaintext size: must be between 1 and 65535 bytes"
-
--- | Converts a length to a 2-byte prefix in big-endian order.
-writeU16BE :: Int -> ByteString
-writeU16BE len = BSL.toStrict $ runPut $ putWord16be (fromIntegral len)
-
 -- | Pads the plaintext to match the required length with padding bytes.
 padPlaintext :: Text -> Either String ByteString
 padPlaintext plaintext =
@@ -149,6 +106,22 @@ padPlaintext plaintext =
        if paddedLen >= unpaddedLen
        then Right $ BS.concat [writeU16BE (fromIntegral unpaddedLen), unpadded, BS.replicate (paddedLen - unpaddedLen) 0]
        else Left "Calculated padded length is less than the unpadded length"
+
+unpadPlaintext :: ByteString -> Either String Text
+unpadPlaintext padded =
+  if isValidPadding padded
+    then Right $ decodeUtf8 unpadded
+    else Left "invalid padding"
+  where
+    unpaddedLen = fromIntegral $ runGet getWord16be (BSL.fromStrict $ BS.take 2 padded)
+    unpadded = BS.drop 2 $ BS.take (2 + unpaddedLen) padded
+    isValidPadding p = case calcPaddedLen unpaddedLen of
+      Left _ -> False
+      Right pd ->
+        let withinBounds = unpaddedLen >= minPlaintextSize && unpaddedLen <= maxPlaintextSize
+            correctLength = BS.length unpadded == unpaddedLen
+            validPaddingLength = BS.length p == 2 + pd
+        in withinBounds && correctLength && validPaddingLength
 
 decodePayload :: Text -> Either String (ByteString, ByteString, ByteString)
 decodePayload payloadText = do
@@ -172,3 +145,13 @@ decodePayload payloadText = do
         ciphertext = BS.take (BS.length rest - 32) rest
 
     Right (nonce, ciphertext, mac)
+
+hkdfExpand :: ByteArrayAccess info => PRK SHA256 -> info -> ByteString
+hkdfExpand prk info = expand prk info 76 -- 76 bytes to cover all keys
+
+convertToFullPubKey :: PubKeyXO -> Maybe S.PubKeyXY
+convertToFullPubKey pk = S.importPubKeyXY $ BS.cons 0x02 (exportPubKeyXO pk)
+
+-- | Converts a length to a 2-byte prefix in big-endian order.
+writeU16BE :: Int -> ByteString
+writeU16BE len = BSL.toStrict $ runPut $ putWord16be (fromIntegral len)

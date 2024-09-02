@@ -1,8 +1,8 @@
 # futr - nostr client
 
-nostr client desktop app written in haskel.
+nostr client desktop app written in Haskell and Qt5.
 
-The name 'futr' was chosen from respect for the honorable Canadians.
+The name 'futr' was chosen out of respect for the honorable Canadians.
 
 ## License
 
