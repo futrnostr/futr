@@ -153,7 +153,7 @@ instance FromJSON InvalidVectors where
 data ValidVectors = ValidVectors
   { validGetConversationKey :: [GetConversationKeyVector]
   , validGetMessageKeys :: MessageKeyVector
-  , calcPaddedLength :: [[Int]]
+  , calcPaddedLength :: [(Int, Int)]
   , encryptDecrypt :: [EncryptDecryptVector]
   , encryptDecryptLongMsg :: [EncryptDecryptLongMsgVector]
   } deriving (Generic, Show)
@@ -227,14 +227,11 @@ testGetMessageKeys tv =
       assertEqual "Chacha nonce should match" chachaNonceRes (hexToByteString $ chachaNonce key)
       assertEqual "HMAC key should match" hmacKeyRes (hexToByteString $ hmacKey key)
 
-testCalcPaddedLength :: [Int] -> TestTree
-testCalcPaddedLength [len, expected] =
-  testCase "Calc Padded Lengths" $ do
-    case calcPaddedLen len of
+testCalcPaddedLength :: (Int, Int) -> TestTree
+testCalcPaddedLength (len, expected) =
+  testCase "Calc Padded Lengths" $ case calcPaddedLen len of
       Left err -> assertFailure $ "Calculation of padding failed: " ++ err
       Right actual -> assertEqual "Length should match" expected actual
-testCalcPaddedLength _ =
-  testCase "Calc Padded Lengths" $ assertFailure "Invalid input: Expected a list with exactly two integers"
 
 testValidEncryptDecrypt :: EncryptDecryptVector -> TestTree
 testValidEncryptDecrypt tv =
@@ -256,10 +253,8 @@ testValidEncryptDecrypt tv =
         assertEqual "Ciphertext should match" payload' ciphertext
 
         case decrypt (fromJust key) ciphertext of
-            Right decryptedText ->
-                assertEqual "Plaintext should match" plaintext' decryptedText
-            Left err ->
-                assertFailure $ "Decryption failed with error: " ++ err
+            Right decryptedText -> assertEqual "Plaintext should match" plaintext' decryptedText
+            Left err -> assertFailure $ "Decryption failed with error: " ++ err
 
 testValidEncryptDecryptLongMsg:: EncryptDecryptLongMsgVector -> TestTree
 testValidEncryptDecryptLongMsg tv = do
