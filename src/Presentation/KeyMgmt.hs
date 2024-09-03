@@ -93,7 +93,7 @@ loadAccount storageDir npubDir = do
     nsecContent <- readFileMaybe (dirPath </> "nsec")
     relayList <- readJSONFile (dirPath </> "relays.json")
     profile <- readJSONFile (dirPath </> "profile.json")
-    
+
     return $ do
         nsecKey <- bech32ToSecKey . strip =<< nsecContent
         pubKeyXO <- bech32ToPubKeyXO (pack npubDir)
@@ -136,7 +136,7 @@ addNewAccount modelVar kp = do
     return $ Just newNpub
 
 createKeyMgmtCtx
-    :: MVar KeyMgmtModel 
+    :: MVar KeyMgmtModel
     -> SignalKey (IO ())
     -> IO (Maybe KeyPair)
     -> (KeyPair -> IO ())
@@ -156,7 +156,7 @@ createKeyMgmtCtx modelVar changeKey getKeyPair setKeyPair = do
         prop "npub" (pubKeyXOToBech32 . npub),
         prop "displayName" displayName,
         prop "picture" picture
-        ]            
+        ]
 
     accountPool <- newFactoryPool (newObject accountClass)
 

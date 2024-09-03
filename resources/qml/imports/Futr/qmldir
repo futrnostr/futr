@@ -1,4 +1,3 @@
 Module Futr
 singleton Constants 1.0 Constants.qml
-EventListSimulator 1.0 EventListSimulator.qml
-EventListModel 1.0 EventListModel.qml
+singleton ExternalIdentityIcons 1.0 ExternalIdentityIcons.qml

@@ -61,5 +61,5 @@ ApplicationWindow {
                 visible: currentScreen == "Home"
             }
         }
-    }   
+    }
 }

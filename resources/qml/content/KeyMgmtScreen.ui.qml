@@ -362,7 +362,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.margins: 10
                     spacing: 20
-                    
+
                     Image {
                         source: "qrc:/icons/warning.svg"
                         width: 25
@@ -409,7 +409,7 @@ Rectangle {
 
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Copy to clipboard")
-                        
+
                         onClicked: {
                             clipboard.copyText(seedPhraseText.text)
                         }
@@ -446,7 +446,7 @@ Rectangle {
 
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Copy to clipboard")
-                        
+
                         onClicked: {
                             clipboard.copyText(privateKeyText.text)
                         }
@@ -464,7 +464,7 @@ Rectangle {
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 10
-                
+
                     TextArea {
                         id: publicKeyText
                         text: ctxKeyMgmt.npub
@@ -484,7 +484,7 @@ Rectangle {
                         ToolTip.delay: 500
                         ToolTip.timeout: 5000
                         ToolTip.text: qsTr("Copy to clipboard")
-                        
+
                         onClicked: {
                             clipboard.copyText(publicKeyText.text)
                         }

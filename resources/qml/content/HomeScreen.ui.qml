@@ -1,60 +1,63 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
+
 import Futr 1.0
+import Profile 1.0
 
 Rectangle {
     id: homeScreen
     width: parent.width
     height: parent.height
-    
+
     Column {
         width: parent.width
 
         Row {
-            height: 100
-            spacing: 10
-            anchors.horizontalCenter: parent.horizontalCenter
-            topPadding: 10
+            height: 80
+            anchors.right: parent.right
 
-            Rectangle {
-                width: parent.parent.width - 20
-                height: 80
-                color: "#f0f0f0" // Light grey background
-                border.color: "#e0e0e0" // Slightly darker grey for border
-                border.width: 2
-                anchors.margins: 10
+            RoundButton {
+                width: 75
+                height: 75
 
-                radius: 5
+                icon.source: "https://avatars.githubusercontent.com/u/394428?v=4" // Use the image as the icon
+                icon.width: 65
+                icon.height: 65
+                icon.color: "transparent"
+                icon.cache: true
 
-                Column {
-                    width: parent.width
-                    height: parent.height
-                    anchors.fill: parent
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.verticalCenter: parent.verticalCenter
-                    topPadding: 10
-                    spacing: 10
+                Material.elevation: 10
 
-                    Text {
-                        text: qsTr("Welcome to Futr")
-                        font: Constants.largeFont
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: parent.width
-                        horizontalAlignment: Text.AlignHCenter
-                    }
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.timeout: 5000
+                ToolTip.text: qsTr("My Profile")
 
-                    Text {
-                        text: qsTr("Your gateway to the future - global, decentralized, censorship-resistant")
-                        font: Constants.font
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: parent.width
-                        horizontalAlignment: Text.AlignHCenter
-                    }
+                onClicked: {
+                    myProfile.visible = true
                 }
             }
         }
 
-        
+
+        MyProfile {
+            id: myProfile
+            visible: false
+
+            anchors.right: parent.right
+            anchors.rightMargin: 10
+            anchors.topMargin: -100
+        }
+
+        EditMyProfile {
+            id: editMyProfile
+            visible: false
+
+            anchors.right: parent.right
+            anchors.rightMargin: 10
+            anchors.topMargin: 10
+        }
     }
 }

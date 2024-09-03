@@ -22,7 +22,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
 
-module Nostr.Keys ( 
+module Nostr.Keys (
     -- * Types
       KeyPair(..)
     , PubKeyXO(..)
@@ -33,7 +33,7 @@ module Nostr.Keys (
     , createKeyPair
     , createSecKey
     , createMnemonic
-        
+
     -- * Parsing and Serialization
     , importSecKey
     , exportSecKey
@@ -44,7 +44,7 @@ module Nostr.Keys (
     , pubKeyXOToBech32
     , bech32ToPubKeyXO
     , bech32ToSecKey
-    
+
     -- * Conversions
     , derivePublicKeyXO
     , keyPairToSecKey

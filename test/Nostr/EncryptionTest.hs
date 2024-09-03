@@ -217,7 +217,7 @@ testGetConversationKey tv =
 
 testGetMessageKeys :: MessageKeyVector -> TestTree
 testGetMessageKeys tv =
-  testCase "Get Message Keys" $ do  
+  testCase "Get Message Keys" $ do
     let conversationKey' = hexToByteString (messageConversationKey tv)
         keyList = keys tv
 

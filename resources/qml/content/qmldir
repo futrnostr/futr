@@ -1,4 +1,5 @@
 module content
 App 1.0 App.qml
+CloseButton 1.0 CloseButton.ui.qml
 HomeScreen 1.0 HomeScreen.ui.qml
 KeyMgmtScreen 1.0 KeyMgmtScreen.ui.qml

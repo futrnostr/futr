@@ -88,7 +88,7 @@ main = do
     setEnv "QT_LOGGING_RULES" "qt.qml.connections=false"
     setEnv "QT_ENABLE_HIGHDPI_SCALING" "1"
 
-    runEngineLoop defaultEngineConfig 
+    runEngineLoop defaultEngineConfig
         { initialDocument = fileDocument path
         , contextObject = Just $ anyObjRef ctx
         , importPaths = [importPath, importPath', importPath'']

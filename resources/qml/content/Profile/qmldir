@@ -1,0 +1,4 @@
+module Profile
+EditMyProfile 1.0 EditMyProfile.ui.qml
+ExternalIdentity 1.0 ExternalIdentity.ui.qml
+MyProfile 1.0 MyProfile.ui.qml

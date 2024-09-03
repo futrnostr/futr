@@ -1,0 +1,4 @@
+module Buttons
+BackButton 1.0 BackButton.ui.qml
+CloseButton 1.0 CloseButton.ui.qml
+EditButton 1.0 EditButton.ui.qml
