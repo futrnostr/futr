@@ -102,8 +102,8 @@ loadAccount storageDir npubDir = do
             { nsec = nsecKey
             , npub = pubKeyXO
             , relays = fromMaybe defaultRelays relayList
-            , displayName = maybe "" id (profile >>= \(Profile _ d _ _ _) -> d)
-            , picture = maybe ("https://robohash.org/" <> pack npubDir <> ".png") id (profile >>= \(Profile _ _ _ p _) -> p)
+            , displayName = maybe "" id (profile >>= \(Profile _ d _ _ _ _) -> d)
+            , picture = maybe ("https://robohash.org/" <> pack npubDir <> ".png") id (profile >>= \(Profile _ _ _ p _ _) -> p)
             }
 
 readFileMaybe :: FilePath -> IO (Maybe Text)

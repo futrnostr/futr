@@ -5,10 +5,11 @@
 
 module Nostr.Profile
   ( RelayURL
-  , Username
+  , Name
   , DisplayName
   , About
   , Picture
+  , Banner
   , Nip05
   , Profile(..)
   , verifyNip05
@@ -28,25 +29,27 @@ import Network.Wreq (Response, getWith, defaults, param, responseBody)
 import Nostr.Keys (PubKeyXO)
 
 type RelayURL = Text
-type Username = Text
+type Name = Text
 type DisplayName = Text
 type About = Text
 type Picture = Text
+type Banner = Text
 type Nip05 = Text
 
-data Profile = Profile Username (Maybe DisplayName) (Maybe About) (Maybe Picture) (Maybe Nip05)
+data Profile = Profile Name (Maybe DisplayName) (Maybe About) (Maybe Picture) (Maybe Nip05) (Maybe Banner)
   deriving (Eq, Show)
 
 instance Default Profile where
-  def = Profile "" Nothing Nothing Nothing Nothing
+  def = Profile "" Nothing Nothing Nothing Nothing Nothing
 
 instance ToJSON Profile where
-  toJSON (Profile username displayName about picture nip05) = object
-    [ "name" .= toJSON username
+  toJSON (Profile name displayName about picture nip05 banner) = object
+    [ "name" .= toJSON name
     , "display_name" .= toJSON displayName
     , "about" .= toJSON about
     , "picture" .= toJSON picture
     , "nip05" .= toJSON nip05
+    , "banner" .= toJSON banner
     ]
 
 instance FromJSON Profile where
@@ -56,6 +59,7 @@ instance FromJSON Profile where
     <*> e .:? "about"
     <*> e .:? "picture"
     <*> e .:? "nip05"
+    <*> e .:? "banner"
 
 data Nip05Response = Nip05Response
   { names :: Maybe Object
@@ -65,7 +69,7 @@ instance FromJSON Nip05Response where
   parseJSON = withObject "Nip05Response" $ \v -> Nip05Response <$> v .:? "names"
 
 verifyNip05 :: Profile -> PubKeyXO -> IO Bool
-verifyNip05 (Profile _ _ _ _ (Just nip05)) pubkey = do
+verifyNip05 (Profile _ _ _ _ (Just nip05) _) pubkey = do
   let (localPart, domain) = parseNip05 nip05
   let opts = defaults & param "name" .~ [localPart]
   result <- try (getWith opts ("https://" ++ unpack domain ++ "/.well-known/nostr.json")) :: IO (Either SomeException (Response ByteString))

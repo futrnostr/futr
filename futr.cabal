@@ -32,10 +32,14 @@ executable futr
         Nostr.Encryption
         Nostr.Encryption.Internal
         Nostr.Event
+        Nostr.Filter
         Nostr.Keys
         Nostr.Kind
         Nostr.Profile
         Nostr.Relay
+        Nostr.RelayPool
+        Nostr.Request
+        Nostr.Response
         Presentation.KeyMgmt
         Types
 
