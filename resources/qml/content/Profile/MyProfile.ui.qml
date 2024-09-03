@@ -59,7 +59,7 @@ Rectangle {
                         width: 60
                         height: 60
                         Layout.leftMargin: 10
-                        Layout.topMargin: 10
+                        Layout.fillHeight: true
 
                         Image {
                             source: "https://avatars.githubusercontent.com/u/394428?v=4"
@@ -67,8 +67,10 @@ Rectangle {
                             height: 60
                             fillMode: Image.PreserveAspectCrop
                             clip: true
+
                         }
                     }
+
                     ColumnLayout {
                         spacing: 10
                         Layout.fillWidth: true
@@ -79,10 +81,13 @@ Rectangle {
                         }
 
                         Text {
+                            text: "Sascha-Oliver Prolić"
+                        }
+
+                        Text {
                             text: "Nostr Haskell Developer by night. Nightmare by day. I don't know what I am doing, but who does anyway?"
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
-                            padding: 5
                         }
 
                         ExternalIdentity {
