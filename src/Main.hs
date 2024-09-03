@@ -92,4 +92,5 @@ main = do
         { initialDocument = fileDocument path
         , contextObject = Just $ anyObjRef ctx
         , importPaths = [importPath, importPath', importPath'']
+        , iconPath = Just ":/icons/nostr-purple.png"
         }

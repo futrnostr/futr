@@ -11,7 +11,7 @@ Button {
     height: 10
 
     flat: true
-    
+
     ToolTip.visible: hovered
     ToolTip.delay: 500
     ToolTip.timeout: 5000
