@@ -5,7 +5,7 @@ tests: True
 source-repository-package
   type: git
   location: https://github.com/prolic/HsQML/
-  tag: 88133e02383c928267a21d6a7eb2bc646a22de32
+  tag: e7fe83f9cc535c66c423d5402d3351c774a5bc2c
 
 source-repository-package
   type: git

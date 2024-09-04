@@ -26,7 +26,6 @@ Rectangle {
                 icon.width: 65
                 icon.height: 65
                 icon.color: "transparent"
-                icon.cache: true
 
                 Material.elevation: 10
 

@@ -79,7 +79,6 @@ Rectangle {
 
                         Image {
                             source: modelData.picture
-                            cache: true
                             width: 50
                             height: 50
                             Layout.preferredWidth: 50
