@@ -1,82 +1,17 @@
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeFamilies         #-}
-
 module Main where
 
-import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar)
-import qualified Data.Map as Map
-import Data.Text (pack, unpack)
-import Data.Typeable (Typeable)
-import Graphics.QML
+import Effectful
+import Effectful.FileSystem (runFileSystem)
+import Effectful.State.Static.Shared (evalState)
+import EffectfulQML
+import Graphics.QML qualified as QML
 import System.Environment (setEnv)
-import Text.Read (readMaybe)
 
-import Nostr.Keys (KeyPair, secKeyToKeyPair)
-import Presentation.KeyMgmt
-import Types
-
-data AppModel = AppModel
-    { keyPair :: Maybe KeyPair
-    , currentScreen :: AppScreen
-    , keyMgmtModel :: MVar KeyMgmtModel
-    } deriving (Typeable)
-
-createContext :: MVar AppModel -> SignalKey (IO ()) -> IO (ObjRef ())
-createContext modelVar changeKey = do
-    let getKeyPair' :: IO (Maybe KeyPair)
-        getKeyPair' = do
-            appModel' <- readMVar modelVar
-            return (keyPair appModel')
-
-        setKeyPair' :: KeyPair -> IO ()
-        setKeyPair' kp = modifyMVar_ modelVar $ \m -> return m { keyPair = Just kp }
-
-    appModel <- readMVar modelVar
-    keyMgmtObj <- createKeyMgmtCtx (keyMgmtModel appModel) changeKey getKeyPair' setKeyPair'
-
-    rootClass <- newClass [
-        defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
-
-        defPropertySigRW' "currentScreen" changeKey
-            (\_ -> fmap (pack . show . currentScreen) (readMVar modelVar))
-            (\obj newScreen -> do
-                case readMaybe (unpack newScreen) :: Maybe AppScreen of
-                    Just s -> do
-                        modifyMVar_ modelVar $ \model -> return model { currentScreen = s }
-                        fireSignal changeKey obj
-                    Nothing -> return ()),
-
-        defMethod' "login" $ \this input -> do
-            appModel' <- readMVar modelVar
-            keyMgmtModel' <- readMVar $ keyMgmtModel appModel'
-            case Map.lookup (AccountId input) (accountMap keyMgmtModel') of
-                Just a -> do
-                    modifyMVar_ modelVar $ \m -> return m { keyPair = Just $ secKeyToKeyPair $ nsec a, currentScreen = Home }
-                    fireSignal changeKey this
-                Nothing ->
-                    return ()
-        ]
-
-    rootObj <- newObject rootClass ()
-    return rootObj
-
+import Futr qualified as Futr
+import Presentation.KeyMgmt qualified as KeyMgmt
 
 main :: IO ()
 main = do
-    accounts <- listAccounts
-    keyMgmtM <- newMVar $ KeyMgmtModel accounts "" ""
-
-    let appModel = AppModel
-            { keyPair = Nothing
-            , currentScreen = Types.KeyMgmt
-            , keyMgmtModel = keyMgmtM
-            }
-
-    modelVar <- newMVar appModel
-    changeKey <- newSignalKey :: IO (SignalKey (IO ()))
-    ctx <- createContext modelVar changeKey
-
     let path = "qrc:/qml/main.qml"
     let importPath = "qrc:/qml"
     let importPath' = "qrc:/qml/content"
@@ -88,9 +23,25 @@ main = do
     setEnv "QT_LOGGING_RULES" "qt.qml.connections=false"
     setEnv "QT_ENABLE_HIGHDPI_SCALING" "1"
 
-    runEngineLoop defaultEngineConfig
-        { initialDocument = fileDocument path
-        , contextObject = Just $ anyObjRef ctx
-        , importPaths = [importPath, importPath', importPath'']
-        , iconPath = Just ":/icons/nostr-purple.png"
-        }
+    runEff
+        . runEffectfulQML
+        . runFileSystem
+        . evalState KeyMgmt.initialState
+        . KeyMgmt.runKeyMgmt
+        . KeyMgmt.runKeyMgmtContext
+        . evalState Futr.initialState
+        . Futr.runFutrContext
+        
+        $ do
+            changeKey <- createSignalKey
+            ctx <- Futr.createCtx changeKey
+
+            let config = QML.defaultEngineConfig
+                    { QML.initialDocument = QML.fileDocument path
+                    , QML.contextObject = Just $ QML.anyObjRef ctx
+                    , QML.importPaths = [importPath, importPath', importPath'']
+                    , QML.iconPath = Just ":/icons/nostr-purple.png"
+                    }
+
+            KeyMgmt.loadAccounts
+            runEngineLoop config changeKey

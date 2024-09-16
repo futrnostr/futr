@@ -6,43 +6,9 @@ module Nostr.Kind where
 import Data.Aeson (FromJSON, ToJSON, parseJSON, toJSON, withScientific, Value(Number))
 import Control.Monad (mzero)
 
--- | The 'Kind' data type represents different kinds of events in the Nostr protocol.
-data Kind
-  = Metadata        -- NIP-01
-  | ShortTextNote   -- NIP-01
-  | FollowList      -- NIP-02
-  | EventDeletion   -- NIP-09
-  | Repost          -- NIP-18
-  | Reaction        -- NIP-25
-  | Seal            -- NIP-59
-  | DirectMessage   -- NIP-17
-  deriving (Eq, Show)
 
--- | 'FromJSON' instance for 'Kind'.
--- This allows parsing JSON numbers into 'Kind' values.
-instance FromJSON Kind where
-  parseJSON = withScientific "kind" $ \k -> case k of
-    0  -> return Metadata
-    1  -> return ShortTextNote
-    3  -> return FollowList
-    5  -> return EventDeletion
-    6  -> return Repost
-    7  -> return Reaction
-    13 -> return Seal
-    14 -> return DirectMessage
-    _  -> mzero
 
--- | 'ToJSON' instance for 'Kind'.
--- This allows serializing 'Kind' values into JSON numbers.
-instance ToJSON Kind where
-  toJSON Metadata      = Number 0
-  toJSON ShortTextNote = Number 1
-  toJSON FollowList    = Number 3
-  toJSON EventDeletion = Number 5
-  toJSON Repost        = Number 6
-  toJSON Reaction      = Number 7
-  toJSON Seal          = Number 13
-  toJSON DirectMessage = Number 14
+
 
 -- kind - description - nip
 -- 0 	User Metadata 	01
