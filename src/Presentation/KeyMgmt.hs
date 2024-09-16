@@ -1,243 +1,297 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications, TypeFamilies      #-}
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Presentation.KeyMgmt where
 
-import Control.Concurrent (MVar, modifyMVar_, readMVar)
 import Control.Monad (filterM)
-import Data.Aeson (FromJSON(..), eitherDecode)
-import qualified Data.ByteString.Lazy as BL
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Aeson (FromJSON (..), eitherDecode)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Text (Text, isPrefixOf, pack, strip, unpack)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable (Typeable)
-import qualified Data.Text.IO as TIO
-import Graphics.QML
-import System.Directory (XdgDirectory(XdgData), createDirectoryIfMissing,
-                         getXdgDirectory, listDirectory, doesDirectoryExist,
-                         doesFileExist, removeDirectoryRecursive)
-import System.FilePath ((</>), takeFileName)
+import Effectful
+import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
+import Effectful.FileSystem
+  ( FileSystem,
+    XdgDirectory (XdgData),
+    createDirectoryIfMissing,
+    doesDirectoryExist,
+    doesFileExist,
+    getXdgDirectory,
+    listDirectory,
+    removeDirectoryRecursive,
+  )
+import Effectful.FileSystem.IO.ByteString qualified as FIOE (readFile, writeFile)
+import Effectful.FileSystem.IO.ByteString.Lazy qualified as BL
+import Effectful.State.Static.Shared (State, get, modify)
+import Effectful.TH
+import EffectfulQML
+import Graphics.QML hiding (fireSignal, runEngineLoop)
+import Nostr.Keys
+import Nostr.Relay (defaultRelays)
+import Nostr.Types
+import System.FilePath (takeFileName, (</>))
 import Text.Read (readMaybe)
 
-import Nostr.Keys hiding (getKeyPair)
-import Nostr.Profile
-import Nostr.Relay (RelayInfo, RelayURI, defaultRelays)
---import Types
-
 data Account = Account
-    { nsec :: SecKey
-    , npub :: PubKeyXO
-    , relays :: [(RelayURI, RelayInfo)]
-    , displayName :: Text
-    , picture :: Text
-    } deriving (Eq, Show)
+  { nsec :: SecKey,
+    npub :: PubKeyXO,
+    relays :: [(RelayURI, RelayInfo)],
+    displayName :: Text,
+    picture :: Text
+  }
+  deriving (Eq, Show)
 
 newtype AccountId = AccountId {accountId :: Text} deriving (Eq, Ord, Show, Typeable)
 
-data KeyMgmtModel = KeyMgmtModel
-    { accountMap :: Map AccountId Account
-    , seedphrase :: Text
-    , errorMsg :: Text
+data KeyMgmtState = KeyMgmtState
+  { accountMap :: Map AccountId Account,
+    accountPool :: Maybe (FactoryPool AccountId),
+    seedphrase :: Text,
+    npubView :: Text,
+    nsecView :: Text,
+    errorMsg :: Text
+  }
+
+initialState :: KeyMgmtState
+initialState =
+  KeyMgmtState
+    { accountMap = Map.empty,
+      accountPool = Nothing,
+      seedphrase = "",
+      npubView = "",
+      nsecView = "",
+      errorMsg = ""
     }
 
-importSecretKey :: Text -> IO (Maybe KeyPair)
-importSecretKey input = do
-    let skMaybe = if "nsec" `isPrefixOf` input
-                  then bech32ToSecKey input
-                  else readMaybe (unpack input) :: Maybe SecKey
-    case skMaybe of
-        Just sk -> do
-            storageDir <- getXdgDirectory XdgData $ "futrnostr/" ++ (unpack $ pubKeyXOToBech32 pk)
-            _ <- createDirectoryIfMissing True storageDir
-            _ <- TIO.writeFile (storageDir ++ "/nsec") content
-            return $ Just kp
-            where
-                pk = derivePublicKeyXO sk
-                content = secKeyToBech32 sk
-                kp = secKeyToKeyPair sk
-        Nothing ->
-            return Nothing
+-- | Key Management Effects.
+data KeyMgmt :: Effect where
+  LoadAccounts :: KeyMgmt m ()
+  ImportSecretKey :: ObjRef () -> Text -> KeyMgmt m ()
+  ImportSeedphrase :: ObjRef () -> Text -> Text -> KeyMgmt m ()
+  GenerateSeedphrase :: ObjRef () -> KeyMgmt m ()
+  RemoveAccount :: ObjRef () -> Text -> KeyMgmt m ()
 
-listAccounts :: IO (Map AccountId Account)
-listAccounts = do
+type instance DispatchOf KeyMgmt = Dynamic
+
+makeEffect ''KeyMgmt
+
+-- | Key Management Effect for creating QML context.
+data KeyMgmtContext :: Effect where
+  CreateCtx :: SignalKey (IO ()) -> KeyMgmtContext m (ObjRef ())
+
+type instance DispatchOf KeyMgmtContext = Dynamic
+
+makeEffect ''KeyMgmtContext
+
+-- | Handler for the logging effect to stdout.
+runKeyMgmt :: (FileSystem :> es, IOE :> es, State KeyMgmtState :> es, EffectfulQML :> es) => Eff (KeyMgmt : es) a -> Eff es a
+runKeyMgmt = interpret $ \_ -> \case
+  LoadAccounts -> do
     storageDir <- getXdgDirectory XdgData "futrnostr"
     directoryExists <- doesDirectoryExist storageDir
     if directoryExists
-        then do
-            contents <- listDirectory storageDir
-            npubDirs <- filterM (isNpubDirectory storageDir) contents
-            accounts <- mapM (loadAccount storageDir) npubDirs
-            let accountPairs = catMaybes $ zipWith (\dir acc -> fmap (\a -> (AccountId $ pack dir, a)) acc) npubDirs accounts
-            return $ Map.fromList accountPairs
-        else return Map.empty
+      then do
+        contents <- listDirectory storageDir
+        npubDirs <- filterM (isNpubDirectory storageDir) contents
+        accounts <- mapM (loadAccount storageDir) npubDirs
+        let accountPairs = catMaybes $ zipWith (\dir acc -> fmap (\a -> (AccountId $ pack dir, a)) acc) npubDirs accounts
+        modify $ \st -> st {accountMap = Map.fromList accountPairs}
+      else modify $ \st -> st {accountMap = Map.empty}
 
-removeAccount:: Text -> IO ()
-removeAccount a = do
-    dir <- getXdgDirectory XdgData $ "futrnostr/" ++ (unpack a)
+  ImportSecretKey obj input -> do
+    mkp <- tryImportSecretKeyAndPersist input
+    case mkp of
+      Just kp -> do
+        let (ai, ad) = accountFromKeyPair kp
+        modify $ \st -> st {accountMap = Map.insert ai ad (accountMap st)}
+      Nothing -> do
+        modify $ \st -> st {errorMsg = "Error: Importing secret key failed"}
+    fireSignal obj
+
+  ImportSeedphrase obj input pwd -> do
+    mkp <- liftIO $ mnemonicToKeyPair input pwd
+    case mkp of
+      Right kp -> do
+        let secKey = keyPairToSecKey kp
+        tryImportSecretKeyAndPersist (secKeyToBech32 secKey) >>= \mkp' ->
+          case mkp' of
+            Just _ -> do
+              let (ai, ad) = accountFromKeyPair kp
+              modify $ \st -> st {accountMap = Map.insert ai ad (accountMap st)}
+            Nothing -> modify $ \st -> st {errorMsg = "Error: Seedphrase generation failed"}
+      Left err -> modify $ \st -> st {errorMsg = "Error: " <> pack err}
+    fireSignal obj
+
+  GenerateSeedphrase obj -> do
+    mnemonicResult <- liftIO createMnemonic
+    case mnemonicResult of
+      Left err -> modify $ \st -> st {errorMsg = "Error: " <> pack err}
+      Right m' -> do
+        keyPairResult <- liftIO $ mnemonicToKeyPair m' ""
+        case keyPairResult of
+          Left err' -> modify $ \st -> st {errorMsg = "Error: " <> pack err'}
+          Right mkp' -> do
+            let secKey = keyPairToSecKey mkp'
+            maybeKeyPair <- tryImportSecretKeyAndPersist (secKeyToBech32 secKey)
+            case maybeKeyPair of
+              Just kp -> do
+                let (ai, ad) = accountFromKeyPair kp
+                modify $ \st ->
+                  st
+                    { accountMap = Map.insert ai ad (accountMap st),
+                      seedphrase = m',
+                      nsecView = secKeyToBech32 $ keyPairToSecKey kp,
+                      npubView = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+                    }
+              Nothing -> modify $ \st -> st {errorMsg = "Error: Unknown error generating new keys"}
+    fireSignal obj
+
+  RemoveAccount obj input -> do
+    modify $ \st -> st {accountMap = Map.delete (AccountId input) (accountMap st)}
+    fireSignal obj
+    dir <- getXdgDirectory XdgData $ "futrnostr/" ++ (unpack input)
     directoryExists <- doesDirectoryExist dir
     if directoryExists
-        then removeDirectoryRecursive dir
-        else return ()
+      then removeDirectoryRecursive dir
+      else return ()
 
-isNpubDirectory :: FilePath -> FilePath -> IO Bool
-isNpubDirectory storageDir name = do
-    let fullPath = storageDir </> name
-    isDir <- doesDirectoryExist fullPath
-    let fileName = takeFileName fullPath
-    return $ isDir && "npub" `isPrefixOf` pack fileName
-
-loadAccount :: FilePath -> FilePath -> IO (Maybe Account)
-loadAccount storageDir npubDir = do
-    let dirPath = storageDir </> npubDir
-    nsecContent <- readFileMaybe (dirPath </> "nsec")
-    relayList <- readJSONFile (dirPath </> "relays.json")
-    profile <- readJSONFile (dirPath </> "profile.json")
-
-    return $ do
-        nsecKey <- bech32ToSecKey . strip =<< nsecContent
-        pubKeyXO <- bech32ToPubKeyXO (pack npubDir)
-
-        Just Account
-            { nsec = nsecKey
-            , npub = pubKeyXO
-            , relays = fromMaybe defaultRelays relayList
-            , displayName = maybe "" id (profile >>= \(Profile _ d _ _ _ _) -> d)
-            , picture = maybe ("https://robohash.org/" <> pack npubDir <> ".png") id (profile >>= \(Profile _ _ _ p _ _) -> p)
-            }
-
-readFileMaybe :: FilePath -> IO (Maybe Text)
-readFileMaybe path = do
-    exists <- doesFileExist path
-    if exists
-        then Just <$> TIO.readFile path
-        else return Nothing
-
-readJSONFile :: FromJSON a => FilePath -> IO (Maybe a)
-readJSONFile path = do
-    exists <- doesFileExist path
-    if exists
-        then eitherDecode <$> BL.readFile path >>= return . either (const Nothing) Just
-        else return Nothing
-
-addNewAccount :: MVar KeyMgmtModel -> KeyPair -> IO (Maybe Text)
-addNewAccount modelVar kp = do
-    let newNpub = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
-    let newAccountId = AccountId newNpub
-    let newAccount = Account
-            { nsec = keyPairToSecKey kp
-            , npub = keyPairToPubKeyXO kp
-            , relays = defaultRelays
-            , displayName = ""
-            , picture =  pack "https://robohash.org/" <> newNpub <> pack ".png"
-            }
-    modifyMVar_ modelVar $ \m ->
-        return m { seedphrase = "", errorMsg = "", accountMap = Map.insert newAccountId newAccount (accountMap m) }
-    return $ Just newNpub
-
-createKeyMgmtCtx
-    :: MVar KeyMgmtModel
-    -> SignalKey (IO ())
-    -> IO (Maybe KeyPair)
-    -> (KeyPair -> IO ())
-    -> IO (ObjRef ())
-createKeyMgmtCtx modelVar changeKey getKeyPair setKeyPair = do
-    let handleError :: ObjRef() -> String -> IO ()
-        handleError obj err = do
-            modifyMVar_ modelVar $ \m -> return m { errorMsg = pack err }
-            fireSignal changeKey obj
-
-    let prop n f = defPropertySigRO' n changeKey (\obj -> do
-            model <- readMVar modelVar
-            return $ maybe "" f $ Map.lookup (fromObjRef obj) (accountMap model))
-
-    accountClass <- newClass [
-        prop "nsec" (secKeyToBech32 . nsec),
-        prop "npub" (pubKeyXOToBech32 . npub),
-        prop "displayName" displayName,
-        prop "picture" picture
-        ]
-
-    accountPool <- newFactoryPool (newObject accountClass)
-
-    contextClass <- newClass [
-        defPropertySigRO' "accounts" changeKey $ \_ -> do
-            model <- readMVar modelVar
-            mapM (getPoolObject accountPool) $ Map.keys (accountMap model),
-
-        defMethod' "removeAccount" $ \this input -> do
-            modifyMVar_ modelVar $ \m -> do
-                let updatedMap = Map.delete (AccountId input) (accountMap m)
-                return m { accountMap = updatedMap }
-            removeAccount input
-            fireSignal changeKey this,
-
-        defPropertySigRO' "seedphrase" changeKey $ \_ -> fmap seedphrase (readMVar modelVar),
-
-        defPropertySigRW' "errorMsg" changeKey
-            (\_ -> fmap errorMsg (readMVar modelVar))
-            (\obj newErrorMsg -> handleError obj $ unpack newErrorMsg),
-
-        defPropertySigRO' "nsec" changeKey $ \_ -> do
-            mkp <- getKeyPair
-            case mkp of
-                Just kp -> return $ secKeyToBech32 (keyPairToSecKey kp)
-                Nothing -> return $ pack "",
-
-        defPropertySigRO' "npub" changeKey $ \_ -> do
-            mkp <- getKeyPair
-            case mkp of
-                Just kp -> return $ pubKeyXOToBech32 (keyPairToPubKeyXO kp)
-                Nothing -> return $ pack "",
-
-        defMethod' "importSecretKey" $ \this (input :: Text) -> do
-            mkp <- importSecretKey input
-            case mkp of
-                Just kp -> do
-                    newNpub <- addNewAccount modelVar kp
-                    fireSignal changeKey this
-                    return newNpub
-                Nothing -> do
-                    handleError this "Error: Importing secret key failed"
-                    return Nothing,
-
-        defMethod' "importSeedphrase" $ \this input pwd -> do
-            mkp <- mnemonicToKeyPair input pwd
-            case mkp of
-                Right kp -> do
-                    let secKey = keyPairToSecKey kp
-                    importSecretKey (secKeyToBech32 secKey) >>= \mkp' ->
-                        case mkp' of
-                            Just _ -> do
-                                newNpub <- addNewAccount modelVar kp
-                                fireSignal changeKey this
-                                return newNpub
-                            Nothing -> do
-                                handleError this "Unknown error"
-                                return Nothing
-                Left err -> do
-                    handleError this err
-                    return Nothing,
-
-        defMethod' "generateSeedphrase" $ \this -> do
-            createMnemonic >>= either (\err -> handleError this err >> return Nothing) (\m' -> do
-                mnemonicToKeyPair m' "" >>= either (\err -> handleError this err >> return Nothing) (\mkp' -> do
-                    let secKey = keyPairToSecKey mkp'
-                    importSecretKey (secKeyToBech32 secKey) >>= \mkp ->
-                        case mkp of
-                            Just kp -> do
-                                newNpub <- addNewAccount modelVar kp
-                                setKeyPair kp
-                                modifyMVar_ modelVar $ \m -> return m { seedphrase = m' }
-                                fireSignal changeKey this
-                                return newNpub
-                            Nothing -> do
-                                handleError this "Unknown error generating new keys"
-                                return Nothing
-                    )
+runKeyMgmtContext ::
+  (KeyMgmt :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es) =>
+  Eff (KeyMgmtContext : es) a ->
+  Eff es a
+runKeyMgmtContext action = interpret handleKeyMgmtContext action
+  where
+    handleKeyMgmtContext :: (KeyMgmt :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es) => EffectHandler KeyMgmtContext es
+    handleKeyMgmtContext _ = \case
+      CreateCtx changeKey -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
+        let prop n f =
+              defPropertySigRO'
+                n
+                changeKey
+                ( \obj -> runE $ do
+                    st <- get
+                    let res = maybe "" f $ Map.lookup (fromObjRef obj) (accountMap st)
+                    return res
                 )
 
-        ]
+        accountClass <-
+          newClass
+            [ prop "nsec" (secKeyToBech32 . nsec),
+              prop "npub" (pubKeyXOToBech32 . npub),
+              prop "displayName" displayName,
+              prop "picture" picture
+            ]
 
-    newObject contextClass ()
-  
+        accountPool' <- newFactoryPool (newObject accountClass)
+
+        runE $ modify $ \st -> st {accountPool = Just accountPool'}
+
+        contextClass <-
+          newClass
+            [ defPropertySigRO' "accounts" changeKey $ \_ -> do
+                st <- runE get
+                mapM (getPoolObject accountPool') $ Map.keys (accountMap st),
+              defMethod' "removeAccount" $ \obj input -> runE $ removeAccount obj input,
+              defPropertySigRO' "seedphrase" changeKey $ \_ -> do
+                st <- runE get
+                return $ seedphrase st,
+              defPropertySigRO' "nsec" changeKey $ \_ -> do
+                st <- runE get
+                return $ nsecView st,
+              defPropertySigRO' "npub" changeKey $ \_ -> do
+                st <- runE get
+                return $ npubView st,
+              defPropertySigRW'
+                "errorMsg"
+                changeKey
+                ( \_ -> do
+                    st <- runE get
+                    return $ errorMsg st
+                )
+                ( \_ newErrorMsg -> runE $ do
+                    modify $ \st -> st {errorMsg = newErrorMsg}
+                    return ()
+                ),
+              defMethod' "importSecretKey" $ \obj (input :: Text) -> runE $ importSecretKey obj input,
+              defMethod' "importSeedphrase" $ \obj input pwd -> runE $ importSeedphrase obj input pwd,
+              defMethod' "generateSeedphrase" $ \obj -> runE $ generateSeedphrase obj
+            ]
+
+        newObject contextClass ()
+
+tryImportSecretKeyAndPersist :: (FileSystem :> es) => Text -> Eff es (Maybe KeyPair)
+tryImportSecretKeyAndPersist input = do
+  let skMaybe =
+        if "nsec" `isPrefixOf` input
+          then bech32ToSecKey input
+          else readMaybe (unpack input) :: Maybe SecKey
+  case skMaybe of
+    Just sk -> do
+      storageDir <- getXdgDirectory XdgData $ "futrnostr/" ++ (unpack $ pubKeyXOToBech32 pk)
+      createDirectoryIfMissing True storageDir
+      FIOE.writeFile (storageDir ++ "/nsec") (encodeUtf8 $ secKeyToBech32 sk)
+      return $ Just kp
+      where
+        pk = derivePublicKeyXO sk
+        kp = secKeyToKeyPair sk
+    Nothing ->
+      return Nothing
+
+isNpubDirectory :: (FileSystem :> es) => FilePath -> FilePath -> Eff es Bool
+isNpubDirectory storageDir name = do
+  let fullPath = storageDir </> name
+  isDir <- doesDirectoryExist fullPath
+  let fileName = takeFileName fullPath
+  return $ isDir && "npub" `isPrefixOf` pack fileName
+
+loadAccount :: (FileSystem :> es) => FilePath -> FilePath -> Eff es (Maybe Account)
+loadAccount storageDir npubDir = do
+  let dirPath = storageDir </> npubDir
+  nsecContent <- readFileMaybe (dirPath </> "nsec")
+  relayList <- readJSONFile (dirPath </> "relays.json")
+  profile <- readJSONFile (dirPath </> "profile.json")
+
+  return $ do
+    nsecKey <- bech32ToSecKey . strip =<< nsecContent
+    pubKeyXO <- bech32ToPubKeyXO (pack npubDir)
+
+    Just
+      Account
+        { nsec = nsecKey,
+          npub = pubKeyXO,
+          relays = fromMaybe defaultRelays relayList,
+          displayName = maybe "" id (profile >>= \(Profile _ d _ _ _ _) -> d),
+          picture = maybe ("https://robohash.org/" <> pack npubDir <> ".png") id (profile >>= \(Profile _ _ _ p _ _) -> p)
+        }
+
+readFileMaybe :: (FileSystem :> es) => FilePath -> Eff es (Maybe Text)
+readFileMaybe path = do
+  exists <- doesFileExist path
+  if exists
+    then Just <$> decodeUtf8 <$> FIOE.readFile path
+    else return Nothing
+
+readJSONFile :: (FromJSON a, FileSystem :> es) => FilePath -> Eff es (Maybe a)
+readJSONFile path = do
+  exists <- doesFileExist path
+  if exists
+    then eitherDecode <$> BL.readFile path >>= return . either (const Nothing) Just
+    else return Nothing
+
+accountFromKeyPair :: KeyPair -> (AccountId, Account)
+accountFromKeyPair kp = (AccountId newNpub, account)
+  where
+    newNpub = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+    account =
+      Account
+        { nsec = keyPairToSecKey kp,
+          npub = keyPairToPubKeyXO kp,
+          relays = defaultRelays,
+          displayName = "",
+          picture = pack "https://robohash.org/" <> newNpub <> pack ".png"
+        }
