@@ -26,12 +26,13 @@ instance FromJSON Nip05Response where
   parseJSON = withObject "Nip05Response" $ \v -> Nip05Response <$> v .:? "names"
 
 verifyNip05 :: Profile -> PubKeyXO -> IO Bool
-verifyNip05 (Profile _ _ _ _ (Just nip05) _) pubkey = do
-  let (localPart, domain) = parseNip05 nip05
-  let opts = defaults & param "name" .~ [localPart]
-  result <- try (getWith opts ("https://" ++ unpack domain ++ "/.well-known/nostr.json")) :: IO (Either SomeException (Response ByteString))
-  return $ either (const False) (checkResponse localPart (pack $ show pubkey) . (^. responseBody)) result
-verifyNip05 _ _ = return False
+verifyNip05 p pubkey = case nip05 p of
+  Just n -> do
+    let (localPart, domain) = parseNip05 n
+    let opts = defaults & param "name" .~ [localPart]
+    result <- try (getWith opts ("https://" ++ unpack domain ++ "/.well-known/nostr.json")) :: IO (Either SomeException (Response ByteString))
+    return $ either (const False) (checkResponse localPart (pack $ show pubkey) . (^. responseBody)) result
+  Nothing -> return False
 
 checkResponse :: Text -> Text -> ByteString -> Bool
 checkResponse localPart pubkey body =
@@ -43,6 +44,6 @@ checkResponse localPart pubkey body =
     _ -> False
 
 parseNip05 :: Text -> (Text, Text)
-parseNip05 nip05 = case splitOn "@" nip05 of
+parseNip05 n = case splitOn "@" n of
   [localPart, domain] -> (localPart, domain)
   _ -> ("", "")

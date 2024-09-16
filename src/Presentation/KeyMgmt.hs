@@ -33,7 +33,7 @@ import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Nostr.Keys
 import Nostr.Relay (defaultRelays)
-import Nostr.Types
+import Nostr.Types hiding (displayName, picture)
 import System.FilePath (takeFileName, (</>))
 import Text.Read (readMaybe)
 
@@ -243,8 +243,8 @@ tryImportSecretKeyAndPersist input = do
       return Nothing
 
 isNpubDirectory :: (FileSystem :> es) => FilePath -> FilePath -> Eff es Bool
-isNpubDirectory storageDir name = do
-  let fullPath = storageDir </> name
+isNpubDirectory storageDir dirName = do
+  let fullPath = storageDir </> dirName
   isDir <- doesDirectoryExist fullPath
   let fileName = takeFileName fullPath
   return $ isDir && "npub" `isPrefixOf` pack fileName

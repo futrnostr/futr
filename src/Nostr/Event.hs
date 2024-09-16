@@ -24,7 +24,7 @@ import Nostr.Types
 
 signEvent :: UnsignedEvent -> KeyPair -> Maybe Event
 signEvent u kp =
-  Event eid (pubKey' u) (created_at' u) (kind' u) (tags' u) (content' u) <$> schnorrSign kp (getEventId eid)
+  Event eid (pubKey' u) (createdAt' u) (kind' u) (tags' u) (content' u) <$> schnorrSign kp (getEventId eid)
   where
     eid = EventId { getEventId = SHA256.hash $ toStrict $ encode u }
 
@@ -38,7 +38,7 @@ textNote :: Text -> PubKeyXO -> Int64 -> UnsignedEvent
 textNote note xo t =
   UnsignedEvent
     { pubKey' = xo
-    , created_at' = t
+    , createdAt' = t
     , kind' = ShortTextNote
     , tags' = []
     , content' = note
@@ -48,7 +48,7 @@ setMetadata :: Profile -> PubKeyXO -> Int64 -> UnsignedEvent
 setMetadata profile xo t =
   UnsignedEvent
     { pubKey' = xo
-    , created_at' = t
+    , createdAt' = t
     , kind' = Metadata
     , tags' = []
     , content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ profile
@@ -65,7 +65,7 @@ replyNote :: Event -> Text -> PubKeyXO -> Int64 -> UnsignedEvent
 replyNote event note xo t =
   UnsignedEvent
     { pubKey' = xo
-    , created_at' = t
+    , createdAt' = t
     , kind' = ShortTextNote
     , tags' = [ETag (eventId event) Nothing (Just Reply)]
     , content' = note
@@ -75,7 +75,7 @@ setContacts :: [(PubKeyXO, Maybe DisplayName)] -> PubKeyXO -> Int64 -> UnsignedE
 setContacts contacts xo t =
   UnsignedEvent
     { pubKey' = xo
-    , created_at' = t
+    , createdAt' = t
     , kind' = FollowList
     , tags' = map (\c -> PTag (fst c) (Just (RelayURI emptyURI)) (snd c)) contacts
     , content' = ""
@@ -85,7 +85,7 @@ deleteEvents :: [EventId] -> Text -> PubKeyXO -> Int64 -> UnsignedEvent
 deleteEvents eids reason xo t =
   UnsignedEvent
     { pubKey' = xo
-    , created_at' = t
+    , createdAt' = t
     , kind' = EventDeletion
     , tags' = toDelete
     , content' = reason

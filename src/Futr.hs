@@ -6,8 +6,10 @@
 
 module Futr where
 
+import Data.Int (Int64)
+import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (pack, unpack)
+import Data.Text (Text, pack, unpack)
 import Effectful
 import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
 import Effectful.State.Static.Shared (State, get, modify)
@@ -16,7 +18,8 @@ import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Text.Read (readMaybe)
 
-import Nostr.Keys (KeyPair, secKeyToKeyPair)
+import Nostr.Keys (KeyPair, PubKeyXO, secKeyToKeyPair)
+import Nostr.Types (Event, EventId, RelayURI)
 import Presentation.KeyMgmt qualified as PKeyMgmt
 
 data AppScreen
@@ -25,15 +28,27 @@ data AppScreen
     | Home
     deriving (Eq, Read, Show)
 
+data ChatMessage = ChatMessage
+  { chatMessageId :: EventId
+  , content :: Text
+  , author :: PubKeyXO
+  , createdAt :: Text
+  , seenOn :: [RelayURI]
+  }
+
 data Futr = Futr
   { keyPair :: Maybe KeyPair
   , currentScreen :: AppScreen
+  , events :: Map EventId (Event, [RelayURI])
+  , chats :: Map PubKeyXO [ChatMessage]
   }
 
 initialState :: Futr
 initialState = Futr
   { keyPair = Nothing
   , currentScreen = KeyMgmt
+  , events = Map.empty
+  , chats = Map.empty
   }
 
 -- | Key Management Effect for creating QML context.

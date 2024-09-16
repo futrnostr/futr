@@ -108,7 +108,7 @@ data Tag
 data Event = Event
   { eventId    :: EventId
   , pubKey     :: PubKeyXO
-  , created_at :: Int64
+  , createdAt :: Int64
   , kind       :: Kind
   , tags       :: [Tag]
   , content    :: Text
@@ -118,7 +118,7 @@ data Event = Event
 
 data UnsignedEvent = UnsignedEvent
   { pubKey'     :: PubKeyXO
-  , created_at' :: Int64
+  , createdAt' :: Int64
   , kind'       :: Kind
   , tags'       :: [Tag]
   , content'    :: Text
@@ -136,8 +136,14 @@ type Picture = Text
 type Banner = Text
 type Nip05 = Text
 
-data Profile = Profile Name (Maybe DisplayName) (Maybe About) (Maybe Picture) (Maybe Nip05) (Maybe Banner)
-  deriving (Eq, Show)
+data Profile = Profile
+  { name :: Maybe Text
+  , displayName :: Maybe Text
+  , about :: Maybe Text
+  , picture :: Maybe Text
+  , nip05 :: Maybe Text
+  , banner :: Maybe Text
+  } deriving (Eq, Show)
 
 -- Helper functions
 
@@ -185,7 +191,7 @@ instance FromJSON Event where
   parseJSON = withObject "event data" $ \e -> Event
     <$> e .: "id"
     <*> e .: "pubkey"
-    <*> e .: "created_at"
+    <*> e .: "createdAt"
     <*> e .: "kind"
     <*> e .: "tags"
     <*> e .: "content"
@@ -195,7 +201,7 @@ instance ToJSON Event where
   toJSON Event {..} = object
      [ "id"         .= show eventId
      , "pubkey"     .= show pubKey
-     , "created_at" .= created_at
+     , "createdAt" .= createdAt
      , "kind"       .= kind
      , "tags"       .= tags
      , "content"    .= content
@@ -206,7 +212,7 @@ instance ToJSON UnsignedEvent where
   toJSON (UnsignedEvent {..}) = Array $ fromList
      [ Number 0
      , String $ pack $ show pubKey'
-     , Number $ fromIntegral $ created_at'
+     , Number $ fromIntegral $ createdAt'
      , toJSON kind'
      , toJSON tags'
      , toJSON content'
@@ -405,7 +411,7 @@ instance ToJSON Filter where
     ]
 
 instance Default Profile where
-  def = Profile "" Nothing Nothing Nothing Nothing Nothing
+  def = Profile Nothing Nothing Nothing Nothing Nothing Nothing
 
 instance ToJSON Profile where
   toJSON (Profile name displayName about picture nip05 banner) = object

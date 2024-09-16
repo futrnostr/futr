@@ -40,11 +40,11 @@ executable futr
         Nostr.Encryption.Internal
         Nostr.Event
         Nostr.Keys
-        Nostr.Kind
         Nostr.Profile
         Nostr.Relay
         Nostr.Types
         Presentation.KeyMgmt
+        TimeFormatter
 
     default-language: Haskell2010
     extra-libraries:  secp256k1
