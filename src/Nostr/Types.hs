@@ -67,7 +67,7 @@ data Request
   = SendEvent Event
   | Subscribe Subscription
   | Close SubscriptionId
-  | Disconnect
+  | Disconnect Relay
   deriving (Eq, Show)
 
 data Response
@@ -317,7 +317,7 @@ instance ToJSON Request where
        , String subId'
        ]
 
-    Disconnect -> String $ pack "Bye!"
+    Disconnect _ -> String $ pack "Bye!"
 
 -- | Converts a `RelayURI` into its JSON representation.
 instance FromJSON RelayURI where

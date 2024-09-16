@@ -6,7 +6,6 @@
 
 module Futr where
 
-import Data.Int (Int64)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
