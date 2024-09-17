@@ -14,9 +14,6 @@ data EffectfulQMLState = EffectfulQMLState
   { signalKey :: Maybe (QML.SignalKey (IO ()))
   }
 
-initialState :: EffectfulQMLState
-initialState = EffectfulQMLState Nothing
-
 -- | Define the effects for QML operations.
 data EffectfulQML :: Effect where
   RunEngineLoop :: QML.EngineConfig -> QML.SignalKey (IO ()) -> EffectfulQML m ()
@@ -31,7 +28,7 @@ makeEffect ''EffectfulQML
 
 -- | Handler for the QML effects.
 runEffectfulQML :: (IOE :> es) => Eff (EffectfulQML : State EffectfulQMLState : es) a -> Eff es a
-runEffectfulQML action = evalState initialState $ interpret handleEffectfulQML action
+runEffectfulQML action = evalState (EffectfulQMLState Nothing) $ interpret handleEffectfulQML action
   where
     handleEffectfulQML
       :: (IOE :> es)

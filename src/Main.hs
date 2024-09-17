@@ -30,8 +30,7 @@ main = do
         . KeyMgmt.runKeyMgmt
         . KeyMgmt.runKeyMgmtContext
         . evalState Futr.initialState
-        . Futr.runFutrContext
-        
+        . Futr.runFutr
         $ do
             changeKey <- createSignalKey
             ctx <- Futr.createCtx changeKey
@@ -43,5 +42,4 @@ main = do
                     , QML.iconPath = Just ":/icons/nostr-purple.png"
                     }
 
-            KeyMgmt.loadAccounts
             runEngineLoop config changeKey

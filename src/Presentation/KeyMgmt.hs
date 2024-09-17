@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -40,9 +41,9 @@ import Text.Read (readMaybe)
 data Account = Account
   { nsec :: SecKey,
     npub :: PubKeyXO,
-    relays :: [(RelayURI, RelayInfo)],
     displayName :: Text,
-    picture :: Text
+    picture :: Text,
+    relays :: [(RelayURI, RelayInfo)]
   }
   deriving (Eq, Show)
 
@@ -68,9 +69,13 @@ initialState =
       errorMsg = ""
     }
 
+type KeyMgmtEff es = ( State KeyMgmtState :> es
+                     , FileSystem :> es
+                     , IOE :> es
+                     , EffectfulQML :> es )
+
 -- | Key Management Effects.
 data KeyMgmt :: Effect where
-  LoadAccounts :: KeyMgmt m ()
   ImportSecretKey :: ObjRef () -> Text -> KeyMgmt m ()
   ImportSeedphrase :: ObjRef () -> Text -> Text -> KeyMgmt m ()
   GenerateSeedphrase :: ObjRef () -> KeyMgmt m ()
@@ -79,6 +84,8 @@ data KeyMgmt :: Effect where
 type instance DispatchOf KeyMgmt = Dynamic
 
 makeEffect ''KeyMgmt
+
+type KeyMgmgtContextEff es = (KeyMgmt :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es, FileSystem :> es)
 
 -- | Key Management Effect for creating QML context.
 data KeyMgmtContext :: Effect where
@@ -89,20 +96,8 @@ type instance DispatchOf KeyMgmtContext = Dynamic
 makeEffect ''KeyMgmtContext
 
 -- | Handler for the logging effect to stdout.
-runKeyMgmt :: (FileSystem :> es, IOE :> es, State KeyMgmtState :> es, EffectfulQML :> es) => Eff (KeyMgmt : es) a -> Eff es a
+runKeyMgmt :: KeyMgmtEff es => Eff (KeyMgmt : es) a -> Eff es a
 runKeyMgmt = interpret $ \_ -> \case
-  LoadAccounts -> do
-    storageDir <- getXdgDirectory XdgData "futrnostr"
-    directoryExists <- doesDirectoryExist storageDir
-    if directoryExists
-      then do
-        contents <- listDirectory storageDir
-        npubDirs <- filterM (isNpubDirectory storageDir) contents
-        accounts <- mapM (loadAccount storageDir) npubDirs
-        let accountPairs = catMaybes $ zipWith (\dir acc -> fmap (\a -> (AccountId $ pack dir, a)) acc) npubDirs accounts
-        modify $ \st -> st {accountMap = Map.fromList accountPairs}
-      else modify $ \st -> st {accountMap = Map.empty}
-
   ImportSecretKey obj input -> do
     mkp <- tryImportSecretKeyAndPersist input
     case mkp of
@@ -160,24 +155,19 @@ runKeyMgmt = interpret $ \_ -> \case
       then removeDirectoryRecursive dir
       else return ()
 
-runKeyMgmtContext ::
-  (KeyMgmt :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es) =>
-  Eff (KeyMgmtContext : es) a ->
-  Eff es a
+
+runKeyMgmtContext :: KeyMgmgtContextEff es => Eff (KeyMgmtContext : es) a -> Eff es a
 runKeyMgmtContext action = interpret handleKeyMgmtContext action
   where
-    handleKeyMgmtContext :: (KeyMgmt :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es) => EffectHandler KeyMgmtContext es
+    handleKeyMgmtContext :: KeyMgmgtContextEff es => EffectHandler KeyMgmtContext es
     handleKeyMgmtContext _ = \case
       CreateCtx changeKey -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-        let prop n f =
-              defPropertySigRO'
-                n
-                changeKey
-                ( \obj -> runE $ do
-                    st <- get
-                    let res = maybe "" f $ Map.lookup (fromObjRef obj) (accountMap st)
-                    return res
-                )
+        runE loadAccounts
+
+        let prop n f = defPropertySigRO' n changeKey ( \obj -> runE $ do
+              st <- get
+              let res = maybe "" f $ Map.lookup (fromObjRef obj) (accountMap st)
+              return res)
 
         accountClass <-
           newClass
@@ -223,6 +213,19 @@ runKeyMgmtContext action = interpret handleKeyMgmtContext action
             ]
 
         newObject contextClass ()
+
+loadAccounts :: (FileSystem :> es, State KeyMgmtState :> es) => Eff es ()
+loadAccounts = do
+  storageDir <- getXdgDirectory XdgData "futrnostr"
+  directoryExists <- doesDirectoryExist storageDir
+  if directoryExists
+    then do
+      contents <- listDirectory storageDir
+      npubDirs <- filterM (isNpubDirectory storageDir) contents
+      accounts <- mapM (loadAccount storageDir) npubDirs
+      let accountPairs = catMaybes $ zipWith (\dir acc -> fmap (\a -> (AccountId $ pack dir, a)) acc) npubDirs accounts
+      modify $ \st -> st {accountMap = Map.fromList accountPairs}
+    else modify $ \st -> st {accountMap = Map.empty}
 
 tryImportSecretKeyAndPersist :: (FileSystem :> es) => Text -> Eff es (Maybe KeyPair)
 tryImportSecretKeyAndPersist input = do
