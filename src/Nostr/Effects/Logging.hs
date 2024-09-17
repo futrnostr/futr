@@ -12,6 +12,7 @@ import Effectful.TH
 data Logging :: Effect where
     LogDebug :: Text -> Logging m ()
     LogInfo :: Text -> Logging m ()
+    LogWarning :: Text -> Logging m ()
     LogError :: Text -> Logging m ()
 
 type instance DispatchOf Logging = Dynamic
@@ -23,4 +24,5 @@ runLoggingStdout :: IOE :> es => Eff (Logging : es) a -> Eff es a
 runLoggingStdout = interpret $ \_ -> \case
     LogDebug msg -> liftIO $ putStrLn ("[DEBUG] " <> show msg)
     LogInfo msg  -> liftIO $ putStrLn ("[INFO] " <> show msg)
+    LogWarning msg -> liftIO $ putStrLn ("[WARN] " <> show msg)
     LogError msg -> liftIO $ putStrLn ("[ERROR] " <> show msg)

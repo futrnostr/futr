@@ -79,8 +79,5 @@ sendWs
 sendWs relay conn channel = forever $ do
   msg <- atomically $ readTChan channel
   case msg of
-      Nostr.Types.Disconnect r ->
-        if r `sameRelay` relay
-          then liftIO $ WS.sendClose conn (T.pack "Bye!")
-          else return ()
+      Nostr.Types.Disconnect -> liftIO $ WS.sendClose conn (T.pack "Bye!")
       _ -> liftIO $ WS.sendTextData conn $ encode msg

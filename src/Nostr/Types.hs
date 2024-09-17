@@ -40,7 +40,6 @@ data RelayInfo = RelayInfo
 data Relay = Relay
   { uri       :: RelayURI
   , info      :: RelayInfo
-  , connected :: Bool
   }
   deriving (Eq, Show)
 
@@ -67,7 +66,7 @@ data Request
   = SendEvent Event
   | Subscribe Subscription
   | Close SubscriptionId
-  | Disconnect Relay
+  | Disconnect
   deriving (Eq, Show)
 
 data Response
@@ -317,7 +316,7 @@ instance ToJSON Request where
        , String subId'
        ]
 
-    Disconnect _ -> String $ pack "Bye!"
+    Disconnect -> String $ pack "Bye!"
 
 -- | Converts a `RelayURI` into its JSON representation.
 instance FromJSON RelayURI where
@@ -332,14 +331,14 @@ instance ToJSON RelayURI where
 
 -- | Instance for ordering 'Relay' values based on their 'uri'.
 instance Ord Relay where
-  compare (Relay r _ _) (Relay r' _ _) = compare r r'
+  compare (Relay r _) (Relay r' _) = compare r r'
 
 -- | Instance for parsing a 'Relay' from JSON.
 instance FromJSON Relay where
   parseJSON = withObject "Relay" $ \r -> do
     uri'  <- r .: "uri"
     info' <- r .: "info"
-    return $ Relay uri' info' False
+    return $ Relay uri' info'
 
 -- | Instance for converting a 'Relay' to JSON.
 instance ToJSON Relay where
