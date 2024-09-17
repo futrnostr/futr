@@ -85,15 +85,15 @@ type instance DispatchOf KeyMgmt = Dynamic
 
 makeEffect ''KeyMgmt
 
-type KeyMgmgtContextEff es = (KeyMgmt :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es, FileSystem :> es)
+type KeyMgmgtUIEff es = (KeyMgmt :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es, FileSystem :> es)
 
--- | Key Management Effect for creating QML context.
-data KeyMgmtContext :: Effect where
-  CreateCtx :: SignalKey (IO ()) -> KeyMgmtContext m (ObjRef ())
+-- | Key Management Effect for creating QML UI.
+data KeyMgmtUI :: Effect where
+  CreateUI :: SignalKey (IO ()) -> KeyMgmtUI m (ObjRef ())
 
-type instance DispatchOf KeyMgmtContext = Dynamic
+type instance DispatchOf KeyMgmtUI = Dynamic
 
-makeEffect ''KeyMgmtContext
+makeEffect ''KeyMgmtUI
 
 -- | Handler for the logging effect to stdout.
 runKeyMgmt :: KeyMgmtEff es => Eff (KeyMgmt : es) a -> Eff es a
@@ -156,12 +156,12 @@ runKeyMgmt = interpret $ \_ -> \case
       else return ()
 
 
-runKeyMgmtContext :: KeyMgmgtContextEff es => Eff (KeyMgmtContext : es) a -> Eff es a
-runKeyMgmtContext action = interpret handleKeyMgmtContext action
+runKeyMgmtUI :: KeyMgmgtUIEff es => Eff (KeyMgmtUI : es) a -> Eff es a
+runKeyMgmtUI action = interpret handleKeyMgmtUI action
   where
-    handleKeyMgmtContext :: KeyMgmgtContextEff es => EffectHandler KeyMgmtContext es
-    handleKeyMgmtContext _ = \case
-      CreateCtx changeKey -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
+    handleKeyMgmtUI :: KeyMgmgtUIEff es => EffectHandler KeyMgmtUI es
+    handleKeyMgmtUI _ = \case
+      CreateUI changeKey -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
         runE loadAccounts
 
         let prop n f = defPropertySigRO' n changeKey ( \obj -> runE $ do

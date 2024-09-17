@@ -28,9 +28,9 @@ main = do
         . runFileSystem
         . evalState KeyMgmt.initialState
         . KeyMgmt.runKeyMgmt
-        . KeyMgmt.runKeyMgmtContext
+        . KeyMgmt.runKeyMgmtUI
         . evalState Futr.initialState
-        . Futr.runFutr
+        . Futr.runFutrUI
         $ do
             changeKey <- createSignalKey
             ctx <- Futr.createCtx changeKey

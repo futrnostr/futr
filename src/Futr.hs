@@ -50,25 +50,25 @@ initialState = Futr
   , chats = Map.empty
   }
 
--- | Key Management Effect for creating QML context.
-data FutrContext :: Effect where
-  CreateCtx :: SignalKey (IO ()) -> FutrContext m (ObjRef ())
+-- | Key Management Effect for creating QML UI.
+data FutrUI :: Effect where
+  CreateCtx :: SignalKey (IO ()) -> FutrUI m (ObjRef ())
 
-type instance DispatchOf FutrContext = Dynamic
+type instance DispatchOf FutrUI = Dynamic
 
-makeEffect ''FutrContext
+makeEffect ''FutrUI
 
 type FutrEff es = (State Futr :> es
                   , PKeyMgmt.KeyMgmt :> es
-                  , PKeyMgmt.KeyMgmtContext :> es
+                  , PKeyMgmt.KeyMgmtUI :> es
                   , State PKeyMgmt.KeyMgmtState :> es
                   , EffectfulQML :> es
                   , IOE :> es)
 
-runFutr :: FutrEff es => Eff (FutrContext : es) a -> Eff es a
-runFutr = interpret $ \_ -> \case
+runFutrUI :: FutrEff es => Eff (FutrUI : es) a -> Eff es a
+runFutrUI = interpret $ \_ -> \case
   CreateCtx changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-    keyMgmtObj <- runE $ PKeyMgmt.createCtx changeKey'
+    keyMgmtObj <- runE $ PKeyMgmt.createUI changeKey'
 
     rootClass <- newClass [
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
