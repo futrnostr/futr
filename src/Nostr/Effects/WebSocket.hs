@@ -68,7 +68,7 @@ receiveWs relay conn queue = forever $ do
     Right msg' -> 
       case decode msg' of
         Just response -> atomically $ writeTQueue queue response
-        Nothing -> logInfo $ "Could not decode server response: " <> T.pack (show msg')
+        Nothing -> logWarning $ "Could not decode server response: " <> T.pack (show msg')
 
 sendWs 
   :: WebSocketEff es

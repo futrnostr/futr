@@ -5,14 +5,15 @@
 
 module Nostr.Effects.RelayPool where
 
-import Control.Monad (forM_)
+import Control.Monad (forM_, void, when)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Effectful
-import Effectful.Concurrent (Concurrent)
-import Effectful.Concurrent.STM (TChan, TQueue, atomically, newTChanIO, newTQueueIO, writeTChan)
+import Effectful.Concurrent (Concurrent, forkIO)
+import Effectful.Concurrent.MVar (MVar, newEmptyMVar, putMVar, tryTakeMVar)
+import Effectful.Concurrent.STM (TChan, TQueue, atomically, newTChanIO, newTQueueIO, readTQueue, writeTChan, writeTQueue)
 import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
 import Effectful.State.Static.Shared (State, evalState, get, modify)
 import Effectful.TH
@@ -33,6 +34,7 @@ data RelayPool :: Effect where
     Subscribe :: [Filter] -> [Relay] -> RelayPool m SubscriptionId
     Unsubscribe :: SubscriptionId -> RelayPool m ()
     ListRelays :: RelayPool m [(Relay, Bool)]
+    ClearNotices :: RelayPool m ()
 
 type instance DispatchOf RelayPool = Dynamic
 
@@ -46,7 +48,38 @@ data RelayPoolState = RelayPoolState
     , subscriptions :: Map SubscribtionId (TQueue Response, [Relay])
     , incomingQueue :: TQueue Response
     , relayChannels :: Map RelayURI (TChan Request)
+    , processing    :: Bool
+    , notices       :: [Text]
     }
+
+-- | Function to process the incoming queue.
+processIncomingQueue :: (Concurrent :> es, Logging :> es, State RelayPoolState :> es) => MVar () -> Eff es ()
+processIncomingQueue stopSignal = do
+  st <- get
+
+  let queue = incomingQueue st
+
+  let forward r s ss = case Map.lookup s ss of
+        Just (targetQueue, _) -> do
+          atomically $ writeTQueue targetQueue r
+          logDebug $ "Forwarded response to subscription: " <> s
+        Nothing -> logWarning $ "Received response for unknown subscription: " <> s
+
+  let loop = do
+        stop <- tryTakeMVar stopSignal
+        if stop == Just ()
+          then logDebug "Stopping incoming queue processing"
+          else do
+            response <- atomically $ readTQueue queue
+            case response of
+              EventReceived subId' _ -> forward response subId' (subscriptions st)
+              Ok eventId' valid msg -> logDebug $ "Received ok: " <> T.pack (show eventId') <> " valid: " <> T.pack (show valid) <> " msg: " <> msg
+              Eose subId' -> forward response subId' (subscriptions st)
+              Closed subId' _ -> forward response subId' (subscriptions st)
+              Notice msg -> do
+                logWarning $ "Received notice: " <> msg
+            loop
+  loop
 
 -- | Handler for relay pool effects.
 runRelayPool
@@ -56,18 +89,22 @@ runRelayPool
   -> Eff es a
 runRelayPool action = do
   queue <- newTQueueIO
+  stopSignal <- newEmptyMVar
   let initialState = RelayPoolState
         { relays = []
         , subscriptions = Map.empty
         , incomingQueue = queue
         , relayChannels = Map.empty
+        , processing = False
+        , notices = []
         }
-  evalState initialState $ interpret handleRelayPool action
+  evalState initialState $ interpret (handleRelayPool stopSignal) action
   where
     handleRelayPool
       :: (Concurrent :> es, IDGen :> es, IOE :> es, Logging :> es, WebSocket :> es)
-      => EffectHandler RelayPool (State RelayPoolState : es)
-    handleRelayPool _ = \case
+      => MVar ()
+      -> EffectHandler RelayPool (State RelayPoolState : es)
+    handleRelayPool stopSignal _ = \case
       AddRelay relay -> do
         st <- get
         let existingRelays = relays st
@@ -85,7 +122,7 @@ runRelayPool action = do
         st <- get
         case Map.lookup (uri relay) (relayChannels st) of
           Just chan -> runClient relay chan (incomingQueue st)
-          Nothing -> logError $ "Could not found channel to communicate to relay " <> relayName relay
+          Nothing -> logError $ "Cannot connect to unknown relay: " <> relayName relay <> ", maybe you forgot to call AddRelay?"
 
       Nostr.Effects.RelayPool.Disconnect relay -> do
         logDebug $ T.pack $ "Disconnecting from " ++ T.unpack (relayName relay) ++ " ..."
@@ -113,10 +150,14 @@ runRelayPool action = do
                 Nothing -> logWarning $ "No channel found for relay: " <> relayName relay
 
       Nostr.Effects.RelayPool.Subscribe filters' rs -> do
+        st <- get
+        when (not $ processing st) $ do
+          modify $ \st' -> st' { processing = True }
+          void $ forkIO $ processIncomingQueue stopSignal
+          return ()
         subId' <- generateID 8
         queue <- newTQueueIO
-        modify $ \st -> st { subscriptions = Map.insert subId' (queue, rs) (subscriptions st) }
-        st <- get
+        modify $ \st' -> st' { subscriptions = Map.insert subId' (queue, rs) (subscriptions st'), processing = True }
         forM_ rs $ \relay -> do
           case Map.lookup (uri relay) (relayChannels st) of
             Just chan -> do
@@ -132,10 +173,19 @@ runRelayPool action = do
             forM_ rs $ \relay -> case Map.lookup (uri relay) (relayChannels st) of
               Just chan -> do
                 atomically $ writeTChan chan (Nostr.Types.Close subId')
+                modify $ \st' -> st' { relayChannels = Map.delete (uri relay) (relayChannels st') }
                 logDebug $ "Stopping subscription: " <> subId' <> " on relay: " <> relayName relay
               Nothing -> return ()
           Nothing -> logWarning $ "Unsubscription of non-existent subscription seen: " <> subId'
+        st' <- get
+        if Map.null (subscriptions st')
+          then do
+            modify $ \st'' -> st'' { processing = False }
+            putMVar stopSignal ()
+          else return ()
 
       ListRelays -> do
         st <- get
         return $ relays st
+
+      ClearNotices -> modify $ \st' -> st' { notices = [] }
