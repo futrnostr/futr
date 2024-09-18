@@ -92,7 +92,7 @@ data Kind
   | DirectMessage   -- NIP-17
   deriving (Eq, Show)
 
-newtype EventId = EventId { getEventId :: ByteString } deriving (Eq)
+newtype EventId = EventId { getEventId :: ByteString } deriving (Eq, Ord)
 
 data Relationship = Reply | Root
   deriving (Eq, Show)

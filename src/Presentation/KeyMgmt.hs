@@ -43,7 +43,7 @@ data Account = Account
     npub :: PubKeyXO,
     displayName :: Text,
     picture :: Text,
-    relays :: [(RelayURI, RelayInfo)]
+    relays :: [Relay]
   }
   deriving (Eq, Show)
 

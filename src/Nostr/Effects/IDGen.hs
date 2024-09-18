@@ -22,11 +22,11 @@ type instance DispatchOf IDGen = Dynamic
 makeEffect ''IDGen
 
 -- | Handler for the IDGen effect.
-runIDGenIO
+runIDGen
   :: IOE :> es
   => Eff (IDGen : es) a
   -> Eff es a
-runIDGenIO = interpret $ \_ -> \case
+runIDGen = interpret $ \_ -> \case
   GenerateID n -> do
     bytes <- liftIO $ replicateM n randomIO
     let byteString = BS.pack bytes

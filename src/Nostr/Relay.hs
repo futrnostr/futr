@@ -21,10 +21,10 @@ import qualified Text.URI.QQ as QQ
 import Nostr.Types (Relay(..), RelayInfo(..), RelayURI(..), unwrapRelayURI)
 
 -- | Provides a default list of relays.
-defaultRelays :: [(RelayURI, RelayInfo)]
+defaultRelays :: [Relay]
 defaultRelays =
-  [ (RelayURI [QQ.uri|wss://nostr.rocks|], RelayInfo True True)
-  , (RelayURI [QQ.uri|ws://localhost:2700|], RelayInfo True True)
+  [ Relay (RelayURI [QQ.uri|wss://nostr.rocks|]) (RelayInfo True True)
+  , Relay (RelayURI [QQ.uri|ws://localhost:2700|]) (RelayInfo True True)
   ]
 
 -- | Retrieves the textual representation of the relay's URI.

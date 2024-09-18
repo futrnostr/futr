@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -33,7 +34,8 @@ data RelayPool :: Effect where
     SendEvent :: Event -> [Relay] -> RelayPool m ()
     Subscribe :: [Filter] -> [Relay] -> RelayPool m SubscriptionId
     Unsubscribe :: SubscriptionId -> RelayPool m ()
-    ListRelays :: RelayPool m [(Relay, Bool)]
+    GetRelays :: RelayPool m [(Relay, Bool)]
+    GetNotices :: RelayPool m [Text]
     ClearNotices :: RelayPool m ()
 
 type instance DispatchOf RelayPool = Dynamic
@@ -81,10 +83,11 @@ processIncomingQueue stopSignal = do
             loop
   loop
 
+type RelayPoolEff es = (Concurrent :> es, IDGen :> es, IOE :> es, Logging :> es, WebSocket :> es)
+
 -- | Handler for relay pool effects.
 runRelayPool
-  :: forall (es :: [Effect]) a.
-     (Concurrent :> es, IDGen :> es, IOE :> es, Logging :> es, WebSocket :> es)
+  :: RelayPoolEff es
   => Eff (RelayPool : State RelayPoolState : es) a
   -> Eff es a
 runRelayPool action = do
@@ -101,7 +104,7 @@ runRelayPool action = do
   evalState initialState $ interpret (handleRelayPool stopSignal) action
   where
     handleRelayPool
-      :: (Concurrent :> es, IDGen :> es, IOE :> es, Logging :> es, WebSocket :> es)
+      :: RelayPoolEff es
       => MVar ()
       -> EffectHandler RelayPool (State RelayPoolState : es)
     handleRelayPool stopSignal _ = \case
@@ -184,8 +187,12 @@ runRelayPool action = do
             putMVar stopSignal ()
           else return ()
 
-      ListRelays -> do
+      GetRelays -> do
         st <- get
         return $ relays st
+
+      GetNotices -> do
+        st <- get
+        return $ notices st
 
       ClearNotices -> modify $ \st' -> st' { notices = [] }
