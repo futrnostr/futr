@@ -35,7 +35,6 @@ ghcup set cabal 3.12.1.0
 `sudo apt-get install autoconf autogen automake libtool`
 
 ```bash
-
 git clone https://github.com/bitcoin-core/secp256k1 && \
     cd secp256k1 && \
     ./autogen.sh && \
@@ -43,7 +42,30 @@ git clone https://github.com/bitcoin-core/secp256k1 && \
     make && \
     make install && \
     cd ..
+```
 
+#### For building AppImage
+
+```bash
+wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage && \
+    chmod +x linuxdeploy-x86_64.AppImage                                                                     && \
+    sudo mv linuxdeploy-x86_64.AppImage /usr/bin                                                                  && \
+    wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage   && \
+    chmod +x appimagetool-x86_64.AppImage                                                                    && \
+    sudo mv appimagetool-x86_64.AppImage /usr/bin
+```
+
+#### Building
+
+```bash
+cabal build
+```
+
+#### Building AppImage
+
+```bash
+cabal build
+./build-appimage.sh
 ```
 
 ### MacOS
