@@ -8,11 +8,8 @@ module Nostr.Relay where
 
 import Basement.IntegralConv (wordToInt)
 import Control.Lens ((^.), (^?), (<&>), _Right)
-
 import Data.Function (on)
 import Data.Text (Text)
-
-
 import Text.URI (render)
 import Text.URI.Lens (uriAuthority, uriPath, uriScheme, authHost, authPort)
 import qualified Text.URI as URI
@@ -23,8 +20,8 @@ import Nostr.Types (Relay(..), RelayInfo(..), RelayURI(..), unwrapRelayURI)
 -- | Provides a default list of relays.
 defaultRelays :: [Relay]
 defaultRelays =
-  [ Relay (RelayURI [QQ.uri|wss://nostr.rocks|]) (RelayInfo True True)
-  , Relay (RelayURI [QQ.uri|ws://localhost:2700|]) (RelayInfo True True)
+  [ Relay (RelayURI [QQ.uri|wss://nos.lol|]) (RelayInfo True True)
+  , Relay (RelayURI [QQ.uri|wss://unknown-domain-relay.com|]) (RelayInfo True True)
   ]
 
 -- | Retrieves the textual representation of the relay's URI.

@@ -44,6 +44,7 @@ module Nostr.Keys (
     , pubKeyXOToBech32
     , bech32ToPubKeyXO
     , bech32ToSecKey
+    , byteStringToHex
 
     -- * Conversions
     , derivePublicKeyXO
@@ -57,7 +58,7 @@ module Nostr.Keys (
     , schnorrVerify
     ) where
 
-import qualified "libsecp256k1" Crypto.Secp256k1 as S
+import "libsecp256k1" Crypto.Secp256k1 qualified as S
 import Data.Aeson
 import Haskoin.Crypto
     ( Mnemonic
@@ -73,13 +74,13 @@ import Haskoin.Crypto
     )
 import System.Entropy (getEntropy)
 import System.Random (newStdGen, randoms)
-import qualified Codec.Binary.Bech32 as Bech32
+import Codec.Binary.Bech32 qualified as Bech32
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Base16  as B16
-import qualified Data.ByteString.Char8 as C
-import qualified Data.Text as T
-import Text.Read (readMaybe)
+import Data.ByteString qualified as BS
+import Data.ByteString.Base16 qualified as B16
+import Data.ByteString.Char8 qualified as C
+import Data.Text qualified as T
+import Data.Text.Encoding (decodeUtf8)
 
 newtype KeyPair = KeyPair { getKeyPair :: S.KeyPair } deriving (Eq)
 newtype SecKey = SecKey { getSecKey :: S.SecKey } deriving (Eq, Read, Show)
@@ -87,22 +88,24 @@ newtype PubKeyXO = PubKeyXO { getPubKeyXO :: S.PubKeyXO } deriving (Eq, Read, Sh
 newtype Signature = Signature { getSignature :: S.Signature } deriving (Eq, Read, Show)
 
 instance FromJSON PubKeyXO where
-  parseJSON = withText "PubKeyXO" $ \t ->
-    case readMaybe (T.unpack t) of
+  parseJSON = withText "PubKeyXO" $ \t -> do
+    decoded <- either fail return $ B16.decode (C.pack $ T.unpack t)
+    case importPubKeyXO decoded of
       Just pk -> return pk
       Nothing -> fail "Invalid PubKeyXO"
 
 instance ToJSON PubKeyXO where
-  toJSON pk = String . T.pack $ show pk
+  toJSON = String . T.pack . C.unpack .B16.encode . exportPubKeyXO
 
 instance FromJSON Signature where
-  parseJSON = withText "Signature" $ \t ->
-    case readMaybe (T.unpack t) of
-      Just s -> return s
+  parseJSON = withText "Signature" $ \t -> do
+    decoded <- either fail return $ B16.decode (C.pack $ T.unpack t)
+    case S.importSignatureCompact decoded of
+      Just sig -> return $ Signature sig
       Nothing -> fail "Invalid Signature"
 
 instance ToJSON Signature where
-  toJSON s = String . T.pack $ show s
+  toJSON = String . T.pack . C.unpack .B16.encode . exportSignature
 
 -- | Generate a secret key
 createSecKey :: IO SecKey
@@ -148,6 +151,9 @@ importPubKeyXO = fmap PubKeyXO . S.importPubKeyXO
 -- | Export PubKeyXO to byte string
 exportPubKeyXO :: PubKeyXO -> ByteString
 exportPubKeyXO = S.exportPubKeyXO . getPubKeyXO
+
+byteStringToHex :: ByteString -> T.Text
+byteStringToHex bs = decodeUtf8 (B16.encode bs)
 
 schnorrSign :: KeyPair -> ByteString -> Maybe Signature
 schnorrSign (KeyPair kp) msg = fmap Signature $ S.schnorrSign kp msg
@@ -197,11 +203,8 @@ derivePublicKeyXO sk = PubKeyXO p
         (p, _) = S.xyToXO $ S.derivePubKey (getSecKey sk)
 
 -- | Exports a signature to hex format
-exportSignature :: Signature -> T.Text
-exportSignature sig = T.pack hexStr
-    where
-        hexStr = strip $ show sig
-
+exportSignature :: Signature -> ByteString
+exportSignature = S.exportSignatureCompact . getSignature
 -- Utility functions
 
 -- | Generate a random byte sequence for a secret key

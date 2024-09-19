@@ -9,6 +9,7 @@ import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
 import Futr qualified as Futr
+import Nostr.Effects.Dispatcher (runDispatcher)
 import Nostr.Effects.IDGen (runIDGen)
 import Nostr.Effects.Logging (runLoggingStdout)
 import Nostr.Effects.RelayPool (runRelayPool)
@@ -38,6 +39,7 @@ main = do
         . KeyMgmt.runKeyMgmt
         . KeyMgmt.runKeyMgmtUI
         . evalState Futr.initialState
+        . runDispatcher
         . runWebSocket
         . runRelayPool
         . Futr.runFutr

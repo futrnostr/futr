@@ -1,18 +1,16 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module Futr where
 
-import Control.Monad (forM_,void)
+import Control.Monad (forM_, void)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
+import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.STM (TQueue, atomically, readTQueue, writeTQueue)
+import Effectful.Concurrent.Async (async)
+import Effectful.Concurrent.STM (TQueue, atomically, readTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
@@ -22,9 +20,11 @@ import Text.Read (readMaybe)
 
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
-import Nostr.Keys (KeyPair, PubKeyXO, secKeyToKeyPair)
-import Nostr.Types (Event(..), EventId, RelayURI, Response(..))
+import Nostr.Keys (KeyPair, PubKeyXO, bech32ToPubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.Types (Event(..), EventId, Filter(..), RelayURI, Response(..))
 import Presentation.KeyMgmt qualified as PKeyMgmt
+
+import Data.Maybe (fromJust)
 
 data AppScreen
     = KeyMgmt
@@ -82,7 +82,8 @@ type FutrEff es = (State FutrState :> es
                   , State RelayPoolState :> es
                   , EffectfulQML :> es
                   , Logging :> es
-                  , IOE :> es)
+                  , IOE :> es
+                  , Concurrent :> es)
 
 runFutr :: FutrEff es => Eff (Futr : es) a -> Eff es a
 runFutr = interpret $ \_ -> \case
@@ -93,16 +94,23 @@ runFutr = interpret $ \_ -> \case
       kst <- get @PKeyMgmt.KeyMgmtState
       case Map.lookup (PKeyMgmt.AccountId input) (PKeyMgmt.accountMap kst) of
         Just a -> do
-          modify $ \st' -> st' { keyPair = Just $ secKeyToKeyPair $ PKeyMgmt.nsec a, currentScreen = Home }
+          let kp = secKeyToKeyPair $ PKeyMgmt.nsec a
+          let xo = keyPairToPubKeyXO kp
+          logDebug $ "xo: " <> pack (show xo)
+          let xo' = fromJust $ bech32ToPubKeyXO "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
+          logDebug $ "xo: " <> pack (show xo')
+          modify $ \st' -> st' { keyPair = Just kp, currentScreen = Home }
           fireSignal obj
-          st <- get @RelayPoolState
-          let rs = relays st
-          forM_ rs $ \(r, _) -> do
-            addRelay r
-            connect r
-          subId' <- subscribe [] $ map fst rs
-          --void $ forkIO $ processSubscriptionQueue
-          logDebug "Login completed"
+          let rs = PKeyMgmt.relays a
+          forM_ rs $ \r -> addRelay r
+          void . async $ forM_ rs $ \r -> connect r
+          now <- liftIO $ fmap (floor . (realToFrac :: POSIXTime -> Double)) getPOSIXTime
+          let initialFilters = [ FollowListFilter [ xo' ] now ]
+             --MetadataFilter contacts now
+             -- , TextNoteFilter contacts now
+          threadDelay 1000000
+          subs <- startSubscription initialFilters rs
+          return ()
         Nothing ->
             return ()
 

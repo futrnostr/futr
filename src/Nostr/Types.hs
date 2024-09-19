@@ -24,7 +24,7 @@ import GHC.Generics (Generic)
 import Text.URI (URI, mkURI, render)
 import Data.Aeson.Types (Parser)
 
-import Nostr.Keys (PubKeyXO, Signature, exportSignature)
+import Nostr.Keys (PubKeyXO, Signature, byteStringToHex, exportPubKeyXO, exportSignature)
 
 -- | Represents a wrapped URI used within a relay.
 newtype RelayURI = RelayURI URI deriving (Eq, Ord, Show)
@@ -190,7 +190,7 @@ instance FromJSON Event where
   parseJSON = withObject "event data" $ \e -> Event
     <$> e .: "id"
     <*> e .: "pubkey"
-    <*> e .: "createdAt"
+    <*> e .: "created_at"
     <*> e .: "kind"
     <*> e .: "tags"
     <*> e .: "content"
@@ -198,13 +198,13 @@ instance FromJSON Event where
 
 instance ToJSON Event where
   toJSON Event {..} = object
-     [ "id"         .= show eventId
-     , "pubkey"     .= show pubKey
-     , "createdAt" .= createdAt
-     , "kind"       .= kind
-     , "tags"       .= tags
-     , "content"    .= content
-     , "sig"        .= exportSignature sig
+     [ "id"        .= byteStringToHex (getEventId eventId)
+     , "pubkey"    .= byteStringToHex (exportPubKeyXO pubKey)
+     , "created_at" .= createdAt
+     , "kind"      .= kind
+     , "tags"      .= tags
+     , "content"   .= content
+     , "sig"       .= byteStringToHex (exportSignature sig)
      ]
 
 instance ToJSON UnsignedEvent where
