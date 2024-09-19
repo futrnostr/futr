@@ -19,6 +19,7 @@
 -- The functions provided in this module ensure secure and efficient cryptographic operations
 -- for key management and transaction signing in the Nostr network.
 
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
 
