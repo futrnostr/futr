@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=futr
 Exec=futr
-Icon=futr-icon
+Icon=nostr-purple
 Type=Application
 Categories=Network
 X-AppImage-Version=4702f2f

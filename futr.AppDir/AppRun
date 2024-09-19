@@ -1,5 +1,3 @@
 #!/bin/sh
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
-EXEC="${HERE}/usr/bin/futr"
-exec "${EXEC}"
+HERE="$(dirname "$(readlink -f "${0}")")"
+exec "${HERE}/usr/bin/futr" "$@"
