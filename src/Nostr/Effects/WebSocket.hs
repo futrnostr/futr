@@ -38,9 +38,20 @@ runWebSocket
 runWebSocket = interpret $ \_ -> \case
    RunClient relay requestChan -> case (extractHostname relay, extractScheme relay) of
     (Just host', Just scheme') ->
-      let startClient = case scheme' of
-            "wss" -> Wuss.runSecureClient (T.unpack host') (fromIntegral $ extractPort relay) (T.unpack $ extractPath relay)
-            "ws"  -> WS.runClient (T.unpack host') (extractPort relay) (T.unpack $ extractPath relay)
+      let options = WS.defaultConnectionOptions { WS.connectionCompressionOptions = WS.PermessageDeflateCompression WS.defaultPermessageDeflate }
+          startClient = case scheme' of
+            "wss" -> Wuss.runSecureClientWith
+              (T.unpack host')
+              (fromIntegral $ extractPort relay)
+              (T.unpack $ extractPath relay)
+              options
+              []
+            "ws"  -> WS.runClientWith
+              (T.unpack host')
+              (extractPort relay)
+              (T.unpack $ extractPath relay)
+              options
+              []
             _     -> error "Unsupported websocket scheme"
       in withSeqEffToIO $ \runE -> do
         runE $ logDebug $ "Attempting to connect to " <> relayName relay
