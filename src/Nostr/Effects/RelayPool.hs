@@ -2,13 +2,12 @@
 
 module Nostr.Effects.RelayPool where
 
-import Control.Monad (forM, forM_, unless, when)
-import Data.Map.Strict (Map)
+import Control.Monad (forM_, unless)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent (Concurrent)
-import Effectful.Concurrent.STM (TChan, TQueue, atomically, newTChanIO, newTQueueIO, writeTChan, writeTQueue)
+import Effectful.Concurrent.STM (TQueue, atomically, newTChanIO, newTQueueIO, writeTChan)
 import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
 import Effectful.State.Static.Shared (State, evalState, get, modify)
 import Effectful.TH
@@ -108,7 +107,7 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
 
       GetRelays -> do
         st <- get @RelayPoolState
-        return $ map (\(uri, rd) -> (Relay uri (relayInfo rd), connected rd)) $ Map.toList (relays st)
+        return $ map (\(uri', rd) -> (Relay uri' (relayInfo rd), connected rd)) $ Map.toList (relays st)
 
       StartSubscription relayURI filters' -> do
         st <- get @RelayPoolState
@@ -126,9 +125,9 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
 
       StopSubscription subId' -> do
         st <- get @RelayPoolState
-        let (maybeRelayURI, _) = Map.foldlWithKey' (\acc@(found, _) k v ->
-                                    if subId' `elem` subscriptions v then (Just k, v) else acc)
-                                  (Nothing, undefined) (relays st)
+        let maybeRelayURI = Map.foldlWithKey' (\acc k v ->
+                              if subId' `elem` subscriptions v then Just k else acc)
+                            Nothing (relays st)
         case maybeRelayURI of
           Just relayURI -> do
             case Map.lookup relayURI (relays st) of
