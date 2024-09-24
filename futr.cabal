@@ -29,13 +29,12 @@ executable futr
     hs-source-dirs:   src
 
     other-modules:
+        AppState
         EffectfulQML
         Futr
-        Nostr.Effects.Dispatcher
         Nostr.Effects.IDGen
         Nostr.Effects.Logging
         Nostr.Effects.RelayPool
-        Nostr.Effects.ResponseProcessor
         Nostr.Effects.WebSocket
         Nostr.Encryption
         Nostr.Encryption.Internal

@@ -8,8 +8,8 @@ import EffectfulQML
 import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
+import AppState qualified as AppState
 import Futr qualified as Futr
-import Nostr.Effects.Dispatcher (runDispatcher)
 import Nostr.Effects.IDGen (runIDGen)
 import Nostr.Effects.Logging (runLoggingStdout)
 import Nostr.Effects.RelayPool (runRelayPool)
@@ -36,10 +36,10 @@ main = do
         . runLoggingStdout
         . runConcurrent
         . evalState KeyMgmt.initialState
+        . evalState AppState.initialRelayPoolState
         . KeyMgmt.runKeyMgmt
         . KeyMgmt.runKeyMgmtUI
-        . evalState Futr.initialState
-        . runDispatcher
+        . evalState AppState.initialState
         . runWebSocket
         . runRelayPool
         . Futr.runFutr

@@ -84,8 +84,8 @@ import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8)
 
 newtype KeyPair = KeyPair { getKeyPair :: S.KeyPair } deriving (Eq)
-newtype SecKey = SecKey { getSecKey :: S.SecKey } deriving (Eq, Read, Show)
-newtype PubKeyXO = PubKeyXO { getPubKeyXO :: S.PubKeyXO } deriving (Eq, Read, Show)
+newtype SecKey = SecKey { getSecKey :: S.SecKey } deriving (Eq, Ord, Read, Show)
+newtype PubKeyXO = PubKeyXO { getPubKeyXO :: S.PubKeyXO } deriving (Eq, Ord, Read, Show)
 newtype Signature = Signature { getSignature :: S.Signature } deriving (Eq, Read, Show)
 
 instance FromJSON PubKeyXO where
