@@ -78,7 +78,7 @@ Rectangle {
                         spacing: 5
 
                         Image {
-                            source: modelData.picture
+                            source: Util.getProfilePicture(modelData.picture, modelData.npub)
                             width: 50
                             height: 50
                             Layout.preferredWidth: 50

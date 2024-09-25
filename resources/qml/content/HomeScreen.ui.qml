@@ -22,10 +22,13 @@ Rectangle {
                 width: 75
                 height: 75
 
-                icon.source: mypicture
                 icon.width: 65
                 icon.height: 65
                 icon.color: "transparent"
+
+                Component.onCompleted: {
+                    icon.source = Util.getProfilePicture(mypicture, mynpub)
+                }
 
                 Material.elevation: 10
 
@@ -42,7 +45,6 @@ Rectangle {
                 }
             }
         }
-
 
         MyProfile {
             id: myProfile

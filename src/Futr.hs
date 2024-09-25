@@ -4,7 +4,6 @@ module Futr where
 
 import Data.Aeson (eitherDecode, encode, toJSON)
 import Data.ByteString.Lazy qualified as BSL
-import Data.Maybe (fromMaybe)
 import Control.Monad (forM_, void, unless, when)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
@@ -70,9 +69,8 @@ loginWithAccount :: FutrEff es => ObjRef () -> PKeyMgmt.Account -> Eff es ()
 loginWithAccount obj a = do
   let kp = secKeyToKeyPair $ PKeyMgmt.nsec a
   let xo = keyPairToPubKeyXO kp
-  logDebug $ "xo: " <> pack (show xo)
-  let xo' = fromJust $ bech32ToPubKeyXO "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
-  logDebug $ "xo: " <> pack (show xo')
+  -- fiatjaf pub key for testing contact loading
+  --let xo' = fromJust $ bech32ToPubKeyXO "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
 
   oldState <- gets @AppState id
   let newState = oldState { keyPair = Just kp }
@@ -83,8 +81,8 @@ loginWithAccount obj a = do
   void . async $ mapM_ connect rs
   now <- liftIO $ fmap (floor . (realToFrac :: POSIXTime -> Double)) getPOSIXTime
   let initialFilters =
-        [ FollowListFilter [ xo' ] now
-        , MetadataFilter [ xo' ] now
+        [ FollowListFilter [ xo ] now
+        , MetadataFilter [ xo ] now
         ]
 
   let runSubscription :: FutrEff es => Relay -> Eff es ()
@@ -115,8 +113,8 @@ loginWithAccount obj a = do
     st <- get @AppState
     let followedPubKeys = Map.keys (follows st)
     let filters =
-          [ FollowListFilter (xo' : followedPubKeys) now
-          , MetadataFilter (xo' : followedPubKeys) now
+          [ FollowListFilter (xo : followedPubKeys) now
+          , MetadataFilter (xo : followedPubKeys) now
           ]
     maybeSubInfo <- startSubscription (uri relay') filters
     case maybeSubInfo of
@@ -189,7 +187,7 @@ handleEvent event' = case kind event' of
     Left err -> logWarning $ "Failed to decode metadata: " <> pack err
 
   FollowList -> do
-    let followList = [(pubKey', relayUri', displayName) | PTag pubKey' relayUri' displayName <- tags event']
+    let followList = [(pubKey', relayUri', displayName') | PTag pubKey' relayUri' displayName' <- tags event']
     modify $ \st -> st { follows = Map.insert (pubKey event') followList (follows st) }
 
   _ -> return ()
@@ -247,8 +245,8 @@ runFutrUI = interpret $ \_ -> \case
           st <- runE $ get @AppState
           runE $ fireSignal obj
           case keyPair st of
-            Just kp -> return $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
-            Nothing -> return "",
+            Just kp -> return $ Just $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+            Nothing -> return Nothing,
 
         defPropertySigRO' "mypicture" changeKey' $ \obj -> do
           st <- runE $ get @AppState
@@ -256,20 +254,21 @@ runFutrUI = interpret $ \_ -> \case
           case keyPair st of
             Just kp -> do
               let p = keyPairToPubKeyXO kp
-              let (profile', _) = Map.findWithDefault (emptyProfile, 0) p (profiles st)
-              return $ fromMaybe ("https://robohash.org/" <> pubKeyXOToBech32 p <> ".png?size=50x50") (picture profile')
-            Nothing -> return "",
+              putStrLn $ "p: " ++ (show p)
+              let (profile', x) = Map.findWithDefault (emptyProfile, 0) p (profiles st)
+              putStrLn $ "profile: " ++ (show $ profiles st)
+              putStrLn $ show x
+              return $ picture profile'
+            Nothing -> return Nothing,
 
         defMethod' "login" $ \obj input -> runE $ login obj input,
 
-        defMethod' "getProfile" $ \_ -> do
+        defMethod' "getProfile" $ \obj npub -> do
           st <- runE $ get @AppState
-          let xo = fromJust $ bech32ToPubKeyXO "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
+          runE $ fireSignal obj
+          let xo = fromJust $ bech32ToPubKeyXO npub
           let (profile', _) = Map.findWithDefault (emptyProfile, 0) xo (profiles st)
-          let profile'' = case picture profile' of
-                Just p -> profile'
-                Nothing -> profile' { picture = Just ("https://robohash.org/" <> pubKeyXOToBech32 xo <> ".png?size=50x50") }
-          return $ TE.decodeUtf8 $ BSL.toStrict $ encode $ toJSON profile''
+          return $ TE.decodeUtf8 $ BSL.toStrict $ encode $ toJSON profile'
         ]
 
     rootObj <- newObject rootClass ()

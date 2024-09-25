@@ -51,14 +51,17 @@ ApplicationWindow {
             KeyMgmtScreen {
                 anchors.margins: 10
                 anchors.fill: parent
-
                 visible: currentScreen == "KeyMgmt"
             }
 
-            HomeScreen {
-                anchors.margins: 10
+            Loader {
+                id: myHomeScreenLoader
+                active: currentScreen == "Home"
                 anchors.fill: parent
-                visible: currentScreen == "Home"
+                sourceComponent: HomeScreen {
+                    anchors.margins: 10
+                    anchors.fill: parent
+                }
             }
         }
     }

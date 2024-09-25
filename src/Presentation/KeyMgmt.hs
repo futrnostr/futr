@@ -41,8 +41,8 @@ import Text.Read (readMaybe)
 data Account = Account
   { nsec :: SecKey,
     npub :: PubKeyXO,
-    displayName :: Text,
-    picture :: Text,
+    displayName :: Maybe Text,
+    picture :: Maybe Text,
     relays :: [Relay]
   }
   deriving (Eq, Show)
@@ -169,12 +169,19 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
               let res = maybe "" f $ Map.lookup (fromObjRef obj) (accountMap st)
               return res)
 
+        let mprop n f = defPropertySigRO' n changeKey ( \obj -> runE $ do
+              st <- get
+              let res = case Map.lookup (fromObjRef obj) (accountMap st) of
+                    Just acc -> f acc
+                    Nothing -> Nothing
+              return res)
+
         accountClass <-
           newClass
             [ prop "nsec" (secKeyToBech32 . nsec),
               prop "npub" (pubKeyXOToBech32 . npub),
-              prop "displayName" displayName,
-              prop "picture" picture
+              mprop "displayName" displayName,
+              mprop "picture" picture
             ]
 
         accountPool' <- newFactoryPool (newObject accountClass)
@@ -268,8 +275,8 @@ loadAccount storageDir npubDir = do
         { nsec = nsecKey,
           npub = pubKeyXO,
           relays = fromMaybe defaultRelays relayList,
-          displayName = maybe "" id (profile >>= \(Profile _ d _ _ _ _) -> d),
-          picture = maybe ("https://robohash.org/" <> pack npubDir <> ".png?size=50x50") id (profile >>= \(Profile _ _ _ p _ _) -> p)
+          displayName = profile >>= \(Profile _ d _ _ _ _) -> d,
+          picture = profile >>= \(Profile _ _ _ p _ _) -> p
         }
 
 readFileMaybe :: (FileSystem :> es) => FilePath -> Eff es (Maybe Text)
@@ -295,6 +302,6 @@ accountFromKeyPair kp = (AccountId newNpub, account)
         { nsec = keyPairToSecKey kp,
           npub = keyPairToPubKeyXO kp,
           relays = defaultRelays,
-          displayName = "",
-          picture = pack "https://robohash.org/" <> newNpub <> pack ".png?size=50x50"
+          displayName = Nothing,
+          picture = Nothing
         }
