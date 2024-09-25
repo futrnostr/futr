@@ -11,164 +11,164 @@ Rectangle {
     border.color: "#e0e0e0"
     radius: 5
     width: 400
-    implicitHeight: contentLoader.implicitHeight
-    property var profileData: {}
+    implicitHeight: content.implicitHeight
+    property var profileData: ({
+        display_name: "",
+        name: "",
+        about: "",
+        picture: "",
+        banner: "",
+        nip05: "",
+        githubProof: "",
+        twitterProof: "",
+        telegramProof: ""
+    })
 
-    Loader {
-        id: contentLoader
+    ColumnLayout {
+        id: content
         anchors.fill: parent
-        sourceComponent: profileData && profileData !== {} ? contentComponent : null
-    }
+        anchors.margins: 1
+        spacing: 10
 
-    Component {
-        id: contentComponent
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignRight
+            Layout.rightMargin: 2
+            Layout.topMargin: 2
 
-        ColumnLayout {
-            id: content
-            anchors.fill: parent
-            anchors.margins: 1
-            spacing: 10
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignRight
-                Layout.rightMargin: 2
-                Layout.topMargin: 2
-
-                CloseButton {
-                    id: closeButton
-                    target: root
-                }
+            CloseButton {
+                id: closeButton
+                target: root
             }
+        }
 
-            RowLayout {
+        RowLayout {
+            width: parent.width
+
+            ColumnLayout {
+                spacing: 10
                 width: parent.width
 
-                ColumnLayout {
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 80
+                    visible: profileData.banner !== null && profileData.banner !== ""
+
+                    Image {
+                        source: profileData.banner ?? ""
+                        width: parent.width
+                        height: 80
+                        fillMode: Image.PreserveAspectCrop
+                        clip: true
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
                     spacing: 10
-                    width: parent.width
 
                     Rectangle {
-                        Layout.fillWidth: true
-                        height: 80
-                        visible: profileData.banner !== null && profileData.banner !== ""
+                        width: 60
+                        height: 60
+                        Layout.leftMargin: 10
+                        Layout.fillHeight: true
 
                         Image {
-                            source: profileData.banner ?? ""
-                            width: parent.width
-                            height: 80
+                            width: 60
+                            height: 60
                             fillMode: Image.PreserveAspectCrop
                             clip: true
+
+                            Component.onCompleted: {
+                                source = Util.getProfilePicture(profileData.picture, mynpub)
+                            }
                         }
                     }
 
-                    RowLayout {
-                        Layout.fillWidth: true
+                    ColumnLayout {
                         spacing: 10
+                        Layout.fillWidth: true
 
-                        Rectangle {
-                            width: 60
-                            height: 60
-                            Layout.leftMargin: 10
-                            Layout.fillHeight: true
+                        Text {
+                            text: profileData.display_name ?? ""
+                            font.bold: true
+                        }
 
-                            Image {
-                                width: 60
-                                height: 60
-                                fillMode: Image.PreserveAspectCrop
-                                clip: true
+                        Text {
+                            text: profileData.name ?? ""
+                        }
 
-                                Component.onCompleted: {
-                                    source = Util.getProfilePicture(profileData.picture, mynpub)
+                        RowLayout {
+                            Text {
+                                text: mynpub
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: parent.width - copyButton.width - parent.spacing
+                            }
+
+                            Button {
+                                id: copyButton
+                                icon.source: "qrc:/icons/content_copy.svg"
+                                flat: true
+                                Layout.preferredWidth: 50
+                                Layout.preferredHeight: 50
+                                Layout.rightMargin: 10
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Copy to clipboard")
+
+                                onClicked: {
+                                    clipboard.copyText(mynpub)
                                 }
                             }
                         }
 
-                        ColumnLayout {
-                            spacing: 10
+                        Text {
+                            text:  profileData.about ?? ""
                             Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                        }
 
-                            Text {
-                                text: profileData.display_name ?? ""
-                                font.bold: true
-                            }
+                        ExternalIdentity {
+                            Layout.fillWidth: true
+                            icon: ExternalIdentityIcons.github
+                            link: profileData.githubLink ?? ""
+                            proof: profileData.githubProof ?? ""
+                            value: profileData.githubUsername ?? ""
+                        }
 
-                            Text {
-                                text: profileData.name ?? ""
-                            }
+                        ExternalIdentity {
+                            Layout.fillWidth: true
+                            icon: ExternalIdentityIcons.telegram
+                            link: profileData.telegramLink ?? ""
+                            proof: profileData.telegramProof ?? ""
+                            value: profileData.telegramUsername ?? ""
+                        }
 
-                            RowLayout {
-                                Text {
-                                    text: mynpub
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                    Layout.maximumWidth: parent.width - copyButton.width - parent.spacing
-                                }
-
-                                Button {
-                                    id: copyButton
-                                    icon.source: "qrc:/icons/content_copy.svg"
-                                    flat: true
-                                    Layout.preferredWidth: 50
-                                    Layout.preferredHeight: 50
-                                    Layout.rightMargin: 10
-
-                                    ToolTip.visible: hovered
-                                    ToolTip.text: qsTr("Copy to clipboard")
-
-                                    onClicked: {
-                                        clipboard.copyText(mynpub)
-                                    }
-                                }
-                            }
-
-                            Text {
-                                text:  profileData.about ?? ""
-                                Layout.fillWidth: true
-                                wrapMode: Text.Wrap
-                            }
-
-                            ExternalIdentity {
-                                Layout.fillWidth: true
-                                icon: ExternalIdentityIcons.github
-                                link: profileData.githubLink ?? ""
-                                proof: profileData.githubProof ?? ""
-                                value: profileData.githubUsername ?? ""
-                            }
-
-                            ExternalIdentity {
-                                Layout.fillWidth: true
-                                icon: ExternalIdentityIcons.telegram
-                                link: profileData.telegramLink ?? ""
-                                proof: profileData.telegramProof ?? ""
-                                value: profileData.telegramUsername ?? ""
-                            }
-
-                            ExternalIdentity {
-                                Layout.fillWidth: true
-                                icon: ExternalIdentityIcons.x_twitter
-                                link: profileData.twitterLink ?? ""
-                                proof: profileData.twitterProof ?? ""
-                                value: profileData.twitterUsername ?? ""
-                            }
+                        ExternalIdentity {
+                            Layout.fillWidth: true
+                            icon: ExternalIdentityIcons.x_twitter
+                            link: profileData.twitterLink ?? ""
+                            proof: profileData.twitterProof ?? ""
+                            value: profileData.twitterUsername ?? ""
                         }
                     }
                 }
             }
+        }
 
-            RowLayout {
-                width: parent.width
-                Layout.alignment: Qt.AlignRight
-                Layout.rightMargin: 10
-                Layout.bottomMargin: 10
+        RowLayout {
+            width: parent.width
+            Layout.alignment: Qt.AlignRight
+            Layout.rightMargin: 10
+            Layout.bottomMargin: 10
 
-                EditButton {
-                    id: editButton
+            EditButton {
+                id: editButton
 
-                    onClicked: {
-                        root.visible = false;
-                        editMyProfile.visible = true;
-                    }
+                onClicked: {
+                    root.visible = false;
+                    editMyProfile.visible = true;
                 }
             }
         }

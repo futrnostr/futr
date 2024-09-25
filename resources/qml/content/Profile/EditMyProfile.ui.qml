@@ -12,7 +12,17 @@ Rectangle {
     radius: 5
     width: 400
     implicitHeight: content.implicitHeight + 20
-    property var profileData: {}
+    property var profileData: ({
+        display_name: "",
+        name: "",
+        about: "",
+        picture: "",
+        banner: "",
+        nip05: "",
+        githubProof: "",
+        twitterProof: "",
+        telegramProof: ""
+    })
     property var labelWidth: 100
 
     ColumnLayout {
