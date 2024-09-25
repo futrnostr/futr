@@ -94,7 +94,10 @@ Rectangle {
                                 onExited: parent.parent.parent.mouseHover = false
 
                                 onClicked: {
-                                    login(modelData.npub)
+                                    connectingModal.visible = true
+                                    delayLogin.npub = modelData.npub
+                                    delayLogin.start()
+                                    connectingModal.visible = false
                                 }
                             }
                         }
@@ -134,7 +137,10 @@ Rectangle {
                                 onExited: parent.parent.parent.mouseHover = false
 
                                 onClicked: {
-                                    login(modelData.npub)
+                                    connectingModal.visible = true
+                                    delayLogin.npub = modelData.npub
+                                    delayLogin.start()
+                                    connectingModal.visible = false
                                 }
                             }
                         }
@@ -328,7 +334,6 @@ Rectangle {
                 }
             }
         }
-
         onRejected: {
             importAccountDialog.visible = false
         }
@@ -538,5 +543,51 @@ Rectangle {
         standardButtons: Dialog.Ok
         modal: true
         anchors.centerIn: parent
+    }
+
+    Dialog {
+        id: connectingModal
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        anchors.centerIn: parent
+        width: 250
+        height: 180
+        visible: false
+
+        background: Rectangle {
+            color: "#000000"
+            border.color: "#e0e0e0"
+            border.width: 1
+            radius: 10
+            anchors.fill: parent
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 20
+
+            BusyIndicator {
+                running: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Text {
+                text: qsTr("Connecting...")
+                color: "#ffffff"
+                font.pixelSize: 16
+                font.bold: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+        }
+    }
+
+    Timer {
+        id: delayLogin
+        interval: 50
+        repeat: false
+        property string npub: ""
+        onTriggered: {
+            login(npub)
+        }
     }
 }

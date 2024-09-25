@@ -74,10 +74,9 @@ loginWithAccount obj a = do
   logDebug $ "xo: " <> pack (show xo')
 
   oldState <- gets @AppState id
-  let newState = oldState { keyPair = Just kp, currentScreen = Home }
+  let newState = oldState { keyPair = Just kp }
   modify @AppState (const newState)
 
-  fireSignal obj
   let rs = PKeyMgmt.relays a
   mapM_ addRelay rs
   void . async $ mapM_ connect rs
@@ -100,7 +99,6 @@ loginWithAccount obj a = do
                   when stopped $ do
                     stopSubscription subId'
                     return ()
-                  fireSignal obj
                   threadDelay $ 100 * 1000
                   unless stopped loop
             loop
@@ -123,7 +121,10 @@ loginWithAccount obj a = do
     case maybeSubInfo of
       Nothing -> logWarning $ "Failed to start second subscription for relay: " <> pack (show (uri relay'))
       Just (_, queue) -> do
-        void . async $ handleResponsesUntilClosed (uri relay') queue
+        void . async $ handleResponsesUntilClosed obj (uri relay') queue
+
+  modify $ \st -> st { currentScreen = Home }
+  fireSignal obj
   return ()
 
 handleResponsesUntilEOSE :: FutrEff es => RelayURI -> [Response] -> Eff es Bool
@@ -141,12 +142,13 @@ handleResponsesUntilEOSE relayURI (r:rs) = case r of
     modify $ handleNotice relayURI msg
     handleResponsesUntilEOSE relayURI rs
 
-handleResponsesUntilClosed :: FutrEff es => RelayURI -> TQueue Response -> Eff es ()
-handleResponsesUntilClosed relayURI queue = do
+handleResponsesUntilClosed :: FutrEff es => ObjRef () -> RelayURI -> TQueue Response -> Eff es ()
+handleResponsesUntilClosed obj relayURI queue = do
   let loop = do
         msg <- atomically $ readTQueue queue
         msgs <- atomically $ flushTQueue queue
         stopped <- processResponses relayURI (msg : msgs)
+        fireSignal obj
         threadDelay $ 100 * 1000
         unless stopped loop
   loop
