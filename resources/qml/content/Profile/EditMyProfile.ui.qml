@@ -12,6 +12,7 @@ Rectangle {
     radius: 5
     width: 400
     implicitHeight: content.implicitHeight + 20
+    property var profileData: {}
 
     ColumnLayout {
         id: content

@@ -22,7 +22,7 @@ Rectangle {
                 width: 75
                 height: 75
 
-                icon.source: "https://avatars.githubusercontent.com/u/394428?v=4" // Use the image as the icon
+                icon.source: mypicture
                 icon.width: 65
                 icon.height: 65
                 icon.color: "transparent"
@@ -36,6 +36,9 @@ Rectangle {
 
                 onClicked: {
                     myProfile.visible = true
+                    var profile = JSON.parse(getProfile(mynpub))
+                    myProfile.profileData = profile
+                    editMyProfile.profileData = profile
                 }
             }
         }

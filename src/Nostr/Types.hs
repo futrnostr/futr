@@ -144,6 +144,9 @@ data Profile = Profile
   , banner :: Maybe Text
   } deriving (Eq, Show)
 
+emptyProfile :: Profile
+emptyProfile = Profile Nothing Nothing Nothing Nothing Nothing Nothing
+
 -- Helper functions
 
 noticeReason :: Text -> StandardPrefix

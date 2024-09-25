@@ -12,6 +12,7 @@ Rectangle {
     radius: 5
     width: 400
     implicitHeight: content.implicitHeight
+    property var profileData: {}
 
     ColumnLayout {
         id: content
@@ -41,9 +42,10 @@ Rectangle {
                 Rectangle {
                     Layout.fillWidth: true
                     height: 80
+                    visible: profileData.banner !== null
 
                     Image {
-                        source: "https://pbs.twimg.com/profile_banners/44196397/1722660499/1500x500"
+                        source: profileData.banner ?? ""
                         width: parent.width
                         height: 80
                         fillMode: Image.PreserveAspectCrop
@@ -62,12 +64,11 @@ Rectangle {
                         Layout.fillHeight: true
 
                         Image {
-                            source: "https://avatars.githubusercontent.com/u/394428?v=4"
+                            source: profileData.picture ?? ""
                             width: 60
                             height: 60
                             fillMode: Image.PreserveAspectCrop
                             clip: true
-
                         }
                     }
 
@@ -76,16 +77,16 @@ Rectangle {
                         Layout.fillWidth: true
 
                         Text {
-                            text: "prolic"
+                            text: profileData.display_name ?? ""
                             font.bold: true
                         }
 
                         Text {
-                            text: "Sascha-Oliver Prolić"
+                            text: profileData.name ?? ""
                         }
 
                         Text {
-                            text: "Nostr Haskell Developer by night. Nightmare by day. I don't know what I am doing, but who does anyway?"
+                            text: profileData.about ?? ""
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
                         }
@@ -93,25 +94,25 @@ Rectangle {
                         ExternalIdentity {
                             Layout.fillWidth: true
                             icon: ExternalIdentityIcons.github
-                            link: "https://github.com/prolic"
-                            proof: "some proof"
-                            value: "prolic"
+                            link: profileData.githubLink ?? ""
+                            proof: profileData.githubProof ?? ""
+                            value: profileData.githubUsername ?? ""
                         }
 
                         ExternalIdentity {
                             Layout.fillWidth: true
                             icon: ExternalIdentityIcons.telegram
-                            link: "https://t.me/sasaprolic"
-                            proof: "some proof"
-                            value: "sasaprolic"
+                            link: profileData.telegramLink ?? ""
+                            proof: profileData.telegramProof ?? ""
+                            value: profileData.telegramUsername ?? ""
                         }
 
                         ExternalIdentity {
                             Layout.fillWidth: true
                             icon: ExternalIdentityIcons.x_twitter
-                            link: "https://x.com/sasaprolic"
-                            proof: "some proof"
-                            value: "sasaprolic"
+                            link: profileData.twitterLink ?? ""
+                            proof: profileData.twitterProof ?? ""
+                            value: profileData.twitterUsername ?? ""
                         }
                     }
                 }

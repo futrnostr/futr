@@ -269,7 +269,7 @@ loadAccount storageDir npubDir = do
           npub = pubKeyXO,
           relays = fromMaybe defaultRelays relayList,
           displayName = maybe "" id (profile >>= \(Profile _ d _ _ _ _) -> d),
-          picture = maybe ("https://robohash.org/" <> pack npubDir <> ".png") id (profile >>= \(Profile _ _ _ p _ _) -> p)
+          picture = maybe ("https://robohash.org/" <> pack npubDir <> ".png?size=50x50") id (profile >>= \(Profile _ _ _ p _ _) -> p)
         }
 
 readFileMaybe :: (FileSystem :> es) => FilePath -> Eff es (Maybe Text)
@@ -296,5 +296,5 @@ accountFromKeyPair kp = (AccountId newNpub, account)
           npub = keyPairToPubKeyXO kp,
           relays = defaultRelays,
           displayName = "",
-          picture = pack "https://robohash.org/" <> newNpub <> pack ".png"
+          picture = pack "https://robohash.org/" <> newNpub <> pack ".png?size=50x50"
         }

@@ -2,8 +2,9 @@
 
 module Futr where
 
-import Data.Aeson (eitherDecode)
+import Data.Aeson (eitherDecode, encode, toJSON)
 import Data.ByteString.Lazy qualified as BSL
+import Data.Maybe (fromMaybe)
 import Control.Monad (forM_, void, unless, when)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
@@ -23,8 +24,8 @@ import Text.Read (readMaybe)
 import AppState
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
-import Nostr.Keys (bech32ToPubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
-import Nostr.Types (Event(..), EventId, Filter(..), Kind(..), Tag(..), RelayURI, Response(..), Relay(..))
+import Nostr.Keys (bech32ToPubKeyXO, keyPairToPubKeyXO, pubKeyXOToBech32, secKeyToKeyPair)
+import Nostr.Types (Event(..), EventId, Filter(..), Kind(..), Profile(..), Tag(..), RelayURI, Response(..), Relay(..), emptyProfile)
 import Presentation.KeyMgmt qualified as PKeyMgmt
 
 import Data.Maybe (fromJust)
@@ -242,7 +243,33 @@ runFutrUI = interpret $ \_ -> \case
                           fireSignal obj
                     Nothing -> return ()),
 
-        defMethod' "login" $ \obj input -> runE $ login obj input
+        defPropertySigRO' "mynpub" changeKey' $ \obj -> do
+          st <- runE $ get @AppState
+          runE $ fireSignal obj
+          case keyPair st of
+            Just kp -> return $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+            Nothing -> return "",
+
+        defPropertySigRO' "mypicture" changeKey' $ \obj -> do
+          st <- runE $ get @AppState
+          runE $ fireSignal obj
+          case keyPair st of
+            Just kp -> do
+              let p = keyPairToPubKeyXO kp
+              let (profile', _) = Map.findWithDefault (emptyProfile, 0) p (profiles st)
+              return $ fromMaybe ("https://robohash.org/" <> pubKeyXOToBech32 p <> ".png?size=50x50") (picture profile')
+            Nothing -> return "",
+
+        defMethod' "login" $ \obj input -> runE $ login obj input,
+
+        defMethod' "getProfile" $ \_ -> do
+          st <- runE $ get @AppState
+          let xo = fromJust $ bech32ToPubKeyXO "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
+          let (profile', _) = Map.findWithDefault (emptyProfile, 0) xo (profiles st)
+          let profile'' = case picture profile' of
+                Just p -> profile'
+                Nothing -> profile' { picture = Just ("https://robohash.org/" <> pubKeyXOToBech32 xo <> ".png?size=50x50") }
+          return $ TE.decodeUtf8 $ BSL.toStrict $ encode $ toJSON profile''
         ]
 
     rootObj <- newObject rootClass ()
