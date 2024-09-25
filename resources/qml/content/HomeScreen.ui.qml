@@ -21,6 +21,7 @@ Rectangle {
             RoundButton {
                 width: 75
                 height: 75
+                flat: true
 
                 icon.width: 65
                 icon.height: 65

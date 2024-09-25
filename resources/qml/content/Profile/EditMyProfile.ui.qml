@@ -13,6 +13,7 @@ Rectangle {
     width: 400
     implicitHeight: content.implicitHeight + 20
     property var profileData: {}
+    property var labelWidth: 100
 
     ColumnLayout {
         id: content
@@ -58,42 +59,90 @@ Rectangle {
             spacing: 10
             width: parent.width
 
-            TextField {
-                id: displayNameField
-                placeholderText: "Display Name"
-                Layout.fillWidth: true
+            RowLayout {
+                spacing: 5
+                Label {
+                    text: "Display Name:"
+                    Layout.preferredWidth: labelWidth
+                }
+                TextField {
+                    id: displayNameField
+                    placeholderText: "Display Name"
+                    Layout.fillWidth: true
+                    text: profileData.display_name
+                }
             }
 
-            TextField {
-                id: nameField
-                placeholderText: "Name"
-                Layout.fillWidth: true
+            RowLayout {
+                spacing: 5
+                Label {
+                    text: "Name:"
+                    Layout.preferredWidth: labelWidth
+                }
+                TextField {
+                    id: nameField
+                    placeholderText: "Name"
+                    Layout.fillWidth: true
+                    text: profileData.name
+                }
             }
 
-            TextArea {
-                id: aboutMeField
-                placeholderText: "About Me"
-                Layout.fillWidth: true
-                Layout.preferredHeight: 70
-                wrapMode: TextEdit.Wrap
+            RowLayout {
+                spacing: 5
+                Label {
+                    text: "About Me:"
+                    Layout.preferredWidth: labelWidth
+                }
+                TextArea {
+                    id: aboutMeField
+                    placeholderText: "About Me"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 70
+                    wrapMode: TextEdit.Wrap
+                    text: profileData.about
+                }
             }
 
-            TextField {
-                id: avatarUrlField
-                placeholderText: "Avatar URL"
-                Layout.fillWidth: true
+            RowLayout {
+                spacing: 5
+                Label {
+                    text: "Avatar URL:"
+                    Layout.preferredWidth: labelWidth
+                }
+                TextField {
+                    id: avatarUrlField
+                    placeholderText: "Avatar URL"
+                    Layout.fillWidth: true
+                    text: profileData.picture
+                }
             }
 
-            TextField {
-                id: bannerUrlField
-                placeholderText: "Banner URL"
-                Layout.fillWidth: true
+            RowLayout {
+                spacing: 5
+                Label {
+                    text: "Banner URL:"
+                    Layout.preferredWidth: labelWidth
+                }
+                TextField {
+                    id: bannerUrlField
+                    placeholderText: "Banner URL"
+                    Layout.fillWidth: true
+                    text: profileData.banner
+                }
             }
 
-            TextField {
-                id: nip05Field
-                placeholderText: "NIP05 Address"
-                Layout.fillWidth: true
+            RowLayout {
+                spacing: 5
+                Label {
+                    text: "NIP05 Address:"
+                    Layout.preferredWidth: labelWidth
+                }
+                TextField {
+                    id: nip05Field
+                    placeholderText: "NIP05 Address"
+                    Layout.fillWidth: true
+                    text: profileData.nip05
+                }
             }
 
             RowLayout {
@@ -148,22 +197,46 @@ Rectangle {
                 id: proofFields
                 visible: false
 
-                TextField {
-                    id: githubProofField
-                    placeholderText: "GitHub Proof"
-                    Layout.fillWidth: true
+                RowLayout {
+                    spacing: 5
+                    Label {
+                        text: "GitHub Proof:"
+                        Layout.preferredWidth: labelWidth
+                    }
+                    TextField {
+                        id: githubProofField
+                        placeholderText: "GitHub Proof"
+                        Layout.fillWidth: true
+                        text: profileData.githubProof ?? ""
+                    }
                 }
 
-                TextField {
-                    id: twitterProofField
-                    placeholderText: "Twitter Proof"
-                    Layout.fillWidth: true
+                RowLayout {
+                    spacing: 5
+                    Label {
+                        text: "Twitter Proof:"
+                        Layout.preferredWidth: labelWidth
+                    }
+                    TextField {
+                        id: twitterProofField
+                        placeholderText: "Twitter Proof"
+                        Layout.fillWidth: true
+                        text: profileData.twitterProof ?? ""
+                    }
                 }
 
-                TextField {
-                    id: telegramProofField
-                    placeholderText: "Telegram Proof"
-                    Layout.fillWidth: true
+                RowLayout {
+                    spacing: 5
+                    Label {
+                        text: "Telegram Proof:"
+                        Layout.preferredWidth: labelWidth
+                    }
+                    TextField {
+                        id: telegramProofField
+                        placeholderText: "Telegram Proof"
+                        Layout.fillWidth: true
+                        text: profileData.telegramProof ?? ""
+                    }
                 }
             }
         }
