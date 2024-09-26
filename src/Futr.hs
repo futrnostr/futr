@@ -243,14 +243,12 @@ runFutrUI = interpret $ \_ -> \case
 
         defPropertySigRO' "mynpub" changeKey' $ \obj -> do
           st <- runE $ get @AppState
-          runE $ fireSignal obj
           case keyPair st of
             Just kp -> return $ Just $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
             Nothing -> return Nothing,
 
         defPropertySigRO' "mypicture" changeKey' $ \obj -> do
           st <- runE $ get @AppState
-          runE $ fireSignal obj
           case keyPair st of
             Just kp -> do
               let p = keyPairToPubKeyXO kp
@@ -265,7 +263,6 @@ runFutrUI = interpret $ \_ -> \case
 
         defMethod' "getProfile" $ \obj npub -> do
           st <- runE $ get @AppState
-          runE $ fireSignal obj
           let xo = fromJust $ bech32ToPubKeyXO npub
           let (profile', _) = Map.findWithDefault (emptyProfile, 0) xo (profiles st)
           return $ TE.decodeUtf8 $ BSL.toStrict $ encode $ toJSON profile'

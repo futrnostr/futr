@@ -12,17 +12,7 @@ Rectangle {
     radius: 5
     width: 400
     implicitHeight: content.implicitHeight
-    property var profileData: ({
-        display_name: "",
-        name: "",
-        about: "",
-        picture: "",
-        banner: "",
-        nip05: "",
-        githubProof: "",
-        twitterProof: "",
-        telegramProof: ""
-    })
+    property var profileData
 
     ColumnLayout {
         id: content
@@ -52,7 +42,7 @@ Rectangle {
                 Rectangle {
                     Layout.fillWidth: true
                     height: 80
-                    visible: profileData.banner !== null && profileData.banner !== ""
+                    visible: profileData !== null && profileData.banner !== null && profileData.banner !== ""
 
                     Image {
                         source: profileData.banner ?? ""
@@ -74,14 +64,12 @@ Rectangle {
                         Layout.fillHeight: true
 
                         Image {
+                            id: profileImage
+                            source: Util.getProfilePicture(profileData.picture, mynpub)
                             width: 60
                             height: 60
                             fillMode: Image.PreserveAspectCrop
                             clip: true
-
-                            Component.onCompleted: {
-                                source = Util.getProfilePicture(profileData.picture, mynpub)
-                            }
                         }
                     }
 
@@ -103,7 +91,6 @@ Rectangle {
                                 text: mynpub
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
-                                Layout.maximumWidth: parent.width - copyButton.width - parent.spacing
                             }
 
                             Button {
@@ -167,8 +154,11 @@ Rectangle {
                 id: editButton
 
                 onClicked: {
-                    root.visible = false;
-                    editMyProfile.visible = true;
+                    var profile = JSON.parse(getProfile(mynpub))
+                    profileLoader.setSource(
+                        "EditMyProfile.ui.qml",
+                        { "profileData": profile }
+                    )
                 }
             }
         }

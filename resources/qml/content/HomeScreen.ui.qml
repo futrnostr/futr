@@ -39,30 +39,40 @@ Rectangle {
                 ToolTip.text: qsTr("My Profile")
 
                 onClicked: {
-                    myProfile.visible = true
                     var profile = JSON.parse(getProfile(mynpub))
-                    myProfile.profileData = profile
-                    editMyProfile.profileData = profile
+                    profileLoader.setSource(
+                        "Profile/MyProfile.ui.qml",
+                        { "profileData": profile }
+                    )
                 }
             }
         }
 
-        MyProfile {
-            id: myProfile
-            visible: false
-
+        Loader {
+            id: profileLoader
             anchors.right: parent.right
             anchors.rightMargin: 10
             anchors.topMargin: -100
+        }/*
+
+        Component {
+            id: myProfileComponent
+            MyProfile {
+                id: myProfile
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.topMargin: -100
+            }
         }
 
-        EditMyProfile {
-            id: editMyProfile
-            visible: false
-
-            anchors.right: parent.right
-            anchors.rightMargin: 10
-            anchors.topMargin: 10
-        }
+        Component {
+            id: editMyProfileComponent
+            EditMyProfile {
+                id: editMyProfile
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.topMargin: 10
+            }
+        }*/
     }
 }
