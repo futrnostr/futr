@@ -45,6 +45,7 @@ executable futr
         Nostr.Types
         Presentation.KeyMgmt
         TimeFormatter
+        UI
 
     default-language: Haskell2010
     extra-libraries:  secp256k1

@@ -2,11 +2,11 @@
 
 module Futr where
 
-import Data.Aeson (decode, eitherDecode, encode)
+import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy qualified as BSL
 import Control.Monad (forM_, void, unless, when)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text, pack, unpack)
+import Data.Text (Text, pack)
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent
@@ -17,16 +17,15 @@ import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
 import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
-import Text.Read (readMaybe)
 
 import AppState
-import Nostr.Event
 import Nostr.Effects.CurrentTime
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
-import Nostr.Keys (bech32ToPubKeyXO, keyPairToPubKeyXO, pubKeyXOToBech32, secKeyToKeyPair)
-import Nostr.Types (Event(..), EventId(..), Filter(..), Kind(..), Profile(..), Tag(..), RelayURI, Response(..), Relay(..), emptyProfile)
+import Nostr.Keys (keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.Types (Event(..), EventId(..), Filter(..), Kind(..), Tag(..), RelayURI, Response(..), Relay(..))
 import Presentation.KeyMgmt qualified as PKeyMgmt
+
 
 
   -- | Futr Effect for managing the application state.
@@ -36,14 +35,6 @@ data Futr :: Effect where
 type instance DispatchOf Futr = Dynamic
 
 makeEffect ''Futr
-
--- | Key Management Effect for creating QML UI.
-data FutrUI :: Effect where
-  CreateUI :: SignalKey (IO ()) -> FutrUI m (ObjRef ())
-
-type instance DispatchOf FutrUI = Dynamic
-
-makeEffect ''FutrUI
 
 type FutrEff es = ( State AppState :> es
                   , PKeyMgmt.KeyMgmt :> es
@@ -70,8 +61,6 @@ loginWithAccount :: FutrEff es => ObjRef () -> PKeyMgmt.Account -> Eff es ()
 loginWithAccount obj a = do
   let kp = secKeyToKeyPair $ PKeyMgmt.nsec a
   let xo = keyPairToPubKeyXO kp
-  -- fiatjaf pub key for testing contact loading
-  --let xo' = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
 
   oldState <- gets @AppState id
   let newState = oldState { keyPair = Just kp }
@@ -222,71 +211,3 @@ handleConfirmation eventId' accepted' msg relayURI st =
          eventId'
          (confirmations st)
       }
-
-
-runFutrUI :: FutrEff es => Eff (FutrUI : Futr : es) a -> Eff (Futr : es) a
-runFutrUI = interpret $ \_ -> \case
-  CreateUI changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-    keyMgmtObj <- runE $ PKeyMgmt.createUI changeKey'
-
-    rootClass <- newClass [
-        defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
-
-        defPropertySigRW' "currentScreen" changeKey'
-            (\_ -> do
-              st <- runE $ get :: IO AppState
-              return $ pack $ show $ currentScreen st)
-            (\obj newScreen -> do
-                case readMaybe (unpack newScreen) :: Maybe AppScreen of
-                    Just s -> do
-                        runE $ do
-                          modify $ \st -> st { currentScreen = s }
-                          fireSignal obj
-                    Nothing -> return ()),
-
-        defPropertySigRO' "mynpub" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          case keyPair st of
-            Just kp -> return $ Just $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
-            Nothing -> return Nothing,
-
-        defPropertySigRO' "mypicture" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          case keyPair st of
-            Just kp -> do
-              let p = keyPairToPubKeyXO kp
-              putStrLn $ "p: " ++ (show p)
-              let (profile', x) = Map.findWithDefault (emptyProfile, 0) p (profiles st)
-              putStrLn $ "profile: " ++ (show $ profiles st)
-              putStrLn $ show x
-              return $ picture profile'
-            Nothing -> return Nothing,
-
-        defMethod' "login" $ \obj input -> runE $ login obj input,
-
-        defMethod' "getProfile" $ \_ npub -> do
-          st <- runE $ get @AppState
-          let xo = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub
-          let (profile', _) = Map.findWithDefault (emptyProfile, 0) xo (profiles st)
-          return $ TE.decodeUtf8 $ BSL.toStrict $ encode profile',
-
-        defMethod' "saveProfile" $ \_ input -> do
-          let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
-          st <- runE $ get @AppState
-          n <- runE now
-          let kp = maybe (error "No key pair available") id $ keyPair st
-          let unsigned = setMetadata profile (keyPairToPubKeyXO kp) n
-          signedMaybe <- signEvent unsigned kp
-          case signedMaybe of
-            Just signed -> do
-              st' <- runE $ get @RelayPoolState
-              runE $ sendEvent signed $ Map.keys (relays st')
-              runE $ logInfo "Profile successfully saved and sent to relay pool"
-            Nothing -> runE $ logWarning "Failed to sign profile update event"
-        ]
-
-    rootObj <- newObject rootClass ()
-
-    runE $ modify $ \st' -> st' { objRef = Just rootObj }
-
-    return rootObj

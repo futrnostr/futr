@@ -16,6 +16,7 @@ import Nostr.Effects.Logging (runLoggingStdout)
 import Nostr.Effects.RelayPool (runRelayPool)
 import Nostr.Effects.WebSocket (runWebSocket)
 import Presentation.KeyMgmt qualified as KeyMgmt
+import UI qualified as UI
 
 main :: IO ()
 main = do
@@ -45,10 +46,10 @@ main = do
         . runWebSocket
         . runRelayPool
         . Futr.runFutr
-        . Futr.runFutrUI
+        . UI.runUI
         $ do
             changeKey <- createSignalKey
-            ctx <- Futr.createUI changeKey
+            ctx <- UI.createUI changeKey
 
             let config = QML.defaultEngineConfig
                     { QML.initialDocument = QML.fileDocument path
