@@ -19,9 +19,9 @@
 -- The functions provided in this module ensure secure and efficient cryptographic operations
 -- for key management and transaction signing in the Nostr network.
 
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
 
 module Nostr.Keys (
     -- * Types
@@ -39,6 +39,7 @@ module Nostr.Keys (
     , importSecKey
     , exportSecKey
     , importPubKeyXO
+    , importSignature
     , exportPubKeyXO
     , exportSignature
     , secKeyToBech32
@@ -59,8 +60,17 @@ module Nostr.Keys (
     , schnorrVerify
     ) where
 
-import "libsecp256k1" Crypto.Secp256k1 qualified as S
+import Crypto.Secp256k1 qualified as S
 import Data.Aeson
+import Data.Aeson.Encoding (text)
+import Codec.Binary.Bech32 qualified as Bech32
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
+import Data.ByteString.Base16 qualified as B16
+import Data.ByteString.Char8 qualified as C
+import Data.Text qualified as T
+import Data.Text.Encoding (decodeUtf8)
+import GHC.Generics (Generic)
 import Haskoin.Crypto
     ( Mnemonic
     , Passphrase
@@ -75,18 +85,11 @@ import Haskoin.Crypto
     )
 import System.Entropy (getEntropy)
 import System.Random (newStdGen, randoms)
-import Codec.Binary.Bech32 qualified as Bech32
-import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
-import Data.ByteString.Base16 qualified as B16
-import Data.ByteString.Char8 qualified as C
-import Data.Text qualified as T
-import Data.Text.Encoding (decodeUtf8)
 
 newtype KeyPair = KeyPair { getKeyPair :: S.KeyPair } deriving (Eq)
 newtype SecKey = SecKey { getSecKey :: S.SecKey } deriving (Eq, Ord, Read, Show)
-newtype PubKeyXO = PubKeyXO { getPubKeyXO :: S.PubKeyXO } deriving (Eq, Ord, Read, Show)
-newtype Signature = Signature { getSignature :: S.Signature } deriving (Eq, Read, Show)
+newtype PubKeyXO = PubKeyXO { getPubKeyXO :: S.PubKeyXO } deriving (Eq, Generic, Ord, Read, Show)
+newtype Signature = Signature { getSignature :: S.SchnorrSignature } deriving (Eq, Generic, Read, Show)
 
 instance FromJSON PubKeyXO where
   parseJSON = withText "PubKeyXO" $ \t -> do
@@ -96,17 +99,19 @@ instance FromJSON PubKeyXO where
       Nothing -> fail "Invalid PubKeyXO"
 
 instance ToJSON PubKeyXO where
-  toJSON = String . T.pack . C.unpack .B16.encode . exportPubKeyXO
+  toJSON = String . byteStringToHex . exportPubKeyXO
+  toEncoding = text . byteStringToHex . exportPubKeyXO
 
 instance FromJSON Signature where
   parseJSON = withText "Signature" $ \t -> do
     decoded <- either fail return $ B16.decode (C.pack $ T.unpack t)
-    case S.importSignatureCompact decoded of
+    case S.importSchnorrSignature decoded of
       Just sig -> return $ Signature sig
       Nothing -> fail "Invalid Signature"
 
 instance ToJSON Signature where
-  toJSON = String . T.pack . C.unpack .B16.encode . exportSignature
+  toJSON = String . byteStringToHex . exportSignature
+  toEncoding = text . byteStringToHex . exportSignature
 
 -- | Generate a secret key
 createSecKey :: IO SecKey
@@ -153,12 +158,23 @@ importPubKeyXO = fmap PubKeyXO . S.importPubKeyXO
 exportPubKeyXO :: PubKeyXO -> ByteString
 exportPubKeyXO = S.exportPubKeyXO . getPubKeyXO
 
+-- | Import byte string and create Signature
+importSignature :: ByteString -> Maybe Signature
+importSignature = fmap Signature . S.importSchnorrSignature
+
+-- | Export signature to byte string
+exportSignature :: Signature -> ByteString
+exportSignature = S.exportSchnorrSignature . getSignature
+
+-- | Convert byte string to hex string
 byteStringToHex :: ByteString -> T.Text
-byteStringToHex bs = decodeUtf8 (B16.encode bs)
+byteStringToHex = decodeUtf8 . B16.encode
 
-schnorrSign :: KeyPair -> ByteString -> Maybe Signature
-schnorrSign (KeyPair kp) msg = fmap Signature $ S.schnorrSign kp msg
+-- | Sign message using Schnorr signature scheme
+schnorrSign :: KeyPair -> ByteString -> IO (Maybe Signature)
+schnorrSign (KeyPair kp) msg = fmap (fmap Signature) $ S.schnorrSignNondeterministic kp msg
 
+-- | Verify Schnorr signature
 schnorrVerify :: PubKeyXO -> ByteString -> Signature -> Bool
 schnorrVerify (PubKeyXO pk) msg (Signature sig) = S.schnorrVerify pk msg sig
 
@@ -203,9 +219,6 @@ derivePublicKeyXO sk = PubKeyXO p
     where
         (p, _) = S.xyToXO $ S.derivePubKey (getSecKey sk)
 
--- | Exports a signature to hex format
-exportSignature :: Signature -> ByteString
-exportSignature = S.exportSignatureCompact . getSignature
 -- Utility functions
 
 -- | Generate a random byte sequence for a secret key

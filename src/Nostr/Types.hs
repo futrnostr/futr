@@ -3,31 +3,37 @@
 
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Nostr.Types where
 
+import Basement.IntegralConv (wordToInt)
+import Control.Lens ((^.), (^?), (<&>), _Right)
 import Control.Monad (mzero)
 import Data.Aeson hiding (Error)
+import Data.Aeson.Encoding (list, text)
+import Data.Aeson.Types (Parser)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.Default
-import Data.Int (Int64)
+import Data.Foldable (toList)
+import Data.Function (on)
 import Data.Maybe (fromMaybe)
 import Data.String.Conversions (ConvertibleStrings, cs)
-import Data.Text (Text, isInfixOf, toLower, pack)
+import Data.Text (Text, isInfixOf, toLower)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Vector qualified as V
-import GHC.Exts (fromList)
 import GHC.Generics (Generic)
-import Text.URI (URI, mkURI, render)
-import Data.Aeson.Types (Parser)
+import Text.URI (URI, mkURI, render, unRText)
+import Text.URI.Lens (uriAuthority, uriPath, uriScheme, authHost, authPort)
+import qualified Text.URI.QQ as QQ
 
 import Nostr.Keys (PubKeyXO, Signature, byteStringToHex, exportPubKeyXO, exportSignature)
 
 -- | Represents a wrapped URI used within a relay.
-newtype RelayURI = RelayURI URI deriving (Eq, Ord, Show)
+newtype RelayURI = RelayURI URI deriving (Eq, Generic, Ord, Show)
 
 -- | Represents the information associated with a relay.
 data RelayInfo = RelayInfo
@@ -41,7 +47,7 @@ data Relay = Relay
   { uri       :: RelayURI
   , info      :: RelayInfo
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 -- | Represents a subscription id as text.
 type SubscriptionId = Text
@@ -51,7 +57,7 @@ data Subscription = Subscription
   { filters :: [Filter]
   , subId   :: SubscriptionId
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 data Filter
   = MetadataFilter [PubKeyXO] Int
@@ -60,14 +66,14 @@ data Filter
   | LinkedEvents [EventId] Int
   | AllNotes Int
   | AllMetadata Int
-  deriving (Eq, Show)
+  deriving (Eq, Generic,Show)
 
 data Request
   = SendEvent Event
   | Subscribe Subscription
   | Close SubscriptionId
   | Disconnect
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 data Response
   = EventReceived SubscriptionId Event
@@ -90,39 +96,39 @@ data Kind
   | Reaction        -- NIP-25
   | Seal            -- NIP-59
   | DirectMessage   -- NIP-17
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 newtype EventId = EventId { getEventId :: ByteString } deriving (Eq, Ord)
 
 data Relationship = Reply | Root
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 data Tag
   = ETag EventId (Maybe RelayURI) (Maybe Relationship)
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
   | NonceTag
   | UnknownTag
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 data Event = Event
   { eventId    :: EventId
   , pubKey     :: PubKeyXO
-  , createdAt :: Int64
+  , createdAt :: Int
   , kind       :: Kind
   , tags       :: [Tag]
   , content    :: Text
   , sig        :: Signature
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 data UnsignedEvent = UnsignedEvent
   { pubKey'     :: PubKeyXO
-  , createdAt' :: Int64
+  , createdAt' :: Int
   , kind'       :: Kind
   , tags'       :: [Tag]
   , content'    :: Text
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 type ReceivedEvent = (Event, [Relay])
 
@@ -142,7 +148,7 @@ data Profile = Profile
   , picture :: Maybe Text
   , nip05 :: Maybe Text
   , banner :: Maybe Text
-  } deriving (Eq, Show)
+  } deriving (Eq, Generic,Show)
 
 emptyProfile :: Profile
 emptyProfile = Profile Nothing Nothing Nothing Nothing Nothing Nothing
@@ -164,10 +170,6 @@ decodeHex str =
     Right bs -> Just bs
     Left _   -> Nothing
 
--- | Unwrap relay URI.
-unwrapRelayURI :: RelayURI -> URI
-unwrapRelayURI (RelayURI u) = u
-
 -- Instance declarations
 
 instance Show EventId where
@@ -187,7 +189,8 @@ instance FromJSON EventId where
           _  -> Nothing
 
 instance ToJSON EventId where
-  toJSON e = String $ decodeUtf8 . B16.encode $ getEventId e
+  toJSON = String . decodeUtf8 . B16.encode . getEventId
+  toEncoding = text . decodeUtf8 . B16.encode . getEventId
 
 instance FromJSON Event where
   parseJSON = withObject "event data" $ \e -> Event
@@ -200,24 +203,24 @@ instance FromJSON Event where
     <*> e .: "sig"
 
 instance ToJSON Event where
-  toJSON Event {..} = object
-     [ "id"        .= byteStringToHex (getEventId eventId)
-     , "pubkey"    .= byteStringToHex (exportPubKeyXO pubKey)
-     , "created_at" .= createdAt
-     , "kind"      .= kind
-     , "tags"      .= tags
-     , "content"   .= content
-     , "sig"       .= byteStringToHex (exportSignature sig)
-     ]
+  toEncoding Event {..} = pairs
+     ( "id"         .= (byteStringToHex $ getEventId eventId)
+    <> "pubkey"     .= (byteStringToHex $ exportPubKeyXO pubKey)
+    <> "created_at" .= createdAt
+    <> "kind"       .= kind
+    <> "tags"       .= tags
+    <> "content"    .= content
+    <> "sig"        .= (byteStringToHex $ exportSignature sig)
+     )
 
 instance ToJSON UnsignedEvent where
-  toJSON (UnsignedEvent {..}) = Array $ fromList
-     [ Number 0
-     , String $ pack $ show pubKey'
-     , Number $ fromIntegral $ createdAt'
-     , toJSON kind'
-     , toJSON tags'
-     , toJSON content'
+  toEncoding UnsignedEvent {..} = list id
+     [ toEncoding (0 :: Int)
+     , text $ byteStringToHex $ exportPubKeyXO pubKey'
+     , toEncoding createdAt'
+     , toEncoding kind'
+     , toEncoding tags'
+     , text content'
      ]
 
 instance FromJSON Tag where
@@ -234,37 +237,32 @@ instance FromJSON Tag where
  parseJSON _ = return UnknownTag
 
 instance ToJSON Tag where
- toJSON (ETag eventId Nothing Nothing) =
-   Array $ fromList
-     [ String "e"
-     , String $ decodeUtf8 $ B16.encode $ getEventId eventId
-     ]
- toJSON (ETag eventId relayURL Nothing) =
-   Array $ fromList
-     [ String "e"
-     , String $ decodeUtf8 $ B16.encode $ getEventId eventId
-     , maybe (String "") (\r -> String $ render $ unwrapRelayURI r) relayURL
-     ]
- toJSON (ETag eventId relayURL marker) =
-   Array $ fromList
-     [ String "e"
-     , String $ decodeUtf8 $ B16.encode $ getEventId eventId
-     , maybe (String "") (\r -> String $ render $ unwrapRelayURI r) relayURL
-     , case marker of
-         Just Reply ->
-           String "reply"
-         Just Root ->
-           String "root"
-     ]
- toJSON (PTag xo relayURL name) =
-   Array $ fromList
-     [ String "p"
-     , toJSON xo
-     , maybe (String "") (\r -> String $ render $ unwrapRelayURI r) relayURL
-     , maybe (String "") (\n -> String n) name
-     ]
- toJSON _ = -- @todo implement nonce tag
-   Array $ fromList []
+  toEncoding (ETag eventId Nothing Nothing) =
+    list id [text "e", text $ decodeUtf8 $ B16.encode $ getEventId eventId]
+  toEncoding (ETag eventId relayURL Nothing) =
+    list id
+      [ text "e"
+      , text $ decodeUtf8 $ B16.encode $ getEventId eventId
+      , maybe (text "") (text . render . unwrapRelayURI) relayURL
+      ]
+  toEncoding (ETag eventId relayURL marker) =
+    list id
+      [ text "e"
+      , text $ decodeUtf8 $ B16.encode $ getEventId eventId
+      , maybe (text "") (text . render . unwrapRelayURI) relayURL
+      , case marker of
+          Just Reply -> text "reply"
+          Just Root -> text "root"
+      ]
+  toEncoding (PTag xo relayURL name) =
+    list id
+      [ text "p"
+      , toEncoding xo
+      , maybe (text "") (text . render . unwrapRelayURI) relayURL
+      , maybe (text "") text name
+      ]
+  toEncoding _ = -- @todo implement nonce tag
+    list id []
 
 instance FromJSON Relationship where
  parseJSON = withText "Relationship" $ \m -> do
@@ -274,8 +272,8 @@ instance FromJSON Relationship where
      _       -> mzero
 
 instance ToJSON Relationship where
- toJSON (Reply) = String "reply"
- toJSON (Root) = String "root"
+  toEncoding Reply = text "reply"
+  toEncoding Root = text "root"
 
 instance FromJSON Response where
   parseJSON = withArray "ServerResponse" $ \arr -> do
@@ -286,9 +284,9 @@ instance FromJSON Response where
         event <- parseJSON $ arr V.! 2
         return $ EventReceived subId' event
       "OK" -> do
-        id' <- parseJSON $ arr V.! 2
-        bool <- parseJSON $ arr V.! 3
-        message <- parseJSON $ arr V.! 4
+        id' <- parseJSON $ arr V.! 1
+        bool <- parseJSON $ arr V.! 2
+        message <- parseJSON $ arr V.! 3
         return $ Ok id' bool message
       "EOSE" -> do
         subId' <- parseJSON $ arr V.! 1
@@ -302,24 +300,15 @@ instance FromJSON Response where
         return $ Notice message
       _ -> fail "Unknown response type"
 
+instance ToJSON Subscription where
+  toEncoding (Subscription efs s) = pairs $ "subId" .= s <> "filters" .= efs
+
 instance ToJSON Request where
-  toJSON sr = case sr of
-    SendEvent e -> Array $ fromList
-       [ String $ pack "EVENT"
-       , toJSON e
-       ]
-
-    Subscribe (Subscription efs s) -> Array $ fromList
-      ([ String $ pack "REQ"
-      , String $ s
-       ] ++ map (\ef -> toJSON ef) efs)
-
-    Close subId' -> Array $ fromList
-       [ String $ pack "CLOSE"
-       , String subId'
-       ]
-
-    Disconnect -> String $ pack "Bye!"
+  toEncoding req = case req of
+    SendEvent event -> list id [text "EVENT", toEncoding event]
+    Subscribe (Subscription filters subId) -> list id $ text "REQ" : text subId : map toEncoding (toList filters)
+    Close subId -> list text ["CLOSE", subId]
+    Disconnect -> list text ["DISCONNECT"]
 
 -- | Converts a `RelayURI` into its JSON representation.
 instance FromJSON RelayURI where
@@ -330,7 +319,8 @@ instance FromJSON RelayURI where
 
 -- | Parses a JSON value into a `RelayURI`.
 instance ToJSON RelayURI where
-  toJSON (RelayURI u) = String $ render u
+  toJSON (RelayURI u) = toJSON $ render u
+  toEncoding (RelayURI u) = toEncoding $ render u
 
 -- | Instance for ordering 'Relay' values based on their 'uri'.
 instance Ord Relay where
@@ -345,10 +335,9 @@ instance FromJSON Relay where
 
 -- | Instance for converting a 'Relay' to JSON.
 instance ToJSON Relay where
-  toJSON r = object $ fromList
-    [ ( "uri", String $ render $ unwrapRelayURI $ uri r)
-    , ( "info", toJSON $ info r)
-    ]
+  toEncoding r = pairs $
+    "uri" .= render (unwrapRelayURI $ uri r) <>
+    "info" .= info r
 
 -- | 'FromJSON' instance for 'Kind'.
 -- This allows parsing JSON numbers into 'Kind' values.
@@ -367,63 +356,56 @@ instance FromJSON Kind where
 -- | 'ToJSON' instance for 'Kind'.
 -- This allows serializing 'Kind' values into JSON numbers.
 instance ToJSON Kind where
-  toJSON Metadata      = Number 0
-  toJSON ShortTextNote = Number 1
-  toJSON FollowList    = Number 3
-  toJSON EventDeletion = Number 5
-  toJSON Repost        = Number 6
-  toJSON Reaction      = Number 7
-  toJSON Seal          = Number 13
-  toJSON DirectMessage = Number 14
+  toEncoding Metadata      = toEncoding (0 :: Int)
+  toEncoding ShortTextNote = toEncoding (1 :: Int)
+  toEncoding FollowList    = toEncoding (3 :: Int)
+  toEncoding EventDeletion = toEncoding (5 :: Int)
+  toEncoding Repost        = toEncoding (6 :: Int)
+  toEncoding Reaction      = toEncoding (7 :: Int)
+  toEncoding Seal          = toEncoding (13 :: Int)
+  toEncoding DirectMessage = toEncoding (14 :: Int)
 
 instance ToJSON Filter where
-  toJSON (MetadataFilter xos now) = object
-    [ "kinds" .= toJSON [Metadata]
-    , "authors" .= toJSON xos
-    , "limit" .= Number 1
-    , "until" .= toJSON (now + 60)
-    ]
-  toJSON (FollowListFilter xos now) = object
-    [ "kinds" .= toJSON [FollowList]
-    , "authors" .= toJSON xos
-    , "limit" .= Number 500
-    , "until" .= toJSON (now + 60)
-    ]
-  toJSON (ShortTextNoteFilter xos now) = object
-    [ "kinds" .= toJSON [ShortTextNote, EventDeletion]
-    , "authors" .= toJSON xos
-    , "limit" .= Number 500
-    , "until" .= toJSON (now + 60)
-    ]
-  toJSON (LinkedEvents eids now) = object
-    [ "kinds" .= toJSON [ShortTextNote]
-    , "limit" .= Number 500
-    , "#e" .= toJSON eids
-    , "until" .= toJSON (now + 60)
-    ]
-  toJSON (AllNotes now) = object
-    [ "kinds" .= toJSON [ShortTextNote]
-    , "limit" .= Number 500
-    , "until" .= toJSON (now + 60)
-    ]
-  toJSON (AllMetadata now) = object
-    [ "kinds" .= toJSON [Metadata]
-    , "limit" .= Number 500
-    , "until" .= toJSON (now + 60)
-    ]
+  toEncoding (MetadataFilter xos now) = pairs $
+    "authors" .= xos <>
+    "kinds" .= [Metadata] <>
+    "until" .= (fromIntegral (now + 60) :: Integer) <>
+    "limit" .= (500 :: Int)
+  toEncoding (FollowListFilter xos now) = pairs $
+    "authors" .= xos <>
+    "kinds" .= [FollowList] <>
+    "until" .= (fromIntegral (now + 60) :: Integer) <>
+    "limit" .= (500 :: Int)
+  toEncoding (ShortTextNoteFilter xos now) = pairs $
+    "authors" .= xos <>
+    "kinds" .= [ShortTextNote, EventDeletion] <>
+    "until" .= (fromIntegral (now + 60) :: Integer) <>
+    "limit" .= (500 :: Int)
+  toEncoding (LinkedEvents eids now) = pairs $
+    "kinds" .= [ShortTextNote] <>
+    "#e" .= eids <>
+    "until" .= (fromIntegral (now + 60) :: Integer) <>
+    "limit" .= (500 :: Int)
+  toEncoding (AllNotes now) = pairs $
+    "kinds" .= [ShortTextNote] <>
+    "until" .= (fromIntegral (now + 60) :: Integer) <>
+    "limit" .= (500 :: Int)
+  toEncoding (AllMetadata now) = pairs $
+    "kinds" .= [Metadata] <>
+    "until" .= (fromIntegral (now + 60) :: Integer) <>
+    "limit" .= (500 :: Int)
 
 instance Default Profile where
   def = Profile Nothing Nothing Nothing Nothing Nothing Nothing
 
 instance ToJSON Profile where
-  toJSON (Profile name displayName about picture nip05 banner) = object
-    [ "name" .= toJSON name
-    , "display_name" .= toJSON displayName
-    , "about" .= toJSON about
-    , "picture" .= toJSON picture
-    , "nip05" .= toJSON nip05
-    , "banner" .= toJSON banner
-    ]
+  toEncoding (Profile name displayName about picture nip05 banner) = pairs $
+    "name" .= name <>
+    "display_name" .= displayName <>
+    "about" .= about <>
+    "picture" .= picture <>
+    "nip05" .= nip05 <>
+    "banner" .= banner
 
 instance FromJSON Profile where
   parseJSON = withObject "profile" $ \e -> Profile
@@ -433,3 +415,58 @@ instance FromJSON Profile where
     <*> e .:? "picture"
     <*> e .:? "nip05"
     <*> e .:? "banner"
+
+-- Relay Helper functions
+
+-- | Provides a default list of relays.
+defaultRelays :: [Relay]
+defaultRelays =
+  [ Relay (RelayURI [QQ.uri|wss://nos.lol|]) (RelayInfo True True)
+  , Relay (RelayURI [QQ.uri|ws://127.0.0.1:7777|]) (RelayInfo True True)
+  ]
+
+-- | Unwrap relay URI.
+unwrapRelayURI :: RelayURI -> URI
+unwrapRelayURI (RelayURI u) = u
+
+-- | Retrieves the textual representation of the relay's URI.
+relayName :: Relay -> Text
+relayName r = render $ unwrapRelayURI $ uri r
+
+relayURIToText :: RelayURI -> Text
+relayURIToText (RelayURI u) = render u
+
+-- | Extracts the scheme of a relay's URI.
+extractScheme :: Relay -> Maybe Text
+extractScheme r = uri' ^. uriScheme <&> unRText
+  where
+    uri' = unwrapRelayURI $ uri r
+
+-- | Extracts the hostname of a relay's URI.
+extractHostname :: Relay -> Maybe Text
+extractHostname r = uri' ^? uriAuthority . _Right . authHost <&> unRText
+  where
+    uri' = unwrapRelayURI $ uri r
+
+-- | Extracts the port of a relay's URI.
+extractPort :: Relay -> Int
+extractPort r =
+  case uri' ^? uriAuthority . _Right . authPort of
+    Just (Just p) -> wordToInt p
+    _ -> if extractScheme r == Just "wss" then 443 else 80
+  where
+    uri' = unwrapRelayURI $ uri r
+
+-- | Extracts the path of a relay's URI.
+extractPath :: Relay -> Text
+extractPath r =
+  case uri' ^? uriPath of
+    Just [] -> "/"
+    Just p  -> foldMap ("/" <>) (map unRText p)
+    _       -> "/"
+  where
+    uri' = unwrapRelayURI $ uri r
+
+-- | Checks if two relays are the same based on URI.
+sameRelay :: Relay -> Relay -> Bool
+sameRelay = (==) `on` uri

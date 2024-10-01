@@ -10,6 +10,7 @@ import System.Environment (setEnv)
 
 import AppState qualified as AppState
 import Futr qualified as Futr
+import Nostr.Effects.CurrentTime (runCurrentTime)
 import Nostr.Effects.IDGen (runIDGen)
 import Nostr.Effects.Logging (runLoggingStdout)
 import Nostr.Effects.RelayPool (runRelayPool)
@@ -33,6 +34,7 @@ main = do
         . runEffectfulQML
         . runFileSystem
         . runIDGen
+        . runCurrentTime
         . runLoggingStdout
         . runConcurrent
         . evalState KeyMgmt.initialState

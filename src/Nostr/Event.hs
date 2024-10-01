@@ -7,35 +7,52 @@ module Nostr.Event where
 
 import Crypto.Hash.SHA256 qualified as SHA256
 import Data.Aeson
-import Data.Aeson.Text (encodeToTextBuilder)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy (fromStrict, toStrict)
-import Data.Int (Int64)
 import Data.String.Conversions (ConvertibleStrings, cs)
 import Data.Text (Text)
-import Data.Text.Encoding (encodeUtf8)
-import Data.Text.Lazy qualified as LazyText
-import Data.Text.Lazy.Builder (toLazyText)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Text.URI (emptyURI)
 
 import Nostr.Keys
 import Nostr.Types
 
-signEvent :: UnsignedEvent -> KeyPair -> Maybe Event
-signEvent u kp =
-  Event eid (pubKey' u) (createdAt' u) (kind' u) (tags' u) (content' u) <$> schnorrSign kp (getEventId eid)
+
+signEvent :: UnsignedEvent -> KeyPair -> IO (Maybe Event)
+signEvent u kp = do
+  s <- schnorrSign kp (getEventId eid)
+  case s of
+    Just s' -> return $ Just $ Event
+      { eventId = eid
+      , pubKey = keyPairToPubKeyXO kp
+      , createdAt = createdAt' u
+      , kind = kind' u
+      , tags = tags' u
+      , content = content' u
+      , sig = s'
+      }
+    Nothing -> return Nothing
   where
-    eid = EventId { getEventId = SHA256.hash $ toStrict $ encode u }
+    serializedEvent = toStrict $ encode u
+    eid = EventId { getEventId = SHA256.hash serializedEvent }
 
 validateEventId :: Event -> Bool
-validateEventId e = (getEventId $ eventId e) == (SHA256.hash $ toStrict $ encode e)
+validateEventId e = 
+  let serializedEvent = toStrict $ encode $ UnsignedEvent
+        { pubKey' = pubKey e
+        , createdAt' = createdAt e
+        , kind' = kind e
+        , tags' = tags e
+        , content' = content e
+        }
+  in (getEventId $ eventId e) == SHA256.hash serializedEvent
 
 verifySignature :: Event -> Bool -- @todo: implement delagate verification (subkeys?)
-verifySignature e = schnorrVerify (pubKey e) (toStrict $ encode e) (sig e)
+verifySignature e = schnorrVerify (pubKey e) (getEventId $ eventId e) (sig e)
 
-textNote :: Text -> PubKeyXO -> Int64 -> UnsignedEvent
-textNote note xo t =
+shortTextNote :: Text -> PubKeyXO -> Int -> UnsignedEvent
+shortTextNote note xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
@@ -44,14 +61,14 @@ textNote note xo t =
     , content' = note
     }
 
-setMetadata :: Profile -> PubKeyXO -> Int64 -> UnsignedEvent
-setMetadata profile xo t =
+setMetadata :: Profile -> PubKeyXO -> Int -> UnsignedEvent
+setMetadata p xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
     , kind' = Metadata
     , tags' = []
-    , content' = LazyText.toStrict . toLazyText . encodeToTextBuilder . toJSON $ profile
+    , content' = decodeUtf8 $ toStrict $ encode p
     }
 
 readProfile :: Event -> Maybe Profile
@@ -61,7 +78,7 @@ readProfile event = case kind event of
   _ ->
     Nothing
 
-replyNote :: Event -> Text -> PubKeyXO -> Int64 -> UnsignedEvent
+replyNote :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
 replyNote event note xo t =
   UnsignedEvent
     { pubKey' = xo
@@ -71,7 +88,7 @@ replyNote event note xo t =
     , content' = note
     }
 
-setContacts :: [(PubKeyXO, Maybe DisplayName)] -> PubKeyXO -> Int64 -> UnsignedEvent
+setContacts :: [(PubKeyXO, Maybe DisplayName)] -> PubKeyXO -> Int -> UnsignedEvent
 setContacts contacts xo t =
   UnsignedEvent
     { pubKey' = xo
@@ -81,7 +98,7 @@ setContacts contacts xo t =
     , content' = ""
     }
 
-deleteEvents :: [EventId] -> Text -> PubKeyXO -> Int64 -> UnsignedEvent
+deleteEvents :: [EventId] -> Text -> PubKeyXO -> Int -> UnsignedEvent
 deleteEvents eids reason xo t =
   UnsignedEvent
     { pubKey' = xo

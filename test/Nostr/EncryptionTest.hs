@@ -192,9 +192,6 @@ hexToByteString str =
     Left err -> error $ "Decoding error: " ++ err
     Right bytes -> bytes
 
-byteStringToHex :: ByteString -> Text
-byteStringToHex = E.decodeUtf8 . B16.encode
-
 sha256HexText :: Text -> Text
 sha256HexText inputText =
   let inputBytes = E.encodeUtf8 inputText

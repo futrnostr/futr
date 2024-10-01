@@ -14,14 +14,13 @@
 -- following the NIP-44 standard for key derivation.
 
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Nostr.Encryption (decrypt, encrypt, getConversationKey) where
 
 import Crypto.Hash (SHA256(..))
 import Crypto.KDF.HKDF (PRK, extract)
-import qualified "libsecp256k1" Crypto.Secp256k1 as S
+import qualified Crypto.Secp256k1 as S
 import Data.ByteString (ByteString)
 import qualified Data.ByteArray as BA
 import qualified Data.ByteString as BS

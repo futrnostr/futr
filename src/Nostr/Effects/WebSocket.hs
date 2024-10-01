@@ -4,6 +4,7 @@ import Control.Monad (forever, void)
 import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent (Concurrent)
 import Effectful.Concurrent.Async (async)
@@ -15,7 +16,6 @@ import Network.WebSockets qualified as WS
 import Wuss qualified as Wuss
 
 import Nostr.Effects.Logging
-import Nostr.Relay
 import Nostr.Types
 
 -- | Effect for handling WebSocket operations.
@@ -78,7 +78,7 @@ receiveWs relay conn responseQueue = forever $ do
     Right msg' -> 
       case eitherDecode msg' of
         Right response -> do
-          --logDebug $ "Received response: " <> T.pack (show response)
+          logDebug $ "Received relay response: " <> T.pack (show response)
           atomically $ writeTQueue responseQueue response
         Left err -> do
           logWarning $ "Could not decode server response: " <> T.pack err
@@ -96,11 +96,13 @@ sendWs relay conn channel = forever $ do
     Nostr.Types.Disconnect -> do
       liftIO $ WS.sendClose conn (T.pack "Bye!")
       logDebug $ "Sent close msg to: " <> relayName relay
+      return ()
     _ -> do
-      logDebug $ "Sending message: " <> T.pack (show msg)
+      logDebug $ "Sending message: " <> (TE.decodeUtf8 $ BSL.toStrict $ encode msg)
       result <- liftIO $ Exception.try $ WS.sendTextData conn $ encode msg
       case result of
         Left e -> do
           logError $ "Failed to send message to " <> relayName relay <> ": " <> T.pack (show (e :: Exception.SomeException))
+          return ()
         Right _ -> do
           logDebug $ "Sent message to: " <> relayName relay

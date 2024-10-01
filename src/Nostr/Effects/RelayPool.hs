@@ -16,7 +16,6 @@ import AppState (RelayPoolState(..), RelayData(..), initialRelayPoolState)
 import Nostr.Effects.IDGen
 import Nostr.Effects.Logging
 import Nostr.Effects.WebSocket
-import Nostr.Relay
 import Nostr.Types
 
 -- | Effect for handling RelayPool operations.
@@ -25,7 +24,7 @@ data RelayPool :: Effect where
     Connect :: Relay -> RelayPool m ()
     Disconnect :: Relay -> RelayPool m ()
     DisconnectAll :: RelayPool m ()
-    SendEvent :: Event -> [Relay] -> RelayPool m ()
+    SendEvent :: Event -> [RelayURI] -> RelayPool m ()
     GetRelays :: RelayPool m [(Relay, Bool)]
     StartSubscription :: RelayURI -> [Filter] -> RelayPool m (Maybe (SubscriptionId, TQueue Response))
     StopSubscription :: SubscriptionId -> RelayPool m ()
@@ -97,13 +96,12 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
 
       Nostr.Effects.RelayPool.SendEvent event rs -> do
         st <- get @RelayPoolState
-        forM_ rs $ \relay -> do
-          let relayURI = uri relay
+        forM_ rs $ \relayURI -> do
           case Map.lookup relayURI (relays st) of
             Just relayData -> do
               atomically $ writeTChan (requestChannel relayData) (Nostr.Types.SendEvent event)
-              logDebug $ "Sent event: " <> T.pack (show event) <> " to relay: " <> relayName relay
-            Nothing -> logWarning $ "No channel found for relay: " <> relayName relay
+              logDebug $ "Sent event to channel: " <> T.pack (show event) <> " to relay: " <> relayURIToText relayURI
+            Nothing -> logWarning $ "No channel found for relay: " <> relayURIToText relayURI
 
       GetRelays -> do
         st <- get @RelayPoolState
@@ -115,12 +113,12 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
         case Map.lookup relayURI (relays st) of
           Just relayData -> do
             atomically $ writeTChan (requestChannel relayData) (Subscribe $ Nostr.Types.Subscription filters' subId')
-            logDebug $ "Starting new subscription: " <> subId' <> " on relay: " <> T.pack (show relayURI)
+            logDebug $ "Starting new subscription: " <> subId' <> " on relay: " <> relayURIToText relayURI
             modify @RelayPoolState $ \st' ->
               st' { relays = Map.adjust (\rd -> rd { subscriptions = subId' : subscriptions rd }) relayURI (relays st') }
             return $ Just (subId', responseQueue relayData)
           Nothing -> do
-            logError $ "No channel found for relay: " <> T.pack (show relayURI)
+            logError $ "No channel found for relay: " <> relayURIToText relayURI
             return Nothing
 
       StopSubscription subId' -> do

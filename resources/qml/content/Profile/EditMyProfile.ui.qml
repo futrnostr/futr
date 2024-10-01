@@ -253,8 +253,17 @@ Rectangle {
                 highlighted: true
 
                 onClicked: {
-                    // Handle save action here
-                    console.log("Save profile clicked")
+                    saveProfile(JSON.stringify({
+                        display_name: displayNameField.text,
+                        name: nameField.text,
+                        about: aboutMeField.text,
+                        picture: avatarUrlField.text,
+                        banner: bannerUrlField.text,
+                        nip05: nip05Field.text,
+                        githubProof: githubProofField.text,
+                        twitterProof: twitterProofField.text,
+                        telegramProof: telegramProofField.text
+                    }))
                 }
             }
         }

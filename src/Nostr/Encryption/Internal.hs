@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Nostr.Encryption.Internal where
@@ -9,7 +8,7 @@ import Crypto.Cipher.ChaCha (generate, initialize)
 import Crypto.Hash (SHA256(..))
 import Crypto.KDF.HKDF (PRK, expand, extractSkip)
 import Crypto.MAC.HMAC (HMAC, hmac)
-import qualified "libsecp256k1" Crypto.Secp256k1 as S
+import qualified Crypto.Secp256k1 as S
 import Data.Bits (shiftL, xor)
 import Data.ByteString (ByteString)
 import Data.ByteArray (ByteArrayAccess)

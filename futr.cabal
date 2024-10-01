@@ -32,6 +32,7 @@ executable futr
         AppState
         EffectfulQML
         Futr
+        Nostr.Effects.CurrentTime
         Nostr.Effects.IDGen
         Nostr.Effects.Logging
         Nostr.Effects.RelayPool
@@ -41,7 +42,6 @@ executable futr
         Nostr.Event
         Nostr.Keys
         Nostr.Profile
-        Nostr.Relay
         Nostr.Types
         Presentation.KeyMgmt
         TimeFormatter
@@ -87,14 +87,13 @@ executable futr
         effectful-th >=1.0.0.2 && <1.1,
         entropy >=0.4.1.10 && <0.5,
         filepath >= 1.4.2 && <1.5,
-        haskoin-core >=1.1.0 && <1.2,
+        haskoin-core,
         hsqml >=0.3.6.0 && <0.4,
         lens >=5.3.2 && <5.4,
         libsecp256k1 >=0.2.1 && <0.3,
         memory >=0.18 && <0.19,
         modern-uri >=0.3.6.1 && <0.4,
         random >=1.2.1.2 && <1.3,
-        secp256k1-haskell >=1.4.0 && <1.5,
         stm >=2.5.1.0 && <2.6,
         string-conversions >=0.4.0.1 && <0.5,
         tagged >=0.8.8 && <0.9,
@@ -131,10 +130,9 @@ test-suite futr-tests
         crypton >=1.0 && <1.1,
         directory >=1.3.7.1 && <1.4,
         entropy >=0.4.1.10 && <0.5,
-        haskoin-core >=1.1.0 && <1.2,
+        haskoin-core,
         libsecp256k1 >=0.2.1 && <0.3,
         memory >=0.18 && <0.19,
-        secp256k1-haskell >=1.4.0 && <1.5,
         tasty >=1.4.3 && <1.5,
         tasty-hunit >=0.10.2 && <0.11,
         text >=2.0.2 && <2.1,

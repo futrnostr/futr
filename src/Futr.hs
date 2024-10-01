@@ -2,13 +2,12 @@
 
 module Futr where
 
-import Data.Aeson (eitherDecode, encode, toJSON)
+import Data.Aeson (decode, eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Control.Monad (forM_, void, unless, when)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
 import Data.Text.Encoding qualified as TE
-import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, cancel, waitAnyCancel, withAsync)
@@ -21,13 +20,14 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Text.Read (readMaybe)
 
 import AppState
+import Nostr.Event
+import Nostr.Effects.CurrentTime
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
 import Nostr.Keys (bech32ToPubKeyXO, keyPairToPubKeyXO, pubKeyXOToBech32, secKeyToKeyPair)
-import Nostr.Types (Event(..), EventId, Filter(..), Kind(..), Profile(..), Tag(..), RelayURI, Response(..), Relay(..), emptyProfile)
+import Nostr.Types (Event(..), EventId(..), Filter(..), Kind(..), Profile(..), Tag(..), RelayURI, Response(..), Relay(..), emptyProfile)
 import Presentation.KeyMgmt qualified as PKeyMgmt
 
-import Data.Maybe (fromJust)
 
   -- | Futr Effect for managing the application state.
 data Futr :: Effect where
@@ -55,6 +55,7 @@ type FutrEff es = ( State AppState :> es
                   , Logging :> es
                   , IOE :> es
                   , Concurrent :> es
+                  , CurrentTime :> es
                   )
 
 runFutr :: FutrEff es => Eff (Futr : es) a -> Eff es a
@@ -70,7 +71,7 @@ loginWithAccount obj a = do
   let kp = secKeyToKeyPair $ PKeyMgmt.nsec a
   let xo = keyPairToPubKeyXO kp
   -- fiatjaf pub key for testing contact loading
-  --let xo' = fromJust $ bech32ToPubKeyXO "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
+  --let xo' = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
 
   oldState <- gets @AppState id
   let newState = oldState { keyPair = Just kp }
@@ -79,10 +80,10 @@ loginWithAccount obj a = do
   let rs = PKeyMgmt.relays a
   mapM_ addRelay rs
   void . async $ mapM_ connect rs
-  now <- liftIO $ fmap (floor . (realToFrac :: POSIXTime -> Double)) getPOSIXTime
+  n <- now
   let initialFilters =
-        [ FollowListFilter [ xo ] now
-        , MetadataFilter [ xo ] now
+        [ FollowListFilter [ xo ] n
+        , MetadataFilter [ xo ] n
         ]
 
   let runSubscription :: FutrEff es => Relay -> Eff es ()
@@ -112,9 +113,10 @@ loginWithAccount obj a = do
   void . async $ forM_ rs \relay' -> do
     st <- get @AppState
     let followedPubKeys = Map.keys (follows st)
+    n' <- now
     let filters =
-          [ FollowListFilter (xo : followedPubKeys) now
-          , MetadataFilter (xo : followedPubKeys) now
+          [ FollowListFilter (xo : followedPubKeys) n'
+          , MetadataFilter (xo : followedPubKeys) n'
           ]
     maybeSubInfo <- startSubscription (uri relay') filters
     case maybeSubInfo of
@@ -167,6 +169,7 @@ processResponses relayURI = go
         logDebug $ "Closed subscription " <> subId <> " with message " <> msg
         return True
       Ok eventId' accepted' msg -> do
+        logDebug $ "OK on subscription " <> pack ( show eventId' ) <> " with message " <> msg
         modify $ handleConfirmation eventId' accepted' msg relayURI
         go rs
       Notice msg -> do
@@ -241,13 +244,13 @@ runFutrUI = interpret $ \_ -> \case
                           fireSignal obj
                     Nothing -> return ()),
 
-        defPropertySigRO' "mynpub" changeKey' $ \obj -> do
+        defPropertySigRO' "mynpub" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           case keyPair st of
             Just kp -> return $ Just $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
             Nothing -> return Nothing,
 
-        defPropertySigRO' "mypicture" changeKey' $ \obj -> do
+        defPropertySigRO' "mypicture" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           case keyPair st of
             Just kp -> do
@@ -261,11 +264,25 @@ runFutrUI = interpret $ \_ -> \case
 
         defMethod' "login" $ \obj input -> runE $ login obj input,
 
-        defMethod' "getProfile" $ \obj npub -> do
+        defMethod' "getProfile" $ \_ npub -> do
           st <- runE $ get @AppState
-          let xo = fromJust $ bech32ToPubKeyXO npub
+          let xo = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub
           let (profile', _) = Map.findWithDefault (emptyProfile, 0) xo (profiles st)
-          return $ TE.decodeUtf8 $ BSL.toStrict $ encode $ toJSON profile'
+          return $ TE.decodeUtf8 $ BSL.toStrict $ encode profile',
+
+        defMethod' "saveProfile" $ \_ input -> do
+          let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
+          st <- runE $ get @AppState
+          n <- runE now
+          let kp = maybe (error "No key pair available") id $ keyPair st
+          let unsigned = setMetadata profile (keyPairToPubKeyXO kp) n
+          signedMaybe <- signEvent unsigned kp
+          case signedMaybe of
+            Just signed -> do
+              st' <- runE $ get @RelayPoolState
+              runE $ sendEvent signed $ Map.keys (relays st')
+              runE $ logInfo "Profile successfully saved and sent to relay pool"
+            Nothing -> runE $ logWarning "Failed to sign profile update event"
         ]
 
     rootObj <- newObject rootClass ()

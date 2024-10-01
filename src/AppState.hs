@@ -1,6 +1,5 @@
 module AppState where
 
-import Data.Int (Int64)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -8,7 +7,7 @@ import Effectful.Concurrent.STM (TChan, TQueue)
 import Graphics.QML (ObjRef)
 
 import Nostr.Keys (KeyPair, PubKeyXO)
-import Nostr.Types (Event, EventId, Profile, Relay, RelayInfo, RelayURI, Request, Response, SubscriptionId)
+import Nostr.Types (Event, EventId, Profile, RelayInfo, RelayURI, Request, Response, SubscriptionId)
 
 -- | State for RelayPool handling.
 data RelayPoolState = RelayPoolState
@@ -57,7 +56,7 @@ data AppState = AppState
   , currentScreen :: AppScreen
   , events :: Map EventId (Event, [RelayURI])
   , chats :: Map PubKeyXO [ChatMessage]
-  , profiles :: Map PubKeyXO (Profile, Int64)
+  , profiles :: Map PubKeyXO (Profile, Int)
   , follows :: Map PubKeyXO [(PubKeyXO, Maybe RelayURI, Maybe Text)]
   , confirmations :: Map EventId [EventConfirmation]
   }
