@@ -4,7 +4,6 @@ import Control.Monad (forever, void)
 import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Text qualified as T
-import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent (Concurrent)
 import Effectful.Concurrent.Async (async)
@@ -93,16 +92,27 @@ sendWs
 sendWs relay conn channel = forever $ do
   msg <- atomically $ readTChan channel
   case msg of
+    Nostr.Types.SendEvent _ -> do
+      if (writable $ info relay)
+        then doSend relay conn msg
+        else return ()
+    Nostr.Types.Subscribe _ -> do
+      if (readable $ info relay)
+        then doSend relay conn msg
+        else return ()
+    Nostr.Types.Close _ -> doSend relay conn msg
     Nostr.Types.Disconnect -> do
       liftIO $ WS.sendClose conn (T.pack "Bye!")
       logDebug $ "Sent close msg to: " <> relayName relay
       return ()
-    _ -> do
-      logDebug $ "Sending message: " <> (TE.decodeUtf8 $ BSL.toStrict $ encode msg)
-      result <- liftIO $ Exception.try $ WS.sendTextData conn $ encode msg
-      case result of
-        Left e -> do
-          logError $ "Failed to send message to " <> relayName relay <> ": " <> T.pack (show (e :: Exception.SomeException))
-          return ()
-        Right _ -> do
-          logDebug $ "Sent message to: " <> relayName relay
+
+doSend :: WebSocketEff es => Relay -> WS.Connection -> Request -> Eff es ()
+doSend relay conn msg = do
+  result <- liftIO $ Exception.try $ WS.sendTextData conn $ encode msg
+  case result of
+    Left e -> do
+      logError $ "Failed to send message to " <> relayName relay <> ": " <> T.pack (show (e :: Exception.SomeException))
+      return ()
+    Right _ -> do
+      logDebug $ "Sent message to " <> relayName relay
+      return ()

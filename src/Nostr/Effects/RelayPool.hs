@@ -28,7 +28,6 @@ data RelayPool :: Effect where
     GetRelays :: RelayPool m [(Relay, Bool)]
     StartSubscription :: RelayURI -> [Filter] -> RelayPool m (Maybe (SubscriptionId, TQueue Response))
     StopSubscription :: SubscriptionId -> RelayPool m ()
-    --ConsumeSubscription :: SubscriptionId -> RelayPool m ()
     UnsubscribeAllSubscriptionsFromRelay :: RelayURI -> RelayPool m ()
 
 type instance DispatchOf RelayPool = Dynamic
