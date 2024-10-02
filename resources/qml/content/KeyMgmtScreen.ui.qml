@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import HsQML.Model 1.0
 import Futr 1.0
+import QtQuick.Controls.Material 2.15
 
 Rectangle {
     id: accountScreen
@@ -13,29 +14,38 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
+            Layout.preferredHeight: welcomeColumn.implicitHeight + 20
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: 10
-            height: 80
-            color: "#f0f0f0"
-            border.color: "#e0e0e0"
-            border.width: 2
+            Layout.leftMargin: 10
+            Layout.rightMargin: 10
+            color: Material.backgroundColor
+            border.color: Material.dividerColor
+            border.width: 1
             radius: 5
 
             ColumnLayout {
+                id: welcomeColumn
                 anchors.fill: parent
                 anchors.margins: 10
                 spacing: 5
 
-                Text {
+                Label {
+                    Layout.fillWidth: true
                     text: qsTr("Welcome to Futr")
                     font: Constants.largeFont
-                    Layout.alignment: Qt.AlignCenter
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
+                    color: Material.primaryTextColor
                 }
 
-                Text {
+                Label {
+                    Layout.fillWidth: true
                     text: qsTr("Your gateway to the future - global, decentralized, censorship-resistant")
                     font: Constants.font
-                    Layout.alignment: Qt.AlignCenter
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
+                    color: Material.secondaryTextColor
                 }
             }
         }
@@ -210,12 +220,12 @@ Rectangle {
         standardButtons: Dialog.Cancel
         anchors.centerIn: parent
         visible: false
-        height: 440
-        width: 540
+        height: 490
+        width: 590
 
         Rectangle {
-            width: 500
-            height: 300
+            width: 550
+            height: 350
             color: "#f0f0f0"
             border.color: "#e0e0e0"
             border.width: 2
@@ -345,12 +355,12 @@ Rectangle {
         modal: true
         standardButtons: Dialog.Ok
         anchors.centerIn: parent
-        width: 740
-        height: 425
+        width: 840
+        height: 475
 
         Rectangle {
-            width: 700
-            height: 350
+            width: 800
+            height: 400
             color: "#f0f0f0"
             border.color: "#e0e0e0"
             border.width: 2
@@ -547,36 +557,35 @@ Rectangle {
 
     Dialog {
         id: connectingModal
-        modal: true
         closePolicy: Popup.NoAutoClose
         anchors.centerIn: parent
+        modal: true
         width: 250
         height: 180
-        visible: false
 
-        background: Rectangle {
+        Rectangle {
             color: "#000000"
             border.color: "#e0e0e0"
             border.width: 1
             radius: 10
-            anchors.fill: parent
-        }
+            anchors.centerIn: parent
 
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 20
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 20
 
-            BusyIndicator {
-                running: true
-                Layout.alignment: Qt.AlignHCenter
-            }
+                BusyIndicator {
+                    running: true
+                    Layout.alignment: Qt.AlignHCenter
+                }
 
-            Text {
-                text: qsTr("Connecting...")
-                color: "#ffffff"
-                font.pixelSize: 16
-                font.bold: true
-                Layout.alignment: Qt.AlignHCenter
+                Text {
+                    text: qsTr("Connecting...")
+                    color: "#ffffff"
+                    font.pixelSize: 16
+                    font.bold: true
+                    Layout.alignment: Qt.AlignHCenter
+                }
             }
         }
     }
