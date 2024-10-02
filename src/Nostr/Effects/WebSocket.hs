@@ -76,9 +76,7 @@ receiveWs relay conn responseQueue = forever $ do
       return ()
     Right msg' -> 
       case eitherDecode msg' of
-        Right response -> do
-          logDebug $ "Received relay response: " <> T.pack (show response)
-          atomically $ writeTQueue responseQueue response
+        Right response -> atomically $ writeTQueue responseQueue response
         Left err -> do
           logWarning $ "Could not decode server response: " <> T.pack err
           logWarning $ "Raw message: " <> T.pack (show msg')

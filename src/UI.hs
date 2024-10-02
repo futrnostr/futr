@@ -4,11 +4,12 @@
 
 module UI where
 
+import Control.Monad (unless)
 import Data.Aeson (decode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
-import Data.Text (Text, pack, unpack)
+import Data.Text (pack, unpack)
 import Data.Text.Encoding qualified as TE
 import Data.Typeable (Typeable)
 import Effectful
@@ -26,7 +27,7 @@ import Nostr.Effects.CurrentTime
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
 import Nostr.Keys (PubKeyXO, bech32ToPubKeyXO, keyPairToPubKeyXO, pubKeyXOToBech32)
-import Nostr.Types (Profile(..), RelayURI, emptyProfile, relayURIToText)
+import Nostr.Types (Profile(..), emptyProfile, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
 import Futr (Futr, FutrEff, login)
 
@@ -45,9 +46,9 @@ runUI = interpret $ \_ -> \case
   CreateUI changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
     keyMgmtObj <- runE $ PKeyMgmt.createUI changeKey'
 
-    let lookupFollowData :: AppState -> FollowId -> Maybe (PubKeyXO, Maybe RelayURI, Maybe Text)
+    let lookupFollowData :: AppState -> FollowId -> Maybe Follow
         lookupFollowData st (FollowId userPubKey idx) =
-          let userFollows = Map.findWithDefault [] userPubKey (follows st)
+          let userFollows = Map.findWithDefault [] userPubKey (followList $ follows st)
           in if idx >= 0 && idx < length userFollows
              then Just (userFollows !! idx)
              else Nothing
@@ -59,23 +60,19 @@ runUI = interpret $ \_ -> \case
           return $ accessor st followData
 
     followClass <- newClass [
-        followProp "pubkey" $ \st followData -> 
-            fmap (pubKeyXOToBech32 . (\(pubkey, _, _) -> pubkey)) followData,
-        followProp "relay" $ \st followData -> 
-            case followData of
-                Just (_, relayURIMaybe, _) -> relayURIToText <$> relayURIMaybe
-                Nothing -> Nothing,
-        followProp "petname" $ \st followData -> 
-            case followData of
-                Just (_, _, petnameMaybe) -> petnameMaybe
-                Nothing -> Nothing,
-        followProp "displayName" $ \st followData -> 
-            fmap (\(pubkey, _, _) -> 
-                let (profile', _) = Map.findWithDefault (emptyProfile, 0) pubkey (profiles st)
+        followProp "pubkey" $ \_ followData ->
+            fmap (pubKeyXOToBech32 . pubkey) followData,
+        followProp "relay" $ \_ followData ->
+            fmap (maybe "" relayURIToText . relayURI) followData,
+        followProp "petname" $ \_ followData ->
+            fmap (fromMaybe "" . petName) followData,
+        followProp "displayName" $ \st followData ->
+            fmap (\follow ->
+                let (profile', _) = Map.findWithDefault (emptyProfile, 0) (pubkey follow) (profiles st)
                 in fromMaybe "" (displayName profile')) followData,
-        followProp "picture" $ \st followData -> 
-            fmap (\(pubkey, _, _) -> 
-                let (profile', _) = Map.findWithDefault (emptyProfile, 0) pubkey (profiles st)
+        followProp "picture" $ \st followData ->
+            fmap (\follow ->
+                let (profile', _) = Map.findWithDefault (emptyProfile, 0) (pubkey follow) (profiles st)
                 in fromMaybe "" (picture profile')) followData
       ]
 
@@ -93,7 +90,7 @@ runUI = interpret $ \_ -> \case
                     Just s -> do
                         runE $ do
                           modify $ \st -> st { currentScreen = s }
-                          fireSignal $ Just obj
+                          fireSignal obj
                     Nothing -> return ()),
 
         defPropertySigRO' "mynpub" changeKey' $ \_ -> do
@@ -107,10 +104,7 @@ runUI = interpret $ \_ -> \case
           case keyPair st of
             Just kp -> do
               let p = keyPairToPubKeyXO kp
-              putStrLn $ "p: " ++ (show p)
-              let (profile', x) = Map.findWithDefault (emptyProfile, 0) p (profiles st)
-              putStrLn $ "profile: " ++ (show $ profiles st)
-              putStrLn $ show x
+              let (profile', _) = Map.findWithDefault (emptyProfile, 0) p (profiles st)
               return $ picture profile'
             Nothing -> return Nothing,
 
@@ -136,32 +130,29 @@ runUI = interpret $ \_ -> \case
               runE $ logInfo "Profile successfully saved and sent to relay pool"
             Nothing -> runE $ logWarning "Failed to sign profile update event",
 
-        defPropertySigRO' "follows" changeKey' $ \_ -> do
+        defPropertySigRO' "follows" changeKey' $ \obj -> do
           st <- runE $ get @AppState
           let maybeUserPubKey = keyPairToPubKeyXO <$> keyPair st
           case maybeUserPubKey of
             Just userPubKey -> do
-              let userFollowsList = Map.findWithDefault [] userPubKey (follows st)
+              let userFollowsList = Map.findWithDefault [] userPubKey (followList $ follows st)
               let followIds = [FollowId userPubKey idx | idx <- [0..(length userFollowsList - 1)]]
-              mapM (getPoolObject followPool) followIds
+              objs <- mapM (getPoolObject followPool) followIds
+              runE $ modify $ \s -> s { follows = (follows s) { objRef = Just obj } }
+              return objs
             Nothing -> return [],
 
         defMethod' "follow" $ \obj npubText -> runE $ do
-            let npub = npubText
-            let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub
+            let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
             st <- get @AppState
-            let userPubKey = keyPairToPubKeyXO <$> keyPair st
-            case userPubKey of
+            case keyPairToPubKeyXO <$> keyPair st of
                 Just userPK -> do
-                    let currentFollows = Map.findWithDefault [] userPK (follows st)
-                    -- Avoid duplicates
-                    let newFollows = if any (\(pk, _, _) -> pk == pubKeyXO) currentFollows
-                                     then currentFollows
-                                     else (pubKeyXO, Nothing, Nothing) : currentFollows
-                    modify $ \st' -> st' { follows = Map.insert userPK newFollows (follows st') }
-                    -- Optionally, fetch the profile of the new follow
-                    -- Update the profiles map if needed
-                    fireSignal $ Just obj
+                    let currentFollows = Map.findWithDefault [] userPK (followList $ follows st)
+                    unless (any (\follow -> pubkey follow == pubKeyXO) currentFollows) $ do
+                        let newFollow = Follow pubKeyXO Nothing Nothing
+                        let newFollows = newFollow : currentFollows
+                        modify $ \st' -> st' { follows = FollowModel (Map.insert userPK newFollows (followList $ follows st')) Nothing }
+                    fireSignal obj
                 Nothing -> return (),
 
         defMethod' "unfollow" $ \obj npubText -> runE $ do
@@ -171,21 +162,19 @@ runUI = interpret $ \_ -> \case
             let userPubKey = keyPairToPubKeyXO <$> keyPair st
             case userPubKey of
                 Just userPK -> do
-                    let currentFollows = Map.findWithDefault [] userPK (follows st)
-                    let newFollows = filter (\(pk, _, _) -> pk /= pubKeyXO) currentFollows
-                    modify $ \st' -> st' { follows = Map.insert userPK newFollows (follows st') }
-                    fireSignal $ Just obj
+                    let currentFollows = Map.findWithDefault [] userPK (followList $ follows st)
+                    let newFollows = filter (\follow -> pubkey follow /= pubKeyXO) currentFollows
+                    modify $ \st' -> st' { follows = FollowModel (Map.insert userPK newFollows (followList $ follows st')) Nothing }
+                    fireSignal obj
                 Nothing -> return (),
 
         defMethod' "openChat" $ \obj npubText -> runE $ do
             let npub = npubText
             let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub
             modify $ \st -> st { currentChatRecipient = Just pubKeyXO }
-            fireSignal $ Just obj
+            fireSignal obj
         ]
 
     rootObj <- newObject rootClass ()
-
-    --runE $ modify $ \st' -> st' { objRef = Just rootObj }
 
     return rootObj

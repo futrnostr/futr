@@ -106,7 +106,6 @@ Rectangle {
 
             model: AutoListModel {
                 source: follows
-                mode: AutoListModel.ByKey
             }
 
             delegate: Rectangle {
