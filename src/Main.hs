@@ -58,4 +58,4 @@ main = do
                     , QML.iconPath = Just ":/icons/nostr-purple.png"
                     }
 
-            runEngineLoop config changeKey
+            runEngineLoop config changeKey ctx

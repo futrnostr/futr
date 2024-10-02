@@ -101,7 +101,7 @@ loginWithAccount obj a = do
   -- Start the main subscription in the background
   void . async $ forM_ rs \relay' -> do
     st <- get @AppState
-    let followedPubKeys = Map.keys (follows st)
+    let followedPubKeys = concatMap (\(_, follows') -> map (\(pubKey, _, _) -> pubKey) follows') $ Map.toList (follows st)
     n' <- now
     let filters =
           [ FollowListFilter (xo : followedPubKeys) n'
@@ -114,7 +114,7 @@ loginWithAccount obj a = do
         void . async $ handleResponsesUntilClosed obj (uri relay') queue
 
   modify $ \st -> st { currentScreen = Home }
-  fireSignal obj
+  fireSignal $ Just obj
   return ()
 
 handleResponsesUntilEOSE :: FutrEff es => RelayURI -> [Response] -> Eff es Bool
@@ -138,7 +138,7 @@ handleResponsesUntilClosed obj relayURI queue = do
         msg <- atomically $ readTQueue queue
         msgs <- atomically $ flushTQueue queue
         stopped <- processResponses relayURI (msg : msgs)
-        fireSignal obj
+        fireSignal Nothing
         threadDelay $ 100 * 1000
         unless stopped loop
   loop

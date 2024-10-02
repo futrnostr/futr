@@ -105,7 +105,7 @@ runKeyMgmt = interpret $ \_ -> \case
         modify $ \st -> st {accountMap = Map.insert ai ad (accountMap st)}
       Nothing -> do
         modify $ \st -> st {errorMsg = "Error: Importing secret key failed"}
-    fireSignal obj
+    fireSignal $ Just obj
 
   ImportSeedphrase obj input pwd -> do
     mkp <- liftIO $ mnemonicToKeyPair input pwd
@@ -119,7 +119,7 @@ runKeyMgmt = interpret $ \_ -> \case
               modify $ \st -> st {accountMap = Map.insert ai ad (accountMap st)}
             Nothing -> modify $ \st -> st {errorMsg = "Error: Seedphrase generation failed"}
       Left err -> modify $ \st -> st {errorMsg = "Error: " <> pack err}
-    fireSignal obj
+    fireSignal $ Just obj
 
   GenerateSeedphrase obj -> do
     mnemonicResult <- liftIO createMnemonic
@@ -143,11 +143,11 @@ runKeyMgmt = interpret $ \_ -> \case
                       npubView = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
                     }
               Nothing -> modify $ \st -> st {errorMsg = "Error: Unknown error generating new keys"}
-    fireSignal obj
+    fireSignal $ Just obj
 
   RemoveAccount obj input -> do
     modify $ \st -> st {accountMap = Map.delete (AccountId input) (accountMap st)}
-    fireSignal obj
+    fireSignal $ Just obj
     dir <- getXdgDirectory XdgData $ "futrnostr/" ++ (unpack input)
     directoryExists <- doesDirectoryExist dir
     if directoryExists

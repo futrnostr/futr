@@ -59,6 +59,7 @@ data AppState = AppState
   , profiles :: Map PubKeyXO (Profile, Int)
   , follows :: Map PubKeyXO [(PubKeyXO, Maybe RelayURI, Maybe Text)]
   , confirmations :: Map EventId [EventConfirmation]
+  , currentChatRecipient :: Maybe PubKeyXO
   }
 
 initialState :: AppState
@@ -71,4 +72,5 @@ initialState = AppState
   , profiles = Map.empty
   , follows = Map.empty
   , confirmations = Map.empty
+  , currentChatRecipient = Nothing
   }
