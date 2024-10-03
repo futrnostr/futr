@@ -78,7 +78,7 @@ Rectangle {
                     property bool mouseHover: false
 
                     height: 60
-                    color: mouseHover ? Material.accent : Material.background
+                    color: mouseHover ? Material.accentColor : Material.backgroundColor
                     border.color: Material.dividerColor
                     radius: 5
                     width: ListView.view.width
@@ -103,10 +103,9 @@ Rectangle {
                                 onExited: parent.parent.parent.mouseHover = false
 
                                 onClicked: {
-                                    connectingModal.visible = true
+                                    connectingModal.open()
                                     delayLogin.npub = modelData.npub
                                     delayLogin.start()
-                                    connectingModal.visible = false
                                 }
                             }
                         }
@@ -544,6 +543,33 @@ Rectangle {
     }
 
     Dialog {
+        id: connectingModal
+        standardButtons: Dialog.NoButton
+        modal: true
+        anchors.centerIn: parent
+        width: 350
+        height: 250
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 20
+
+            BusyIndicator {
+                running: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Text {
+                text: qsTr("Connecting...")
+                color: Material.foreground
+                font.pixelSize: 16
+                font.bold: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+        }
+    }
+
+    Dialog {
         property string accountToRemove: ""
 
         id: confirmRemoveAccount
@@ -571,48 +597,14 @@ Rectangle {
         anchors.centerIn: parent
     }
 
-    Dialog {
-        id: connectingModal
-        closePolicy: Popup.NoAutoClose
-        anchors.centerIn: parent
-        modal: true
-        width: 250
-        height: 180
-
-        Rectangle {
-            color: Material.dialogColor
-            border.color: Material.dividerColor
-            border.width: 1
-            radius: 10
-            anchors.centerIn: parent
-
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 20
-
-                BusyIndicator {
-                    running: true
-                    Layout.alignment: Qt.AlignHCenter
-                }
-
-                Text {
-                    text: qsTr("Connecting...")
-                    color: Material.foreground
-                    font.pixelSize: 16
-                    font.bold: true
-                    Layout.alignment: Qt.AlignHCenter
-                }
-            }
-        }
-    }
-
     Timer {
         id: delayLogin
-        interval: 50
+        interval: 5
         repeat: false
         property string npub: ""
         onTriggered: {
             login(npub)
+            connectingModal.close()
         }
     }
 }
