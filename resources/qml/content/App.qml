@@ -71,16 +71,16 @@ ApplicationWindow {
     }
 
     Button {
-            id: themeToggle
-            anchors.top: parent.top
-            anchors.right: parent.right
-            anchors.margins: 10
-            icon.source: isDarkTheme ? "qrc:/icons/light_mode.png" : "qrc:/icons/dark_mode.png"
-            icon.color: Material.foreground
-            onClicked: isDarkTheme = !isDarkTheme
-            flat: true
+        id: themeToggle
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 10
+        icon.source: isDarkTheme ? "qrc:/icons/light_mode.png" : "qrc:/icons/dark_mode.png"
+        icon.color: Material.foreground
+        onClicked: isDarkTheme = !isDarkTheme
+        flat: true
 
-            ToolTip.visible: hovered
-            ToolTip.text: qsTr("Switch to " + (isDarkTheme ? "Light" : "Dark") + " Mode")
-        }
+        ToolTip.visible: hovered
+        ToolTip.text: qsTr("Switch to " + (isDarkTheme ? "Light" : "Dark") + " Mode")
+    }
 }

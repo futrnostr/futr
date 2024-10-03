@@ -8,7 +8,7 @@ import Futr 1.0
 
 Rectangle {
     id: root
-    border.color: "#e0e0e0"
+    color: Material.backgroundColor
     radius: 5
     width: 400
     implicitHeight: content.implicitHeight + 20

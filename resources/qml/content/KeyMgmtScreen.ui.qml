@@ -37,7 +37,6 @@ Rectangle {
                     font: Constants.largeFont
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
-                    color: Material.primaryTextColor
                 }
 
                 Label {
@@ -46,7 +45,6 @@ Rectangle {
                     font: Constants.font
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
-                    color: Material.secondaryTextColor
                 }
             }
         }
@@ -55,6 +53,7 @@ Rectangle {
             text: qsTr("Select an account from the list below:")
             font: Constants.font
             Layout.alignment: Qt.AlignLeft
+            color: Material.primaryTextColor
         }
 
         ScrollView {
@@ -128,6 +127,7 @@ Rectangle {
                                     text: modelData.displayName
                                     elide: Text.ElideRight
                                     width: parent.width
+                                    color: Material.primaryTextColor
                                 }
 
                                 Text {
@@ -160,13 +160,14 @@ Rectangle {
                         }
 
                         RoundButton {
-                            Layout.preferredWidth: 30
-                            Layout.preferredHeight: 30
+                            Layout.preferredWidth: 40
+                            Layout.preferredHeight: 40
                             Layout.alignment: Qt.AlignVCenter
+                            Layout.rightMargin: 20
 
                             icon.source: "qrc:/icons/delete.svg"
-                            icon.width: 16
-                            icon.height: 16
+                            icon.width: 34
+                            icon.height: 34
 
                             onClicked: {
                                 confirmRemoveAccount.accountToRemove = modelData.npub
@@ -181,6 +182,7 @@ Rectangle {
             text: qsTr("Or:")
             font: Constants.font
             Layout.alignment: Qt.AlignLeft
+            color: Material.primaryTextColor
         }
 
         Row {
@@ -194,9 +196,11 @@ Rectangle {
                 font: Constants.font
                 highlighted: true
                 Layout.alignment: Qt.AlignLeft
+                width: implicitWidth + 80
 
                 onClicked: {
                     importAccountDialog.visible = true
+                    ctxKeyMgmt.errorMsg = ""
                 }
             }
 
@@ -206,7 +210,7 @@ Rectangle {
                 font: Constants.font
                 highlighted: true
                 Layout.alignment: Qt.AlignRight
-                Layout.rightMargin: 30
+                width: implicitWidth + 80
 
                 onClicked: function () {
                     ctxKeyMgmt.generateSeedphrase()
@@ -247,8 +251,8 @@ Rectangle {
 
                     Image {
                         source: "qrc:/icons/account_box.svg"
-                        height: 24
-                        width: 24
+                        height: 48
+                        width: 48
                         Layout.alignment: Qt.AlignHCenter
                     }
 
@@ -263,12 +267,22 @@ Rectangle {
                 Flow {
                     Layout.fillWidth: true
 
+                    ButtonGroup {
+                        id: importTypeGroup
+                        onCheckedButtonChanged: {
+                            ctxKeyMgmt.errorMsg = ""
+                            secretkey.visible = checkedButton === radionsec
+                            seedphrase.visible = checkedButton === radioseedphrase
+                            password.visible = checkedButton === radioseedphrase
+                        }
+                    }
+
                     RadioButton {
                         text: qsTr("Import secret key (nsec or hex format)")
                         id: radionsec
                         checked: true
                         Layout.alignment: Qt.AlignLeft
-                        onClicked: ctxKeyMgmt.errorMsg = ""
+                        ButtonGroup.group: importTypeGroup
                     }
 
                     RadioButton {
@@ -276,7 +290,7 @@ Rectangle {
                         id: radioseedphrase
                         checked: false
                         Layout.alignment: Qt.AlignRight
-                        onClicked: ctxKeyMgmt.errorMsg = ""
+                        ButtonGroup.group: importTypeGroup
                     }
                 }
 
@@ -285,7 +299,7 @@ Rectangle {
                     placeholderText: qsTr("Enter nsec or hex key")
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: parent.width - 20
-                    visible: radionsec.checked
+                    visible: importTypeGroup.checkedButton === radionsec
                 }
 
                 TextArea {
@@ -293,7 +307,7 @@ Rectangle {
                     placeholderText: qsTr("Enter seedphrase (no commas)")
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: parent.width - 20
-                    visible: radioseedphrase.checked
+                    visible: importTypeGroup.checkedButton === radioseedphrase
                 }
 
                 TextField {
@@ -301,7 +315,7 @@ Rectangle {
                     placeholderText: qsTr("Enter password for seedphrase (optional)")
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: parent.width - 20
-                    visible: radioseedphrase.checked
+                    visible: importTypeGroup.checkedButton === radioseedphrase
                 }
 
                 Text {
@@ -331,13 +345,13 @@ Rectangle {
                         onClicked: function () {
                             if (radionsec.checked) {
                                 var res = ctxKeyMgmt.importSecretKey(secretkey.text);
-                                if (res !== null) {
+                                if (res === true) {
                                     importSuccessDialog.visible = true
                                     importAccountDialog.visible = false
                                 }
                             } else if (radioseedphrase.checked) {
                                 var res = ctxKeyMgmt.importSeedphrase(seedphrase.text, password.text)
-                                if (res !== null) {
+                                if (res === true) {
                                     importSuccessDialog.visible = true
                                     importAccountDialog.visible = false
                                 }
@@ -389,7 +403,6 @@ Rectangle {
                     Text {
                         text: "Important: Store your keys securely!"
                         font.pixelSize: 24
-                        color: "#000000"
                         font.bold: true
                         wrapMode: Text.WordWrap
                         Layout.alignment: Qt.AlignLeft

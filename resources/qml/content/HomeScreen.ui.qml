@@ -114,7 +114,7 @@ Rectangle {
                 height: 80
                 width: parent ? parent.width : 200
                 color: mouseHover ? "lightsteelblue" : "#f0f0f0"
-                border.color: "gray"
+                border.color: Material.dividerColor
                 radius: 5
 
                 RowLayout {
