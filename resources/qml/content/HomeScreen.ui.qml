@@ -11,6 +11,7 @@ Rectangle {
     id: homeScreen
     width: parent.width
     height: parent.height
+    color: Material.backgroundColor
 
     ColumnLayout {
         anchors.fill: parent
@@ -96,88 +97,93 @@ Rectangle {
             }
         }
 
-        // Follows list
-        ListView {
-            id: followsView
+        ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            spacing: 5
+            Layout.alignment: Qt.AlignHCenter
 
-            model: AutoListModel {
-                source: follows
-            }
+            ListView {
+                id: followsView
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 5
 
-            delegate: Rectangle {
-                id: followItem
-                property bool mouseHover: false
-                height: 80
-                width: parent ? parent.width : 200
-                color: mouseHover ? "lightsteelblue" : "#f0f0f0"
-                border.color: Material.dividerColor
-                radius: 5
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 10
-
-                    Image {
-                        source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
-                        width: 50
-                        height: 50
-                        clip: true
-                        Layout.preferredWidth: 50
-                        Layout.preferredHeight: 50
-                        smooth: true
-                        fillMode: Image.PreserveAspectCrop
-                    }
-
-                    RowLayout {
-                        spacing: 10
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 5
-
-                            Text {
-                                text: modelData.displayName !== "" ? modelData.displayName : modelData.pubkey
-                                font: Constants.largeFont
-                                elide: Text.ElideRight
-                                wrapMode: Text.NoWrap
-                                clip: true
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-
-                            Text {
-                                text: modelData.relay
-                                elide: Text.ElideRight
-                                wrapMode: Text.NoWrap
-                                clip: true
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-                        }
-
-                        Button {
-                            text: qsTr("Chat Now")
-                            onClicked: {
-                                openChat(modelData.pubkey)
-                            }
-                        }
-
-                        Button {
-                            text: qsTr("Unfollow")
-                            onClicked: {
-                                unfollow(modelData.pubkey)
-                            }
-                        }
-                    }
+                model: AutoListModel {
+                    source: follows
                 }
 
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onEntered: followItem.mouseHover = true
-                    onExited: followItem.mouseHover = false
+                delegate: Rectangle {
+                    id: followItem
+                    property bool mouseHover: false
+                    height: 80
+                    width: parent ? parent.width : 200
+                    color: mouseHover ? Material.accentColor : Material.backgroundColor
+                    border.color: Material.dividerColor
+                    radius: 5
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+
+                        Image {
+                            source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
+                            width: 50
+                            height: 50
+                            clip: true
+                            Layout.preferredWidth: 50
+                            Layout.preferredHeight: 50
+                            smooth: true
+                            fillMode: Image.PreserveAspectCrop
+                        }
+
+                        RowLayout {
+                            spacing: 10
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 5
+
+                                Text {
+                                    text: modelData.displayName !== "" ? modelData.displayName : modelData.pubkey
+                                    font: Constants.largeFont
+                                    elide: Text.ElideRight
+                                    wrapMode: Text.NoWrap
+                                    clip: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
+                                Text {
+                                    text: modelData.relay
+                                    elide: Text.ElideRight
+                                    wrapMode: Text.NoWrap
+                                    clip: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+                            }
+
+                            Button {
+                                text: qsTr("Chat Now")
+                                onClicked: {
+                                    openChat(modelData.pubkey)
+                                }
+                            }
+
+                            Button {
+                                text: qsTr("Unfollow")
+                                onClicked: {
+                                    unfollow(modelData.pubkey)
+                                }
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onEntered: followItem.mouseHover = true
+                        onExited: followItem.mouseHover = false
+                    }
                 }
             }
         }

@@ -12,6 +12,9 @@ Rectangle {
     radius: 5
     width: 400
     implicitHeight: content.implicitHeight
+    border.color: Material.dividerColor
+    border.width: 1
+
     property var profileData
 
     ColumnLayout {
@@ -62,6 +65,7 @@ Rectangle {
                         height: 60
                         Layout.leftMargin: 10
                         Layout.fillHeight: true
+                        color: Material.backgroundColor
 
                         Image {
                             id: profileImage
