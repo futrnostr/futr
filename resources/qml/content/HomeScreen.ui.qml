@@ -7,21 +7,23 @@ import HsQML.Model 1.0
 import Futr 1.0
 import Profile 1.0
 
-Rectangle {
+Item {
     id: homeScreen
     width: parent.width
     height: parent.height
-    color: Material.backgroundColor
 
     ColumnLayout {
         anchors.fill: parent
         spacing: 10
 
-        RowLayout {
-            Layout.alignment: Qt.AlignRight
+        // Top row with profile button
+        Item {
             Layout.fillWidth: true
+            height: 80
 
             RoundButton {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
                 width: 75
                 height: 75
                 flat: true
@@ -60,7 +62,7 @@ Rectangle {
             TextField {
                 id: searchInput
                 placeholderText: qsTr("Enter npub to search")
-                width: 300
+                Layout.preferredWidth: 300
             }
 
             Button {
@@ -68,7 +70,6 @@ Rectangle {
                 onClicked: {
                     var npub = searchInput.text.trim()
                     if (npub.length > 0) {
-                        // Implement your search logic here
                         profileLoader.setSource(
                             "Profile/ViewProfile.ui.qml",
                             { "npub": npub }
@@ -90,118 +91,190 @@ Rectangle {
         }
 
         // Three-column layout
-        RowLayout {
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 10
 
-            // Left column: Follows list
-            ColumnLayout {
-                Layout.preferredWidth: parent.width * 0.3
-                Layout.fillHeight: true
+            Row {
+                anchors.fill: parent
+                spacing: 10
 
-                ScrollView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                // Left column: Follows list
+                Rectangle {
+                    width: parent.width * 0.3
+                    height: parent.height
+                    color: Material.backgroundColor
 
-                    ListView {
-                        id: followsView
-                        clip: true
-                        spacing: 5
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 10
 
-                        model: AutoListModel {
-                            source: follows
-                        }
-
-                        delegate: Rectangle {
-                            id: followItem
-                            property bool mouseHover: false
-                            height: 80
-                            width: parent ? parent.width : 200
-                            color: mouseHover ? Material.accentColor : Material.backgroundColor
-                            border.color: Material.dividerColor
-                            radius: 5
+                        // Filter input
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 40
+                            radius: 20
+                            color: Material.background
+                            border.color: Material.accentColor
+                            border.width: filterInput.activeFocus ? 2 : 1
 
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.margins: 10
+                                spacing: 10
 
                                 Image {
-                                    source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
-                                    Layout.preferredWidth: 50
-                                    Layout.preferredHeight: 50
+                                    Layout.leftMargin: 10
+                                    source: "qrc:/icons/search.svg"
+                                    sourceSize.width: 20
+                                    sourceSize.height: 20
                                     Layout.alignment: Qt.AlignVCenter
-                                    smooth: true
-                                    fillMode: Image.PreserveAspectCrop
                                 }
 
-                                ColumnLayout {
+                                TextField {
+                                    id: filterInput
                                     Layout.fillWidth: true
-                                    spacing: 5
+                                    Layout.fillHeight: true
+                                    placeholderText: qsTr("Filter follows...")
+                                    background: Item {}
+                                    color: Material.foreground
+                                    font.pixelSize: 14
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    leftPadding: 0
+                                    rightPadding: 0
+                                    topPadding: 0
+                                    bottomPadding: 0
+                                }
 
-                                    Text {
-                                        text: modelData.displayName !== "" ? modelData.displayName : modelData.pubkey
-                                        font: Constants.font
-                                        color: Material.primaryTextColor
-                                        elide: Text.ElideRight
-                                        Layout.fillWidth: true
-                                    }
+                                Image {
+                                    source: "qrc:/icons/close.svg"
+                                    sourceSize.width: 16
+                                    sourceSize.height: 16
+                                    Layout.alignment: Qt.AlignVCenter
+                                    Layout.rightMargin: 10
+                                    visible: filterInput.text.length > 0
+                                    opacity: clearMouseArea.containsMouse ? 0.7 : 1.0
 
-                                    Text {
-                                        text: modelData.relay
-                                        elide: Text.ElideRight
-                                        Layout.fillWidth: true
-                                        font: Constants.smallFont
-                                        color: Material.secondaryTextColor
+                                    MouseArea {
+                                        id: clearMouseArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: filterInput.text = ""
                                     }
                                 }
                             }
+                        }
 
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onEntered: followItem.mouseHover = true
-                                onExited: followItem.mouseHover = false
-                                onClicked: {
-                                    chatLoader.setSource("Chat/ChatWindow.ui.qml", { "pubkey": modelData.pubkey })
-                                    rightProfileLoader.setSource("Profile/ViewProfile.ui.qml", { "npub": modelData.pubkey })
+                        // Follows list
+                        ListView {
+                            id: followsView
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            spacing: 5
+
+                            model: AutoListModel {
+                                id: followsModel
+                                source: follows
+                            }
+
+                            delegate: Rectangle {
+                                id: followItem
+                                property bool mouseHover: false
+                                height: visible ? 80 : 0
+                                width: parent ? parent.width : 200
+                                visible: {
+                                    if (filterInput.text === "") return true;
+                                    var searchText = filterInput.text.toLowerCase();
+                                    return modelData.pubkey.toLowerCase().includes(searchText) ||
+                                           (modelData.displayName && modelData.displayName.toLowerCase().includes(searchText));
+                                }
+                                color: mouseHover ? Material.accentColor : Material.backgroundColor
+                                border.color: Material.dividerColor
+                                radius: 5
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+
+                                    Image {
+                                        source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
+                                        Layout.preferredWidth: 50
+                                        Layout.preferredHeight: 50
+                                        Layout.alignment: Qt.AlignVCenter
+                                        smooth: true
+                                        fillMode: Image.PreserveAspectCrop
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 5
+
+                                        Text {
+                                            text: modelData.displayName !== "" ? modelData.displayName : modelData.pubkey
+                                            font: Constants.font
+                                            color: Material.primaryTextColor
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Text {
+                                            text: modelData.relay
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                            font: Constants.smallFont
+                                            color: Material.secondaryTextColor
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onEntered: followItem.mouseHover = true
+                                    onExited: followItem.mouseHover = false
+                                    onClicked: {
+                                        chatLoader.setSource("Chat/ChatWindow.ui.qml", { "pubkey": modelData.pubkey })
+                                        rightProfileLoader.setSource("Profile/ViewProfile.ui.qml", { "npub": modelData.pubkey })
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // Center column: Chat window
-            ColumnLayout {
-                Layout.preferredWidth: parent.width * 0.4
-                Layout.fillHeight: true
+                // Center column: Chat window
+                Rectangle {
+                    width: parent.width * 0.4
+                    height: parent.height
+                    color: Material.backgroundColor
 
-                Loader {
-                    id: chatLoader
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Loader {
+                        id: chatLoader
+                        anchors.fill: parent
+                    }
                 }
-            }
 
-            // Right column: Profile view
-            ColumnLayout {
-                Layout.preferredWidth: parent.width * 0.3
-                Layout.fillHeight: true
+                // Right column: Profile view
+                Rectangle {
+                    width: parent.width * 0.3
+                    height: parent.height
+                    color: Material.backgroundColor
 
-                Loader {
-                    id: rightProfileLoader
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Loader {
+                        id: rightProfileLoader
+                        anchors.fill: parent
+                    }
                 }
             }
         }
     }
 
-    // Add this Rectangle for the profile card
+    // Profile card
     Rectangle {
         id: profileCard
         width: 400
+        height: 600
         anchors {
             right: parent.right
             top: parent.top
@@ -213,6 +286,7 @@ Rectangle {
 
         Loader {
             id: profileLoader
+            anchors.fill: parent
         }
 
         Behavior on opacity {

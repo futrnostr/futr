@@ -75,7 +75,7 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 10
-        icon.source: isDarkTheme ? "qrc:/icons/light_mode.png" : "qrc:/icons/dark_mode.png"
+        icon.source: isDarkTheme ? "qrc:/icons/light_mode.svg" : "qrc:/icons/dark_mode.svg"
         icon.color: Material.foreground
         onClicked: isDarkTheme = !isDarkTheme
         flat: true

@@ -233,7 +233,7 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
               defPropertySigRW'
                 "errorMsg"
                 changeKey
-                ( \obj -> do
+                ( \_ -> do
                     st <- runE get
                     return $ errorMsg st
                 )
