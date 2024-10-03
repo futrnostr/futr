@@ -89,3 +89,36 @@ ghcup set cabal 3.12.1.0
 ```
 
 @todo
+
+## Profiling
+
+# Install ghc-prof-flamegraph if you haven't already
+
+```bash
+cabal install ghc-prof-flamegraph
+```
+
+Build and run the program with profiling
+
+```bash
+cabal build --enable-profiling --ghc-options="-fprof-auto -rtsopts"
+LC_ALL=C cabal run --enable-profiling futr -- +RTS -p
+```
+
+Watch the output
+
+```bash
+less futr.prof
+```
+
+Generate the flamegraph
+
+```bash
+ghc-prof-flamegraph futr.prof
+```
+
+Open the generated file in your browser
+
+```bash
+xdg-open futr.svg
+```
