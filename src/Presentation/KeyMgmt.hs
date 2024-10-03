@@ -235,7 +235,6 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                 changeKey
                 ( \obj -> do
                     st <- runE get
-                    runE $ fireSignal obj
                     return $ errorMsg st
                 )
                 ( \obj newErrorMsg -> runE $ do
