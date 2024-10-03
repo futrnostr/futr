@@ -49,6 +49,7 @@ Rectangle {
             Text {
                 text: "Edit Profile"
                 font: Constants.largeFont
+                color: Material.primaryTextColor
             }
 
             Item {

@@ -17,7 +17,6 @@ Rectangle {
         anchors.fill: parent
         spacing: 10
 
-        // Profile button
         RowLayout {
             Layout.alignment: Qt.AlignRight
             Layout.fillWidth: true
@@ -48,16 +47,9 @@ Rectangle {
                         "Profile/MyProfile.ui.qml",
                         { "profileData": profile }
                     )
+                    profileCard.visible = true
                 }
             }
-        }
-
-        // Profile loader
-        Loader {
-            id: profileLoader
-            Layout.alignment: Qt.AlignRight
-            Layout.rightMargin: 10
-            Layout.topMargin: -100
         }
 
         // Search row
@@ -97,95 +89,138 @@ Rectangle {
             }
         }
 
-        ScrollView {
+        // Three-column layout
+        RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.alignment: Qt.AlignHCenter
+            spacing: 10
 
-            ListView {
-                id: followsView
-                Layout.fillWidth: true
+            // Left column: Follows list
+            ColumnLayout {
+                Layout.preferredWidth: parent.width * 0.3
                 Layout.fillHeight: true
-                clip: true
-                spacing: 5
 
-                model: AutoListModel {
-                    source: follows
-                }
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
 
-                delegate: Rectangle {
-                    id: followItem
-                    property bool mouseHover: false
-                    height: 80
-                    width: parent ? parent.width : 200
-                    color: mouseHover ? Material.accentColor : Material.backgroundColor
-                    border.color: Material.dividerColor
-                    radius: 5
+                    ListView {
+                        id: followsView
+                        clip: true
+                        spacing: 5
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 10
-
-                        Image {
-                            source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
-                            width: 50
-                            height: 50
-                            clip: true
-                            Layout.preferredWidth: 50
-                            Layout.preferredHeight: 50
-                            smooth: true
-                            fillMode: Image.PreserveAspectCrop
+                        model: AutoListModel {
+                            source: follows
                         }
 
-                        RowLayout {
-                            spacing: 10
+                        delegate: Rectangle {
+                            id: followItem
+                            property bool mouseHover: false
+                            height: 80
+                            width: parent ? parent.width : 200
+                            color: mouseHover ? Material.accentColor : Material.backgroundColor
+                            border.color: Material.dividerColor
+                            radius: 5
 
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 5
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
 
-                                Text {
-                                    text: modelData.displayName !== "" ? modelData.displayName : modelData.pubkey
-                                    font: Constants.largeFont
-                                    elide: Text.ElideRight
-                                    wrapMode: Text.NoWrap
-                                    clip: true
+                                Image {
+                                    source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
+                                    Layout.preferredWidth: 50
+                                    Layout.preferredHeight: 50
                                     Layout.alignment: Qt.AlignVCenter
+                                    smooth: true
+                                    fillMode: Image.PreserveAspectCrop
                                 }
 
-                                Text {
-                                    text: modelData.relay
-                                    elide: Text.ElideRight
-                                    wrapMode: Text.NoWrap
-                                    clip: true
-                                    Layout.alignment: Qt.AlignVCenter
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    Text {
+                                        text: modelData.displayName !== "" ? modelData.displayName : modelData.pubkey
+                                        font: Constants.font
+                                        color: Material.primaryTextColor
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+
+                                    Text {
+                                        text: modelData.relay
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                        font: Constants.smallFont
+                                        color: Material.secondaryTextColor
+                                    }
                                 }
                             }
 
-                            Button {
-                                text: qsTr("Chat Now")
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onEntered: followItem.mouseHover = true
+                                onExited: followItem.mouseHover = false
                                 onClicked: {
-                                    openChat(modelData.pubkey)
-                                }
-                            }
-
-                            Button {
-                                text: qsTr("Unfollow")
-                                onClicked: {
-                                    unfollow(modelData.pubkey)
+                                    chatLoader.setSource("Chat/ChatWindow.ui.qml", { "pubkey": modelData.pubkey })
+                                    rightProfileLoader.setSource("Profile/ViewProfile.ui.qml", { "npub": modelData.pubkey })
                                 }
                             }
                         }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onEntered: followItem.mouseHover = true
-                        onExited: followItem.mouseHover = false
                     }
                 }
             }
+
+            // Center column: Chat window
+            ColumnLayout {
+                Layout.preferredWidth: parent.width * 0.4
+                Layout.fillHeight: true
+
+                Loader {
+                    id: chatLoader
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                }
+            }
+
+            // Right column: Profile view
+            ColumnLayout {
+                Layout.preferredWidth: parent.width * 0.3
+                Layout.fillHeight: true
+
+                Loader {
+                    id: rightProfileLoader
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                }
+            }
+        }
+    }
+
+    // Add this Rectangle for the profile card
+    Rectangle {
+        id: profileCard
+        width: 400
+        anchors {
+            right: parent.right
+            top: parent.top
+            margins: 20
+        }
+        visible: false
+        Material.elevation: 6
+        radius: 10
+
+        Loader {
+            id: profileLoader
+        }
+
+        Behavior on opacity {
+            NumberAnimation { duration: 150 }
+        }
+
+        onVisibleChanged: {
+            opacity = visible ? 1 : 0
         }
     }
 }

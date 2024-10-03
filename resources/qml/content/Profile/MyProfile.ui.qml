@@ -31,7 +31,7 @@ Rectangle {
 
             CloseButton {
                 id: closeButton
-                target: root
+                target: profileCard
             }
         }
 
@@ -83,11 +83,14 @@ Rectangle {
 
                         Text {
                             text: profileData.display_name ?? ""
-                            font.bold: true
+                            font: Constants.font
+                            color: Material.primaryTextColor
                         }
 
                         Text {
                             text: profileData.name ?? ""
+                            font: Constants.font
+                            color: Material.primaryTextColor
                         }
 
                         RowLayout {
@@ -95,6 +98,8 @@ Rectangle {
                                 text: mynpub
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
+                                font: Constants.font
+                                color: Material.primaryTextColor
                             }
 
                             Button {
@@ -118,6 +123,8 @@ Rectangle {
                             text:  profileData.about ?? ""
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
+                            font: Constants.font
+                            color: Material.primaryTextColor
                         }
 
                         ExternalIdentity {

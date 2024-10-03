@@ -12,6 +12,12 @@ QtObject {
         color: Material.primaryTextColor,
         wrapMode: Text.WordWrap
     })
+    readonly property font smallFont: Qt.font({
+        family: "Arial",
+        pixelSize: Qt.application.font.pixelSize * 0.8,
+        color: Material.secondaryTextColor,
+        wrapMode: Text.WordWrap
+    })
     readonly property font largeFont: Qt.font({
         family: "Arial",
         pixelSize: Qt.application.font.pixelSize * 2,
