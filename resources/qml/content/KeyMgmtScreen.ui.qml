@@ -7,6 +7,7 @@ import QtQuick.Controls.Material 2.15
 
 Rectangle {
     id: accountScreen
+    color: Material.backgroundColor
 
     ColumnLayout {
         anchors.fill: parent
@@ -78,24 +79,23 @@ Rectangle {
                     property bool mouseHover: false
 
                     height: 60
-                    color: mouseHover ? "lightsteelblue" : "#f0f0f0"
-                    border.color: "gray"
+                    color: mouseHover ? Material.accent : Material.background
+                    border.color: Material.dividerColor
                     radius: 5
-                    width: parent ? parent.width : 200
+                    width: ListView.view.width
 
                     RowLayout {
                         anchors.fill: parent
-                        spacing: 5
+                        anchors.margins: 10
+                        spacing: 10
 
                         Image {
                             source: Util.getProfilePicture(modelData.picture, modelData.npub)
-                            width: 50
-                            height: 50
-                            Layout.preferredWidth: 50
-                            Layout.preferredHeight: 50
+                            Layout.preferredWidth: 40
+                            Layout.preferredHeight: 40
+                            Layout.alignment: Qt.AlignVCenter
                             smooth: true
                             fillMode: Image.PreserveAspectCrop
-                            Layout.leftMargin: 10
 
                             MouseArea {
                                 anchors.fill: parent
@@ -115,26 +115,30 @@ Rectangle {
                         ColumnLayout {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.leftMargin: 10
+                            spacing: 2
 
-                            Text {
-                                font: Constants.largeFont
-                                text: modelData.displayName
-                                elide: Text.ElideRight
-                                wrapMode: Text.NoWrap
-                                clip: true
-                                Layout.alignment: Qt.AlignVCenter
-                                Layout.topMargin: 10
+                            Item {
+                                Layout.fillHeight: true
                                 Layout.fillWidth: true
-                            }
 
-                            Text {
-                                text: modelData.npub
-                                elide: Text.ElideRight
-                                wrapMode: Text.NoWrap
-                                clip: true
-                                Layout.alignment: Qt.AlignBottom
-                                Layout.fillWidth: true
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.bottom: parent.verticalCenter
+                                    font: Constants.font
+                                    text: modelData.displayName
+                                    elide: Text.ElideRight
+                                    width: parent.width
+                                }
+
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.verticalCenter
+                                    text: modelData.npub
+                                    font.pixelSize: Constants.font.pixelSize * 0.8
+                                    elide: Text.ElideRight
+                                    width: parent.width
+                                    color: Material.secondaryTextColor
+                                }
                             }
 
                             MouseArea {
@@ -156,14 +160,13 @@ Rectangle {
                         }
 
                         RoundButton {
-                            width: 8
-                            height: 8
+                            Layout.preferredWidth: 30
+                            Layout.preferredHeight: 30
+                            Layout.alignment: Qt.AlignVCenter
 
                             icon.source: "qrc:/icons/delete.svg"
-                            icon.width: 12
-                            icon.height: 12
-
-                            Layout.rightMargin: 10
+                            icon.width: 16
+                            icon.height: 16
 
                             onClicked: {
                                 confirmRemoveAccount.accountToRemove = modelData.npub
@@ -220,14 +223,14 @@ Rectangle {
         standardButtons: Dialog.Cancel
         anchors.centerIn: parent
         visible: false
-        height: 490
-        width: 590
+        height: 610
+        width: 740
 
         Rectangle {
-            width: 550
-            height: 350
-            color: "#f0f0f0"
-            border.color: "#e0e0e0"
+            width: 700
+            height: 470
+            color: Material.dialogColor
+            border.color: Material.dividerColor
             border.width: 2
             radius: 10
 
@@ -355,14 +358,14 @@ Rectangle {
         modal: true
         standardButtons: Dialog.Ok
         anchors.centerIn: parent
-        width: 840
-        height: 475
+        width: 940
+        height: 675
 
         Rectangle {
-            width: 800
-            height: 400
-            color: "#f0f0f0"
-            border.color: "#e0e0e0"
+            width: 900
+            height: 600
+            color: Material.dialogColor
+            border.color: Material.dividerColor
             border.width: 2
             radius: 10
 
@@ -397,7 +400,7 @@ Rectangle {
                     id: seedPhraseLabel
                     text: "Seed Phrase:"
                     font: Constants.font
-                    color: "#000000"
+                    color: Material.foreground
                     horizontalAlignment: Text.AlignLeft
                 }
 
@@ -434,7 +437,7 @@ Rectangle {
                 Text {
                     id: privateKeyLabel
                     text: "Private Key (nsec format):"
-                    color: "#000000"
+                    color: Material.foreground
                     font: Constants.font
                     horizontalAlignment: Text.AlignLeft
                 }
@@ -470,7 +473,7 @@ Rectangle {
                 Text {
                     id: publicKeyLabel
                     text: "Public Key (npub format):"
-                    color: "#000000"
+                    color: Material.foreground
                     font: Constants.font
                     horizontalAlignment: Text.AlignLeft
                 }
@@ -509,7 +512,7 @@ Rectangle {
                     id: infoText
                     text: "Please write down either the seed phrase or the private key and store them in a secure place. The seed phrase is easier to remember, but the private key is more secure. Choose based on your preference."
                     font: Constants.font
-                    color: "#616161"
+                    color: Material.secondaryTextColor
                     horizontalAlignment: Text.AlignCenter
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
@@ -564,8 +567,8 @@ Rectangle {
         height: 180
 
         Rectangle {
-            color: "#000000"
-            border.color: "#e0e0e0"
+            color: Material.dialogColor
+            border.color: Material.dividerColor
             border.width: 1
             radius: 10
             anchors.centerIn: parent
@@ -581,7 +584,7 @@ Rectangle {
 
                 Text {
                     text: qsTr("Connecting...")
-                    color: "#ffffff"
+                    color: Material.foreground
                     font.pixelSize: 16
                     font.bold: true
                     Layout.alignment: Qt.AlignHCenter

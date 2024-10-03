@@ -50,6 +50,7 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.leftMargin: 1
             anchors.rightMargin: 1
+            color: Material.backgroundColor
 
             KeyMgmtScreen {
                 anchors.margins: 10
@@ -80,6 +81,6 @@ ApplicationWindow {
             flat: true
 
             ToolTip.visible: hovered
-            ToolTip.text: "Switch to " + (isDarkTheme ? "Light" : "Dark") + " Mode"
+            ToolTip.text: qsTr("Switch to " + (isDarkTheme ? "Light" : "Dark") + " Mode")
         }
 }
