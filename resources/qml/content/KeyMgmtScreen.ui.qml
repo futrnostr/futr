@@ -332,15 +332,16 @@ Rectangle {
                 }
 
                 Button {
-                    id: importbutton
+                    id: importButton
                     text: qsTr("Import")
                     font: Constants.font
                     highlighted: true
                     Layout.alignment: Qt.AlignRight
                     Layout.rightMargin: 10
+                    Layout.preferredWidth: implicitWidth + 80
 
                     Connections {
-                        target: importbutton
+                        target: importButton
                         onClicked: function () {
                             if (radionsec.checked) {
                                 var res = ctxKeyMgmt.importSecretKey(secretkey.text);
@@ -433,8 +434,8 @@ Rectangle {
 
                     Button {
                         icon.source: "qrc:/icons/content_copy.svg"
-                        Layout.preferredWidth: 50
-                        Layout.preferredHeight: 50
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 34
 
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Copy to clipboard")
@@ -470,8 +471,8 @@ Rectangle {
 
                     Button {
                         icon.source: "qrc:/icons/content_copy.svg"
-                        Layout.preferredWidth: 50
-                        Layout.preferredHeight: 50
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 34
 
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Copy to clipboard")
@@ -506,8 +507,8 @@ Rectangle {
 
                     Button {
                         icon.source: "qrc:/icons/content_copy.svg"
-                        Layout.preferredWidth: 50
-                        Layout.preferredHeight: 50
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 34
 
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
@@ -547,8 +548,8 @@ Rectangle {
         standardButtons: Dialog.NoButton
         modal: true
         anchors.centerIn: parent
-        width: 350
-        height: 250
+        width: 300
+        height: 200
 
         ColumnLayout {
             anchors.fill: parent

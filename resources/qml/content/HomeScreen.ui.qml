@@ -271,22 +271,21 @@ Item {
     }
 
     // Profile card
-    Rectangle {
+    Pane {
         id: profileCard
         width: 400
-        height: 600
+        padding: 0
+        visible: false
+        Material.elevation: 6
+
         anchors {
             right: parent.right
             top: parent.top
             margins: 20
         }
-        visible: false
-        Material.elevation: 6
-        radius: 10
 
         Loader {
             id: profileLoader
-            anchors.fill: parent
         }
 
         Behavior on opacity {
