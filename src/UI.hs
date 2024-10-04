@@ -29,7 +29,7 @@ import Nostr.Effects.RelayPool
 import Nostr.Keys (PubKeyXO, bech32ToPubKeyXO, keyPairToPubKeyXO, pubKeyXOToBech32)
 import Nostr.Types (Profile(..), emptyProfile, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
-import Futr (Futr, FutrEff, login)
+import Futr (Futr, FutrEff, login, logout)
 
 -- | Key Management Effect for creating QML UI.
 data UI :: Effect where
@@ -109,6 +109,8 @@ runUI = interpret $ \_ -> \case
             Nothing -> return Nothing,
 
         defMethod' "login" $ \obj input -> runE $ login obj input,
+
+        defMethod' "logout" $ \obj -> runE $ logout obj,
 
         defMethod' "getProfile" $ \_ npub -> do
           st <- runE $ get @AppState

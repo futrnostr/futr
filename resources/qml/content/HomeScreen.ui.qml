@@ -22,6 +22,7 @@ Item {
             height: 80
 
             RoundButton {
+                id: profileButton
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 width: 75
@@ -36,20 +37,61 @@ Item {
                     icon.source = Util.getProfilePicture(mypicture, mynpub)
                 }
 
-                Material.elevation: 10
+                Material.elevation: 6
 
-                ToolTip.visible: hovered
-                ToolTip.delay: 500
-                ToolTip.timeout: 5000
-                ToolTip.text: qsTr("My Profile")
+                onClicked: profileMenu.open()
 
-                onClicked: {
-                    var profile = JSON.parse(getProfile(mynpub))
-                    profileLoader.setSource(
-                        "Profile/MyProfile.ui.qml",
-                        { "profileData": profile }
-                    )
-                    profileCard.visible = true
+                background: Rectangle {
+                    color: "transparent"
+                }
+
+                states: [
+                    State {
+                        name: "pressed"
+                        when: profileButton.pressed
+                        PropertyChanges { target: profileButton; opacity: 0.8 }
+                    }
+                ]
+
+                Menu {
+                    id: profileMenu
+                    y: profileButton.height
+
+                    onClosed: {
+                        if (!profileCard.visible) {
+                            profileLoader.source = ""
+                        }
+                    }
+
+                    MenuItem {
+                        text: qsTr("My Profile")
+                        onTriggered: {
+                            var profile = JSON.parse(getProfile(mynpub))
+                            profileLoader.setSource(
+                                "Profile/MyProfile.ui.qml",
+                                { "profileData": profile }
+                            )
+                            profileCard.visible = true
+                            profileMenu.close()
+                        }
+                    }
+
+                    MenuItem {
+                        text: qsTr("Settings")
+                        onTriggered: {
+                            // Dummy for now, does nothing
+                            console.log("Settings clicked")
+                            profileCard.visible = false
+                            profileMenu.close()
+                        }
+                    }
+
+                    MenuItem {
+                        text: qsTr("Logout")
+                        onTriggered: {
+                            logout()
+                        }
+                    }
                 }
             }
         }
@@ -101,7 +143,7 @@ Item {
 
                 // Left column: Follows list
                 Rectangle {
-                    width: parent.width * 0.3
+                    width: parent.width * 0.3 - (parent.spacing * 2 / 3)
                     height: parent.height
                     color: Material.backgroundColor
 
@@ -245,7 +287,7 @@ Item {
 
                 // Center column: Chat window
                 Rectangle {
-                    width: parent.width * 0.4
+                    width: parent.width * 0.4 - (parent.spacing * 2 / 3)
                     height: parent.height
                     color: Material.backgroundColor
 
@@ -257,7 +299,7 @@ Item {
 
                 // Right column: Profile view
                 Rectangle {
-                    width: parent.width * 0.3
+                    width: parent.width * 0.3 - (parent.spacing * 2 / 3)
                     height: parent.height
                     color: Material.backgroundColor
 

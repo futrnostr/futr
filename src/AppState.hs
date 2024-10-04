@@ -22,6 +22,7 @@ data RelayData = RelayData
   , responseQueue  :: TQueue Response
   , notices        :: [Text]
   , subscriptions  :: [SubscriptionId]
+  , retryCount     :: Int
   }
 
 -- | Initial state for RelayPool.

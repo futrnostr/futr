@@ -31,6 +31,7 @@ import Presentation.KeyMgmt qualified as PKeyMgmt
   -- | Futr Effect for managing the application state.
 data Futr :: Effect where
   Login :: ObjRef () -> Text -> Futr m ()
+  Logout :: ObjRef () -> Futr m ()
 
 type instance DispatchOf Futr = Dynamic
 
@@ -56,6 +57,25 @@ runFutr = interpret $ \_ -> \case
       case Map.lookup (PKeyMgmt.AccountId input) (PKeyMgmt.accountMap kst) of
         Just a -> loginWithAccount obj a
         Nothing -> return ()
+
+  Logout obj -> do
+      modify @AppState $ \st -> st
+        { keyPair = Nothing
+        , currentScreen = KeyMgmt
+        , follows = FollowModel Map.empty (objRef $ follows st)
+        , profiles = Map.empty
+        , confirmations = Map.empty
+        }
+
+      relays' <- gets @RelayPoolState relays
+      mapM_ disconnect (Map.keys relays')
+
+      modify @RelayPoolState $ \st -> st
+        { relays = Map.empty
+        }
+
+      fireSignal obj
+      logInfo "User logged out successfully"
 
 loginWithAccount :: FutrEff es => ObjRef () -> PKeyMgmt.Account -> Eff es ()
 loginWithAccount obj a = do

@@ -22,7 +22,7 @@ import Nostr.Types
 data RelayPool :: Effect where
     AddRelay :: Relay -> RelayPool m ()
     Connect :: Relay -> RelayPool m ()
-    Disconnect :: Relay -> RelayPool m ()
+    Disconnect :: RelayURI -> RelayPool m ()
     DisconnectAll :: RelayPool m ()
     SendEvent :: Event -> [RelayURI] -> RelayPool m ()
     GetRelays :: RelayPool m [(Relay, Bool)]
@@ -55,7 +55,7 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
         unless (Map.member relayURI existingRelays) do
           reqChan <- newTChanIO
           resQueue <- newTQueueIO
-          let newRelayData = RelayData False (info relay) reqChan resQueue [] []
+          let newRelayData = RelayData False (info relay) reqChan resQueue [] [] 0
               updatedRelays = Map.insert relayURI newRelayData existingRelays
           modify @RelayPoolState $ \st' -> st' { relays = updatedRelays }
 
@@ -70,14 +70,13 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
           Nothing -> do
             reqChan <- newTChanIO
             resQueue <- newTQueueIO
-            let newRelayData = RelayData False (info relay) reqChan resQueue [] []
+            let newRelayData = RelayData False (info relay) reqChan resQueue [] [] 0
             modify @RelayPoolState $ \st' ->
               st' { relays = Map.insert relayURI newRelayData (relays st') }
             runClient relay reqChan resQueue
 
-      Nostr.Effects.RelayPool.Disconnect relay -> do
-        let relayURI = uri relay
-        logDebug $ T.pack $ "Disconnecting from " ++ T.unpack (relayName relay) ++ " ..."
+      Nostr.Effects.RelayPool.Disconnect relayURI -> do
+        logDebug $ T.pack $ "Disconnecting from " ++ T.unpack (relayURIToText relayURI) ++ " ..."
         modify @RelayPoolState $ \st ->
           st { relays = Map.adjust (\rd -> rd { connected = False }) relayURI (relays st) }
         st <- get @RelayPoolState
