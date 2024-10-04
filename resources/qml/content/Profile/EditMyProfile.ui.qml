@@ -8,10 +8,13 @@ import Futr 1.0
 
 Rectangle {
     id: root
-    border.color: "#e0e0e0"
+    color: Material.backgroundColor
     radius: 5
     width: 400
     implicitHeight: content.implicitHeight + 20
+    border.color: Material.dividerColor
+    border.width: 1
+
     property var profileData
     property var labelWidth: 100
 
@@ -46,6 +49,7 @@ Rectangle {
             Text {
                 text: "Edit Profile"
                 font: Constants.largeFont
+                color: Material.primaryTextColor
             }
 
             Item {

@@ -32,11 +32,11 @@ main = do
     setEnv "QT_ENABLE_HIGHDPI_SCALING" "1"
 
     runEff
+        . runLoggingStdout
         . runEffectfulQML
         . runFileSystem
         . runIDGen
         . runCurrentTime
-        . runLoggingStdout
         . runConcurrent
         . evalState KeyMgmt.initialState
         . evalState AppState.initialRelayPoolState
@@ -58,4 +58,4 @@ main = do
                     , QML.iconPath = Just ":/icons/nostr-purple.png"
                     }
 
-            runEngineLoop config changeKey
+            runEngineLoop config changeKey ctx

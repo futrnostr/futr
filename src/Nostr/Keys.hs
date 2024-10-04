@@ -96,7 +96,7 @@ instance FromJSON PubKeyXO where
     decoded <- either fail return $ B16.decode (C.pack $ T.unpack t)
     case importPubKeyXO decoded of
       Just pk -> return pk
-      Nothing -> fail "Invalid PubKeyXO"
+      Nothing -> fail $ "Invalid PubKeyXO: " ++ T.unpack t
 
 instance ToJSON PubKeyXO where
   toJSON = String . byteStringToHex . exportPubKeyXO

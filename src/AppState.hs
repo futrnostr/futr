@@ -22,6 +22,7 @@ data RelayData = RelayData
   , responseQueue  :: TQueue Response
   , notices        :: [Text]
   , subscriptions  :: [SubscriptionId]
+  , retryCount     :: Int
   }
 
 -- | Initial state for RelayPool.
@@ -52,23 +53,34 @@ data EventConfirmation = EventConfirmation
 
 data AppState = AppState
   { keyPair :: Maybe KeyPair
-  , objRef :: Maybe (ObjRef ())
   , currentScreen :: AppScreen
   , events :: Map EventId (Event, [RelayURI])
   , chats :: Map PubKeyXO [ChatMessage]
   , profiles :: Map PubKeyXO (Profile, Int)
-  , follows :: Map PubKeyXO [(PubKeyXO, Maybe RelayURI, Maybe Text)]
+  , follows :: FollowModel
   , confirmations :: Map EventId [EventConfirmation]
+  , currentChatRecipient :: Maybe PubKeyXO
+  }
+
+data FollowModel = FollowModel
+  { followList :: Map PubKeyXO [Follow]
+  , objRef :: Maybe (ObjRef ())
+  }
+
+data Follow = Follow
+  { pubkey :: PubKeyXO
+  , relayURI :: Maybe RelayURI
+  , petName :: Maybe Text
   }
 
 initialState :: AppState
 initialState = AppState
   { keyPair = Nothing
-  , objRef = Nothing
   , currentScreen = KeyMgmt
   , events = Map.empty
   , chats = Map.empty
   , profiles = Map.empty
-  , follows = Map.empty
+  , follows = FollowModel Map.empty Nothing
   , confirmations = Map.empty
+  , currentChatRecipient = Nothing
   }

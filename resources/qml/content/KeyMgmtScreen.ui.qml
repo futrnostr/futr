@@ -3,9 +3,11 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import HsQML.Model 1.0
 import Futr 1.0
+import QtQuick.Controls.Material 2.15
 
 Rectangle {
     id: accountScreen
+    color: Material.backgroundColor
 
     ColumnLayout {
         anchors.fill: parent
@@ -13,29 +15,36 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
+            Layout.preferredHeight: welcomeColumn.implicitHeight + 20
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: 10
-            height: 80
-            color: "#f0f0f0"
-            border.color: "#e0e0e0"
-            border.width: 2
+            Layout.leftMargin: 10
+            Layout.rightMargin: 10
+            color: Material.backgroundColor
+            border.color: Material.dividerColor
+            border.width: 1
             radius: 5
 
             ColumnLayout {
+                id: welcomeColumn
                 anchors.fill: parent
                 anchors.margins: 10
                 spacing: 5
 
-                Text {
+                Label {
+                    Layout.fillWidth: true
                     text: qsTr("Welcome to Futr")
                     font: Constants.largeFont
-                    Layout.alignment: Qt.AlignCenter
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
                 }
 
-                Text {
+                Label {
+                    Layout.fillWidth: true
                     text: qsTr("Your gateway to the future - global, decentralized, censorship-resistant")
                     font: Constants.font
-                    Layout.alignment: Qt.AlignCenter
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
                 }
             }
         }
@@ -44,6 +53,7 @@ Rectangle {
             text: qsTr("Select an account from the list below:")
             font: Constants.font
             Layout.alignment: Qt.AlignLeft
+            color: Material.primaryTextColor
         }
 
         ScrollView {
@@ -68,24 +78,23 @@ Rectangle {
                     property bool mouseHover: false
 
                     height: 60
-                    color: mouseHover ? "lightsteelblue" : "#f0f0f0"
-                    border.color: "gray"
+                    color: mouseHover ? Material.accentColor : Material.backgroundColor
+                    border.color: Material.dividerColor
                     radius: 5
-                    width: parent ? parent.width : 200
+                    width: ListView.view.width
 
                     RowLayout {
                         anchors.fill: parent
-                        spacing: 5
+                        anchors.margins: 10
+                        spacing: 10
 
                         Image {
                             source: Util.getProfilePicture(modelData.picture, modelData.npub)
-                            width: 50
-                            height: 50
-                            Layout.preferredWidth: 50
-                            Layout.preferredHeight: 50
+                            Layout.preferredWidth: 40
+                            Layout.preferredHeight: 40
+                            Layout.alignment: Qt.AlignVCenter
                             smooth: true
                             fillMode: Image.PreserveAspectCrop
-                            Layout.leftMargin: 10
 
                             MouseArea {
                                 anchors.fill: parent
@@ -94,10 +103,9 @@ Rectangle {
                                 onExited: parent.parent.parent.mouseHover = false
 
                                 onClicked: {
-                                    connectingModal.visible = true
+                                    connectingModal.open()
                                     delayLogin.npub = modelData.npub
                                     delayLogin.start()
-                                    connectingModal.visible = false
                                 }
                             }
                         }
@@ -105,26 +113,31 @@ Rectangle {
                         ColumnLayout {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.leftMargin: 10
+                            spacing: 2
 
-                            Text {
-                                font: Constants.largeFont
-                                text: modelData.displayName
-                                elide: Text.ElideRight
-                                wrapMode: Text.NoWrap
-                                clip: true
-                                Layout.alignment: Qt.AlignVCenter
-                                Layout.topMargin: 10
+                            Item {
+                                Layout.fillHeight: true
                                 Layout.fillWidth: true
-                            }
 
-                            Text {
-                                text: modelData.npub
-                                elide: Text.ElideRight
-                                wrapMode: Text.NoWrap
-                                clip: true
-                                Layout.alignment: Qt.AlignBottom
-                                Layout.fillWidth: true
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.bottom: parent.verticalCenter
+                                    font: Constants.font
+                                    text: modelData.displayName
+                                    elide: Text.ElideRight
+                                    width: parent.width
+                                    color: Material.primaryTextColor
+                                }
+
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.verticalCenter
+                                    text: modelData.npub
+                                    font.pixelSize: Constants.font.pixelSize * 0.8
+                                    elide: Text.ElideRight
+                                    width: parent.width
+                                    color: Material.secondaryTextColor
+                                }
                             }
 
                             MouseArea {
@@ -137,23 +150,22 @@ Rectangle {
                                 onExited: parent.parent.parent.mouseHover = false
 
                                 onClicked: {
-                                    connectingModal.visible = true
+                                    connectingModal.open()
                                     delayLogin.npub = modelData.npub
                                     delayLogin.start()
-                                    connectingModal.visible = false
                                 }
                             }
                         }
 
                         RoundButton {
-                            width: 8
-                            height: 8
+                            Layout.preferredWidth: 40
+                            Layout.preferredHeight: 40
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.rightMargin: 20
 
                             icon.source: "qrc:/icons/delete.svg"
-                            icon.width: 12
-                            icon.height: 12
-
-                            Layout.rightMargin: 10
+                            icon.width: 34
+                            icon.height: 34
 
                             onClicked: {
                                 confirmRemoveAccount.accountToRemove = modelData.npub
@@ -168,6 +180,7 @@ Rectangle {
             text: qsTr("Or:")
             font: Constants.font
             Layout.alignment: Qt.AlignLeft
+            color: Material.primaryTextColor
         }
 
         Row {
@@ -181,9 +194,11 @@ Rectangle {
                 font: Constants.font
                 highlighted: true
                 Layout.alignment: Qt.AlignLeft
+                width: implicitWidth + 80
 
                 onClicked: {
                     importAccountDialog.visible = true
+                    ctxKeyMgmt.errorMsg = ""
                 }
             }
 
@@ -193,7 +208,7 @@ Rectangle {
                 font: Constants.font
                 highlighted: true
                 Layout.alignment: Qt.AlignRight
-                Layout.rightMargin: 30
+                width: implicitWidth + 80
 
                 onClicked: function () {
                     ctxKeyMgmt.generateSeedphrase()
@@ -210,14 +225,14 @@ Rectangle {
         standardButtons: Dialog.Cancel
         anchors.centerIn: parent
         visible: false
-        height: 440
-        width: 540
+        height: 610
+        width: 740
 
         Rectangle {
-            width: 500
-            height: 300
-            color: "#f0f0f0"
-            border.color: "#e0e0e0"
+            width: 700
+            height: 470
+            color: Material.dialogColor
+            border.color: Material.dividerColor
             border.width: 2
             radius: 10
 
@@ -234,8 +249,8 @@ Rectangle {
 
                     Image {
                         source: "qrc:/icons/account_box.svg"
-                        height: 24
-                        width: 24
+                        height: 48
+                        width: 48
                         Layout.alignment: Qt.AlignHCenter
                     }
 
@@ -250,12 +265,22 @@ Rectangle {
                 Flow {
                     Layout.fillWidth: true
 
+                    ButtonGroup {
+                        id: importTypeGroup
+                        onCheckedButtonChanged: {
+                            ctxKeyMgmt.errorMsg = ""
+                            secretkey.visible = checkedButton === radionsec
+                            seedphrase.visible = checkedButton === radioseedphrase
+                            password.visible = checkedButton === radioseedphrase
+                        }
+                    }
+
                     RadioButton {
                         text: qsTr("Import secret key (nsec or hex format)")
                         id: radionsec
                         checked: true
                         Layout.alignment: Qt.AlignLeft
-                        onClicked: ctxKeyMgmt.errorMsg = ""
+                        ButtonGroup.group: importTypeGroup
                     }
 
                     RadioButton {
@@ -263,7 +288,7 @@ Rectangle {
                         id: radioseedphrase
                         checked: false
                         Layout.alignment: Qt.AlignRight
-                        onClicked: ctxKeyMgmt.errorMsg = ""
+                        ButtonGroup.group: importTypeGroup
                     }
                 }
 
@@ -272,7 +297,7 @@ Rectangle {
                     placeholderText: qsTr("Enter nsec or hex key")
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: parent.width - 20
-                    visible: radionsec.checked
+                    visible: importTypeGroup.checkedButton === radionsec
                 }
 
                 TextArea {
@@ -280,7 +305,7 @@ Rectangle {
                     placeholderText: qsTr("Enter seedphrase (no commas)")
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: parent.width - 20
-                    visible: radioseedphrase.checked
+                    visible: importTypeGroup.checkedButton === radioseedphrase
                 }
 
                 TextField {
@@ -288,7 +313,7 @@ Rectangle {
                     placeholderText: qsTr("Enter password for seedphrase (optional)")
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: parent.width - 20
-                    visible: radioseedphrase.checked
+                    visible: importTypeGroup.checkedButton === radioseedphrase
                 }
 
                 Text {
@@ -306,25 +331,26 @@ Rectangle {
                 }
 
                 Button {
-                    id: importbutton
+                    id: importButton
                     text: qsTr("Import")
                     font: Constants.font
                     highlighted: true
                     Layout.alignment: Qt.AlignRight
                     Layout.rightMargin: 10
+                    Layout.preferredWidth: implicitWidth + 80
 
                     Connections {
-                        target: importbutton
+                        target: importButton
                         onClicked: function () {
                             if (radionsec.checked) {
                                 var res = ctxKeyMgmt.importSecretKey(secretkey.text);
-                                if (res !== null) {
+                                if (res === true) {
                                     importSuccessDialog.visible = true
                                     importAccountDialog.visible = false
                                 }
                             } else if (radioseedphrase.checked) {
                                 var res = ctxKeyMgmt.importSeedphrase(seedphrase.text, password.text)
-                                if (res !== null) {
+                                if (res === true) {
                                     importSuccessDialog.visible = true
                                     importAccountDialog.visible = false
                                 }
@@ -345,14 +371,14 @@ Rectangle {
         modal: true
         standardButtons: Dialog.Ok
         anchors.centerIn: parent
-        width: 740
-        height: 425
+        width: 940
+        height: 675
 
         Rectangle {
-            width: 700
-            height: 350
-            color: "#f0f0f0"
-            border.color: "#e0e0e0"
+            width: 900
+            height: 600
+            color: Material.dialogColor
+            border.color: Material.dividerColor
             border.width: 2
             radius: 10
 
@@ -376,7 +402,6 @@ Rectangle {
                     Text {
                         text: "Important: Store your keys securely!"
                         font.pixelSize: 24
-                        color: "#000000"
                         font.bold: true
                         wrapMode: Text.WordWrap
                         Layout.alignment: Qt.AlignLeft
@@ -387,7 +412,7 @@ Rectangle {
                     id: seedPhraseLabel
                     text: "Seed Phrase:"
                     font: Constants.font
-                    color: "#000000"
+                    color: Material.foreground
                     horizontalAlignment: Text.AlignLeft
                 }
 
@@ -408,8 +433,8 @@ Rectangle {
 
                     Button {
                         icon.source: "qrc:/icons/content_copy.svg"
-                        Layout.preferredWidth: 50
-                        Layout.preferredHeight: 50
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 34
 
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Copy to clipboard")
@@ -424,7 +449,7 @@ Rectangle {
                 Text {
                     id: privateKeyLabel
                     text: "Private Key (nsec format):"
-                    color: "#000000"
+                    color: Material.foreground
                     font: Constants.font
                     horizontalAlignment: Text.AlignLeft
                 }
@@ -445,8 +470,8 @@ Rectangle {
 
                     Button {
                         icon.source: "qrc:/icons/content_copy.svg"
-                        Layout.preferredWidth: 50
-                        Layout.preferredHeight: 50
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 34
 
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Copy to clipboard")
@@ -460,7 +485,7 @@ Rectangle {
                 Text {
                     id: publicKeyLabel
                     text: "Public Key (npub format):"
-                    color: "#000000"
+                    color: Material.foreground
                     font: Constants.font
                     horizontalAlignment: Text.AlignLeft
                 }
@@ -481,8 +506,8 @@ Rectangle {
 
                     Button {
                         icon.source: "qrc:/icons/content_copy.svg"
-                        Layout.preferredWidth: 50
-                        Layout.preferredHeight: 50
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 34
 
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
@@ -499,7 +524,7 @@ Rectangle {
                     id: infoText
                     text: "Please write down either the seed phrase or the private key and store them in a secure place. The seed phrase is easier to remember, but the private key is more secure. Choose based on your preference."
                     font: Constants.font
-                    color: "#616161"
+                    color: Material.secondaryTextColor
                     horizontalAlignment: Text.AlignCenter
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
@@ -514,6 +539,34 @@ Rectangle {
 
         onAccepted: {
             keysGeneratedDialog.visible = false
+        }
+    }
+
+    Dialog {
+        id: connectingModal
+        standardButtons: Dialog.NoButton
+        modal: true
+        anchors.centerIn: parent
+        width: 300
+        height: 200
+        closePolicy: Popup.NoAutoClose  // Add this line
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 20
+
+            BusyIndicator {
+                running: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Text {
+                text: qsTr("Connecting...")
+                color: Material.foreground
+                font.pixelSize: 16
+                font.bold: true
+                Layout.alignment: Qt.AlignHCenter
+            }
         }
     }
 
@@ -545,49 +598,14 @@ Rectangle {
         anchors.centerIn: parent
     }
 
-    Dialog {
-        id: connectingModal
-        modal: true
-        closePolicy: Popup.NoAutoClose
-        anchors.centerIn: parent
-        width: 250
-        height: 180
-        visible: false
-
-        background: Rectangle {
-            color: "#000000"
-            border.color: "#e0e0e0"
-            border.width: 1
-            radius: 10
-            anchors.fill: parent
-        }
-
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 20
-
-            BusyIndicator {
-                running: true
-                Layout.alignment: Qt.AlignHCenter
-            }
-
-            Text {
-                text: qsTr("Connecting...")
-                color: "#ffffff"
-                font.pixelSize: 16
-                font.bold: true
-                Layout.alignment: Qt.AlignHCenter
-            }
-        }
-    }
-
     Timer {
         id: delayLogin
-        interval: 50
+        interval: 250
         repeat: false
         property string npub: ""
         onTriggered: {
             login(npub)
+            connectingModal.close()
         }
     }
 }

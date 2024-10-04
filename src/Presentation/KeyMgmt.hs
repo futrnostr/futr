@@ -37,6 +37,8 @@ import Nostr.Types hiding (displayName, picture)
 import System.FilePath (takeFileName, (</>))
 import Text.Read (readMaybe)
 
+
+-- | Account.
 data Account = Account
   { nsec :: SecKey,
     npub :: PubKeyXO,
@@ -46,8 +48,12 @@ data Account = Account
   }
   deriving (Eq, Show)
 
+
+-- | Account ID.
 newtype AccountId = AccountId {accountId :: Text} deriving (Eq, Ord, Show, Typeable)
 
+
+-- | Key Management State.
 data KeyMgmtState = KeyMgmtState
   { accountMap :: Map AccountId Account,
     accountPool :: Maybe (FactoryPool AccountId),
@@ -57,6 +63,8 @@ data KeyMgmtState = KeyMgmtState
     errorMsg :: Text
   }
 
+
+-- | Initial Key Management State.
 initialState :: KeyMgmtState
 initialState =
   KeyMgmtState
@@ -68,6 +76,8 @@ initialState =
       errorMsg = ""
     }
 
+
+-- | Key Management Effect.
 type KeyMgmtEff es = ( State KeyMgmtState :> es
                      , FileSystem :> es
                      , IOE :> es
@@ -75,24 +85,31 @@ type KeyMgmtEff es = ( State KeyMgmtState :> es
 
 -- | Key Management Effects.
 data KeyMgmt :: Effect where
-  ImportSecretKey :: ObjRef () -> Text -> KeyMgmt m ()
-  ImportSeedphrase :: ObjRef () -> Text -> Text -> KeyMgmt m ()
+  ImportSecretKey :: ObjRef () -> Text -> KeyMgmt m Bool
+  ImportSeedphrase :: ObjRef () -> Text -> Text -> KeyMgmt m Bool
   GenerateSeedphrase :: ObjRef () -> KeyMgmt m ()
   RemoveAccount :: ObjRef () -> Text -> KeyMgmt m ()
 
 type instance DispatchOf KeyMgmt = Dynamic
 
+
 makeEffect ''KeyMgmt
 
+
+-- | Key Management UI Effect.
 type KeyMgmgtUIEff es = (KeyMgmt :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es, FileSystem :> es)
 
 -- | Key Management Effect for creating QML UI.
 data KeyMgmtUI :: Effect where
   CreateUI :: SignalKey (IO ()) -> KeyMgmtUI m (ObjRef ())
 
+
+-- | Dispatch for Key Management UI Effect.
 type instance DispatchOf KeyMgmtUI = Dynamic
 
+
 makeEffect ''KeyMgmtUI
+
 
 -- | Handler for the logging effect to stdout.
 runKeyMgmt :: KeyMgmtEff es => Eff (KeyMgmt : es) a -> Eff es a
@@ -103,9 +120,12 @@ runKeyMgmt = interpret $ \_ -> \case
       Just kp -> do
         let (ai, ad) = accountFromKeyPair kp
         modify $ \st -> st {accountMap = Map.insert ai ad (accountMap st)}
+        fireSignal obj
+        return True
       Nothing -> do
         modify $ \st -> st {errorMsg = "Error: Importing secret key failed"}
-    fireSignal obj
+        fireSignal obj
+        return False
 
   ImportSeedphrase obj input pwd -> do
     mkp <- liftIO $ mnemonicToKeyPair input pwd
@@ -117,9 +137,16 @@ runKeyMgmt = interpret $ \_ -> \case
             Just _ -> do
               let (ai, ad) = accountFromKeyPair kp
               modify $ \st -> st {accountMap = Map.insert ai ad (accountMap st)}
-            Nothing -> modify $ \st -> st {errorMsg = "Error: Seedphrase generation failed"}
-      Left err -> modify $ \st -> st {errorMsg = "Error: " <> pack err}
-    fireSignal obj
+              fireSignal obj
+              return True
+            Nothing -> do
+              modify $ \st -> st {errorMsg = "Error: Seedphrase generation failed"}
+              fireSignal obj
+              return False
+      Left err -> do
+        modify $ \st -> st {errorMsg = "Error: " <> pack err}
+        fireSignal obj
+        return False
 
   GenerateSeedphrase obj -> do
     mnemonicResult <- liftIO createMnemonic
@@ -155,6 +182,7 @@ runKeyMgmt = interpret $ \_ -> \case
       else return ()
 
 
+-- | Run the Key Management UI effect.
 runKeyMgmtUI :: KeyMgmgtUIEff es => Eff (KeyMgmtUI : es) a -> Eff es a
 runKeyMgmtUI action = interpret handleKeyMgmtUI action
   where
@@ -209,8 +237,9 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                     st <- runE get
                     return $ errorMsg st
                 )
-                ( \_ newErrorMsg -> runE $ do
+                ( \obj newErrorMsg -> runE $ do
                     modify $ \st -> st {errorMsg = newErrorMsg}
+                    fireSignal obj
                     return ()
                 ),
               defMethod' "importSecretKey" $ \obj (input :: Text) -> runE $ importSecretKey obj input,
@@ -220,6 +249,8 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
 
         newObject contextClass ()
 
+
+-- | Load all accounts from the Nostr data directory.
 loadAccounts :: (FileSystem :> es, State KeyMgmtState :> es) => Eff es ()
 loadAccounts = do
   storageDir <- getXdgDirectory XdgData "futrnostr"
@@ -233,6 +264,8 @@ loadAccounts = do
       modify $ \st -> st {accountMap = Map.fromList accountPairs}
     else modify $ \st -> st {accountMap = Map.empty}
 
+
+-- | Try to import a secret key and persist it.
 tryImportSecretKeyAndPersist :: (FileSystem :> es) => Text -> Eff es (Maybe KeyPair)
 tryImportSecretKeyAndPersist input = do
   let skMaybe =
@@ -251,6 +284,7 @@ tryImportSecretKeyAndPersist input = do
     Nothing ->
       return Nothing
 
+-- | Check if a directory is a Nostr pubkey.
 isNpubDirectory :: (FileSystem :> es) => FilePath -> FilePath -> Eff es Bool
 isNpubDirectory storageDir dirName = do
   let fullPath = storageDir </> dirName
@@ -258,6 +292,8 @@ isNpubDirectory storageDir dirName = do
   let fileName = takeFileName fullPath
   return $ isDir && "npub" `isPrefixOf` pack fileName
 
+
+-- | Load an account from a Nostr pubkey directory.
 loadAccount :: (FileSystem :> es) => FilePath -> FilePath -> Eff es (Maybe Account)
 loadAccount storageDir npubDir = do
   let dirPath = storageDir </> npubDir
@@ -278,6 +314,7 @@ loadAccount storageDir npubDir = do
           picture = profile >>= \(Profile _ _ _ p _ _) -> p
         }
 
+-- | Read a file and return its contents as a Maybe Text.
 readFileMaybe :: (FileSystem :> es) => FilePath -> Eff es (Maybe Text)
 readFileMaybe path = do
   exists <- doesFileExist path
@@ -285,6 +322,8 @@ readFileMaybe path = do
     then Just <$> decodeUtf8 <$> FIOE.readFile path
     else return Nothing
 
+
+-- | Read a JSON file and return its contents as a Maybe value of the specified type.
 readJSONFile :: (FromJSON a, FileSystem :> es) => FilePath -> Eff es (Maybe a)
 readJSONFile path = do
   exists <- doesFileExist path
@@ -292,6 +331,8 @@ readJSONFile path = do
     then eitherDecode <$> BL.readFile path >>= return . either (const Nothing) Just
     else return Nothing
 
+
+-- | Create an AccountId and Account from a KeyPair.
 accountFromKeyPair :: KeyPair -> (AccountId, Account)
 accountFromKeyPair kp = (AccountId newNpub, account)
   where

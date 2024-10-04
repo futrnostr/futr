@@ -31,6 +31,7 @@ import Presentation.KeyMgmt qualified as PKeyMgmt
   -- | Futr Effect for managing the application state.
 data Futr :: Effect where
   Login :: ObjRef () -> Text -> Futr m ()
+  Logout :: ObjRef () -> Futr m ()
 
 type instance DispatchOf Futr = Dynamic
 
@@ -56,6 +57,25 @@ runFutr = interpret $ \_ -> \case
       case Map.lookup (PKeyMgmt.AccountId input) (PKeyMgmt.accountMap kst) of
         Just a -> loginWithAccount obj a
         Nothing -> return ()
+
+  Logout obj -> do
+      modify @AppState $ \st -> st
+        { keyPair = Nothing
+        , currentScreen = KeyMgmt
+        , follows = FollowModel Map.empty (objRef $ follows st)
+        , profiles = Map.empty
+        , confirmations = Map.empty
+        }
+
+      relays' <- gets @RelayPoolState relays
+      mapM_ disconnect (Map.keys relays')
+
+      modify @RelayPoolState $ \st -> st
+        { relays = Map.empty
+        }
+
+      fireSignal obj
+      logInfo "User logged out successfully"
 
 loginWithAccount :: FutrEff es => ObjRef () -> PKeyMgmt.Account -> Eff es ()
 loginWithAccount obj a = do
@@ -101,7 +121,7 @@ loginWithAccount obj a = do
   -- Start the main subscription in the background
   void . async $ forM_ rs \relay' -> do
     st <- get @AppState
-    let followedPubKeys = Map.keys (follows st)
+    let followedPubKeys = concatMap (\(_, follows') -> map (\(Follow pk _ _) -> pk) follows') $ Map.toList $ followList $ follows st
     n' <- now
     let filters =
           [ FollowListFilter (xo : followedPubKeys) n'
@@ -111,7 +131,7 @@ loginWithAccount obj a = do
     case maybeSubInfo of
       Nothing -> logWarning $ "Failed to start second subscription for relay: " <> pack (show (uri relay'))
       Just (_, queue) -> do
-        void . async $ handleResponsesUntilClosed obj (uri relay') queue
+        void . async $ handleResponsesUntilClosed (uri relay') queue
 
   modify $ \st -> st { currentScreen = Home }
   fireSignal obj
@@ -119,32 +139,39 @@ loginWithAccount obj a = do
 
 handleResponsesUntilEOSE :: FutrEff es => RelayURI -> [Response] -> Eff es Bool
 handleResponsesUntilEOSE _ [] = return False
-handleResponsesUntilEOSE relayURI (r:rs) = case r of
+handleResponsesUntilEOSE relayURI' (r:rs) = case r of
   EventReceived _ event' -> do
     handleEvent event'
-    handleResponsesUntilEOSE relayURI rs
+    handleResponsesUntilEOSE relayURI' rs
   Eose _ -> return True
   Closed _ _ -> return True
   Ok eventId' accepted' msg -> do
-    modify $ handleConfirmation eventId' accepted' msg relayURI
-    handleResponsesUntilEOSE relayURI rs
+    modify $ handleConfirmation eventId' accepted' msg relayURI'
+    handleResponsesUntilEOSE relayURI' rs
   Notice msg -> do
-    modify $ handleNotice relayURI msg
-    handleResponsesUntilEOSE relayURI rs
+    modify $ handleNotice relayURI' msg
+    handleResponsesUntilEOSE relayURI' rs
 
-handleResponsesUntilClosed :: FutrEff es => ObjRef () -> RelayURI -> TQueue Response -> Eff es ()
-handleResponsesUntilClosed obj relayURI queue = do
+handleResponsesUntilClosed :: FutrEff es => RelayURI -> TQueue Response -> Eff es ()
+handleResponsesUntilClosed relayURI' queue = do
   let loop = do
         msg <- atomically $ readTQueue queue
         msgs <- atomically $ flushTQueue queue
-        stopped <- processResponses relayURI (msg : msgs)
-        fireSignal obj
+        stopped <- processResponses relayURI' (msg : msgs)
+        st <- get @AppState
+
+        -- @todo: fire signal for other lists as needed
+        let obj = objRef $ follows st
+        case obj of
+          Just obj' -> fireSignal obj'
+          Nothing -> logWarning "No objRef for follows in AppState"
+
         threadDelay $ 100 * 1000
         unless stopped loop
   loop
 
 processResponses :: FutrEff es => RelayURI -> [Response] -> Eff es Bool
-processResponses relayURI = go
+processResponses relayURI' = go
   where
     go [] = return False
     go (r:rs) = case r of
@@ -159,10 +186,10 @@ processResponses relayURI = go
         return True
       Ok eventId' accepted' msg -> do
         logDebug $ "OK on subscription " <> pack ( show eventId' ) <> " with message " <> msg
-        modify $ handleConfirmation eventId' accepted' msg relayURI
+        modify $ handleConfirmation eventId' accepted' msg relayURI'
         go rs
       Notice msg -> do
-        modify $ handleNotice relayURI msg
+        modify $ handleNotice relayURI' msg
         go rs
 
 handleEvent :: FutrEff es => Event -> Eff es ()
@@ -179,20 +206,20 @@ handleEvent event' = case kind event' of
     Left err -> logWarning $ "Failed to decode metadata: " <> pack err
 
   FollowList -> do
-    let followList = [(pubKey', relayUri', displayName') | PTag pubKey' relayUri' displayName' <- tags event']
-    modify $ \st -> st { follows = Map.insert (pubKey event') followList (follows st) }
+    let followList' = [Follow pubKey' relayUri' displayName' | PTag pubKey' relayUri' displayName' <- tags event']
+    modify $ \st -> st { follows = FollowModel (Map.insert (pubKey event') followList' (followList $ follows st)) (objRef $ follows st) }
 
   _ -> return ()
 
 handleNotice :: RelayURI -> Text -> RelayPoolState -> RelayPoolState
-handleNotice relayURI msg st =
-  st { relays = Map.adjust (\rd -> rd { notices = msg : notices rd }) relayURI (relays st) }
+handleNotice relayURI' msg st =
+  st { relays = Map.adjust (\rd -> rd { notices = msg : notices rd }) relayURI' (relays st) }
 
 
 handleConfirmation :: EventId -> Bool -> Text -> RelayURI -> AppState -> AppState
-handleConfirmation eventId' accepted' msg relayURI st =
+handleConfirmation eventId' accepted' msg relayURI' st =
   let updateConfirmation = EventConfirmation
-        { relay = relayURI
+        { relay = relayURI'
         , waitingForConfirmation = False
         , accepted = accepted'
         , message = msg
@@ -201,7 +228,7 @@ handleConfirmation eventId' accepted' msg relayURI st =
       updateConfirmations :: [EventConfirmation] -> [EventConfirmation]
       updateConfirmations [] = [updateConfirmation]
       updateConfirmations (conf:confs)
-        | relay conf == relayURI && waitingForConfirmation conf =
+        | relay conf == relayURI' && waitingForConfirmation conf =
             updateConfirmation : confs
         | otherwise = conf : updateConfirmations confs
   in st  { confirmations = Map.alter

@@ -8,10 +8,13 @@ import Futr 1.0
 
 Rectangle {
     id: root
-    border.color: "#e0e0e0"
+    color: Material.backgroundColor
     radius: 5
     width: 400
     implicitHeight: content.implicitHeight
+    border.color: Material.dividerColor
+    border.width: 1
+
     property var profileData
 
     ColumnLayout {
@@ -28,7 +31,7 @@ Rectangle {
 
             CloseButton {
                 id: closeButton
-                target: root
+                target: profileCard
             }
         }
 
@@ -62,6 +65,7 @@ Rectangle {
                         height: 60
                         Layout.leftMargin: 10
                         Layout.fillHeight: true
+                        color: Material.backgroundColor
 
                         Image {
                             id: profileImage
@@ -79,11 +83,14 @@ Rectangle {
 
                         Text {
                             text: profileData.display_name ?? ""
-                            font.bold: true
+                            font: Constants.font
+                            color: Material.primaryTextColor
                         }
 
                         Text {
                             text: profileData.name ?? ""
+                            font: Constants.font
+                            color: Material.primaryTextColor
                         }
 
                         RowLayout {
@@ -91,6 +98,8 @@ Rectangle {
                                 text: mynpub
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
+                                font: Constants.font
+                                color: Material.primaryTextColor
                             }
 
                             Button {
@@ -114,6 +123,8 @@ Rectangle {
                             text:  profileData.about ?? ""
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
+                            font: Constants.font
+                            color: Material.primaryTextColor
                         }
 
                         ExternalIdentity {

@@ -40,6 +40,7 @@ Rectangle {
 
         Text {
             text: value
+            font: Constants.font
             color: "blue"
             anchors.verticalCenter: parent.verticalCenter
         }

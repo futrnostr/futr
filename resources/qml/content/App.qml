@@ -9,14 +9,17 @@ ApplicationWindow {
     id: root
     width: Constants.width
     height: Constants.height
-    minimumWidth: 720
+    minimumWidth: 920
     minimumHeight: 525
     visible: true
     title: "Futr"
     font: Constants.font
 
-    Material.theme: Material.Light
-    Material.accent: Material.Teal
+    property bool isDarkTheme: false
+    property color accentColor: "#9C27B0"
+
+    Material.theme: isDarkTheme ? Material.Dark : Material.Light
+    Material.accent: accentColor
     Material.primary: Material.BlueGrey
 
     ClipboardHelper {
@@ -32,14 +35,14 @@ ApplicationWindow {
         Rectangle {
             width: 1
             height: parent.height
-            color: "#000000"
+            color: Material.dividerColor
             anchors.left: parent.left
         }
 
         Rectangle {
             width: 1
             height: parent.height
-            color: "#000000"
+            color: Material.dividerColor
             anchors.right: parent.right
         }
 
@@ -47,6 +50,7 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.leftMargin: 1
             anchors.rightMargin: 1
+            color: Material.backgroundColor
 
             KeyMgmtScreen {
                 anchors.margins: 10
@@ -64,5 +68,19 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    Button {
+        id: themeToggle
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 10
+        icon.source: isDarkTheme ? "qrc:/icons/light_mode.svg" : "qrc:/icons/dark_mode.svg"
+        icon.color: Material.foreground
+        onClicked: isDarkTheme = !isDarkTheme
+        flat: true
+
+        ToolTip.visible: hovered
+        ToolTip.text: qsTr("Switch to " + (isDarkTheme ? "Light" : "Dark") + " Mode")
     }
 }
