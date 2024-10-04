@@ -58,7 +58,8 @@ Item {
                     y: profileButton.height
 
                     onClosed: {
-                        if (!profileCard.visible) {
+                        if (!profileLoader.item || !profileLoader.item.visible) {
+                            profileCard.visible = false
                             profileLoader.source = ""
                         }
                     }
@@ -328,6 +329,14 @@ Item {
 
         Loader {
             id: profileLoader
+            onLoaded: {
+                if (item && typeof item.closeRequested === "function") {
+                    item.closeRequested.connect(function() {
+                        profileCard.visible = false
+                        profileLoader.source = ""
+                    })
+                }
+            }
         }
 
         Behavior on opacity {

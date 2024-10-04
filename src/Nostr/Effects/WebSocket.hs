@@ -1,6 +1,6 @@
 module Nostr.Effects.WebSocket where
 
-import Control.Monad (forever, void, when)
+import Control.Monad (void, when)
 import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Text qualified as T
@@ -9,7 +9,7 @@ import Effectful.Concurrent (Concurrent)
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (TChan, TQueue, atomically, readTChan, writeTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, get, gets, modify)
+import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
 import Control.Exception qualified as Exception
 import Network.WebSockets qualified as WS
@@ -42,7 +42,7 @@ runWebSocket
   => Eff (WebSocket : es) a
   -> Eff es a
 runWebSocket = interpret $ \_ -> \case
-   RunClient relay requestChan responseQueue -> do
+   RunClient relay requestChan responseQueue' -> do
     relayPoolState <- get @RelayPoolState
     let relayData = Map.lookup (uri relay) (relays relayPoolState)
     case relayData of
@@ -51,8 +51,8 @@ runWebSocket = interpret $ \_ -> \case
       _ -> do
         when (maybe True (\rd -> not (connected rd)) relayData) $
           modify @RelayPoolState $ \rps -> rps
-            { relays = Map.alter (updateRelayData relay requestChan responseQueue) (uri relay) (relays rps) }
-        connectToRelay relay requestChan responseQueue
+            { relays = Map.alter (updateRelayData relay requestChan responseQueue') (uri relay) (relays rps) }
+        connectToRelay relay requestChan responseQueue'
 
 
 -- | Update the relay data.
@@ -64,7 +64,7 @@ updateRelayData relay reqChan respQueue = \case
 
 -- | Connect to a relay.
 connectToRelay :: WebSocketEff es => Relay -> TChan Request -> TQueue Response -> Eff es ()
-connectToRelay relay requestChan responseQueue = case (extractHostname relay, extractScheme relay) of
+connectToRelay relay requestChan responseQueue' = case (extractHostname relay, extractScheme relay) of
   (Just host', Just scheme') ->
     let options = WS.defaultConnectionOptions { WS.connectionCompressionOptions = WS.PermessageDeflateCompression WS.defaultPermessageDeflate }
         startClient = case scheme' of
@@ -87,7 +87,7 @@ connectToRelay relay requestChan responseQueue = case (extractHostname relay, ex
         logDebug $ "Connected to " <> relayName relay
         modify @RelayPoolState $ \rps -> rps
           { relays = Map.adjust (\rd -> rd { connected = True, retryCount = 0 }) (uri relay) (relays rps) }
-        void $ async $ receiveWs relay conn responseQueue
+        void $ async $ receiveWs relay conn responseQueue'
         sendWs relay conn requestChan)
         (\e -> runE $ do
           logError $ "Failed to connect to " <> relayName relay <> ": " <> T.pack (show (e :: Exception.SomeException))
@@ -103,7 +103,7 @@ receiveWs
   -> WS.Connection
   -> TQueue Response
   -> Eff es ()
-receiveWs relay conn responseQueue = do
+receiveWs relay conn responseQueue' = do
   let loop = do
         relayPoolState <- get @RelayPoolState
         case Map.lookup (uri relay) (relays relayPoolState) of
@@ -117,7 +117,7 @@ receiveWs relay conn responseQueue = do
               Right msg' ->
                 case eitherDecode msg' of
                   Right response -> do
-                    atomically $ writeTQueue responseQueue response
+                    atomically $ writeTQueue responseQueue' response
                     loop
                   Left err -> do
                     logWarning $ "Could not decode server response: " <> T.pack err
