@@ -150,10 +150,9 @@ Rectangle {
                                 onExited: parent.parent.parent.mouseHover = false
 
                                 onClicked: {
-                                    connectingModal.visible = true
+                                    connectingModal.open()
                                     delayLogin.npub = modelData.npub
                                     delayLogin.start()
-                                    connectingModal.visible = false
                                 }
                             }
                         }
@@ -550,6 +549,7 @@ Rectangle {
         anchors.centerIn: parent
         width: 300
         height: 200
+        closePolicy: Popup.NoAutoClose  // Add this line
 
         ColumnLayout {
             anchors.fill: parent
@@ -600,7 +600,7 @@ Rectangle {
 
     Timer {
         id: delayLogin
-        interval: 5
+        interval: 250
         repeat: false
         property string npub: ""
         onTriggered: {
