@@ -21,9 +21,9 @@ See [License File](LICENSE).
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
 ghcup install ghc 9.6.6
-ghcup install cabal 3.12.1.0
+ghcup install cabal 3.10.3.0
 ghcup set ghc 9.6.6
-ghcup set cabal 3.12.1.0
+ghcup set cabal 3.10.3.0
 ```
 
 #### For QT:
@@ -83,9 +83,9 @@ cabal build
 ```bash
 Set-ExecutionPolicy Bypass -Scope Process -Force;[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; try { Invoke-Command -ScriptBlock ([ScriptBlock]::Create((Invoke-WebRequest https://www.haskell.org/ghcup/sh/bootstrap-haskell.ps1 -UseBasicParsing))) -ArgumentList $true } catch { Write-Error $_ }
 ghcup install ghc 9.6.6
-ghcup install cabal 3.12.1.0
+ghcup install cabal 3.10.3.0
 ghcup set ghc 9.6.6
-ghcup set cabal 3.12.1.0
+ghcup set cabal 3.10.3.0
 ```
 
 @todo
