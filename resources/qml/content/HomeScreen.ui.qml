@@ -32,10 +32,7 @@ Item {
                 icon.width: 65
                 icon.height: 65
                 icon.color: "transparent"
-
-                Component.onCompleted: {
-                    icon.source = Util.getProfilePicture(mypicture, mynpub)
-                }
+                icon.source: Util.getProfilePicture(mypicture, mynpub)
 
                 Material.elevation: 6
 
@@ -133,7 +130,6 @@ Item {
             }
         }
 
-        // Three-column layout
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -262,11 +258,12 @@ Item {
                                         }
 
                                         Text {
-                                            text: modelData.relay
+                                            text: modelData.pubkey
                                             elide: Text.ElideRight
                                             Layout.fillWidth: true
                                             font: Constants.smallFont
                                             color: Material.secondaryTextColor
+                                            visible: modelData.displayName !== ""
                                         }
                                     }
                                 }

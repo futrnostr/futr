@@ -9,6 +9,7 @@
 module Nostr.Types where
 
 import Basement.IntegralConv (wordToInt)
+import Control.Applicative ((<|>))
 import Control.Lens ((^.), (^?), (<&>), _Right)
 import Control.Monad (mzero)
 import Data.Aeson hiding (Error)
@@ -30,7 +31,8 @@ import Text.URI (URI, mkURI, render, unRText)
 import Text.URI.Lens (uriAuthority, uriPath, uriScheme, authHost, authPort)
 import qualified Text.URI.QQ as QQ
 
-import Nostr.Keys (PubKeyXO, Signature, byteStringToHex, exportPubKeyXO, exportSignature)
+
+import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature)
 
 -- | Represents a wrapped URI used within a relay.
 newtype RelayURI = RelayURI URI deriving (Eq, Generic, Ord, Show)
@@ -60,8 +62,8 @@ data Subscription = Subscription
   deriving (Eq, Generic, Show)
 
 data Filter
-  = MetadataFilter [PubKeyXO] Int
-  | FollowListFilter [PubKeyXO] Int
+  = MetadataFilter [PubKeyXO]
+  | FollowListFilter [PubKeyXO]
   | ShortTextNoteFilter [PubKeyXO] Int
   | LinkedEvents [EventId] Int
   | AllNotes Int
@@ -106,8 +108,7 @@ data Relationship = Reply | Root
 data Tag
   = ETag EventId (Maybe RelayURI) (Maybe Relationship)
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
-  | NonceTag
-  | UnknownTag
+  | UnknownTag Value  -- Store the original JSON data as an Aeson Value
   deriving (Eq, Generic, Show)
 
 data Event = Event
@@ -223,18 +224,28 @@ instance ToJSON UnsignedEvent where
      , text content'
      ]
 
+
 instance FromJSON Tag where
- parseJSON (Array v)
-   | V.length v > 0 =
-       case v V.! 0 of
-         String "e" ->
-           ETag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
-         String "p" ->
-           PTag <$> parseJSON (v V.! 1) <*> parseJSON (fromMaybe Null $ v V.!? 2) <*> parseJSON (fromMaybe Null $ v V.!? 3)
-         _ ->
-           return UnknownTag
-   | otherwise = return UnknownTag
- parseJSON _ = return UnknownTag
+  parseJSON v@(Array arr)
+    | V.length arr > 0 =
+       case arr V.! 0 of
+         String "e" -> do
+           eventId <- parseJSON (arr V.! 1)
+           relayURL <- parseJSON (fromMaybe Null $ arr V.!? 2)
+           marker <- parseJSON (fromMaybe Null $ arr V.!? 3)
+           return $ ETag eventId relayURL marker
+         String "p" -> do
+           pubKeyResult <- (Just <$> parseJSON (arr V.! 1)) <|> pure Nothing
+           case pubKeyResult of
+             Just pubKey -> do
+               relayURL <- parseJSON (fromMaybe Null $ arr V.!? 2)
+               name <- parseJSON (fromMaybe Null $ arr V.!? 3)
+               return $ PTag pubKey relayURL name
+             Nothing -> return $ UnknownTag v
+         _ -> return $ UnknownTag v
+    | otherwise = return $ UnknownTag v
+  parseJSON v = return $ UnknownTag v
+
 
 instance ToJSON Tag where
   toEncoding (ETag eventId Nothing Nothing) =
@@ -261,8 +272,9 @@ instance ToJSON Tag where
       , maybe (text "") (text . render . unwrapRelayURI) relayURL
       , maybe (text "") text name
       ]
-  toEncoding _ = -- @todo implement nonce tag
-    list id []
+  toEncoding (UnknownTag v) =
+    list id [toEncoding v]
+
 
 instance FromJSON Relationship where
  parseJSON = withText "Relationship" $ \m -> do
@@ -271,9 +283,11 @@ instance FromJSON Relationship where
      "root"  -> return Root
      _       -> mzero
 
+
 instance ToJSON Relationship where
   toEncoding Reply = text "reply"
   toEncoding Root = text "root"
+
 
 instance FromJSON Response where
   parseJSON = withArray "ServerResponse" $ \arr -> do
@@ -366,15 +380,13 @@ instance ToJSON Kind where
   toEncoding DirectMessage = toEncoding (14 :: Int)
 
 instance ToJSON Filter where
-  toEncoding (MetadataFilter xos now) = pairs $
+  toEncoding (MetadataFilter xos) = pairs $
     "authors" .= xos <>
     "kinds" .= [Metadata] <>
-    "until" .= (fromIntegral (now + 60) :: Integer) <>
     "limit" .= (500 :: Int)
-  toEncoding (FollowListFilter xos now) = pairs $
+  toEncoding (FollowListFilter xos) = pairs $
     "authors" .= xos <>
     "kinds" .= [FollowList] <>
-    "until" .= (fromIntegral (now + 60) :: Integer) <>
     "limit" .= (500 :: Int)
   toEncoding (ShortTextNoteFilter xos now) = pairs $
     "authors" .= xos <>
@@ -422,7 +434,8 @@ instance FromJSON Profile where
 defaultRelays :: [Relay]
 defaultRelays =
   [ Relay (RelayURI [QQ.uri|wss://nos.lol|]) (RelayInfo True True)
-  , Relay (RelayURI [QQ.uri|ws://127.0.0.1:7777|]) (RelayInfo True True)
+  --, Relay (RelayURI [QQ.uri|ws://127.0.0.1:7777|]) (RelayInfo True True)
+  , Relay (RelayURI [QQ.uri|wss://relay.damus.io|]) (RelayInfo True True)
   ]
 
 -- | Unwrap relay URI.

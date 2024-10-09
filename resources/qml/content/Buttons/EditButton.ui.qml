@@ -2,8 +2,6 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 
 Button {
-    id: root
-
     icon.source: "qrc:/icons/edit.svg"
 
     width: 10

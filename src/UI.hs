@@ -7,11 +7,12 @@ module UI where
 import Control.Monad (unless)
 import Data.Aeson (decode, encode)
 import Data.ByteString.Lazy qualified as BSL
+import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (pack, unpack)
 import Data.Text.Encoding qualified as TE
-import Data.Typeable (Typeable)
+import Data.Proxy (Proxy(..))
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (get, modify)
@@ -29,51 +30,53 @@ import Nostr.Effects.RelayPool
 import Nostr.Keys (PubKeyXO, bech32ToPubKeyXO, keyPairToPubKeyXO, pubKeyXOToBech32)
 import Nostr.Types (Profile(..), emptyProfile, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
-import Futr (Futr, FutrEff, login, logout)
+import Futr (Futr, FutrEff, LoginStatusChanged, login, logout)
 
 -- | Key Management Effect for creating QML UI.
 data UI :: Effect where
   CreateUI :: SignalKey (IO ()) -> UI m (ObjRef ())
 
+
+-- | Dispatch type for UI effect.
 type instance DispatchOf UI = Dynamic
+
 
 makeEffect ''UI
 
-data FollowId = FollowId PubKeyXO Int deriving (Eq, Ord, Show, Typeable)
 
+-- | Run the UI effect.
 runUI :: (FutrEff es, Futr :> es) => Eff (UI : es) a -> Eff es a
 runUI = interpret $ \_ -> \case
   CreateUI changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
     keyMgmtObj <- runE $ PKeyMgmt.createUI changeKey'
 
-    let lookupFollowData :: AppState -> FollowId -> Maybe Follow
-        lookupFollowData st (FollowId userPubKey idx) =
-          let userFollows = Map.findWithDefault [] userPubKey (followList $ follows st)
-          in if idx >= 0 && idx < length userFollows
-             then Just (userFollows !! idx)
-             else Nothing
-
     let followProp name' accessor = defPropertySigRO' name' changeKey' $ \obj -> do
-          let followId = fromObjRef obj :: FollowId
+          let pubKeyXO = fromObjRef obj :: PubKeyXO
           st <- runE $ get @AppState
-          let followData = lookupFollowData st followId
+          let followList' = followList $ follows st
+          let userPubKey = keyPairToPubKeyXO <$> keyPair st
+          let followData = userPubKey >>= \upk -> Map.lookup upk followList' >>= find (\f -> pubkey f == pubKeyXO)
           return $ accessor st followData
 
     followClass <- newClass [
-        followProp "pubkey" $ \_ followData ->
-            fmap (pubKeyXOToBech32 . pubkey) followData,
-        followProp "relay" $ \_ followData ->
-            fmap (maybe "" relayURIToText . relayURI) followData,
-        followProp "petname" $ \_ followData ->
-            fmap (fromMaybe "" . petName) followData,
-        followProp "displayName" $ \st followData ->
-            fmap (\follow ->
+        followProp "pubkey" $ \_ followMaybe ->
+            maybe "" (pubKeyXOToBech32 . pubkey) followMaybe,
+        followProp "relay" $ \_ followMaybe ->
+            maybe "" (maybe "" relayURIToText . relayURI) followMaybe,
+        followProp "petname" $ \_ followMaybe ->
+            maybe "" (fromMaybe "" . petName) followMaybe,
+        followProp "displayName" $ \st followMaybe ->
+            case followMaybe of
+              Just follow ->
                 let (profile', _) = Map.findWithDefault (emptyProfile, 0) (pubkey follow) (profiles st)
-                in fromMaybe "" (displayName profile')) followData,
-        followProp "picture" $ \st followData ->
-            fmap (\follow ->
+                in fromMaybe "" (displayName profile')
+              Nothing -> "",
+        followProp "picture" $ \st followMaybe ->
+            case followMaybe of
+              Just follow ->
                 let (profile', _) = Map.findWithDefault (emptyProfile, 0) (pubkey follow) (profiles st)
-                in fromMaybe "" (picture profile')) followData
+                in fromMaybe "" (picture profile')
+              Nothing -> ""
       ]
 
     followPool <- newFactoryPool (newObject followClass)
@@ -108,6 +111,8 @@ runUI = interpret $ \_ -> \case
               return $ picture profile'
             Nothing -> return Nothing,
 
+        defSignal "loginStatusChanged" (Proxy :: Proxy LoginStatusChanged),
+
         defMethod' "login" $ \obj input -> runE $ login obj input,
 
         defMethod' "logout" $ \obj -> runE $ logout obj,
@@ -137,9 +142,8 @@ runUI = interpret $ \_ -> \case
           let maybeUserPubKey = keyPairToPubKeyXO <$> keyPair st
           case maybeUserPubKey of
             Just userPubKey -> do
-              let userFollowsList = Map.findWithDefault [] userPubKey (followList $ follows st)
-              let followIds = [FollowId userPubKey idx | idx <- [0..(length userFollowsList - 1)]]
-              objs <- mapM (getPoolObject followPool) followIds
+              let userFollows = Map.findWithDefault [] userPubKey (followList $ follows st)
+              objs <- mapM (getPoolObject followPool) (map pubkey userFollows)
               runE $ modify $ \s -> s { follows = (follows s) { objRef = Just obj } }
               return objs
             Nothing -> return [],

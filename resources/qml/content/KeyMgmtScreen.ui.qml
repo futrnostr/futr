@@ -9,6 +9,27 @@ Rectangle {
     id: accountScreen
     color: Material.backgroundColor
 
+    Timer {
+        id: delayLogin
+        interval: 250
+        repeat: false
+        property string npub: ""
+        onTriggered: {
+            loginStatusChanged.connect(loginCallback)
+            login(npub)
+        }
+    }
+
+    function loginCallback(success, message) {
+        connectingModal.close()
+        if (success) {
+            currentScreen = "Home"
+        } else {
+            loginErrorDialog.errorMessage = message
+            loginErrorDialog.open()
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 20
@@ -220,7 +241,7 @@ Rectangle {
 
     Dialog {
         id: importAccountDialog
-        title: "Import Account"
+        title: qsTr("Import Account")
         modal: true
         standardButtons: Dialog.Cancel
         anchors.centerIn: parent
@@ -400,7 +421,7 @@ Rectangle {
                     }
 
                     Text {
-                        text: "Important: Store your keys securely!"
+                        text: qsTr("Important: Store your keys securely!")
                         font.pixelSize: 24
                         font.bold: true
                         wrapMode: Text.WordWrap
@@ -410,7 +431,7 @@ Rectangle {
 
                 Text {
                     id: seedPhraseLabel
-                    text: "Seed Phrase:"
+                    text: qsTr("Seed Phrase:")
                     font: Constants.font
                     color: Material.foreground
                     horizontalAlignment: Text.AlignLeft
@@ -448,7 +469,7 @@ Rectangle {
 
                 Text {
                     id: privateKeyLabel
-                    text: "Private Key (nsec format):"
+                    text: qsTr("Private Key (nsec format):")
                     color: Material.foreground
                     font: Constants.font
                     horizontalAlignment: Text.AlignLeft
@@ -484,7 +505,7 @@ Rectangle {
 
                 Text {
                     id: publicKeyLabel
-                    text: "Public Key (npub format):"
+                    text: qsTr("Public Key (npub format):")
                     color: Material.foreground
                     font: Constants.font
                     horizontalAlignment: Text.AlignLeft
@@ -522,7 +543,7 @@ Rectangle {
 
                 Text {
                     id: infoText
-                    text: "Please write down either the seed phrase or the private key and store them in a secure place. The seed phrase is easier to remember, but the private key is more secure. Choose based on your preference."
+                    text: qsTr("Please write down either the seed phrase or the private key and store them in a secure place. The seed phrase is easier to remember, but the private key is more secure. Choose based on your preference.")
                     font: Constants.font
                     color: Material.secondaryTextColor
                     horizontalAlignment: Text.AlignCenter
@@ -549,7 +570,7 @@ Rectangle {
         anchors.centerIn: parent
         width: 300
         height: 200
-        closePolicy: Popup.NoAutoClose  // Add this line
+        closePolicy: Popup.NoAutoClose
 
         ColumnLayout {
             anchors.fill: parent
@@ -571,10 +592,27 @@ Rectangle {
     }
 
     Dialog {
+        id: loginErrorDialog
+        title: qsTr("Login Error")
+        standardButtons: Dialog.Ok
+        modal: true
+        anchors.centerIn: parent
+
+        property string errorMessage: ""
+
+        Text {
+            text: loginErrorDialog.errorMessage
+            color: Material.foreground
+            font.pixelSize: 14
+            wrapMode: Text.WordWrap
+        }
+    }
+
+    Dialog {
         property string accountToRemove: ""
 
         id: confirmRemoveAccount
-        title: "Are you sure you want to remove this account?"
+        title: qsTr("Are you sure you want to remove this account?")
         standardButtons: Dialog.Ok | Dialog.Cancel
         modal: true
         anchors.centerIn: parent
@@ -592,20 +630,9 @@ Rectangle {
 
     Dialog {
         id: importSuccessDialog
-        title: "Nostr account succesfully imported"
+        title: qsTr("Nostr account succesfully imported")
         standardButtons: Dialog.Ok
         modal: true
         anchors.centerIn: parent
-    }
-
-    Timer {
-        id: delayLogin
-        interval: 250
-        repeat: false
-        property string npub: ""
-        onTriggered: {
-            login(npub)
-            connectingModal.close()
-        }
     }
 }
