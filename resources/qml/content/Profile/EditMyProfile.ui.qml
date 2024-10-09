@@ -58,7 +58,7 @@ Rectangle {
 
             CloseButton {
                 id: closeButton
-                target: editMyProfile
+                target: profileCard
             }
         }
 

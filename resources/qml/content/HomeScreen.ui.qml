@@ -32,10 +32,7 @@ Item {
                 icon.width: 65
                 icon.height: 65
                 icon.color: "transparent"
-
-                Component.onCompleted: {
-                    icon.source = Util.getProfilePicture(mypicture, mynpub)
-                }
+                icon.source: Util.getProfilePicture(mypicture, mynpub)
 
                 Material.elevation: 6
 
