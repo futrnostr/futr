@@ -2,7 +2,7 @@
 
 module Nostr.Effects.RelayPool where
 
-import Control.Monad (forM_, unless)
+import Control.Monad (forM, forM_, unless)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Effectful
@@ -21,11 +21,11 @@ import Nostr.Types
 -- | Effect for handling RelayPool operations.
 data RelayPool :: Effect where
     AddRelay :: Relay -> RelayPool m ()
-    Connect :: Relay -> RelayPool m ()
+    Connect :: Relay -> RelayPool m Bool
     Disconnect :: RelayURI -> RelayPool m ()
     DisconnectAll :: RelayPool m ()
     SendEvent :: Event -> [RelayURI] -> RelayPool m ()
-    GetRelays :: RelayPool m [(Relay, Bool)]
+    GetRelays :: RelayPool m [(Relay, ConnectionState)]
     StartSubscription :: RelayURI -> [Filter] -> RelayPool m (Maybe (SubscriptionId, TQueue Response))
     StopSubscription :: SubscriptionId -> RelayPool m ()
     UnsubscribeAllSubscriptionsFromRelay :: RelayURI -> RelayPool m ()
@@ -34,7 +34,7 @@ type instance DispatchOf RelayPool = Dynamic
 
 makeEffect ''RelayPool
 
-type RelayPoolEff es = (WebSocket :> es, Concurrent :> es, Logging :> es, IDGen :> es)
+type RelayPoolEff es = (WebSocket :> es, State WebSocketState :> es, Concurrent :> es, Logging :> es, IDGen :> es)
 
 data RelayPoolError = RelayNotFound RelayURI
   deriving (Show, Eq)
@@ -46,7 +46,7 @@ runRelayPool
   -> Eff es a
 runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPool action
   where
-    handleRelayPool :: forall es. RelayPoolEff es => EffectHandler RelayPool (State RelayPoolState : es)
+    handleRelayPool :: RelayPoolEff es => EffectHandler RelayPool (State RelayPoolState : es)
     handleRelayPool _ = \case
       AddRelay relay -> do
         st <- get @RelayPoolState
@@ -55,39 +55,64 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
         unless (Map.member relayURI existingRelays) do
           reqChan <- newTChanIO
           resQueue <- newTQueueIO
-          let newRelayData = RelayData False (info relay) reqChan resQueue [] [] 0
-              updatedRelays = Map.insert relayURI newRelayData existingRelays
-          modify @RelayPoolState $ \st' -> st' { relays = updatedRelays }
+          let newRelayData = RelayData (info relay) reqChan resQueue [] []
+          modify @RelayPoolState $ \st' ->
+            st' { relays = Map.insert relayURI newRelayData (relays st') }
+          modify @WebSocketState $ \wsState ->
+            wsState { connections = Map.insert relayURI (RelayConnectionState Disconnected 0) (connections wsState) }
 
       Connect relay -> do
         let relayURI = uri relay
         st <- get @RelayPoolState
         case Map.lookup relayURI (relays st) of
           Just relayData -> do
-            modify @RelayPoolState $ \st' ->
-              st' { relays = Map.adjust (\rd -> rd { connected = True }) relayURI (relays st') }
-            runClient relay (requestChannel relayData) (responseQueue relayData)
+            wsState <- get @WebSocketState
+            case Map.lookup relayURI (connections wsState) of
+              Just relayConnState ->
+                case connectionStatus relayConnState of
+                  Connected -> do 
+                    logDebug $ "Already connected to " <> relayURIToText relayURI
+                    return True
+                  Disconnected -> do
+                    result <- runClient relay (requestChannel relayData) (responseQueue relayData)
+                    case result of
+                      Left e -> do
+                        logError $ "Failed to connect to " <> relayURIToText relayURI <> ": " <> T.pack (show e)
+                        return False
+                      Right _ -> do
+                        return True
+                  Connecting -> do
+                    logDebug $ "Connection already in progress for " <> relayURIToText relayURI
+                    return False
+              Nothing -> do
+                logWarning $ "No connection state found for relay: " <> relayURIToText relayURI
+                return False
           Nothing -> do
             reqChan <- newTChanIO
             resQueue <- newTQueueIO
-            let newRelayData = RelayData False (info relay) reqChan resQueue [] [] 0
+            let newRelayData = RelayData (info relay) reqChan resQueue [] []
             modify @RelayPoolState $ \st' ->
               st' { relays = Map.insert relayURI newRelayData (relays st') }
-            runClient relay reqChan resQueue
+            modify @WebSocketState $ \wsState ->
+              wsState { connections = Map.insert relayURI (RelayConnectionState Connecting 0) (connections wsState) }
+            result <- runClient relay reqChan resQueue
+            case result of
+              Left e -> do
+                logError $ "Failed to connect to " <> relayURIToText relayURI <> ": " <> T.pack (show e)
+                return False
+              Right _ -> return True
 
       Nostr.Effects.RelayPool.Disconnect relayURI -> do
-        logDebug $ T.pack $ "Disconnecting from " ++ T.unpack (relayURIToText relayURI) ++ " ..."
-        modify @RelayPoolState $ \st ->
-          st { relays = Map.adjust (\rd -> rd { connected = False }) relayURI (relays st) }
         st <- get @RelayPoolState
         case Map.lookup relayURI (relays st) of
-          Just relayData -> atomically $ writeTChan (requestChannel relayData) Nostr.Types.Disconnect
+          Just relayData -> do
+            atomically $ writeTChan (requestChannel relayData) Nostr.Types.Disconnect
+            logDebug $ T.pack $ "Disconnecting from " ++ T.unpack (relayURIToText relayURI) ++ " ..."
+
           Nothing -> return ()
 
       Nostr.Effects.RelayPool.DisconnectAll -> do
         logDebug $ "Disconnecting from all relays ..."
-        modify @RelayPoolState $ \st ->
-          st { relays = Map.map (\rd -> rd { connected = False }) (relays st) }
         st <- get @RelayPoolState
         forM_ (Map.elems $ relays st) $ \relayData ->
           atomically $ writeTChan (requestChannel relayData) Nostr.Types.Disconnect
@@ -103,21 +128,30 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
 
       GetRelays -> do
         st <- get @RelayPoolState
-        return $ map (\(uri', rd) -> (Relay uri' (relayInfo rd), connected rd)) $ Map.toList (relays st)
+        wst <- get @WebSocketState
+        relayInfo' <- forM (Map.toList $ relays st) $ \(relayURI, relayData) -> do
+          let connStatus = maybe Disconnected connectionStatus (Map.lookup relayURI (connections wst))
+          return (Relay relayURI (relayInfo relayData), connStatus)
+        return relayInfo'
 
       StartSubscription relayURI filters' -> do
         st <- get @RelayPoolState
-        subId' <- generateID 8
         case Map.lookup relayURI (relays st) of
           Just relayData -> do
-            atomically $ writeTChan (requestChannel relayData) (Subscribe $ Nostr.Types.Subscription filters' subId')
-            logDebug $ "Starting new subscription: " <> subId' <> " on relay: " <> relayURIToText relayURI
-            modify @RelayPoolState $ \st' ->
-              st' { relays = Map.adjust (\rd -> rd { subscriptions = subId' : subscriptions rd }) relayURI (relays st') }
-            return $ Just (subId', responseQueue relayData)
-          Nothing -> do
-            logError $ "No channel found for relay: " <> relayURIToText relayURI
-            return Nothing
+            wst <- get @WebSocketState
+            case Map.lookup relayURI (connections wst) of
+              Just RelayConnectionState{connectionStatus = Connected} -> do
+                subId' <- generateID 8
+                atomically $ writeTChan (requestChannel relayData) (Subscribe $ Nostr.Types.Subscription filters' subId')
+                logDebug $ "Starting new subscription: " <> subId' <> " on relay: " <> relayURIToText relayURI
+                modify @RelayPoolState $ \st' ->
+                  st' { relays = Map.adjust (\rd -> rd { subscriptions = subId' : subscriptions rd }) relayURI (relays st') }
+                return $ Just (subId', responseQueue relayData)
+              _ -> do
+                logWarning $ "Cannot start subscription: Relay " <> relayURIToText relayURI <> " is not connected."
+                return Nothing
+
+          _ -> return Nothing
 
       StopSubscription subId' -> do
         st <- get @RelayPoolState
@@ -129,10 +163,10 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
             case Map.lookup relayURI (relays st) of
               Just relayData -> do
                 atomically $ writeTChan (requestChannel relayData) (Close subId')
-                logDebug $ "Closed subscription: " <> subId' <> " on relay: " <> T.pack (show relayURI)
+                logDebug $ "Closed subscription: " <> subId' <> " on relay: " <> relayURIToText relayURI
                 modify @RelayPoolState $ \st' ->
                   st' { relays = Map.adjust (\rd -> rd { subscriptions = filter (/= subId') (subscriptions rd) }) relayURI (relays st') }
-              Nothing -> logWarning $ "No channel found for relay: " <> T.pack (show relayURI)
+              Nothing -> logWarning $ "No channel found for relay: " <> relayURIToText relayURI
           Nothing -> return ()
 
       UnsubscribeAllSubscriptionsFromRelay relayURI -> do
@@ -141,7 +175,7 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
           Just relayData -> do
             forM_ (subscriptions relayData) $ \subId' -> do
               atomically $ writeTChan (requestChannel relayData) (Close subId')
-              logDebug $ "Closed subscription: " <> subId' <> " on relay: " <> T.pack (show relayURI)
+              logDebug $ "Closed subscription: " <> subId' <> " on relay: " <> relayURIToText relayURI
             modify @RelayPoolState $ \st' ->
               st' { relays = Map.adjust (\rd -> rd { subscriptions = [] }) relayURI (relays st') }
-          Nothing -> logError $ "No channel found for relay: " <> T.pack (show relayURI)
+          Nothing -> logError $ "No channel found for relay: " <> relayURIToText relayURI

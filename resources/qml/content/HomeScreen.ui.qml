@@ -133,7 +133,6 @@ Item {
             }
         }
 
-        // Three-column layout
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -262,11 +261,12 @@ Item {
                                         }
 
                                         Text {
-                                            text: modelData.relay
+                                            text: modelData.pubkey
                                             elide: Text.ElideRight
                                             Layout.fillWidth: true
                                             font: Constants.smallFont
                                             color: Material.secondaryTextColor
+                                            visible: modelData.displayName !== ""
                                         }
                                     }
                                 }

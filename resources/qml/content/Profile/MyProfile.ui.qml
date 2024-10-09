@@ -7,7 +7,6 @@ import Buttons 1.0
 import Futr 1.0
 
 Rectangle {
-    id: root
     color: Material.backgroundColor
     radius: 5
     width: 400

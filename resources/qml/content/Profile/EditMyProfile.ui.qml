@@ -7,7 +7,7 @@ import Buttons 1.0
 import Futr 1.0
 
 Rectangle {
-    id: root
+    id: editMyProfile
     color: Material.backgroundColor
     radius: 5
     width: 400
@@ -58,7 +58,7 @@ Rectangle {
 
             CloseButton {
                 id: closeButton
-                target: root
+                target: editMyProfile
             }
         }
 

@@ -43,7 +43,7 @@ main = do
         . KeyMgmt.runKeyMgmt
         . KeyMgmt.runKeyMgmtUI
         . evalState AppState.initialState
-        . runWebSocket
+        . runWebSocket 3 -- max 3 retries
         . runRelayPool
         . Futr.runFutr
         . UI.runUI

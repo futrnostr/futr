@@ -14,16 +14,16 @@ data RelayPoolState = RelayPoolState
     { relays        :: Map RelayURI RelayData
     }
 
+
 -- | Data for each relay.
 data RelayData = RelayData
-  { connected      :: Bool
-  , relayInfo      :: RelayInfo
+  { relayInfo      :: RelayInfo
   , requestChannel :: TChan Request
   , responseQueue  :: TQueue Response
   , notices        :: [Text]
   , subscriptions  :: [SubscriptionId]
-  , retryCount     :: Int
   }
+
 
 -- | Initial state for RelayPool.
 initialRelayPoolState :: RelayPoolState
@@ -31,10 +31,12 @@ initialRelayPoolState = RelayPoolState
   { relays = Map.empty
   }
 
+
 data AppScreen
     = KeyMgmt
     | Home
     deriving (Eq, Read, Show)
+
 
 data ChatMessage = ChatMessage
   { chatMessageId :: EventId
@@ -44,12 +46,14 @@ data ChatMessage = ChatMessage
   , seenOn :: [RelayURI]
   }
 
+
 data EventConfirmation = EventConfirmation
   { relay :: RelayURI
   , waitingForConfirmation :: Bool
   , accepted :: Bool
   , message :: Text
   }
+
 
 data AppState = AppState
   { keyPair :: Maybe KeyPair
@@ -60,18 +64,22 @@ data AppState = AppState
   , follows :: FollowModel
   , confirmations :: Map EventId [EventConfirmation]
   , currentChatRecipient :: Maybe PubKeyXO
+  , activeConnections :: Int
   }
+
 
 data FollowModel = FollowModel
   { followList :: Map PubKeyXO [Follow]
   , objRef :: Maybe (ObjRef ())
   }
 
+
 data Follow = Follow
   { pubkey :: PubKeyXO
   , relayURI :: Maybe RelayURI
   , petName :: Maybe Text
-  }
+  } deriving (Show)
+
 
 initialState :: AppState
 initialState = AppState
@@ -83,4 +91,5 @@ initialState = AppState
   , follows = FollowModel Map.empty Nothing
   , confirmations = Map.empty
   , currentChatRecipient = Nothing
+  , activeConnections = 0
   }

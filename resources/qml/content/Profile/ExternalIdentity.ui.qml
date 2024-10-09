@@ -6,7 +6,6 @@ import QtQuick.Layouts 1.15
 import Futr 1.0
 
 Rectangle {
-    id: root
     required property string proof
     required property string value
     required property string icon
