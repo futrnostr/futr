@@ -12,11 +12,22 @@ Item {
     width: parent.width
     height: parent.height
 
+    Component.onCompleted: {
+        setCurrentProfile(mynpub)
+        profileLoader.setSource(
+            "Profile/Profile.ui.qml",
+            { 
+                "profileData": currentProfile,
+                "npub": mynpub 
+            }
+        )
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 10
 
-        // Top row with profile button
+        // Top row with profile button and search
         Item {
             Layout.fillWidth: true
             height: 80
@@ -24,6 +35,7 @@ Item {
             RoundButton {
                 id: profileButton
                 anchors.right: parent.right
+                anchors.rightMargin: 100
                 anchors.verticalCenter: parent.verticalCenter
                 width: 75
                 height: 75
@@ -54,22 +66,14 @@ Item {
                     id: profileMenu
                     y: profileButton.height
 
-                    onClosed: {
-                        if (!profileLoader.item || !profileLoader.item.visible) {
-                            profileCard.visible = false
-                            profileLoader.source = ""
-                        }
-                    }
-
                     MenuItem {
                         text: qsTr("My Profile")
                         onTriggered: {
-                            var profile = JSON.parse(getProfile(mynpub))
+                            setCurrentProfile(mynpub)
                             profileLoader.setSource(
-                                "Profile/MyProfile.ui.qml",
-                                { "profileData": profile }
+                                "Profile/Profile.ui.qml",
+                                { "profileData": currentProfile, "npub": mynpub }
                             )
-                            profileCard.visible = true
                             profileMenu.close()
                         }
                     }
@@ -92,39 +96,32 @@ Item {
                     }
                 }
             }
-        }
 
-        // Search row
-        RowLayout {
-            Layout.alignment: Qt.AlignHCenter
-            spacing: 10
+            // Search row
+            RowLayout {
+                anchors.centerIn: parent
+                spacing: 10
 
-            TextField {
-                id: searchInput
-                placeholderText: qsTr("Enter npub to search")
-                Layout.preferredWidth: 300
-            }
-
-            Button {
-                text: qsTr("Search")
-                onClicked: {
-                    var npub = searchInput.text.trim()
-                    if (npub.length > 0) {
-                        profileLoader.setSource(
-                            "Profile/ViewProfile.ui.qml",
-                            { "npub": npub }
-                        )
-                    }
+                TextField {
+                    id: searchInput
+                    placeholderText: qsTr("Enter npub or nprofile")
+                    Layout.preferredWidth: 300
+                    onAccepted: searchButton.clicked()
                 }
-            }
 
-            Button {
-                text: qsTr("Follow")
-                onClicked: {
-                    var npub = searchInput.text.trim()
-                    if (npub.length > 0) {
-                        follow(npub)
-                        searchInput.text = ""
+                Button {
+                    id: searchButton
+                    text: qsTr("Search")
+                    onClicked: {
+                        var input = searchInput.text.trim()
+                        var result = JSON.parse(search(input))
+                        if (result && result.npub) {
+                            setCurrentProfile(result.npub)
+                            profileLoader.setSource("Profile/Profile.ui.qml", { 
+                                "profileData": currentProfile, 
+                                "npub": result.npub 
+                            })
+                        }
                     }
                 }
             }
@@ -136,6 +133,7 @@ Item {
 
             Row {
                 anchors.fill: parent
+                anchors.margins: 10
                 spacing: 10
 
                 // Left column: Follows list
@@ -143,9 +141,13 @@ Item {
                     width: parent.width * 0.3 - (parent.spacing * 2 / 3)
                     height: parent.height
                     color: Material.backgroundColor
+                    border.color: Material.dividerColor
+                    border.width: 1
+                    radius: 5
 
                     ColumnLayout {
                         anchors.fill: parent
+                        anchors.margins: 10
                         spacing: 10
 
                         // Filter input
@@ -159,6 +161,8 @@ Item {
 
                             RowLayout {
                                 anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
                                 spacing: 10
 
                                 Image {
@@ -205,77 +209,90 @@ Item {
                         }
 
                         // Follows list
-                        ListView {
-                            id: followsView
+                        Rectangle {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            clip: true
-                            spacing: 5
+                            color: "transparent"
 
-                            model: AutoListModel {
-                                id: followsModel
-                                source: follows
-                            }
+                            ListView {
+                                id: followsView
+                                anchors.fill: parent
+                                clip: true
+                                spacing: 5
 
-                            delegate: Rectangle {
-                                id: followItem
-                                property bool mouseHover: false
-                                height: visible ? 80 : 0
-                                width: parent ? parent.width : 200
-                                visible: {
-                                    if (filterInput.text === "") return true;
-                                    var searchText = filterInput.text.toLowerCase();
-                                    return modelData.pubkey.toLowerCase().includes(searchText) ||
-                                           (modelData.displayName && modelData.displayName.toLowerCase().includes(searchText));
-                                }
-                                color: mouseHover ? Material.accentColor : Material.backgroundColor
-                                border.color: Material.dividerColor
-                                radius: 5
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 10
-
-                                    Image {
-                                        source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
-                                        Layout.preferredWidth: 50
-                                        Layout.preferredHeight: 50
-                                        Layout.alignment: Qt.AlignVCenter
-                                        smooth: true
-                                        fillMode: Image.PreserveAspectCrop
-                                    }
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 5
-
-                                        Text {
-                                            text: modelData.displayName !== "" ? modelData.displayName : modelData.pubkey
-                                            font: Constants.font
-                                            color: Material.primaryTextColor
-                                            elide: Text.ElideRight
-                                            Layout.fillWidth: true
-                                        }
-
-                                        Text {
-                                            text: modelData.pubkey
-                                            elide: Text.ElideRight
-                                            Layout.fillWidth: true
-                                            font: Constants.smallFont
-                                            color: Material.secondaryTextColor
-                                            visible: modelData.displayName !== ""
-                                        }
-                                    }
+                                model: AutoListModel {
+                                    id: followsModel
+                                    source: follows
                                 }
 
-                                MouseArea {
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onEntered: followItem.mouseHover = true
-                                    onExited: followItem.mouseHover = false
-                                    onClicked: {
-                                        chatLoader.setSource("Chat/ChatWindow.ui.qml", { "pubkey": modelData.pubkey })
-                                        rightProfileLoader.setSource("Profile/ViewProfile.ui.qml", { "npub": modelData.pubkey })
+                                ScrollBar.vertical: ScrollBar {
+                                    active: true
+                                    policy: ScrollBar.AsNeeded
+                                }
+
+                                delegate: Rectangle {
+                                    id: followItem
+                                    property bool mouseHover: false
+                                    height: visible ? 80 : 0
+                                    width: followsView.width - followsView.ScrollBar.vertical.width
+                                    visible: {
+                                        if (filterInput.text === "") return true;
+                                        var searchText = filterInput.text.toLowerCase();
+                                        return modelData.pubkey.toLowerCase().includes(searchText) ||
+                                               (modelData.displayName && modelData.displayName.toLowerCase().includes(searchText));
+                                    }
+                                    color: mouseHover ? Material.accentColor : Material.backgroundColor
+                                    border.color: Material.dividerColor
+                                    radius: 5
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 10
+
+                                        Image {
+                                            source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
+                                            Layout.preferredWidth: 50
+                                            Layout.preferredHeight: 50
+                                            Layout.alignment: Qt.AlignVCenter
+                                            smooth: true
+                                            fillMode: Image.PreserveAspectCrop
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 5
+
+                                            Text {
+                                                text: modelData.displayName || modelData.name || modelData.pubkey
+                                                font: Constants.font
+                                                color: Material.primaryTextColor
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+
+                                            Text {
+                                                text: modelData.name || modelData.pubkey
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                                font: Constants.smallFont
+                                                color: Material.secondaryTextColor
+                                                visible: modelData.displayName !== "" || modelData.name !== ""
+                                            }
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        onEntered: followItem.mouseHover = true
+                                        onExited: followItem.mouseHover = false
+                                        onClicked: {
+                                            setCurrentProfile(modelData.pubkey)
+                                            profileLoader.setSource("Profile/Profile.ui.qml", { 
+                                                "profileData": currentProfile, 
+                                                "npub": modelData.pubkey 
+                                            })
+                                        }
                                     }
                                 }
                             }
@@ -302,46 +319,13 @@ Item {
                     color: Material.backgroundColor
 
                     Loader {
-                        id: rightProfileLoader
+                        id: profileLoader
                         anchors.fill: parent
+                        anchors.rightMargin: 10
+                        anchors.bottomMargin: 5
                     }
                 }
             }
-        }
-    }
-
-    // Profile card
-    Pane {
-        id: profileCard
-        width: 400
-        padding: 0
-        visible: false
-        Material.elevation: 6
-
-        anchors {
-            right: parent.right
-            top: parent.top
-            margins: 20
-        }
-
-        Loader {
-            id: profileLoader
-            onLoaded: {
-                if (item && typeof item.closeRequested === "function") {
-                    item.closeRequested.connect(function() {
-                        profileCard.visible = false
-                        profileLoader.source = ""
-                    })
-                }
-            }
-        }
-
-        Behavior on opacity {
-            NumberAnimation { duration: 150 }
-        }
-
-        onVisibleChanged: {
-            opacity = visible ? 1 : 0
         }
     }
 }

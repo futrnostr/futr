@@ -10,9 +10,9 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Proxy (Proxy(..))
 import Data.Text (pack, unpack)
 import Data.Text.Encoding qualified as TE
-import Data.Proxy (Proxy(..))
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (get, modify)
@@ -21,16 +21,16 @@ import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Text.Read (readMaybe)
 
-
-import AppState
+import Nostr.Bech32
 import Nostr.Event
 import Nostr.Effects.CurrentTime
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
-import Nostr.Keys (PubKeyXO, bech32ToPubKeyXO, keyPairToPubKeyXO, pubKeyXOToBech32)
+import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Types (Profile(..), emptyProfile, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
-import Futr (Futr, FutrEff, LoginStatusChanged, login, logout)
+import Futr (Futr, FutrEff, LoginStatusChanged, login, logout, search, setCurrentProfile)
+import Types
 
 -- | Key Management Effect for creating QML UI.
 data UI :: Effect where
@@ -49,6 +49,44 @@ runUI :: (FutrEff es, Futr :> es) => Eff (UI : es) a -> Eff es a
 runUI = interpret $ \_ -> \case
   CreateUI changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
     keyMgmtObj <- runE $ PKeyMgmt.createUI changeKey'
+
+    profileClass <- newClass [
+        defPropertySigRO' "name" changeKey' $ \_ -> do
+          st <- runE $ get @AppState
+          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          return $ name profile,
+
+        defPropertySigRO' "displayName" changeKey' $ \_ -> do
+          st <- runE $ get @AppState
+          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          return $ displayName profile,
+
+        defPropertySigRO' "about" changeKey' $ \_ -> do
+          st <- runE $ get @AppState
+          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          return $ about profile,
+
+        defPropertySigRO' "picture" changeKey' $ \_ -> do
+          st <- runE $ get @AppState
+          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          return $ picture profile,
+
+        defPropertySigRO' "nip05" changeKey' $ \_ -> do
+          st <- runE $ get @AppState
+          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          return $ nip05 profile,
+
+        defPropertySigRO' "banner" changeKey' $ \_ -> do
+          st <- runE $ get @AppState
+          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          return $ banner profile
+        ]
 
     let followProp name' accessor = defPropertySigRO' name' changeKey' $ \obj -> do
           let pubKeyXO = fromObjRef obj :: PubKeyXO
@@ -71,6 +109,12 @@ runUI = interpret $ \_ -> \case
                 let (profile', _) = Map.findWithDefault (emptyProfile, 0) (pubkey follow) (profiles st)
                 in fromMaybe "" (displayName profile')
               Nothing -> "",
+        followProp "name" $ \st followMaybe ->
+            case followMaybe of
+              Just follow ->
+                let (profile', _) = Map.findWithDefault (emptyProfile, 0) (pubkey follow) (profiles st)
+                in fromMaybe "" (name profile')
+              Nothing -> "",
         followProp "picture" $ \st followMaybe ->
             case followMaybe of
               Just follow ->
@@ -84,9 +128,15 @@ runUI = interpret $ \_ -> \case
     rootClass <- newClass [
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
 
+        defPropertyConst' "currentProfile" (\_ -> do
+          profileObj <- newObject profileClass ()
+          runE $ modify @AppState $ \st -> st { profileObjRef = Just profileObj }
+          return profileObj
+        ),
+
         defPropertySigRW' "currentScreen" changeKey'
             (\_ -> do
-              st <- runE $ get :: IO AppState
+              st <- runE $ get @AppState
               return $ pack $ show $ currentScreen st)
             (\obj newScreen -> do
                 case readMaybe (unpack newScreen) :: Maybe AppScreen of
@@ -117,11 +167,11 @@ runUI = interpret $ \_ -> \case
 
         defMethod' "logout" $ \obj -> runE $ logout obj,
 
-        defMethod' "getProfile" $ \_ npub -> do
-          st <- runE $ get @AppState
-          let xo = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub
-          let (profile', _) = Map.findWithDefault (emptyProfile, 0) xo (profiles st)
-          return $ TE.decodeUtf8 $ BSL.toStrict $ encode profile',
+        defMethod' "search" $ \obj input -> runE $ do
+          res <- search obj input
+          return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
+
+        defMethod' "setCurrentProfile" $ \_ npub -> runE $ setCurrentProfile npub,
 
         defMethod' "saveProfile" $ \_ input -> do
           let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
@@ -179,7 +229,8 @@ runUI = interpret $ \_ -> \case
             let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub
             modify $ \st -> st { currentChatRecipient = Just pubKeyXO }
             fireSignal obj
-        ]
+
+      ]
 
     rootObj <- newObject rootClass ()
 

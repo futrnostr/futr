@@ -32,6 +32,7 @@ import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
 import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
+import Nostr.Bech32
 import Nostr.Keys
 import Nostr.Types hiding (displayName, picture)
 import System.FilePath (takeFileName, (</>))

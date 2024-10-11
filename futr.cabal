@@ -29,9 +29,9 @@ executable futr
     hs-source-dirs:   src
 
     other-modules:
-        AppState
         EffectfulQML
         Futr
+        Nostr.Bech32
         Nostr.Effects.CurrentTime
         Nostr.Effects.IDGen
         Nostr.Effects.Logging
@@ -44,6 +44,7 @@ executable futr
         Nostr.Profile
         Nostr.Types
         Presentation.KeyMgmt
+        Types
         TimeFormatter
         UI
 
