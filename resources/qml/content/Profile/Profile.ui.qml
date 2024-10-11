@@ -96,6 +96,21 @@ Rectangle {
                     )
                 }
             }
+
+            Button {
+                visible: npub !== mynpub
+                text: profileData.isFollow ? qsTr("Unfollow") : qsTr("Follow")
+                font: Constants.font
+                highlighted: true
+
+                onClicked: {
+                    if (profileData.isFollow) {
+                        unfollow(npub)
+                    } else {
+                        follow(npub)
+                    }
+                }
+            }
         }
 
         ColumnLayout {

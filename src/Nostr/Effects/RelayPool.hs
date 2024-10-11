@@ -121,9 +121,7 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
         st <- get @RelayPoolState
         forM_ rs $ \relayURI -> do
           case Map.lookup relayURI (relays st) of
-            Just relayData -> do
-              atomically $ writeTChan (requestChannel relayData) (Nostr.Types.SendEvent event)
-              logDebug $ "Sent event to channel: " <> T.pack (show event) <> " to relay: " <> relayURIToText relayURI
+            Just relayData -> atomically $ writeTChan (requestChannel relayData) (Nostr.Types.SendEvent event)
             Nothing -> logWarning $ "No channel found for relay: " <> relayURIToText relayURI
 
       GetRelays -> do

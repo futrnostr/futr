@@ -223,12 +223,11 @@ Item {
                                 model: AutoListModel {
                                     id: followsModel
                                     source: follows
-                                    mode: AutoListModel.ByIndex
                                 }
 
                                 ScrollBar.vertical: ScrollBar {
                                     active: true
-                                    policy: ScrollBar.AsNeeded
+                                    policy: ScrollBar.AlwaysOn
                                 }
 
                                 delegate: Rectangle {

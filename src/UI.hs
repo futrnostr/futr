@@ -4,7 +4,6 @@
 
 module UI where
 
-import Control.Monad (unless)
 import Data.Aeson (decode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (find)
@@ -29,7 +28,8 @@ import Nostr.Effects.RelayPool
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Types (Profile(..), emptyProfile, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
-import Futr (Futr, FutrEff, LoginStatusChanged, login, logout, search, setCurrentProfile)
+import Futr ( Futr, FutrEff, LoginStatusChanged, login, logout, followProfile,
+              search, setCurrentProfile, unfollowProfile )
 import Types
 
 -- | Key Management Effect for creating QML UI.
@@ -85,7 +85,17 @@ runUI = interpret $ \_ -> \case
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
           let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
-          return $ banner profile
+          return $ banner profile,
+
+        defPropertySigRO' "isFollow" changeKey' $ \_ -> do
+          st <- runE $ get @AppState
+          let currentPubKey = keyPairToPubKeyXO <$> keyPair st
+          let profilePubKey = currentProfile st
+          case (currentPubKey, profilePubKey) of
+            (Just userPK, Just profilePK) -> do
+              let userFollows = Map.findWithDefault [] userPK (followList $ follows st)
+              return $ any (\follow -> pubkey follow == profilePK) userFollows
+            _ -> return False
         ]
 
     let followProp name' accessor = defPropertySigRO' name' changeKey' $ \obj -> do
@@ -198,31 +208,9 @@ runUI = interpret $ \_ -> \case
               return objs
             Nothing -> return [],
 
-        defMethod' "follow" $ \obj npubText -> runE $ do
-            let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
-            st <- get @AppState
-            case keyPairToPubKeyXO <$> keyPair st of
-                Just userPK -> do
-                    let currentFollows = Map.findWithDefault [] userPK (followList $ follows st)
-                    unless (any (\follow -> pubkey follow == pubKeyXO) currentFollows) $ do
-                        let newFollow = Follow pubKeyXO Nothing Nothing
-                        let newFollows = newFollow : currentFollows
-                        modify $ \st' -> st' { follows = FollowModel (Map.insert userPK newFollows (followList $ follows st')) Nothing }
-                    fireSignal obj
-                Nothing -> return (),
+        defMethod' "follow" $ \_ npubText -> runE $ followProfile npubText,
 
-        defMethod' "unfollow" $ \obj npubText -> runE $ do
-            let npub = npubText
-            let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub
-            st <- get @AppState
-            let userPubKey = keyPairToPubKeyXO <$> keyPair st
-            case userPubKey of
-                Just userPK -> do
-                    let currentFollows = Map.findWithDefault [] userPK (followList $ follows st)
-                    let newFollows = filter (\follow -> pubkey follow /= pubKeyXO) currentFollows
-                    modify $ \st' -> st' { follows = FollowModel (Map.insert userPK newFollows (followList $ follows st')) Nothing }
-                    fireSignal obj
-                Nothing -> return (),
+        defMethod' "unfollow" $ \_ npubText -> runE $ unfollowProfile npubText,
 
         defMethod' "openChat" $ \obj npubText -> runE $ do
             let npub = npubText

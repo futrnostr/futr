@@ -29,9 +29,10 @@ import Nostr.Bech32
 import Nostr.Effects.CurrentTime
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
+import Nostr.Event (signEvent)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Tag(..),
-                     RelayURI, Response(..), Relay(..), relayName, relayURIToText)
+                     RelayURI, Response(..), Relay(..), UnsignedEvent(..), relayName, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
 import Types
 
@@ -62,6 +63,8 @@ data Futr :: Effect where
   Login :: ObjRef () -> Text -> Futr m Bool
   Search :: ObjRef () -> Text -> Futr m SearchResult
   SetCurrentProfile :: Text -> Futr m ()
+  FollowProfile :: Text -> Futr m ()
+  UnfollowProfile :: Text -> Futr m ()
   Logout :: ObjRef () -> Futr m ()
 
 
@@ -99,7 +102,6 @@ runFutr = interpret $ \_ -> \case
         Nothing -> return False
 
   Search _ input -> do
-    logInfo $ "Searching for: " <> input
     st <- get @AppState
     let myPubKey = keyPairToPubKeyXO <$> keyPair st
 
@@ -122,7 +124,6 @@ runFutr = interpret $ \_ -> \case
                       Nothing -> do
                         relays' <- gets @RelayPoolState relays
                         let relaysToSearch = Map.keys relays'
-                        logInfo $ "Searching in relays: " <> pack (show relaysToSearch)
                         forM_ relaysToSearch $ \relay' -> do
                           void $ async $ do
                             maybeSubInfo <- startSubscription relay' [MetadataFilter [pubkey']]
@@ -135,13 +136,9 @@ runFutr = interpret $ \_ -> \case
 
                         return $ ProfileResult (pubKeyXOToBech32 pubkey') Nothing
 
-          Nothing -> do
-            logWarning $ "Failed to parse nprofile or npub: " <> input
-            return NoResult
+          Nothing -> return NoResult
 
-      _ -> do
-        logWarning $ "Unsupported search input: " <> input
-        return NoResult
+      _ -> return NoResult
 
   SetCurrentProfile npub' -> do
     case bech32ToPubKeyXO npub' of
@@ -154,6 +151,33 @@ runFutr = interpret $ \_ -> \case
       Nothing -> do
         logError $ "Invalid npub, cannot set current profile: " <> npub'
         return ()
+
+  FollowProfile npub' -> do
+    let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
+    st <- get @AppState
+    case keyPairToPubKeyXO <$> keyPair st of
+        Just userPK -> do
+            let currentFollows = Map.findWithDefault [] userPK (followList $ follows st)
+            unless (any (\follow -> pubkey follow == pubKeyXO) currentFollows) $ do
+                let newFollow = Follow pubKeyXO Nothing Nothing
+                let newFollows = newFollow : currentFollows
+                modify $ \st' -> st' { follows = (follows st') { followList = Map.insert userPK newFollows (followList $ follows st') } }
+            notifyUI
+            sendFollowListEvent
+        Nothing -> return ()
+
+  UnfollowProfile npub' -> do
+    let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
+    st <- get @AppState
+    let userPubKey = keyPairToPubKeyXO <$> keyPair st
+    case userPubKey of
+        Just userPK -> do
+            let currentFollows = Map.findWithDefault [] userPK (followList $ follows st)
+            let newFollows = filter (\follow -> pubkey follow /= pubKeyXO) currentFollows
+            modify $ \st' -> st' { follows = (follows st') { followList = Map.insert userPK newFollows (followList $ follows st') } }
+            notifyUI
+            sendFollowListEvent
+        Nothing -> return ()
 
   Logout obj -> do
       modify @AppState $ \st -> st
@@ -338,7 +362,7 @@ handleEvent event' = case kind event' of
     Left err -> logWarning $ "Failed to decode metadata: " <> pack err
 
   FollowList -> do
-    let followList' = [Follow pubKey' relayUri' displayName' | PTag pubKey' relayUri' displayName' <- tags event']
+    let followList' = [Follow pk relayUri' displayName' | PTag pk relayUri' displayName' <- tags event']
     modify $ \st -> st { follows = FollowModel (Map.insert (pubKey event') followList' (followList $ follows st)) (objRef $ follows st) }
 
   _ -> logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
@@ -382,3 +406,31 @@ handleSearchSubscription relayURI' queue = do
   msgs <- atomically $ flushTQueue queue
   void $ processResponses relayURI' (msg : msgs)
   notifyUI
+
+
+-- | Send a follow list event.
+sendFollowListEvent :: FutrEff es => Eff es ()
+sendFollowListEvent = do
+    st <- get @AppState
+    case keyPair st of
+        Just kp -> do
+            let userPK = keyPairToPubKeyXO kp
+            currentTime <- now
+            let followList' = Map.findWithDefault [] userPK (followList $ follows st)
+            let ntags = map (\(Follow pk _ _) -> PTag pk Nothing Nothing) followList'
+            let event = UnsignedEvent
+                    { pubKey' = userPK
+                    , createdAt' = currentTime
+                    , kind' = FollowList
+                    , tags' = ntags
+                    , content' = ""
+                    }
+            signedEvent <- liftIO $ signEvent event kp
+            case signedEvent of
+              Just signedEvent' -> do
+                relays' <- gets @RelayPoolState relays
+                sendEvent signedEvent' (Map.keys relays')
+              Nothing -> do
+                logError "Failed to sign follow list event"
+                return ()
+        Nothing -> return ()
