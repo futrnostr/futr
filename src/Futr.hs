@@ -150,9 +150,7 @@ runFutr = interpret $ \_ -> \case
         obj <- gets @AppState profileObjRef
         case obj of
           Just obj' -> fireSignal obj'
-          Nothing -> do
-            logError "No objRef for current profile"
-            return ()
+          Nothing -> return ()
       Nothing -> do
         logError $ "Invalid npub, cannot set current profile: " <> npub'
         return ()
@@ -298,14 +296,10 @@ handleResponsesUntilClosed relayURI' queue = do
 notifyUI :: FutrEff es => Eff es ()
 notifyUI = do
   st <- get @AppState
-  -- @todo: fire signal for other lists as needed
-  case objRef $ follows st of
-    Just obj' -> fireSignal obj'
-    Nothing -> logWarning "No objRef for follows in AppState"
+  let notifyObjRef = maybe (pure ()) fireSignal
 
-  case profileObjRef st of
-    Just obj' -> fireSignal obj'
-    Nothing -> logWarning "No objRef for profile in AppState"
+  notifyObjRef (objRef $ follows st)
+  notifyObjRef (profileObjRef st)
 
 
 -- | Process responses.

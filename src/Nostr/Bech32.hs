@@ -18,7 +18,6 @@ import Codec.Binary.Bech32 qualified as Bech32
 import Data.Binary.Put (runPut, putWord8, putByteString)
 import Data.Binary.Get (runGet, getWord8, getByteString, isEmpty)
 import Data.ByteString qualified as BS
-import Data.ByteString.Base16 qualified as B16
 import qualified Data.ByteString.Lazy as LBS
 import Data.ByteString.Short qualified as BSS
 import Data.Maybe (mapMaybe)

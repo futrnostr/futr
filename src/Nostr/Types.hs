@@ -490,7 +490,7 @@ instance ToJSON Profile where
 
 instance FromJSON Profile where
   parseJSON = withObject "profile" $ \e -> Profile
-    <$> e .: "name"
+    <$> e .:? "name"
     <*> e .:? "display_name"
     <*> e .:? "about"
     <*> e .:? "picture"

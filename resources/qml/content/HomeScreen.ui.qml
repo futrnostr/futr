@@ -223,6 +223,7 @@ Item {
                                 model: AutoListModel {
                                     id: followsModel
                                     source: follows
+                                    mode: AutoListModel.ByIndex
                                 }
 
                                 ScrollBar.vertical: ScrollBar {
