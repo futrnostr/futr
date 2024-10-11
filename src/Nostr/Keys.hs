@@ -42,10 +42,6 @@ module Nostr.Keys (
     , importSignature
     , exportPubKeyXO
     , exportSignature
-    , secKeyToBech32
-    , pubKeyXOToBech32
-    , bech32ToPubKeyXO
-    , bech32ToSecKey
     , byteStringToHex
 
     -- * Conversions
@@ -63,7 +59,6 @@ module Nostr.Keys (
 import Crypto.Secp256k1 qualified as S
 import Data.Aeson
 import Data.Aeson.Encoding (text)
-import Codec.Binary.Bech32 qualified as Bech32
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
@@ -125,22 +120,6 @@ createKeyPair = do
     bs <- secKeyGen
     sk <- maybe (error "Unknown error upon key pair generation") return $ S.importSecKey bs
     return $ KeyPair $ S.keyPairCreate sk
-
--- | Bech32 encoding for SecKey
-secKeyToBech32 :: SecKey -> T.Text
-secKeyToBech32 secKey = toBech32 "nsec" (S.exportSecKey $ getSecKey secKey)
-
--- | Bech32 encoding for PubKeyXO
-pubKeyXOToBech32 :: PubKeyXO -> T.Text
-pubKeyXOToBech32 pubKeyXO = toBech32 "npub" (S.exportPubKeyXO $ getPubKeyXO pubKeyXO)
-
--- | Bech32 decoding to SecKey
-bech32ToSecKey :: T.Text -> Maybe SecKey
-bech32ToSecKey txt = fmap SecKey $ fromBech32 "nsec" txt >>= S.importSecKey
-
--- | Bech32 decoding to PubKeyXO
-bech32ToPubKeyXO :: T.Text -> Maybe PubKeyXO
-bech32ToPubKeyXO txt = fmap PubKeyXO $ fromBech32 "npub" txt >>= S.importPubKeyXO
 
 -- | Import byte string and create SecKey
 importSecKey :: ByteString -> Maybe SecKey
@@ -224,29 +203,6 @@ derivePublicKeyXO sk = PubKeyXO p
 -- | Generate a random byte sequence for a secret key
 secKeyGen :: IO BS.ByteString
 secKeyGen = BS.pack . take 32 . randoms <$> newStdGen
-
--- | Convert from ByteString to bech32
-toBech32 :: T.Text -> BS.ByteString -> T.Text
-toBech32 hrpText bs =
-    case Bech32.humanReadablePartFromText hrpText of
-        Left err -> error $ "Invalid HRP: " ++ show err
-        Right hrp ->
-            case Bech32.encode hrp (Bech32.dataPartFromBytes bs) of
-                Left err -> error $ "Bech32 encoding failed: " ++ show err
-                Right txt -> txt
-
--- | Convert from bech32 to ByteString
-fromBech32 :: T.Text -> T.Text -> Maybe BS.ByteString
-fromBech32 hrpText txt =
-    case Bech32.humanReadablePartFromText hrpText of
-        Left _ -> Nothing
-        Right hrp ->
-            case Bech32.decode txt of
-                Left _ -> Nothing
-                Right (hrp', dp) ->
-                    if hrp == hrp'
-                    then Bech32.dataPartToBytes dp
-                    else Nothing
 
 -- | Derivation path for Nostr (NIP-06)
 nostrAddr :: DerivPath

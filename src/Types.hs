@@ -1,4 +1,4 @@
-module AppState where
+module Types where
 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -64,6 +64,8 @@ data AppState = AppState
   , follows :: FollowModel
   , confirmations :: Map EventId [EventConfirmation]
   , currentChatRecipient :: Maybe PubKeyXO
+  , currentProfile :: Maybe PubKeyXO
+  , profileObjRef :: Maybe (ObjRef ())
   , activeConnections :: Int
   }
 
@@ -91,5 +93,7 @@ initialState = AppState
   , follows = FollowModel Map.empty Nothing
   , confirmations = Map.empty
   , currentChatRecipient = Nothing
+  , currentProfile = Nothing
+  , profileObjRef = Nothing
   , activeConnections = 0
   }

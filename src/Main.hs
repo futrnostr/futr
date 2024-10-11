@@ -8,7 +8,6 @@ import EffectfulQML
 import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
-import AppState qualified as AppState
 import Futr qualified as Futr
 import Nostr.Effects.CurrentTime (runCurrentTime)
 import Nostr.Effects.IDGen (runIDGen)
@@ -17,6 +16,7 @@ import Nostr.Effects.RelayPool (runRelayPool)
 import Nostr.Effects.WebSocket (runWebSocket)
 import Presentation.KeyMgmt qualified as KeyMgmt
 import UI qualified as UI
+import Types
 
 main :: IO ()
 main = do
@@ -39,10 +39,10 @@ main = do
         . runCurrentTime
         . runConcurrent
         . evalState KeyMgmt.initialState
-        . evalState AppState.initialRelayPoolState
+        . evalState Types.initialRelayPoolState
         . KeyMgmt.runKeyMgmt
         . KeyMgmt.runKeyMgmtUI
-        . evalState AppState.initialState
+        . evalState Types.initialState
         . runWebSocket 3 -- max 3 retries
         . runRelayPool
         . Futr.runFutr

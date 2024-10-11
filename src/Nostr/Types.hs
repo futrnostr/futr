@@ -14,14 +14,13 @@ import Control.Lens ((^.), (^?), (<&>), _Right)
 import Control.Monad (mzero)
 import Data.Aeson hiding (Error)
 import Data.Aeson.Encoding (list, text)
-import Data.Aeson.Types (Parser)
+import Data.Aeson.Types (Parser, parseEither)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.Default
 import Data.Foldable (toList)
 import Data.Function (on)
-import Data.Maybe (fromMaybe)
 import Data.String.Conversions (ConvertibleStrings, cs)
 import Data.Text (Text, isInfixOf, toLower)
 import Data.Text.Encoding (decodeUtf8)
@@ -31,11 +30,11 @@ import Text.URI (URI, mkURI, render, unRText)
 import Text.URI.Lens (uriAuthority, uriPath, uriScheme, authHost, authPort)
 import qualified Text.URI.QQ as QQ
 
-
 import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature)
 
 -- | Represents a wrapped URI used within a relay.
 newtype RelayURI = RelayURI URI deriving (Eq, Generic, Ord, Show)
+
 
 -- | Represents the information associated with a relay.
 data RelayInfo = RelayInfo
@@ -44,6 +43,7 @@ data RelayInfo = RelayInfo
   }
   deriving (Eq, Ord, Show, Generic, FromJSON, ToJSON)
 
+
 -- | Represents a relay entity containing URI, relay information, and connection status.
 data Relay = Relay
   { uri       :: RelayURI
@@ -51,8 +51,10 @@ data Relay = Relay
   }
   deriving (Eq, Generic, Show)
 
+
 -- | Represents a subscription id as text.
 type SubscriptionId = Text
+
 
 -- | Represents a subscription.
 data Subscription = Subscription
@@ -61,6 +63,8 @@ data Subscription = Subscription
   }
   deriving (Eq, Generic, Show)
 
+
+-- | Represents a filter for events.
 data Filter
   = MetadataFilter [PubKeyXO]
   | FollowListFilter [PubKeyXO]
@@ -70,6 +74,8 @@ data Filter
   | AllMetadata Int
   deriving (Eq, Generic,Show)
 
+
+-- | Represents a request to the relay.
 data Request
   = SendEvent Event
   | Subscribe Subscription
@@ -77,6 +83,8 @@ data Request
   | Disconnect
   deriving (Eq, Generic, Show)
 
+
+-- | Represents a response from the relay.
 data Response
   = EventReceived SubscriptionId Event
   | Ok EventId Bool Text
@@ -85,8 +93,11 @@ data Response
   | Notice Text
   deriving (Eq, Show)
 
+
+-- | Represents a standard prefix for error messages.
 data StandardPrefix = Duplicate | Pow | Blocked | RateLimited | Invalid | Error
     deriving (Eq, Show)
+
 
 -- | The 'Kind' data type represents different kinds of events in the Nostr protocol.
 data Kind
@@ -98,19 +109,27 @@ data Kind
   | Reaction        -- NIP-25
   | Seal            -- NIP-59
   | DirectMessage   -- NIP-17
-  deriving (Eq, Generic, Show)
+  deriving (Eq, Generic, Read, Show)
 
+
+-- | Represents an event id as a byte string.
 newtype EventId = EventId { getEventId :: ByteString } deriving (Eq, Ord)
 
+
+-- | Represents a relationship type.
 data Relationship = Reply | Root
   deriving (Eq, Generic, Show)
 
+
+-- | Represents a tag in an event.
 data Tag
   = ETag EventId (Maybe RelayURI) (Maybe Relationship)
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
   | UnknownTag Value  -- Store the original JSON data as an Aeson Value
   deriving (Eq, Generic, Show)
 
+
+-- | Represents an event.
 data Event = Event
   { eventId    :: EventId
   , pubKey     :: PubKeyXO
@@ -122,6 +141,8 @@ data Event = Event
   }
   deriving (Eq, Generic, Show)
 
+
+-- | Represents an unsigned event.
 data UnsignedEvent = UnsignedEvent
   { pubKey'     :: PubKeyXO
   , createdAt' :: Int
@@ -131,8 +152,12 @@ data UnsignedEvent = UnsignedEvent
   }
   deriving (Eq, Generic, Show)
 
+
+-- | Represents a received event with its associated relays.
 type ReceivedEvent = (Event, [Relay])
 
+
+-- | Represents a contact with a public key and an optional display name.
 type Contact = (PubKeyXO, Maybe DisplayName)
 
 type Name = Text
@@ -142,6 +167,8 @@ type Picture = Text
 type Banner = Text
 type Nip05 = Text
 
+
+-- | Represents a user profile.
 data Profile = Profile
   { name :: Maybe Text
   , displayName :: Maybe Text
@@ -151,11 +178,15 @@ data Profile = Profile
   , banner :: Maybe Text
   } deriving (Eq, Generic,Show)
 
+
+-- | Empty profile.
 emptyProfile :: Profile
 emptyProfile = Profile Nothing Nothing Nothing Nothing Nothing Nothing
 
 -- Helper functions
 
+
+-- | Converts an error message to a standard prefix.
 noticeReason :: Text -> StandardPrefix
 noticeReason errMsg
   | "duplicate:"    `isInfixOf` errMsg = Duplicate
@@ -165,6 +196,8 @@ noticeReason errMsg
   | "invalid:"      `isInfixOf` errMsg = Invalid
   | otherwise                          = Error
 
+
+-- | Decodes a hex string to a byte string.
 decodeHex :: ConvertibleStrings a ByteString => a -> Maybe ByteString
 decodeHex str =
   case B16.decode $ cs str of
@@ -224,28 +257,64 @@ instance ToJSON UnsignedEvent where
      , text content'
      ]
 
-
 instance FromJSON Tag where
-  parseJSON v@(Array arr)
-    | V.length arr > 0 =
-       case arr V.! 0 of
-         String "e" -> do
-           eventId <- parseJSON (arr V.! 1)
-           relayURL <- parseJSON (fromMaybe Null $ arr V.!? 2)
-           marker <- parseJSON (fromMaybe Null $ arr V.!? 3)
-           return $ ETag eventId relayURL marker
-         String "p" -> do
-           pubKeyResult <- (Just <$> parseJSON (arr V.! 1)) <|> pure Nothing
-           case pubKeyResult of
-             Just pubKey -> do
-               relayURL <- parseJSON (fromMaybe Null $ arr V.!? 2)
-               name <- parseJSON (fromMaybe Null $ arr V.!? 3)
-               return $ PTag pubKey relayURL name
-             Nothing -> return $ UnknownTag v
-         _ -> return $ UnknownTag v
-    | otherwise = return $ UnknownTag v
+  parseJSON v@(Array arr) =
+    case V.toList arr of
+      ("e":rest) -> either (const $ return $ UnknownTag v) return $ parseEither (parseETag rest) v
+      ("p":rest) -> either (const $ return $ UnknownTag v) return $ parseEither (parsePTag rest) v
+      _          -> return $ UnknownTag v
   parseJSON v = return $ UnknownTag v
 
+parseETag :: [Value] -> Value -> Parser Tag
+parseETag rest _ = do
+  case rest of
+    [eventIdVal, relayVal, markerVal] -> do
+      eventId <- parseJSONSafe eventIdVal
+      relay <- parseMaybeRelayURI relayVal
+      marker <- parseMaybeRelationship markerVal
+      return $ ETag eventId relay marker
+    [eventIdVal, relayVal] -> do
+      eventId <- parseJSONSafe eventIdVal
+      relay <- parseMaybeRelayURI relayVal
+      return $ ETag eventId relay Nothing
+    [eventIdVal] -> do
+      eventId <- parseJSONSafe eventIdVal
+      return $ ETag eventId Nothing Nothing
+    _ -> fail "Invalid ETag format"
+
+parsePTag :: [Value] -> Value -> Parser Tag
+parsePTag rest _ = do
+  case rest of
+    (pubKeyVal:relayVal:nameVal:_) -> do
+      pubKey <- parseJSONSafe pubKeyVal
+      relay <- parseMaybeRelayURI relayVal
+      name <- parseMaybeDisplayName nameVal
+      return $ PTag pubKey relay name
+    (pubKeyVal:relayVal:_) -> do
+      pubKey <- parseJSONSafe pubKeyVal
+      relay <- parseMaybeRelayURI relayVal
+      return $ PTag pubKey relay Nothing
+    (pubKeyVal:_) -> do
+      pubKey <- parseJSONSafe pubKeyVal
+      return $ PTag pubKey Nothing Nothing
+    _ -> fail "Invalid PTag format"
+
+parseJSONSafe :: FromJSON a => Value -> Parser a
+parseJSONSafe v = case parseEither parseJSON v of
+  Left _ -> fail "Parsing failed"
+  Right x -> return x
+
+parseMaybeRelayURI :: Value -> Parser (Maybe RelayURI)
+parseMaybeRelayURI Null = return Nothing
+parseMaybeRelayURI v = (Just <$> parseJSONSafe v) <|> return Nothing
+
+parseMaybeRelationship :: Value -> Parser (Maybe Relationship)
+parseMaybeRelationship Null = return Nothing
+parseMaybeRelationship v = (Just <$> parseJSONSafe v) <|> return Nothing
+
+parseMaybeDisplayName :: Value -> Parser (Maybe DisplayName)
+parseMaybeDisplayName Null = return Nothing
+parseMaybeDisplayName v = (Just <$> parseJSONSafe v) <|> return Nothing
 
 instance ToJSON Tag where
   toEncoding (ETag eventId Nothing Nothing) =
@@ -329,7 +398,7 @@ instance FromJSON RelayURI where
   parseJSON = withText "URI" $ \u ->
     case mkURI u of
       Just u' -> return $ RelayURI u'
-      Nothing -> fail "Invalid relay URI"
+      Nothing -> fail $ "Invalid relay URI: " ++ show u
 
 -- | Parses a JSON value into a `RelayURI`.
 instance ToJSON RelayURI where

@@ -32,12 +32,13 @@ Rectangle {
 
             BackButton {
                 id: backButton
+                Layout.alignment: Qt.AlignLeft
 
                 onClicked: {
-                    var profile = JSON.parse(getProfile(mynpub))
+                    setCurrentProfile(mynpub)
                     profileLoader.setSource(
-                        "MyProfile.ui.qml",
-                        { "profileData": profile }
+                        "Profile.ui.qml",
+                        { "profileData": currentProfile, "npub": mynpub }
                     )
                 }
             }
@@ -50,15 +51,15 @@ Rectangle {
                 text: "Edit Profile"
                 font: Constants.largeFont
                 color: Material.primaryTextColor
+                Layout.alignment: Qt.AlignCenter
             }
 
             Item {
                 Layout.fillWidth: true
             }
 
-            CloseButton {
-                id: closeButton
-                target: profileCard
+            Item {
+                Layout.preferredWidth: backButton.width
             }
         }
 

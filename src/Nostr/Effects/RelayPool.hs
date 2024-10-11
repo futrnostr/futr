@@ -12,11 +12,11 @@ import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
 import Effectful.State.Static.Shared (State, evalState, get, modify)
 import Effectful.TH
 
-import AppState (RelayPoolState(..), RelayData(..), initialRelayPoolState)
 import Nostr.Effects.IDGen
 import Nostr.Effects.Logging
 import Nostr.Effects.WebSocket
 import Nostr.Types
+import Types (RelayPoolState(..), RelayData(..), initialRelayPoolState)
 
 -- | Effect for handling RelayPool operations.
 data RelayPool :: Effect where

@@ -1,13 +1,16 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Futr where
 
-import Data.Aeson (eitherDecode)
+import Data.Aeson (ToJSON, eitherDecode, pairs, toEncoding, (.=))
 import Data.ByteString.Lazy qualified as BSL
-import Control.Monad (forM, void, unless, when)
+import Control.Monad (forM, forM_, void, unless, when)
+import Data.Maybe (listToMaybe)
 import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy(..))
-import Data.Text (Text, pack)
+import Data.Text (Text, isPrefixOf, pack)
 import Data.Text.Encoding qualified as TE
 import Data.Typeable (Typeable)
 import Effectful
@@ -18,23 +21,47 @@ import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
 import EffectfulQML
+import GHC.Generics (Generic)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 
-import AppState
+import Nostr.Bech32
 import Nostr.Effects.CurrentTime
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
-import Nostr.Keys (keyPairToPubKeyXO, secKeyToKeyPair)
-import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Tag(..), 
+import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Tag(..),
                      RelayURI, Response(..), Relay(..), relayName, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
+import Types
 
 
+-- | Signal key class for LoginStatusChanged.
+data LoginStatusChanged deriving Typeable
 
-  -- | Futr Effect for managing the application state.
+instance SignalKeyClass LoginStatusChanged where
+    type SignalParams LoginStatusChanged = Bool -> Text -> IO ()
+
+
+-- | Search result.
+data SearchResult
+  = ProfileResult { npub :: Text, relayUri :: Maybe Text }
+  | NoResult
+  deriving (Eq, Generic, Show)
+
+instance ToJSON SearchResult where
+  toEncoding (ProfileResult npub' relayUri') = pairs
+     ( "npub"  .= npub'
+    <> "relayUri" .= relayUri'
+     )
+  toEncoding NoResult = pairs ( "result" .= ("no_result" :: Text) )
+
+
+-- | Futr Effects.
 data Futr :: Effect where
   Login :: ObjRef () -> Text -> Futr m Bool
+  Search :: ObjRef () -> Text -> Futr m SearchResult
+  SetCurrentProfile :: Text -> Futr m ()
   Logout :: ObjRef () -> Futr m ()
 
 
@@ -45,15 +72,7 @@ type instance DispatchOf Futr = Dynamic
 makeEffect ''Futr
 
 
--- | Signal key class for LoginStatusChanged.
-data LoginStatusChanged deriving Typeable
-
-
-instance SignalKeyClass LoginStatusChanged where
-    type SignalParams LoginStatusChanged = Bool -> Text -> IO ()
-
-
--- | Futr Effect
+-- | Effectful type for Futr.
 type FutrEff es = ( State AppState :> es
                   , PKeyMgmt.KeyMgmt :> es
                   , PKeyMgmt.KeyMgmtUI :> es
@@ -79,6 +98,65 @@ runFutr = interpret $ \_ -> \case
           return success
         Nothing -> return False
 
+  Search _ input -> do
+    logInfo $ "Searching for: " <> input
+    st <- get @AppState
+    let myPubKey = keyPairToPubKeyXO <$> keyPair st
+
+    case input of
+      _ | "nprofile" `isPrefixOf` input || "npub" `isPrefixOf` input -> do
+        case parseNprofileOrNpub input of
+          Just (pubkey', maybeRelay) -> do
+            case myPubKey of
+              Just myKey | myKey == pubkey' -> do
+                return $ ProfileResult (pubKeyXOToBech32 pubkey') (relayURIToText <$> maybeRelay)
+
+              _ -> do
+                let userFollows = maybe [] (flip (Map.findWithDefault []) (followList $ follows st)) myPubKey
+                if any (\(Follow pk _ _) -> pk == pubkey') userFollows
+                  then do
+                    return $ ProfileResult (pubKeyXOToBech32 pubkey') (relayURIToText <$> maybeRelay)
+                  else do
+                    case maybeRelay of
+                      Just relay' -> return $ ProfileResult (pubKeyXOToBech32 pubkey') (Just $ relayURIToText relay')
+                      Nothing -> do
+                        relays' <- gets @RelayPoolState relays
+                        let relaysToSearch = Map.keys relays'
+                        logInfo $ "Searching in relays: " <> pack (show relaysToSearch)
+                        forM_ relaysToSearch $ \relay' -> do
+                          void $ async $ do
+                            maybeSubInfo <- startSubscription relay' [MetadataFilter [pubkey']]
+                            case maybeSubInfo of
+                              Just (subId, queue) -> do
+                                handleSearchSubscription relay' queue
+                                stopSubscription subId
+                              Nothing -> 
+                                logWarning $ "Failed to start search subscription for relay: " <> relayURIToText relay'
+
+                        return $ ProfileResult (pubKeyXOToBech32 pubkey') Nothing
+
+          Nothing -> do
+            logWarning $ "Failed to parse nprofile or npub: " <> input
+            return NoResult
+
+      _ -> do
+        logWarning $ "Unsupported search input: " <> input
+        return NoResult
+
+  SetCurrentProfile npub' -> do
+    case bech32ToPubKeyXO npub' of
+      Just pk -> do
+        modify @AppState $ \st -> st { currentProfile = Just pk }
+        obj <- gets @AppState profileObjRef
+        case obj of
+          Just obj' -> fireSignal obj'
+          Nothing -> do
+            logError "No objRef for current profile"
+            return ()
+      Nothing -> do
+        logError $ "Invalid npub, cannot set current profile: " <> npub'
+        return ()
+
   Logout obj -> do
       modify @AppState $ \st -> st
         { keyPair = Nothing
@@ -99,6 +177,16 @@ runFutr = interpret $ \_ -> \case
       logInfo "User logged out successfully"
 
 
+-- Helper function to parse nprofile or npub
+parseNprofileOrNpub :: Text -> Maybe (PubKeyXO, Maybe RelayURI)
+parseNprofileOrNpub input = 
+  case bech32ToPubKeyXO input of
+    Just pubkey' -> Just (pubkey', Nothing)  -- For npub
+    Nothing -> case nprofileToPubKeyXO input of
+      Just (pubkey', relays') -> Just (pubkey', listToMaybe relays')  -- For nprofile
+      Nothing -> Nothing
+
+
 -- | Login with an account.
 loginWithAccount :: FutrEff es => ObjRef () -> PKeyMgmt.Account -> Eff es Bool
 loginWithAccount obj a = do
@@ -117,6 +205,7 @@ loginWithAccount obj a = do
       then do
         logDebug $ "Connected to relay: " <> relayName relay'
         modify @AppState $ \st -> st { keyPair = Just kp, currentScreen = Home }
+        fireSignal obj
         liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
         
         -- Initial subscription (until EOSE)
@@ -134,6 +223,7 @@ loginWithAccount obj a = do
             void $ async $ do
               handleResponsesUntilEOSE (uri relay') queue
               stopSubscription subId'
+              fireSignal obj
 
               -- Start the main subscription after EOSE
               st <- get @AppState
@@ -174,7 +264,6 @@ handleResponsesUntilEOSE relayURI' queue = do
   msg <- atomically $ readTQueue queue
   msgs <- atomically $ flushTQueue queue
   stopped <- processResponsesUntilEOSE relayURI' (msg : msgs)
-  notifyUI
   unless stopped $ handleResponsesUntilEOSE relayURI' queue
 
 
@@ -213,6 +302,10 @@ notifyUI = do
   case objRef $ follows st of
     Just obj' -> fireSignal obj'
     Nothing -> logWarning "No objRef for follows in AppState"
+
+  case profileObjRef st of
+    Just obj' -> fireSignal obj'
+    Nothing -> logWarning "No objRef for profile in AppState"
 
 
 -- | Process responses.
@@ -286,3 +379,12 @@ handleConfirmation eventId' accepted' msg relayURI' st =
          eventId'
          (confirmations st)
       }
+
+
+-- | Handle the search subscription, updating profiles and stopping on EOSE.
+handleSearchSubscription :: FutrEff es => RelayURI -> TQueue Response -> Eff es ()
+handleSearchSubscription relayURI' queue = do
+  msg <- atomically $ readTQueue queue
+  msgs <- atomically $ flushTQueue queue
+  void $ processResponses relayURI' (msg : msgs)
+  notifyUI

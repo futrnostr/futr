@@ -26,48 +26,19 @@ ApplicationWindow {
         id: clipboard
     }
 
-    Rectangle {
-        width: 900
-        height: parent.height
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.margins: 10
-
-        Rectangle {
-            width: 1
-            height: parent.height
-            color: Material.dividerColor
-            anchors.left: parent.left
-        }
-
-        Rectangle {
-            width: 1
-            height: parent.height
-            color: Material.dividerColor
-            anchors.right: parent.right
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            anchors.leftMargin: 1
-            anchors.rightMargin: 1
-            color: Material.backgroundColor
-
-            KeyMgmtScreen {
-                anchors.margins: 10
-                anchors.fill: parent
-                visible: currentScreen == "KeyMgmt"
-            }
-
-            Loader {
-                id: myHomeScreenLoader
-                active: currentScreen == "Home"
-                anchors.fill: parent
-                sourceComponent: HomeScreen {
-                    anchors.margins: 10
-                    anchors.fill: parent
-                }
+    Loader {
+        id: screenLoader
+        anchors.fill: parent
+        source: {
+            if (currentScreen === "Home") {
+                return "HomeScreen.ui.qml";
+            } else if (currentScreen === "KeyMgmt") {
+                return "KeyMgmtScreen.ui.qml";
+            } else {
+                return "";
             }
         }
+        active: currentScreen === "Home" || currentScreen === "KeyMgmt"
     }
 
     Button {
