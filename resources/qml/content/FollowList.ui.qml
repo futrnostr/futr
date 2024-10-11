@@ -36,6 +36,14 @@ Rectangle {
                 model: AutoListModel {
                     id: followsModel
                     source: follows
+                    mode: AutoListModel.ByKey
+                    equalityTest: function (oldItem, newItem) {
+                        return oldItem.displayName === newItem.displayName
+                            && oldItem.name === newItem.name
+                            && oldItem.petname === newItem.petname
+                            && oldItem.relay === newItem.relay
+                            && oldItem.picture === newItem.picture
+                    }
                 }
 
                 ScrollBar.vertical: ScrollBar {
@@ -76,7 +84,7 @@ Rectangle {
                             spacing: 5
 
                             Text {
-                                text: modelData.displayName || modelData.name || modelData.pubkey
+                                text: modelData.petname ||modelData.displayName || modelData.name || modelData.pubkey
                                 font: Constants.font
                                 color: Material.primaryTextColor
                                 elide: Text.ElideRight

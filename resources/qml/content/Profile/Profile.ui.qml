@@ -102,6 +102,7 @@ Rectangle {
                 text: profileData.isFollow ? qsTr("Unfollow") : qsTr("Follow")
                 font: Constants.font
                 highlighted: true
+                Material.background: Material.primary
 
                 onClicked: {
                     if (profileData.isFollow) {
