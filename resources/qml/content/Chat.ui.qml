@@ -33,7 +33,6 @@ Rectangle {
         anchors.margins: 1
         spacing: 10
 
-        // Header
         Rectangle {
             Layout.fillWidth: true
             height: 60
@@ -58,6 +57,7 @@ Rectangle {
                     font.pixelSize: 16
                     color: Material.foreground
                     Layout.fillWidth: true
+                    elide: Text.ElideRight
                 }
             }
         }
@@ -68,11 +68,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            spacing: 10
             verticalLayoutDirection: ListView.TopToBottom
             layoutDirection: Qt.LeftToRight
-
-            // Add left margin to create space for non-own messages
             leftMargin: 10
             rightMargin: 10
 
@@ -83,7 +80,7 @@ Rectangle {
 
             delegate: Item {
                 width: messageListView.width - messageListView.leftMargin - messageListView.rightMargin - (messageListView.ScrollBar.vertical ? messageListView.ScrollBar.vertical.width : 0)
-                height: messageBubble.height + timestampText.height + 10
+                height: messageBubble.height + 5
 
                 Rectangle {
                     id: messageBubble
@@ -92,36 +89,33 @@ Rectangle {
                         right: modelData.isOwnMessage ? parent.right : undefined
                         top: parent.top
                     }
-                    width: Math.min(messageContent.implicitWidth + 24, parent.width * 0.8)
-                    height: messageContent.height + 20
-                    color: modelData.isOwnMessage ? Material.accent : Material.primary
+                    width: Math.min(Math.max(messageContent.implicitWidth, timestampText.implicitWidth) + 24, parent.width * 0.8)
+                    height: messageContent.height + timestampText.height + 20
+                    color: modelData.isOwnMessage ? Material.accentColor : Material.dividerColor
                     radius: 10
 
-                    Text {
-                        id: messageContent
-                        anchors {
-                            left: parent.left
-                            right: parent.right
-                            verticalCenter: parent.verticalCenter
-                            margins: 12
-                        }
-                        text: modelData.content
-                        wrapMode: Text.Wrap
-                        color: Material.foreground
-                    }
-                }
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 4
 
-                Text {
-                    id: timestampText
-                    anchors {
-                        top: messageBubble.bottom
-                        left: modelData.isOwnMessage ? undefined : messageBubble.left
-                        right: modelData.isOwnMessage ? messageBubble.right : undefined
-                        topMargin: 2
+                        Text {
+                            id: messageContent
+                            Layout.fillWidth: true
+                            text: modelData.content
+                            wrapMode: Text.Wrap
+                            color: Material.foreground
+                        }
+
+                        Text {
+                            id: timestampText
+                            Layout.alignment: modelData.isOwnMessage ? Qt.AlignRight : Qt.AlignLeft
+                            text: modelData.timestamp
+                            font.pixelSize: 10
+                            color: Material.secondaryTextColor
+                            opacity: 0.9
+                        }
                     }
-                    text: modelData.timestamp
-                    font: Constants.smallFont
-                    color: Material.hintTextColor
                 }
             }
 
@@ -150,14 +144,14 @@ Rectangle {
             TextField {
                 id: messageInput
                 Layout.fillWidth: true
-                placeholderText: "Type a message..."
+                placeholderText: qsTr("Type a message...")
                 font.pixelSize: 14
                 bottomPadding: 10
                 leftPadding: 10
             }
 
             Button {
-                text: "Send"
+                text: qsTr("Send")
                 highlighted: true
                 bottomPadding: 10
                 rightPadding: 10
