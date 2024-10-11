@@ -77,7 +77,7 @@ Rectangle {
                     id: displayNameField
                     placeholderText: "Display Name"
                     Layout.fillWidth: true
-                    text: profileData.display_name
+                    text: profileData.displayName
                 }
             }
 
