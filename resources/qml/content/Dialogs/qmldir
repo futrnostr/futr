@@ -1,0 +1,7 @@
+module Dialogs
+ConnectingModal 1.0 ConnectingModal.ui.qml
+ImportAccountDialog 1.0 ImportAccountDialog.ui.qml
+ImportSuccessDialog 1.0 ImportSuccessDialog.ui.qml
+KeysGeneratedDialog 1.0 KeysGeneratedDialog.ui.qml
+LoginErrorDialog 1.0 LoginErrorDialog.ui.qml
+RemoveAccountDialog 1.0 RemoveAccountDialog.ui.qml

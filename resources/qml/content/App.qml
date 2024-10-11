@@ -12,7 +12,7 @@ ApplicationWindow {
     minimumWidth: 920
     minimumHeight: 525
     visible: true
-    title: "Futr"
+    title: qsTr("Futr")
     font: Constants.font
 
     property bool isDarkTheme: false

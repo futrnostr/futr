@@ -24,12 +24,11 @@ main = do
     let importPath = "qrc:/qml"
     let importPath' = "qrc:/qml/content"
     let importPath'' = "qrc:/qml/imports"
-    let qtQuickControls = "resources/qml/qtquickcontrols2.conf" -- @todo move out of the way
 
-    setEnv "QT_QUICK_CONTROLS_CONF" qtQuickControls
     setEnv "QT_AUTO_SCREEN_SCALE_FACTOR" "1"
     setEnv "QT_LOGGING_RULES" "qt.qml.connections=false"
     setEnv "QT_ENABLE_HIGHDPI_SCALING" "1"
+    setEnv "QT_QUICK_CONTROLS_STYLE" "Material"
 
     runEff
         . runLoggingStdout
