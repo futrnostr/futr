@@ -10,8 +10,6 @@ Rectangle {
     width: parent.width * 0.3 - (parent.spacing * 2 / 3)
     height: parent.height
     color: Material.backgroundColor
-    border.color: Material.dividerColor
-    border.width: 1
     radius: 5
 
     ColumnLayout {
@@ -103,9 +101,13 @@ Rectangle {
                         onExited: followItem.mouseHover = false
                         onClicked: {
                             setCurrentProfile(modelData.pubkey)
-                            profileLoader.setSource("Profile/Profile.ui.qml", { 
-                                "profileData": currentProfile, 
-                                "npub": modelData.pubkey 
+                            profileLoader.setSource("Profile/Profile.ui.qml", {
+                                "profileData": currentProfile,
+                                "npub": modelData.pubkey
+                            })
+                            chatLoader.setSource("Chat.ui.qml", {
+                                "profileData": currentProfile,
+                                "npub": modelData.pubkey
                             })
                         }
                     }
