@@ -29,10 +29,10 @@ ghcup set cabal 3.10.3.0
 #### For QT:
 
 ```bash
-sudo apt-get install qtdeclarative5-dev && \
-                     libqt5quick5 && \
-                     qttools5-dev-tools && \
-                     qtbase5-dev && \
+sudo apt-get install qtdeclarative5-dev \
+                     libqt5quick5 \
+                     qttools5-dev-tools \
+                     qtbase5-dev \
                      qt5-image-formats-plugins
 ```
 
