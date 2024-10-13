@@ -31,6 +31,8 @@ ghcup set cabal 3.10.3.0
 ```bash
 sudo apt-get install qtdeclarative5-dev \
                      libqt5quick5 \
+                     qml-module-qtquick-controls \
+                     qml-module-qtquick-controls2 \
                      qttools5-dev-tools \
                      qtbase5-dev \
                      qt5-image-formats-plugins
