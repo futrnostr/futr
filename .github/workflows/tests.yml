@@ -54,7 +54,7 @@ jobs:
       - name: Configure
         run: cabal configure --enable-tests
       - name: Cache
-        uses: actions/cache@v4.1.0
+        uses: actions/cache@v4.1.1
         with:
           path: ${{ steps.setup-haskell.outputs.cabal-store }}
           key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-${{ hashFiles('**/plan.json') }}
