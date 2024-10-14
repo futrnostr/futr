@@ -12,4 +12,4 @@ See [License File](LICENSE).
 
 ## For developers
 
-For detailed setup instructions, including how to set up the development environment for different operating systems as well as profiling instructions, please refer to the [Setup Guide](Setup.md).
+For detailed setup instructions, including how to set up the development environment for different operating systems as well as profiling instructions, please refer to the [Setup Guide](docs/Setup.md).
