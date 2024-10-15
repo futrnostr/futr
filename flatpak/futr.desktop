@@ -1,7 +1,6 @@
 [Desktop Entry]
 Name=futr
 Exec=futr
-Icon=nostr-purple
+Icon=com.futrnostr.futr
 Type=Application
 Categories=Network
-X-AppImage-Version=4702f2f

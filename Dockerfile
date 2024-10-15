@@ -1,5 +1,5 @@
-# Use Ubuntu as the base image
-FROM ubuntu:latest
+# Use Ubuntu 20.04 LTS as the base image
+FROM ubuntu:20.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     autogen \
     automake \
     libtool \
+    pkg-config \
     qtdeclarative5-dev \
     libqt5quick5 \
     qt5-image-formats-plugins \
@@ -24,6 +25,8 @@ RUN apt-get update && apt-get install -y \
     libgmp-dev \
     libffi-dev \
     libncurses5-dev \
+    flatpak \
+    flatpak-builder \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GHCup
@@ -46,13 +49,6 @@ RUN git clone https://github.com/bitcoin-core/secp256k1 && \
 # Set library path
 RUN echo "/usr/local/lib" | tee /etc/ld.so.conf.d/local.conf && ldconfig
 
-# Install AppImage tools
-RUN wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage && \
-    chmod +x linuxdeploy-x86_64.AppImage && \
-    mv linuxdeploy-x86_64.AppImage /usr/bin && \
-    wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage && \
-    chmod +x appimagetool-x86_64.AppImage && \
-    mv appimagetool-x86_64.AppImage /usr/bin
 
 # Set working directory
 WORKDIR /app

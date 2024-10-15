@@ -10,15 +10,15 @@ case "$1" in
         echo "Running tests..."
         cabal test
         ;;
-    appimage)
-        echo "Building AppImage..."
-        ./build-appimage.sh
+    flatpak)
+        echo "Building Flatpak..."
+        ./build-flatpak.sh
         ;;
     shell)
         echo "Starting shell..."
         /bin/bash
         ;;
     *)
-        echo "Usage: $0 {build|test|appimage|shell}"
+        echo "Usage: $0 {build|test|flatpak|shell}"
         exit 1
 esac
