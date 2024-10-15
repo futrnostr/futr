@@ -18,10 +18,10 @@ To run the tests, run the following command:
 docker run -it --rm -v $(pwd):/app futr-dev test
 ```
 
-To build the AppImage, run the following command:
+To build the Flatpak, run the following command:
 
 ```bash
-docker run -it --rm -v $(pwd):/app futr-dev appimage
+docker run -it --rm -v $(pwd):/app futr-dev flatpak
 ```
 
 To enter the shell of the container, run the following command:
