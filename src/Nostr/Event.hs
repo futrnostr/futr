@@ -7,10 +7,7 @@ module Nostr.Event where
 
 import Crypto.Hash.SHA256 qualified as SHA256
 import Data.Aeson
-import Data.ByteString (ByteString)
-import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy (fromStrict, toStrict)
-import Data.String.Conversions (ConvertibleStrings, cs)
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Text.URI (emptyURI)
@@ -19,6 +16,7 @@ import Nostr.Keys
 import Nostr.Types
 
 
+-- | Sign an event.
 signEvent :: UnsignedEvent -> KeyPair -> IO (Maybe Event)
 signEvent u kp = do
   s <- schnorrSign kp (getEventId eid)
@@ -37,22 +35,30 @@ signEvent u kp = do
     serializedEvent = toStrict $ encode u
     eid = EventId { getEventId = SHA256.hash serializedEvent }
 
-validateEventId :: Event -> Bool
-validateEventId e = 
-  let serializedEvent = toStrict $ encode $ UnsignedEvent
-        { pubKey' = pubKey e
-        , createdAt' = createdAt e
-        , kind' = kind e
-        , tags' = tags e
-        , content' = content e
-        }
-  in (getEventId $ eventId e) == SHA256.hash serializedEvent
 
+-- | Validate the event ID.
+validateEventId :: Event -> Bool
+validateEventId e =
+  let unsignedEvent = UnsignedEvent (pubKey e) (createdAt e) (kind e) (tags e) (content e)
+      serializedEvent = toStrict $ encode unsignedEvent
+      computedId = SHA256.hash serializedEvent
+      eventId' = getEventId $ eventId e
+  in eventId' == computedId
+
+
+-- | Verify the signature of an event.
 verifySignature :: Event -> Bool -- @todo: implement delagate verification (subkeys?)
 verifySignature e = schnorrVerify (pubKey e) (getEventId $ eventId e) (sig e)
 
-shortTextNote :: Text -> PubKeyXO -> Int -> UnsignedEvent
-shortTextNote note xo t =
+
+-- | Validate both the event ID and signature of an event.
+validateEvent :: Event -> Bool
+validateEvent e = validateEventId e && verifySignature e
+
+
+-- | Create a short text note event.
+createShortTextNote :: Text -> PubKeyXO -> Int -> UnsignedEvent
+createShortTextNote note xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
@@ -61,8 +67,10 @@ shortTextNote note xo t =
     , content' = note
     }
 
-setMetadata :: Profile -> PubKeyXO -> Int -> UnsignedEvent
-setMetadata p xo t =
+
+-- | Create metadata event.
+createMetadata :: Profile -> PubKeyXO -> Int -> UnsignedEvent
+createMetadata p xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
@@ -71,15 +79,10 @@ setMetadata p xo t =
     , content' = decodeUtf8 $ toStrict $ encode p
     }
 
-readProfile :: Event -> Maybe Profile
-readProfile event = case kind event of
-  Metadata ->
-    decode $ fromStrict $ encodeUtf8 $ content event
-  _ ->
-    Nothing
 
-replyNote :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
-replyNote event note xo t =
+-- | Create a reply note event.
+createReplyNote :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
+createReplyNote event note xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
@@ -88,8 +91,10 @@ replyNote event note xo t =
     , content' = note
     }
 
-setContacts :: [(PubKeyXO, Maybe DisplayName)] -> PubKeyXO -> Int -> UnsignedEvent
-setContacts contacts xo t =
+
+-- | Create a follow list event.
+createFollowList :: [(PubKeyXO, Maybe DisplayName)] -> PubKeyXO -> Int -> UnsignedEvent
+createFollowList contacts xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
@@ -98,8 +103,10 @@ setContacts contacts xo t =
     , content' = ""
     }
 
-deleteEvents :: [EventId] -> Text -> PubKeyXO -> Int -> UnsignedEvent
-deleteEvents eids reason xo t =
+
+-- | Create a delete event.
+createEventDeletion :: [EventId] -> Text -> PubKeyXO -> Int -> UnsignedEvent
+createEventDeletion eids reason xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
@@ -110,12 +117,27 @@ deleteEvents eids reason xo t =
   where
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
 
+
+-- | Read profile from event.
+readProfile :: Event -> Maybe Profile
+readProfile event = case kind event of
+  Metadata ->
+    decode $ fromStrict $ encodeUtf8 $ content event
+  _ ->
+    Nothing
+
+
+-- | Get the reply event ID.
 getReplyEventId :: Event -> Maybe EventId
 getReplyEventId = getRelationshipEventId Reply
 
+
+-- | Get the root event ID.
 getRootEventId :: Event -> Maybe EventId
 getRootEventId = getRelationshipEventId Root
 
+
+-- | Get the relationship event ID.
 getRelationshipEventId :: Relationship -> Event -> Maybe EventId
 getRelationshipEventId m e =
   if null replyList
@@ -131,9 +153,3 @@ getRelationshipEventId m e =
     extractEventId :: Tag -> EventId
     extractEventId (ETag eid _ _) = eid
     extractEventId _ = error "Could not extract event id from reply or root tag"
-
-decodeHex :: ConvertibleStrings a ByteString => a -> Maybe ByteString
-decodeHex str =
-  case B16.decode $ cs str of
-    Right bs -> Just bs
-    Left _   -> Nothing
