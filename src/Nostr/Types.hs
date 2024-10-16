@@ -18,7 +18,6 @@ import Data.Aeson.Types (Parser, parseEither)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
-import Data.Default
 import Data.Foldable (toList)
 import Data.Function (on)
 import Data.String.Conversions (ConvertibleStrings, cs)
@@ -31,6 +30,7 @@ import Text.URI.Lens (uriAuthority, uriPath, uriScheme, authHost, authPort)
 import qualified Text.URI.QQ as QQ
 
 import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature)
+
 
 -- | Represents a wrapped URI used within a relay.
 newtype RelayURI = RelayURI URI deriving (Eq, Generic, Ord, Show)
@@ -125,7 +125,7 @@ data Relationship = Reply | Root
 data Tag
   = ETag EventId (Maybe RelayURI) (Maybe Relationship)
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
-  | UnknownTag Value  -- Store the original JSON data as an Aeson Value
+  | GenericTag [Value]
   deriving (Eq, Generic, Show)
 
 
@@ -160,11 +160,23 @@ type ReceivedEvent = (Event, [Relay])
 -- | Represents a contact with a public key and an optional display name.
 type Contact = (PubKeyXO, Maybe DisplayName)
 
+
+-- | Represents a name.
 type Name = Text
+
+-- | Represents a display name.
 type DisplayName = Text
+
+-- | Represents an about text.
 type About = Text
+
+-- | Represents a picture.
 type Picture = Text
+
+-- | Represents a banner.
 type Banner = Text
+
+-- | Represents a NIP-05.
 type Nip05 = Text
 
 
@@ -206,9 +218,12 @@ decodeHex str =
 
 -- Instance declarations
 
+-- | Converts an 'EventId' to its string representation.
 instance Show EventId where
   showsPrec _ = shows . B16.encode . getEventId
 
+
+-- | Converts a JSON string into an 'EventId'.
 instance FromJSON EventId where
   parseJSON = withText "EventId" $ \i -> do
     case eventId' i of
@@ -222,10 +237,14 @@ instance FromJSON EventId where
           32 -> Just $ EventId bs
           _  -> Nothing
 
+
+-- | Converts an 'EventId' to its JSON representation.
 instance ToJSON EventId where
   toJSON = String . decodeUtf8 . B16.encode . getEventId
   toEncoding = text . decodeUtf8 . B16.encode . getEventId
 
+
+-- | Converts a JSON object into an 'Event'.
 instance FromJSON Event where
   parseJSON = withObject "event data" $ \e -> Event
     <$> e .: "id"
@@ -236,6 +255,8 @@ instance FromJSON Event where
     <*> e .: "content"
     <*> e .: "sig"
 
+
+-- | Converts an 'Event' to its JSON representation.
 instance ToJSON Event where
   toEncoding Event {..} = pairs
      ( "id"         .= (byteStringToHex $ getEventId eventId)
@@ -247,6 +268,8 @@ instance ToJSON Event where
     <> "sig"        .= (byteStringToHex $ exportSignature sig)
      )
 
+
+-- | Converts an 'UnsignedEvent' to its JSON representation.
 instance ToJSON UnsignedEvent where
   toEncoding UnsignedEvent {..} = list id
      [ toEncoding (0 :: Int)
@@ -257,14 +280,18 @@ instance ToJSON UnsignedEvent where
      , text content'
      ]
 
+
+-- | Parses a 'Tag' from a JSON array.
 instance FromJSON Tag where
   parseJSON v@(Array arr) =
     case V.toList arr of
-      ("e":rest) -> either (const $ return $ UnknownTag v) return $ parseEither (parseETag rest) v
-      ("p":rest) -> either (const $ return $ UnknownTag v) return $ parseEither (parsePTag rest) v
-      _          -> return $ UnknownTag v
-  parseJSON v = return $ UnknownTag v
+      ("e":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseETag rest) v
+      ("p":rest) -> either (const $ parseGenericTag v) return $ parseEither (parsePTag rest) v
+      _          -> parseGenericTag v
+  parseJSON v = parseGenericTag v
 
+
+-- | Parses an ETag from a JSON array.
 parseETag :: [Value] -> Value -> Parser Tag
 parseETag rest _ = do
   case rest of
@@ -282,6 +309,8 @@ parseETag rest _ = do
       return $ ETag eventId Nothing Nothing
     _ -> fail "Invalid ETag format"
 
+
+-- | Parses a PTag from a JSON array.
 parsePTag :: [Value] -> Value -> Parser Tag
 parsePTag rest _ = do
   case rest of
@@ -299,32 +328,40 @@ parsePTag rest _ = do
       return $ PTag pubKey Nothing Nothing
     _ -> fail "Invalid PTag format"
 
+
+-- | Parses a JSON value safely and returns the parsed result.
 parseJSONSafe :: FromJSON a => Value -> Parser a
 parseJSONSafe v = case parseEither parseJSON v of
   Left _ -> fail "Parsing failed"
   Right x -> return x
 
+
+-- | Parses a maybe relay URI from a JSON value.
 parseMaybeRelayURI :: Value -> Parser (Maybe RelayURI)
 parseMaybeRelayURI Null = return Nothing
 parseMaybeRelayURI v = (Just <$> parseJSONSafe v) <|> return Nothing
 
+
+-- | Parses a maybe relationship from a JSON value.
 parseMaybeRelationship :: Value -> Parser (Maybe Relationship)
 parseMaybeRelationship Null = return Nothing
 parseMaybeRelationship v = (Just <$> parseJSONSafe v) <|> return Nothing
 
+
+-- | Parses a maybe display name from a JSON value.
 parseMaybeDisplayName :: Value -> Parser (Maybe DisplayName)
 parseMaybeDisplayName Null = return Nothing
 parseMaybeDisplayName v = (Just <$> parseJSONSafe v) <|> return Nothing
 
+
+-- | Parses a generic tag from a JSON array.
+parseGenericTag :: Value -> Parser Tag
+parseGenericTag (Array arr) = return $ GenericTag (V.toList arr)
+parseGenericTag v = fail $ "Expected array for generic tag, got: " ++ show v
+
+
+-- | Converts a 'Tag' to its JSON representation.
 instance ToJSON Tag where
-  toEncoding (ETag eventId Nothing Nothing) =
-    list id [text "e", text $ decodeUtf8 $ B16.encode $ getEventId eventId]
-  toEncoding (ETag eventId relayURL Nothing) =
-    list id
-      [ text "e"
-      , text $ decodeUtf8 $ B16.encode $ getEventId eventId
-      , maybe (text "") (text . render . unwrapRelayURI) relayURL
-      ]
   toEncoding (ETag eventId relayURL marker) =
     list id
       [ text "e"
@@ -333,18 +370,19 @@ instance ToJSON Tag where
       , case marker of
           Just Reply -> text "reply"
           Just Root -> text "root"
+          Nothing -> text ""
       ]
   toEncoding (PTag xo relayURL name) =
-    list id
+    list id $
       [ text "p"
       , toEncoding xo
-      , maybe (text "") (text . render . unwrapRelayURI) relayURL
-      , maybe (text "") text name
-      ]
-  toEncoding (UnknownTag v) =
-    list id [toEncoding v]
+      ] ++
+      (maybe [] (\r -> [text . render . unwrapRelayURI $ r]) relayURL) ++
+      (maybe [] (\n -> [text n]) name)
+  toEncoding (GenericTag values) = list toEncoding values
 
 
+-- | Converts a JSON string into a 'Relationship'.
 instance FromJSON Relationship where
  parseJSON = withText "Relationship" $ \m -> do
    case toLower m of
@@ -353,11 +391,13 @@ instance FromJSON Relationship where
      _       -> mzero
 
 
+-- | Converts a 'Relationship' to its JSON representation.
 instance ToJSON Relationship where
   toEncoding Reply = text "reply"
   toEncoding Root = text "root"
 
 
+-- | Converts a JSON array into a 'Response'.
 instance FromJSON Response where
   parseJSON = withArray "ServerResponse" $ \arr -> do
     type' <- parseJSON $ arr V.! 0 :: Parser Text
@@ -383,15 +423,20 @@ instance FromJSON Response where
         return $ Notice message
       _ -> fail "Unknown response type"
 
+
+-- | Converts a 'Subscription' to its JSON representation.
 instance ToJSON Subscription where
   toEncoding (Subscription efs s) = pairs $ "subId" .= s <> "filters" .= efs
 
+
+-- | Converts a 'Request' to its JSON representation.
 instance ToJSON Request where
   toEncoding req = case req of
     SendEvent event -> list id [text "EVENT", toEncoding event]
     Subscribe (Subscription filters subId) -> list id $ text "REQ" : text subId : map toEncoding (toList filters)
     Close subId -> list text ["CLOSE", subId]
     Disconnect -> list text ["DISCONNECT"]
+
 
 -- | Converts a `RelayURI` into its JSON representation.
 instance FromJSON RelayURI where
@@ -400,14 +445,17 @@ instance FromJSON RelayURI where
       Just u' -> return $ RelayURI u'
       Nothing -> fail $ "Invalid relay URI: " ++ show u
 
+
 -- | Parses a JSON value into a `RelayURI`.
 instance ToJSON RelayURI where
   toJSON (RelayURI u) = toJSON $ render u
   toEncoding (RelayURI u) = toEncoding $ render u
 
+
 -- | Instance for ordering 'Relay' values based on their 'uri'.
 instance Ord Relay where
   compare (Relay r _) (Relay r' _) = compare r r'
+
 
 -- | Instance for parsing a 'Relay' from JSON.
 instance FromJSON Relay where
@@ -416,11 +464,13 @@ instance FromJSON Relay where
     info' <- r .: "info"
     return $ Relay uri' info'
 
+
 -- | Instance for converting a 'Relay' to JSON.
 instance ToJSON Relay where
   toEncoding r = pairs $
     "uri" .= render (unwrapRelayURI $ uri r) <>
     "info" .= info r
+
 
 -- | 'FromJSON' instance for 'Kind'.
 -- This allows parsing JSON numbers into 'Kind' values.
@@ -448,6 +498,8 @@ instance ToJSON Kind where
   toEncoding Seal          = toEncoding (13 :: Int)
   toEncoding DirectMessage = toEncoding (14 :: Int)
 
+
+-- | 'ToJSON' instance for 'Filter'.
 instance ToJSON Filter where
   toEncoding (MetadataFilter xos) = pairs $
     "authors" .= xos <>
@@ -476,9 +528,8 @@ instance ToJSON Filter where
     "until" .= (fromIntegral (now + 60) :: Integer) <>
     "limit" .= (500 :: Int)
 
-instance Default Profile where
-  def = Profile Nothing Nothing Nothing Nothing Nothing Nothing
 
+-- | 'ToJSON' instance for 'Profile'.
 instance ToJSON Profile where
   toEncoding (Profile name displayName about picture nip05 banner) = pairs $
     "name" .= name <>
@@ -488,6 +539,8 @@ instance ToJSON Profile where
     "nip05" .= nip05 <>
     "banner" .= banner
 
+
+-- | 'FromJSON' instance for 'Profile'.
 instance FromJSON Profile where
   parseJSON = withObject "profile" $ \e -> Profile
     <$> e .:? "name"
@@ -507,16 +560,21 @@ defaultRelays =
   , Relay (RelayURI [QQ.uri|wss://relay.damus.io|]) (RelayInfo True True)
   ]
 
+
 -- | Unwrap relay URI.
 unwrapRelayURI :: RelayURI -> URI
 unwrapRelayURI (RelayURI u) = u
+
 
 -- | Retrieves the textual representation of the relay's URI.
 relayName :: Relay -> Text
 relayName r = render $ unwrapRelayURI $ uri r
 
+
+-- | Converts a 'RelayURI' to a 'Text'.
 relayURIToText :: RelayURI -> Text
 relayURIToText (RelayURI u) = render u
+
 
 -- | Extracts the scheme of a relay's URI.
 extractScheme :: Relay -> Maybe Text
@@ -524,11 +582,13 @@ extractScheme r = uri' ^. uriScheme <&> unRText
   where
     uri' = unwrapRelayURI $ uri r
 
+
 -- | Extracts the hostname of a relay's URI.
 extractHostname :: Relay -> Maybe Text
 extractHostname r = uri' ^? uriAuthority . _Right . authHost <&> unRText
   where
     uri' = unwrapRelayURI $ uri r
+
 
 -- | Extracts the port of a relay's URI.
 extractPort :: Relay -> Int
@@ -539,6 +599,7 @@ extractPort r =
   where
     uri' = unwrapRelayURI $ uri r
 
+
 -- | Extracts the path of a relay's URI.
 extractPath :: Relay -> Text
 extractPath r =
@@ -548,6 +609,7 @@ extractPath r =
     _       -> "/"
   where
     uri' = unwrapRelayURI $ uri r
+
 
 -- | Checks if two relays are the same based on URI.
 sameRelay :: Relay -> Relay -> Bool
