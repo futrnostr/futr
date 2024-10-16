@@ -59,7 +59,6 @@ Item {
                 onTriggered: {
                     // Dummy for now, does nothing
                     console.log("Settings clicked")
-                    profileCard.visible = false
                     profileMenu.close()
                 }
             }

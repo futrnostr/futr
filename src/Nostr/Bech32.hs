@@ -12,7 +12,6 @@ module Nostr.Bech32
     , nrelayToRelay
     , relayToNrelay
     , debugNprofileParsing
-    , encodeTLV
     ) where
 
 import Codec.Binary.Bech32 qualified as Bech32

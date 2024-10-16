@@ -188,7 +188,7 @@ runUI = interpret $ \_ -> \case
           st <- runE $ get @AppState
           n <- runE now
           let kp = maybe (error "No key pair available") id $ keyPair st
-          let unsigned = setMetadata profile (keyPairToPubKeyXO kp) n
+          let unsigned = createMetadata profile (keyPairToPubKeyXO kp) n
           signedMaybe <- signEvent unsigned kp
           case signedMaybe of
             Just signed -> do

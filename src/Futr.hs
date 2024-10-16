@@ -29,8 +29,8 @@ import Nostr.Bech32
 import Nostr.Effects.CurrentTime
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
-import Nostr.Event (signEvent)
-import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.Event (createFollowList, signEvent, validateEvent)
+import Nostr.Keys (KeyPair, PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Tag(..),
                      RelayURI, Response(..), Relay(..), UnsignedEvent(..), relayName, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
@@ -294,7 +294,7 @@ processResponsesUntilEOSE :: FutrEff es => RelayURI -> [Response] -> Eff es Bool
 processResponsesUntilEOSE _ [] = return False
 processResponsesUntilEOSE relayURI' (r:rs) = case r of
   EventReceived _ event' -> do
-    handleEvent event'
+    handleEvent event' relayURI'
     processResponsesUntilEOSE relayURI' rs
   Eose _ -> return True
   Closed _ _ -> return True
@@ -331,7 +331,7 @@ processResponses :: FutrEff es => RelayURI -> [Response] -> Eff es Bool
 processResponses _ [] = return False
 processResponses relayURI' (r:rs) = case r of
   EventReceived _ event' -> do
-    handleEvent event'
+    handleEvent event' relayURI'
     processResponses relayURI' rs
   Eose subId' -> do
     logDebug $ "EOSE on subscription " <> subId'
@@ -349,23 +349,28 @@ processResponses relayURI' (r:rs) = case r of
 
 
 -- | Handle an event.
-handleEvent :: FutrEff es => Event -> Eff es ()
-handleEvent event' = case kind event' of
-  Metadata -> case eitherDecode (BSL.fromStrict $ TE.encodeUtf8 $ content event') of
-    Right profile -> do
-      modify $ \st ->
-        st { profiles = Map.insertWith (\new old -> if snd new > snd old then new else old)
-                                 (pubKey event')
-                                 (profile, createdAt event')
-                                 (profiles st)
-           }
-    Left err -> logWarning $ "Failed to decode metadata: " <> pack err
+handleEvent :: FutrEff es => Event -> RelayURI -> Eff es ()
+handleEvent event' relayURI' =
+  if not (validateEvent event')
+    then do
+      logWarning $ "Invalid event seen: " <> eventToNevent event' (Just relayURI')
+    else do
+      case kind event' of
+        Metadata -> case eitherDecode (BSL.fromStrict $ TE.encodeUtf8 $ content event') of
+          Right profile -> do
+            modify $ \st ->
+              st { profiles = Map.insertWith (\new old -> if snd new > snd old then new else old)
+                                      (pubKey event')
+                                      (profile, createdAt event')
+                                      (profiles st)
+                }
+          Left err -> logWarning $ "Failed to decode metadata: " <> pack err
 
-  FollowList -> do
-    let followList' = [Follow pk relayUri' displayName' | PTag pk relayUri' displayName' <- tags event']
-    modify $ \st -> st { follows = FollowModel (Map.insert (pubKey event') followList' (followList $ follows st)) (objRef $ follows st) }
+        FollowList -> do
+          let followList' = [Follow pk relayUri' displayName' | PTag pk relayUri' displayName' <- tags event']
+          modify $ \st -> st { follows = FollowModel (Map.insert (pubKey event') followList' (followList $ follows st)) (objRef $ follows st) }
 
-  _ -> logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
+        _ -> logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
 
 
 -- | Handle a notice.
@@ -414,23 +419,22 @@ sendFollowListEvent = do
     st <- get @AppState
     case keyPair st of
         Just kp -> do
-            let userPK = keyPairToPubKeyXO kp
-            currentTime <- now
-            let followList' = Map.findWithDefault [] userPK (followList $ follows st)
-            let ntags = map (\(Follow pk _ _) -> PTag pk Nothing Nothing) followList'
-            let event = UnsignedEvent
-                    { pubKey' = userPK
-                    , createdAt' = currentTime
-                    , kind' = FollowList
-                    , tags' = ntags
-                    , content' = ""
-                    }
-            signedEvent <- liftIO $ signEvent event kp
-            case signedEvent of
-              Just signedEvent' -> do
-                relays' <- gets @RelayPoolState relays
-                sendEvent signedEvent' (Map.keys relays')
-              Nothing -> do
-                logError "Failed to sign follow list event"
-                return ()
+          currentTime <- now
+          let userPK = keyPairToPubKeyXO kp
+          let followList' = Map.findWithDefault [] userPK (followList $ follows st)
+          let followTuples = map (\(Follow pk _ petName') -> (pk, petName')) followList'
+          let event = createFollowList followTuples userPK currentTime
+          signedEvent <- signEvent' event kp
+          case signedEvent of
+            Just signedEvent' -> do
+              relays' <- gets @RelayPoolState relays
+              sendEvent signedEvent' (Map.keys relays')
+            Nothing -> do
+              logError "Failed to sign follow list event"
+              return ()
         Nothing -> return ()
+
+
+-- | Sign an event.
+signEvent' :: FutrEff es => UnsignedEvent -> KeyPair -> Eff es (Maybe Event)
+signEvent' e kp = liftIO $ signEvent e kp
