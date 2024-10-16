@@ -12,6 +12,7 @@ module Nostr.Bech32
     , nrelayToRelay
     , relayToNrelay
     , debugNprofileParsing
+    , encodeTLV
     ) where
 
 import Codec.Binary.Bech32 qualified as Bech32
@@ -72,12 +73,16 @@ naddrToEvent txt = do
 
 
 -- | Convert an Event to nevent bech32 encoding
-eventToNevent :: Event -> T.Text
-eventToNevent event = toBech32 "nevent" $ encodeTLV
-  [ (0, BSS.toShort $ getEventId $ eventId event)
-  , (2, BSS.toShort $ exportPubKeyXO $ pubKey event)
-  , (3, BSS.toShort $ encodeUtf8 $ T.pack $ show $ kind event)
-  ]
+eventToNevent :: Event -> Maybe RelayURI -> T.Text
+eventToNevent event relayURI' = toBech32 "nevent" $ encodeTLV tlvData
+  where
+    baseTLV = [ (0, BSS.toShort $ getEventId $ eventId event)
+              , (2, BSS.toShort $ exportPubKeyXO $ pubKey event)
+              , (3, BSS.toShort $ encodeUtf8 $ T.pack $ show $ kind event)
+              ]
+    tlvData = case relayURI' of
+      Just r  -> (1, BSS.toShort $ encodeUtf8 $ relayURIToText r) : baseTLV
+      Nothing -> baseTLV
 
 
 -- | Decode nevent bech32 encoding to Event components
@@ -168,10 +173,7 @@ toBech32 :: T.Text -> BS.ByteString -> T.Text
 toBech32 hrpText bs =
     case Bech32.humanReadablePartFromText hrpText of
         Left err -> error $ "Invalid HRP: " ++ show err
-        Right hrp ->
-            case Bech32.encode hrp (Bech32.dataPartFromBytes bs) of
-                Left err -> error $ "Bech32 encoding failed: " ++ show err
-                Right txt -> txt
+        Right hrp -> Bech32.encodeLenient hrp (Bech32.dataPartFromBytes bs)
 
 
 -- | Encode a list of TLV (Type-Length-Value) items
