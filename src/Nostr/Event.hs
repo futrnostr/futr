@@ -10,7 +10,6 @@ import Data.Aeson
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Text.URI (emptyURI)
 
 import Nostr.Keys
 import Nostr.Types
@@ -99,7 +98,7 @@ createFollowList contacts xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = FollowList
-    , tags' = map (\c -> PTag (fst c) (Just (RelayURI emptyURI)) (snd c)) contacts
+    , tags' = map (\c -> PTag (fst c) (Just (RelayURI "")) (snd c)) contacts
     , content' = ""
     }
 

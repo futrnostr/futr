@@ -25,7 +25,6 @@ import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Word (Word8)
 import Text.Read (readMaybe)
-import Text.URI (mkURI)
 
 import Nostr.Keys (SecKey, PubKeyXO, importPubKeyXO, exportPubKeyXO, importSecKey, exportSecKey)
 import Nostr.Types (Event(..), EventId(..), Kind, RelayURI(..), relayURIToText)
@@ -111,7 +110,7 @@ nprofileToPubKeyXO txt = do
                Nothing -> Nothing
   let relays = mapMaybe (\(t, v) -> 
                  if t == 1 
-                 then RelayURI <$> mkURI (decodeUtf8 $ BSS.fromShort v)
+                 then pure $ RelayURI (decodeUtf8 $ BSS.fromShort v)
                  else Nothing) tlvs
   return (pubKey', relays)
 
@@ -154,7 +153,7 @@ nrelayToRelay txt = do
   bs <- fromBech32 "nrelay" txt
   let tlvs = decodeTLV bs
   relayText <- lookup 0 tlvs >>= (Just . decodeUtf8 . BSS.fromShort)
-  RelayURI <$> mkURI relayText
+  pure $ RelayURI relayText
 
 
 -- | Convert from bech32 to ByteString

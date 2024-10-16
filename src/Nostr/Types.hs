@@ -8,9 +8,7 @@
 
 module Nostr.Types where
 
-import Basement.IntegralConv (wordToInt)
 import Control.Applicative ((<|>))
-import Control.Lens ((^.), (^?), (<&>), _Right)
 import Control.Monad (mzero)
 import Data.Aeson hiding (Error)
 import Data.Aeson.Encoding (list, text)
@@ -21,19 +19,17 @@ import Data.ByteString.Base16 qualified as B16
 import Data.Foldable (toList)
 import Data.Function (on)
 import Data.String.Conversions (ConvertibleStrings, cs)
-import Data.Text (Text, isInfixOf, toLower)
+import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8)
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
-import Text.URI (URI, mkURI, render, unRText)
-import Text.URI.Lens (uriAuthority, uriPath, uriScheme, authHost, authPort)
-import qualified Text.URI.QQ as QQ
 
 import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature)
 
 
 -- | Represents a wrapped URI used within a relay.
-newtype RelayURI = RelayURI URI deriving (Eq, Generic, Ord, Show)
+newtype RelayURI = RelayURI { unRelayURI :: Text } deriving (Eq, Show, Ord)
 
 
 -- | Represents the information associated with a relay.
@@ -72,7 +68,7 @@ data Filter
   | LinkedEvents [EventId] Int
   | AllNotes Int
   | AllMetadata Int
-  deriving (Eq, Generic,Show)
+  deriving (Eq, Generic, Show)
 
 
 -- | Represents a request to the relay.
@@ -201,11 +197,11 @@ emptyProfile = Profile Nothing Nothing Nothing Nothing Nothing Nothing
 -- | Converts an error message to a standard prefix.
 noticeReason :: Text -> StandardPrefix
 noticeReason errMsg
-  | "duplicate:"    `isInfixOf` errMsg = Duplicate
-  | "pow:"          `isInfixOf` errMsg = Pow
-  | "blocked:"      `isInfixOf` errMsg = Blocked
-  | "rate-limited:" `isInfixOf` errMsg = RateLimited
-  | "invalid:"      `isInfixOf` errMsg = Invalid
+  | "duplicate:"    `T.isInfixOf` errMsg = Duplicate
+  | "pow:"          `T.isInfixOf` errMsg = Pow
+  | "blocked:"      `T.isInfixOf` errMsg = Blocked
+  | "rate-limited:" `T.isInfixOf` errMsg = RateLimited
+  | "invalid:"      `T.isInfixOf` errMsg = Invalid
   | otherwise                          = Error
 
 
@@ -286,7 +282,7 @@ instance FromJSON Tag where
   parseJSON v@(Array arr) =
     case V.toList arr of
       ("e":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseETag rest) v
-      ("p":rest) -> either (const $ parseGenericTag v) return $ parseEither (parsePTag rest) v
+      ("p":rest) -> parsePTag rest v
       _          -> parseGenericTag v
   parseJSON v = parseGenericTag v
 
@@ -312,20 +308,19 @@ parseETag rest _ = do
 
 -- | Parses a PTag from a JSON array.
 parsePTag :: [Value] -> Value -> Parser Tag
-parsePTag rest _ = do
-  case rest of
-    (pubKeyVal:relayVal:nameVal:_) -> do
-      pubKey <- parseJSONSafe pubKeyVal
-      relay <- parseMaybeRelayURI relayVal
-      name <- parseMaybeDisplayName nameVal
-      return $ PTag pubKey relay name
-    (pubKeyVal:relayVal:_) -> do
-      pubKey <- parseJSONSafe pubKeyVal
-      relay <- parseMaybeRelayURI relayVal
-      return $ PTag pubKey relay Nothing
-    (pubKeyVal:_) -> do
-      pubKey <- parseJSONSafe pubKeyVal
-      return $ PTag pubKey Nothing Nothing
+parsePTag rest _ = case rest of
+    (pubkeyVal : maybeRelay : maybeName : _) -> do
+      pubkey <- parseJSONSafe pubkeyVal
+      relay <- parseMaybeRelayURI maybeRelay
+      name <- parseMaybeDisplayName maybeName
+      return $ PTag pubkey relay name
+    (pubkeyVal : maybeRelay : _) -> do
+      pubkey <- parseJSONSafe pubkeyVal
+      relay <- parseMaybeRelayURI maybeRelay
+      return $ PTag pubkey relay Nothing
+    (pubkeyVal : _) -> do
+      pubkey <- parseJSONSafe pubkeyVal
+      return $ PTag pubkey Nothing Nothing
     _ -> fail "Invalid PTag format"
 
 
@@ -338,8 +333,9 @@ parseJSONSafe v = case parseEither parseJSON v of
 
 -- | Parses a maybe relay URI from a JSON value.
 parseMaybeRelayURI :: Value -> Parser (Maybe RelayURI)
-parseMaybeRelayURI Null = return Nothing
-parseMaybeRelayURI v = (Just <$> parseJSONSafe v) <|> return Nothing
+parseMaybeRelayURI (String s) = pure (Just (RelayURI s))
+parseMaybeRelayURI Null = pure Nothing
+parseMaybeRelayURI _ = fail "Expected string or null for RelayURI"
 
 
 -- | Parses a maybe relationship from a JSON value.
@@ -351,7 +347,8 @@ parseMaybeRelationship v = (Just <$> parseJSONSafe v) <|> return Nothing
 -- | Parses a maybe display name from a JSON value.
 parseMaybeDisplayName :: Value -> Parser (Maybe DisplayName)
 parseMaybeDisplayName Null = return Nothing
-parseMaybeDisplayName v = (Just <$> parseJSONSafe v) <|> return Nothing
+parseMaybeDisplayName (String t) = return (Just t)
+parseMaybeDisplayName v = fail $ "Expected string for display name, got: " ++ show v
 
 
 -- | Parses a generic tag from a JSON array.
@@ -363,21 +360,21 @@ parseGenericTag v = fail $ "Expected array for generic tag, got: " ++ show v
 -- | Converts a 'Tag' to its JSON representation.
 instance ToJSON Tag where
   toEncoding (ETag eventId relayURL marker) =
-    list id
+    list id $
       [ text "e"
       , text $ decodeUtf8 $ B16.encode $ getEventId eventId
-      , maybe (text "") (text . render . unwrapRelayURI) relayURL
-      , case marker of
-          Just Reply -> text "reply"
-          Just Root -> text "root"
-          Nothing -> text ""
-      ]
+      ] ++
+      (maybe [] (\r -> [text $ unRelayURI r]) relayURL) ++
+      (case marker of
+         Just Reply -> [text "reply"]
+         Just Root -> [text "root"]
+         Nothing -> [])
   toEncoding (PTag xo relayURL name) =
     list id $
       [ text "p"
       , toEncoding xo
       ] ++
-      (maybe [] (\r -> [text . render . unwrapRelayURI $ r]) relayURL) ++
+      (maybe [] (\r -> [text $ unRelayURI r]) relayURL) ++
       (maybe [] (\n -> [text n]) name)
   toEncoding (GenericTag values) = list toEncoding values
 
@@ -385,7 +382,7 @@ instance ToJSON Tag where
 -- | Converts a JSON string into a 'Relationship'.
 instance FromJSON Relationship where
  parseJSON = withText "Relationship" $ \m -> do
-   case toLower m of
+   case T.toLower m of
      "reply" -> return Reply
      "root"  -> return Root
      _       -> mzero
@@ -440,16 +437,13 @@ instance ToJSON Request where
 
 -- | Converts a `RelayURI` into its JSON representation.
 instance FromJSON RelayURI where
-  parseJSON = withText "URI" $ \u ->
-    case mkURI u of
-      Just u' -> return $ RelayURI u'
-      Nothing -> fail $ "Invalid relay URI: " ++ show u
+  parseJSON = withText "RelayURI" (pure . RelayURI)
 
 
 -- | Parses a JSON value into a `RelayURI`.
 instance ToJSON RelayURI where
-  toJSON (RelayURI u) = toJSON $ render u
-  toEncoding (RelayURI u) = toEncoding $ render u
+  toJSON (RelayURI uri) = String uri
+  toEncoding (RelayURI uri) = toEncoding uri
 
 
 -- | Instance for ordering 'Relay' values based on their 'uri'.
@@ -468,7 +462,7 @@ instance FromJSON Relay where
 -- | Instance for converting a 'Relay' to JSON.
 instance ToJSON Relay where
   toEncoding r = pairs $
-    "uri" .= render (unwrapRelayURI $ uri r) <>
+    "uri" .= unRelayURI (uri r) <>
     "info" .= info r
 
 
@@ -555,60 +549,59 @@ instance FromJSON Profile where
 -- | Provides a default list of relays.
 defaultRelays :: [Relay]
 defaultRelays =
-  [ Relay (RelayURI [QQ.uri|wss://nos.lol|]) (RelayInfo True True)
-  --, Relay (RelayURI [QQ.uri|ws://127.0.0.1:7777|]) (RelayInfo True True)
-  , Relay (RelayURI [QQ.uri|wss://relay.damus.io|]) (RelayInfo True True)
+  [ Relay (RelayURI "wss://nos.lol") (RelayInfo True True)
+  --, Relay (RelayURI "ws://127.0.0.1:7777") (RelayInfo True True)
+  , Relay (RelayURI "wss://relay.damus.io") (RelayInfo True True)
   ]
-
-
--- | Unwrap relay URI.
-unwrapRelayURI :: RelayURI -> URI
-unwrapRelayURI (RelayURI u) = u
 
 
 -- | Retrieves the textual representation of the relay's URI.
 relayName :: Relay -> Text
-relayName r = render $ unwrapRelayURI $ uri r
+relayName r = unRelayURI $ uri r
 
 
 -- | Converts a 'RelayURI' to a 'Text'.
 relayURIToText :: RelayURI -> Text
-relayURIToText (RelayURI u) = render u
+relayURIToText = unRelayURI
 
 
 -- | Extracts the scheme of a relay's URI.
 extractScheme :: Relay -> Maybe Text
-extractScheme r = uri' ^. uriScheme <&> unRText
+extractScheme r =
+  case T.splitOn "://" u of
+    (scheme:_) -> Just scheme
+    _ -> Nothing
   where
-    uri' = unwrapRelayURI $ uri r
+    u = unRelayURI $ uri r
 
 
 -- | Extracts the hostname of a relay's URI.
 extractHostname :: Relay -> Maybe Text
-extractHostname r = uri' ^? uriAuthority . _Right . authHost <&> unRText
+extractHostname r =
+  case T.splitOn "://" u of
+    (_:rest:_) -> Just $ T.takeWhile (/= ':') $ T.dropWhile (== '/') rest
+    _ -> Nothing
   where
-    uri' = unwrapRelayURI $ uri r
+    u = unRelayURI $ uri r
 
 
 -- | Extracts the port of a relay's URI.
 extractPort :: Relay -> Int
 extractPort r =
-  case uri' ^? uriAuthority . _Right . authPort of
-    Just (Just p) -> wordToInt p
-    _ -> if extractScheme r == Just "wss" then 443 else 80
-  where
-    uri' = unwrapRelayURI $ uri r
+  case extractScheme r of
+    Just "wss" -> 443
+    Just "ws" -> 80
+    _ -> 80  -- Default to 80 if scheme is unknown
 
 
 -- | Extracts the path of a relay's URI.
 extractPath :: Relay -> Text
-extractPath r =
-  case uri' ^? uriPath of
-    Just [] -> "/"
-    Just p  -> foldMap ("/" <>) (map unRText p)
-    _       -> "/"
-  where
-    uri' = unwrapRelayURI $ uri r
+extractPath (Relay (RelayURI u) _) =
+  case T.splitOn "://" u of
+    (_:rest:_) ->
+      let withoutHost = T.dropWhile (/= '/') rest
+      in if T.null withoutHost then "/" else withoutHost
+    _ -> "/"
 
 
 -- | Checks if two relays are the same based on URI.

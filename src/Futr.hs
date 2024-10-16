@@ -7,6 +7,7 @@ module Futr where
 import Data.Aeson (ToJSON, eitherDecode, pairs, toEncoding, (.=))
 import Data.ByteString.Lazy qualified as BSL
 import Control.Monad (forM, forM_, void, unless, when)
+
 import Data.Maybe (listToMaybe)
 import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy(..))
@@ -25,12 +26,19 @@ import GHC.Generics (Generic)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 
+-- uncomment to see the serialized event
+
+--import Crypto.Hash.SHA256 qualified as SHA256
+--import Data.ByteString.Lazy.Char8 qualified as BSL8
+--import System.IO (hPutStrLn, stderr)
+
+
 import Nostr.Bech32
 import Nostr.Effects.CurrentTime
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
 import Nostr.Event (createFollowList, signEvent, validateEvent)
-import Nostr.Keys (KeyPair, PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.Keys (KeyPair, PubKeyXO, byteStringToHex, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Tag(..),
                      RelayURI, Response(..), Relay(..), UnsignedEvent(..), relayName, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
@@ -353,7 +361,17 @@ handleEvent :: FutrEff es => Event -> RelayURI -> Eff es ()
 handleEvent event' relayURI' =
   if not (validateEvent event')
     then do
-      logWarning $ "Invalid event seen: " <> eventToNevent event' (Just relayURI')
+      logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
+
+      -- uncomment to see the serialized event
+      -- so far most times the problem was json parsing / serialization bug
+
+      --let unsignedEvent = UnsignedEvent (pubKey event') (createdAt event') (kind event') (tags event') (content event')
+      --    serializedEvent = encode unsignedEvent
+      --liftIO $ hPutStrLn stderr $ "Serialized: " <> BSL8.unpack serializedEvent
+      --let computedId = SHA256.hash $ BSL.toStrict serializedEvent
+      --logWarning $ "Computed ID: " <> byteStringToHex computedId
+
     else do
       case kind event' of
         Metadata -> case eitherDecode (BSL.fromStrict $ TE.encodeUtf8 $ content event') of
