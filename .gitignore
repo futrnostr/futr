@@ -13,8 +13,6 @@ dist-docs.*/
 cabal.project.local*
 *.ft
 build/
-futr-x86_64.AppImage
-futr.AppDir/
 resources.cpp
 resources.qrc
 futr.flatpak

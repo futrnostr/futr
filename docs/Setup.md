@@ -9,31 +9,31 @@ The easiest way to get started is using the pre-built Docker image.
 To build the project, run the following command:
 
 ```bash
-docker run -it --rm -v $(pwd):/app futr-dev build
+docker run -it --rm -v $(pwd):/app prolic/futr-dev build
 ```
 
 To run the tests, run the following command:
 
 ```bash
-docker run -it --rm -v $(pwd):/app futr-dev test
+docker run -it --rm -v $(pwd):/app prolic/futr-dev test
 ```
 
 To build the Flatpak, run the following command:
 
 ```bash
-docker run -it --rm -v $(pwd):/app futr-dev flatpak
+docker run -it --rm -v $(pwd):/app prolic/futr-dev flatpak
 ```
 
 To enter the shell of the container, run the following command:
 
 ```bash
-docker run -it --rm -v $(pwd):/app futr-dev shell
+docker run -it --rm -v $(pwd):/app prolic/futr-dev shell
 ```
 
 ### Build the docker image
 
 ```bash
-docker buildx build . -t futr-dev
+docker buildx build . -t prolic/futr-dev
 ```
 
 ## Linux (Ubuntu / Linux Mint)
@@ -77,28 +77,17 @@ git clone https://github.com/bitcoin-core/secp256k1 && \
     cd ..
 ```
 
-### Building AppImage
-
-```bash
-wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage && \
-    chmod +x linuxdeploy-x86_64.AppImage                                                                     && \
-    sudo mv linuxdeploy-x86_64.AppImage /usr/bin                                                                  && \
-    wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage   && \
-    chmod +x appimagetool-x86_64.AppImage                                                                    && \
-    sudo mv appimagetool-x86_64.AppImage /usr/bin
-```
-
 ### Building
 
 ```bash
 cabal build
 ```
 
-### Building AppImage
+### Building Flatpak
 
 ```bash
 cabal build
-./build-appimage.sh
+./build-flatpak.sh
 ```
 
 ## MacOS
