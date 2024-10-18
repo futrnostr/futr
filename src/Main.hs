@@ -10,6 +10,7 @@ import System.Environment (setEnv)
 
 import Futr qualified as Futr
 import Logging (runLoggingStdout)
+import Nostr.GiftWrap (runGiftWrap)
 import Nostr.RelayPool (runRelayPool)
 import Nostr.WebSocket (runWebSocket)
 import Nostr.Util (runUtil)
@@ -40,6 +41,7 @@ main = do
         . KeyMgmt.runKeyMgmt
         . KeyMgmt.runKeyMgmtUI
         . evalState Types.initialState
+        . runGiftWrap
         . runWebSocket 3 -- max 3 retries
         . runRelayPool
         . Futr.runFutr
