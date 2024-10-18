@@ -10,8 +10,7 @@ import Data.Aeson
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import qualified Data.Text.Encoding as TE
-import qualified Data.ByteString.Lazy as BL
+
 
 import Nostr.Keys
 import Nostr.Types
@@ -124,20 +123,20 @@ createEventDeletion eids reason xo t =
 
 -- | Create a rumor from an event.
 createRumor :: PubKeyXO -> Int -> Kind -> [Tag] -> Text -> Rumor
-createRumor pubKey createdAt kind tags content =
-  let rumorId = calculateEventId pubKey createdAt kind tags content
+createRumor pubKey' createdAt' kind' tags' content' =
+  let rumorId = calculateEventId pubKey' createdAt' kind' tags' content'
   in Rumor
     { rumorId = rumorId
-    , rumorPubKey = pubKey
-    , rumorCreatedAt = createdAt
-    , rumorKind = kind
-    , rumorTags = tags
-    , rumorContent = content
+    , rumorPubKey = pubKey'
+    , rumorCreatedAt = createdAt'
+    , rumorKind = kind'
+    , rumorTags = tags'
+    , rumorContent = content'
     }
   where
     calculateEventId :: PubKeyXO -> Int -> Kind -> [Tag] -> Text -> EventId
-    calculateEventId pubKey createdAt kind tags content =
-      let unsignedEvent = UnsignedEvent pubKey createdAt kind tags content
+    calculateEventId pubKey'' createdAt'' kind'' tags'' content'' =
+      let unsignedEvent = UnsignedEvent pubKey'' createdAt'' kind'' tags'' content''
           serializedEvent = toStrict $ encode unsignedEvent
           computedId = SHA256.hash serializedEvent
       in EventId computedId
@@ -151,7 +150,7 @@ createSeal rumor kp pk = do
   case getConversationKey (keyPairToSecKey kp) pk of
     Nothing -> return Nothing
     Just conversationKey -> do
-      case encrypt (decodeUtf8 $ BL.toStrict rumorJson) conversationKey nonce of
+      case encrypt (decodeUtf8 $ toStrict rumorJson) conversationKey nonce of
         Left _ -> return Nothing
         Right sealContent -> do
           currentTime <- getCurrentTime
@@ -174,7 +173,7 @@ createGiftWrap sealEvent recipientPubKey = do
   case getConversationKey (keyPairToSecKey randomKeyPair) recipientPubKey of
     Nothing -> return Nothing
     Just conversationKey -> do
-      case encrypt (decodeUtf8 $ BL.toStrict sealJson) conversationKey nonce of
+      case encrypt (decodeUtf8 $ toStrict sealJson) conversationKey nonce of
         Left _ -> return Nothing
         Right wrapContent -> do
           currentTime <- getCurrentTime
@@ -197,7 +196,7 @@ unwrapGiftWrap wrapEvent kp = do
     Nothing -> return Nothing
     Just key -> case decrypt key wrapContent of
       Left _ -> return Nothing
-      Right decryptedContent -> case eitherDecode (BL.fromStrict $ encodeUtf8 decryptedContent) of
+      Right decryptedContent -> case eitherDecode (fromStrict $ encodeUtf8 decryptedContent) of
         Left _ -> return Nothing
         Right sealEvent -> return $ Just sealEvent
 
@@ -216,7 +215,7 @@ unwrapSeal sealEvent kp = do
             return Nothing
           else do
             let sealPK = pubKey sealEvent
-            case eitherDecode (BL.fromStrict $ encodeUtf8 decryptedContent) of
+            case eitherDecode (fromStrict $ encodeUtf8 decryptedContent) of
               Right rumor -> do
                 if rumorPubKey rumor == sealPK
                   then do

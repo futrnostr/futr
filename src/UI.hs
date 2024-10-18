@@ -6,11 +6,11 @@ module UI where
 
 import Data.Aeson (decode, encode)
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (find, intercalate, sortOn)
+import Data.List (find, sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy(..))
-import Data.Text (Text, pack, unpack)
+import Data.Text (pack, unpack)
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)

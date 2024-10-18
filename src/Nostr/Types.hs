@@ -12,26 +12,24 @@ module Nostr.Types where
 import Control.Applicative ((<|>))
 import Control.Monad (mzero)
 import Data.Aeson hiding (Error)
-import Data.Aeson.Encoding (list, text, pairs, pair)
-import Data.Aeson.Types (Pair, Parser, parseEither)
+import Data.Aeson.Encoding (list, text, pair)
+import Data.Aeson.Key (fromText)
+import Data.Aeson.Types (Parser, parseEither)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.Foldable (toList)
 import Data.Function (on)
+import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
+import Data.Scientific (toBoundedInteger)
 import Data.String.Conversions (ConvertibleStrings, cs)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8)
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
-import Data.Maybe (mapMaybe)
-import qualified Data.Map as Map
-import qualified Data.Aeson.KeyMap as KM
-import Data.Aeson.Key (fromText)
-import Data.Aeson (object)
-import Data.Scientific (toBoundedInteger)
+import Prelude hiding (until)
 
 import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature)
 
