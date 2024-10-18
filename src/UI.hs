@@ -20,13 +20,13 @@ import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Text.Read (readMaybe)
 
+import Logging
 import Nostr.Bech32
 import Nostr.Event
-import Nostr.Effects.CurrentTime
-import Nostr.Effects.Logging
-import Nostr.Effects.RelayPool
+import Nostr.RelayPool
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Types (EventId(..), Profile(..), emptyProfile, relayURIToText)
+import Nostr.Util
 import Presentation.KeyMgmt qualified as PKeyMgmt
 import Futr ( Futr, FutrEff, LoginStatusChanged, login, logout, followProfile, openChat,
               search, setCurrentProfile, unfollowProfile )
@@ -227,7 +227,7 @@ runUI = interpret $ \_ -> \case
         defMethod' "saveProfile" $ \_ input -> do
           let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
           st <- runE $ get @AppState
-          n <- runE now
+          n <- runE getCurrentTime
           let kp = maybe (error "No key pair available") id $ keyPair st
           let unsigned = createMetadata profile (keyPairToPubKeyXO kp) n
           signedMaybe <- signEvent unsigned kp

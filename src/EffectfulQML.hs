@@ -10,7 +10,7 @@ import Effectful.State.Static.Shared (State, evalState, get, put)
 import Effectful.TH
 import Graphics.QML qualified as QML
 
-import Nostr.Effects.Logging
+import Logging
 
 data EffectfulQMLState = EffectfulQMLState
   { signalKey :: Maybe (QML.SignalKey (IO ()))

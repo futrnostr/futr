@@ -1,4 +1,4 @@
-module Nostr.Effects.Subscription where
+module Nostr.Subscription where
 
 import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy qualified as BSL
@@ -14,9 +14,9 @@ import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
 
+import Logging
 import Nostr.Keys (PubKeyXO)
-import Nostr.Effects.Logging
-import Nostr.Effects.RelayPool
+import Nostr.RelayPool
 import Nostr.Types
 import Types (AppState(..))
 
