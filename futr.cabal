@@ -40,6 +40,7 @@ executable futr
         Nostr.Keys
         Nostr.Profile
         Nostr.RelayPool
+        Nostr.Subscription
         Nostr.WebSocket
         Nostr.Types
         Nostr.Util

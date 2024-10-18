@@ -11,6 +11,7 @@ import Effectful.TH
 import Graphics.QML qualified as QML
 
 import Logging
+import Types (AppState(..), FollowModel(..))
 
 data EffectfulQMLState = EffectfulQMLState
   { signalKey :: Maybe (QML.SignalKey (IO ()))
@@ -24,6 +25,7 @@ data EffectfulQML :: Effect where
   FireSignalWith :: QML.SignalKey (IO ()) -> QML.ObjRef () -> EffectfulQML m ()
   FireSignal :: QML.ObjRef () -> EffectfulQML m ()
   FireSignalOnRoot :: EffectfulQML m ()
+  NotifyUI :: EffectfulQML m ()
 
 
 type instance DispatchOf EffectfulQML = Dynamic
@@ -31,11 +33,14 @@ type instance DispatchOf EffectfulQML = Dynamic
 makeEffect ''EffectfulQML
 
 -- | Handler for the QML effects.
-runEffectfulQML :: (IOE :> es, Logging :> es) => Eff (EffectfulQML : State EffectfulQMLState : es) a -> Eff es a
+runEffectfulQML
+  :: (IOE :> es, Logging :> es, State AppState :> es)
+  => Eff (EffectfulQML : State EffectfulQMLState : es) a
+  -> Eff es a
 runEffectfulQML action = evalState (EffectfulQMLState Nothing Nothing) $ interpret handleEffectfulQML action
   where
     handleEffectfulQML
-      :: (IOE :> es, Logging :> es)
+      :: (IOE :> es, Logging :> es, State AppState :> es)
       => EffectHandler EffectfulQML (State EffectfulQMLState : es)
     handleEffectfulQML _ = \case
       RunEngineLoop config changeKey ctx -> do
@@ -50,7 +55,7 @@ runEffectfulQML action = evalState (EffectfulQMLState Nothing Nothing) $ interpr
         st <- get
         case signalKey st of
           Just key -> liftIO $ QML.fireSignal key obj
-          Nothing -> error "No signal key available"
+          Nothing -> logError "No signal key available"
 
       FireSignalOnRoot -> do
         st <- get
@@ -58,4 +63,15 @@ runEffectfulQML action = evalState (EffectfulQMLState Nothing Nothing) $ interpr
           (Just rootObj', Just changeKey') -> do
             logDebug "Firing signal on root"
             liftIO $ QML.fireSignal changeKey' rootObj'
-          _ -> logWarning "No rootObjRef or signalKey in AppState"
+          _ -> logWarning "No rootObjRef or signalKey"
+
+      NotifyUI -> do
+        st <- get
+        case signalKey st of
+          Just key -> do
+            let notifyObjRef = maybe (pure ()) (liftIO . QML.fireSignal key)
+            st' <- get @AppState
+            notifyObjRef (objRef $ follows st')
+            notifyObjRef (profileObjRef st')
+            notifyObjRef (chatObjRef st')
+          Nothing -> logWarning "No signal key available for NotifyUI"
