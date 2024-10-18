@@ -7,14 +7,11 @@ module Futr where
 import Data.Aeson (ToJSON, eitherDecode, pairs, toEncoding, (.=))
 import Data.ByteString.Lazy qualified as BSL
 import Control.Monad (forM, forM_, void, unless, when)
-import Data.List (find, nub)
 import Data.Maybe (listToMaybe)
 import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, isPrefixOf, pack)
 import Data.Text.Encoding qualified as TE
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Data.Time.Format (defaultTimeLocale, formatTime)
 import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
@@ -30,11 +27,12 @@ import Graphics.QML qualified as QML
 
 import Logging
 import Nostr.Bech32
-import Nostr.Event (createFollowList, signEvent, unwrapGiftWrap, unwrapSeal, validateEvent)
+import Nostr.Event (createFollowList, signEvent, validateEvent)
 import Nostr.Keys (KeyPair, PubKeyXO, byteStringToHex, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.GiftWrap
 import Nostr.RelayPool
 import Nostr.Types ( Event(..), EventId(..), Kind(..), Tag(..),
-                     RelayURI, Response(..), Relay(..), Rumor(..), UnsignedEvent(..),
+                     RelayURI, Response(..), Relay(..), UnsignedEvent(..),
                      followListFilter, giftWrapFilter, metadataFilter,
                      relayName, relayURIToText)
 import Nostr.Util
@@ -87,6 +85,7 @@ type FutrEff es = ( State AppState :> es
                   , RelayPool :> es
                   , State PKeyMgmt.KeyMgmtState :> es
                   , State RelayPoolState :> es
+                  , GiftWrap :> es
                   , EffectfulQML :> es
                   , Logging :> es
                   , IOE :> es
@@ -191,7 +190,7 @@ runFutr = interpret $ \_ -> \case
       (Just _, Just subId') -> stopSubscription subId'
       _ -> return ()
 
-    modify $ \st' -> st' { currentChatRecipient = (Just pubKeyXO, Nothing) }
+    modify $ \st' -> st' { currentChatRecipient = (Just [pubKeyXO], Nothing) }
     notifyUI
 
   Logout obj -> do
@@ -369,7 +368,7 @@ processResponses relayURI' (r:rs) = case r of
 
 -- | Handle an event.
 handleEvent :: FutrEff es => Event -> RelayURI -> Eff es ()
-handleEvent event' relayURI' =
+handleEvent event' _ =
   if not (validateEvent event')
     then do
       logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
@@ -389,7 +388,7 @@ handleEvent event' relayURI' =
           let followList' = [Follow pk relayUri' displayName' | PTag pk relayUri' displayName' <- tags event']
           modify $ \st -> st { follows = FollowModel (Map.insert (pubKey event') followList' (followList $ follows st)) (objRef $ follows st) }
 
-        GiftWrap -> handleGiftWrapEvent event' relayURI'
+        GiftWrap -> handleGiftWrapEvent event'
 
         _ -> logDebug $ "Ignoring gift wrapped event of kind: " <> pack (show (kind event'))
 
@@ -459,100 +458,3 @@ sendFollowListEvent = do
 -- | Sign an event.
 signEvent' :: FutrEff es => UnsignedEvent -> KeyPair -> Eff es (Maybe Event)
 signEvent' e kp = liftIO $ signEvent e kp
-
-
--- Helper function to find the first 'p' tag
-findFirstPTag :: [Tag] -> Maybe PubKeyXO
-findFirstPTag [] = Nothing
-findFirstPTag (PTag pk _ _ : _) = Just pk
-findFirstPTag (_ : rest) = findFirstPTag rest
-
-
--- | Handle a gift wrap event.
-handleGiftWrapEvent :: FutrEff es => Event -> RelayURI -> Eff es ()
-handleGiftWrapEvent event' relayURI' = do
-  st <- get @AppState
-  case keyPair st of
-    Just kp -> processGiftWrap event' relayURI' kp
-    Nothing -> logWarning "No key pair available to decrypt gift wrap"
-
-
--- | Process a gift wrap event.
-processGiftWrap :: FutrEff es => Event -> RelayURI -> KeyPair -> Eff es ()
-processGiftWrap event' relayURI' kp = do
-  unwrappedEvent <- liftIO $ unwrapGiftWrap event' kp
-  case unwrappedEvent of
-    Just sealedEvent -> handleSealedEvent sealedEvent event' relayURI' kp
-    Nothing -> logInfo "Failed to unwrap gift wrap"
-
-
--- | Handle a sealed event.
-handleSealedEvent :: FutrEff es => Event -> Event -> RelayURI -> KeyPair -> Eff es ()
-handleSealedEvent sealedEvent originalEvent relayURI' kp
-  | not (validateEvent sealedEvent) =
-      logWarning $ "Invalid sealed event: " <> (byteStringToHex $ getEventId (eventId sealedEvent))
-  | kind sealedEvent /= Seal =
-      logInfo "Unwrapped event is not a Seal"
-  | otherwise = do
-      unwrappedRumor <- liftIO $ unwrapSeal sealedEvent kp
-      case unwrappedRumor of
-        Just decryptedRumor -> processDecryptedRumor decryptedRumor originalEvent relayURI' kp
-        Nothing -> logInfo "Failed to decrypt sealed event"
-
-
--- | Process a decrypted rumor.
-processDecryptedRumor :: FutrEff es => Rumor -> Event -> RelayURI -> KeyPair -> Eff es ()
-processDecryptedRumor decryptedRumor originalEvent relayURI' kp =
-  case findFirstPTag (rumorTags decryptedRumor) of
-    Just receiverPubKey -> do
-      let (senderPubKey, chatKey) = determineSenderAndChatKey kp receiverPubKey decryptedRumor
-      let chatMsg = createChatMessage originalEvent decryptedRumor senderPubKey relayURI'
-      updateChats chatKey chatMsg
-    Nothing -> logInfo "No receiver found in rumor tags, discarding message"
-
-
--- | Determine the sender and chat key.
-determineSenderAndChatKey :: KeyPair -> PubKeyXO -> Rumor -> (PubKeyXO, PubKeyXO)
-determineSenderAndChatKey kp receiverPubKey decryptedRumor
-  | keyPairToPubKeyXO kp == receiverPubKey = (rumorPubKey decryptedRumor, rumorPubKey decryptedRumor)  -- I'm the receiver
-  | otherwise = (keyPairToPubKeyXO kp, receiverPubKey)  -- I'm the sender
-
-
--- | Create a chat message.
-createChatMessage :: Event -> Rumor -> PubKeyXO -> RelayURI -> ChatMessage
-createChatMessage originalEvent decryptedRumor senderPubKey relayURI' =
-  ChatMessage
-    { chatMessageId = eventId originalEvent
-    , chatMessage = rumorContent decryptedRumor
-    , author = senderPubKey
-    , chatMessageCreatedAt = rumorCreatedAt decryptedRumor
-    , timestamp = pack $ formatTime defaultTimeLocale "%FT%T%QZ" $ posixSecondsToUTCTime $ fromIntegral $ rumorCreatedAt decryptedRumor
-    , seenOn = [relayURI']
-    }
-
-
--- | Update chats.
-updateChats :: FutrEff es => PubKeyXO -> ChatMessage -> Eff es ()
-updateChats chatKey chatMsg = modify $ \s -> s { chats = updatedChats chatKey chatMsg (chats s) }
-
-
--- | Update chats.
-updatedChats :: PubKeyXO -> ChatMessage -> Map.Map PubKeyXO [ChatMessage] -> Map.Map PubKeyXO [ChatMessage]
-updatedChats chatKey chatMsg = Map.alter (updateChatMessages chatMsg) chatKey
-
-
--- | Update chat messages.
-updateChatMessages :: ChatMessage -> Maybe [ChatMessage] -> Maybe [ChatMessage]
-updateChatMessages chatMsg = \case
-  Nothing -> Just [chatMsg]
-  Just msgs -> Just $ updateOrInsertMessage chatMsg msgs
-
-
--- | Update or insert a message.
-updateOrInsertMessage :: ChatMessage -> [ChatMessage] -> [ChatMessage]
-updateOrInsertMessage chatMsg msgs =
-  case find (\m -> chatMessageId m == chatMessageId chatMsg) msgs of
-    Nothing -> chatMsg : msgs
-    Just existingMsg ->
-      chatMsg { seenOn = nub (head (seenOn chatMsg) : seenOn existingMsg) } :
-      filter (\m -> chatMessageId m /= chatMessageId chatMsg) msgs

@@ -218,9 +218,7 @@ unwrapSeal sealEvent kp = do
             case eitherDecode (fromStrict $ encodeUtf8 decryptedContent) of
               Right rumor -> do
                 if rumorPubKey rumor == sealPK
-                  then do
-                    putStrLn $ "Unsealed rumor: " <> show rumor
-                    return $ Just rumor
+                  then return $ Just rumor
                   else do
                     putStrLn $ "Rumor pubkey does not match seal pubkey: " <> show rumor
                     return Nothing

@@ -36,6 +36,7 @@ executable futr
         Nostr.Encryption
         Nostr.Encryption.Internal
         Nostr.Event
+        Nostr.GiftWrap
         Nostr.Keys
         Nostr.Profile
         Nostr.RelayPool

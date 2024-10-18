@@ -44,7 +44,6 @@ data ChatMessage = ChatMessage
   , author :: PubKeyXO
   , chatMessageCreatedAt :: Int
   , timestamp :: Text
-  , seenOn :: [RelayURI]
   } deriving (Show)
 
 
@@ -60,11 +59,11 @@ data AppState = AppState
   { keyPair :: Maybe KeyPair
   , currentScreen :: AppScreen
   , events :: Map EventId (Event, [RelayURI])
-  , chats :: Map PubKeyXO [ChatMessage]
+  , chats :: Map [PubKeyXO] [ChatMessage]
   , profiles :: Map PubKeyXO (Profile, Int)
   , follows :: FollowModel
   , confirmations :: Map EventId [EventConfirmation]
-  , currentChatRecipient :: (Maybe PubKeyXO, Maybe SubscriptionId)
+  , currentChatRecipient :: (Maybe [PubKeyXO], Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
   , profileObjRef :: Maybe (ObjRef ())
   , chatObjRef :: Maybe (ObjRef ())
