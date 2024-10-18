@@ -12,6 +12,7 @@ import Futr qualified as Futr
 import Logging (runLoggingStdout)
 import Nostr.GiftWrap (runGiftWrap)
 import Nostr.RelayPool (runRelayPool)
+import Nostr.Subscription (runSubscription)
 import Nostr.WebSocket (runWebSocket)
 import Nostr.Util (runUtil)
 import Presentation.KeyMgmt qualified as KeyMgmt
@@ -32,6 +33,7 @@ main = do
 
     runEff
         . runLoggingStdout
+        . evalState Types.initialState
         . runEffectfulQML
         . runFileSystem
         . runUtil
@@ -40,10 +42,10 @@ main = do
         . evalState Types.initialRelayPoolState
         . KeyMgmt.runKeyMgmt
         . KeyMgmt.runKeyMgmtUI
-        . evalState Types.initialState
         . runGiftWrap
         . runWebSocket 3 -- max 3 retries
         . runRelayPool
+        . runSubscription
         . Futr.runFutr
         . UI.runUI
         $ do

@@ -10,7 +10,7 @@ import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH (makeEffect)
 import Data.List (sort)
-import Data.Map qualified as Map
+import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Text (pack)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
