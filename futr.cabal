@@ -31,18 +31,17 @@ executable futr
     other-modules:
         EffectfulQML
         Futr
+        Logging
         Nostr.Bech32
-        Nostr.Effects.CurrentTime
-        Nostr.Effects.IDGen
-        Nostr.Effects.Logging
-        Nostr.Effects.RelayPool
-        Nostr.Effects.WebSocket
         Nostr.Encryption
         Nostr.Encryption.Internal
         Nostr.Event
         Nostr.Keys
         Nostr.Profile
+        Nostr.RelayPool
+        Nostr.WebSocket
         Nostr.Types
+        Nostr.Util
         Presentation.KeyMgmt
         Types
         TimeFormatter

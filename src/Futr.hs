@@ -28,16 +28,16 @@ import GHC.Generics (Generic)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 
+import Logging
 import Nostr.Bech32
-import Nostr.Effects.CurrentTime
-import Nostr.Effects.Logging
-import Nostr.Effects.RelayPool
 import Nostr.Event (createFollowList, signEvent, unwrapGiftWrap, unwrapSeal, validateEvent)
 import Nostr.Keys (KeyPair, PubKeyXO, byteStringToHex, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.RelayPool
 import Nostr.Types ( Event(..), EventId(..), Kind(..), Tag(..),
                      RelayURI, Response(..), Relay(..), Rumor(..), UnsignedEvent(..),
                      followListFilter, giftWrapFilter, metadataFilter,
                      relayName, relayURIToText)
+import Nostr.Util
 import Presentation.KeyMgmt qualified as PKeyMgmt
 import Types
 
@@ -91,7 +91,7 @@ type FutrEff es = ( State AppState :> es
                   , Logging :> es
                   , IOE :> es
                   , Concurrent :> es
-                  , CurrentTime :> es
+                  , Util :> es
                   )
 
 
@@ -440,7 +440,7 @@ sendFollowListEvent = do
     st <- get @AppState
     case keyPair st of
         Just kp -> do
-          currentTime <- now
+          currentTime <- getCurrentTime
           let userPK = keyPairToPubKeyXO kp
           let followList' = Map.findWithDefault [] userPK (followList $ follows st)
           let followTuples = map (\(Follow pk _ petName') -> (pk, petName')) followList'

@@ -9,11 +9,10 @@ import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
 import Futr qualified as Futr
-import Nostr.Effects.CurrentTime (runCurrentTime)
-import Nostr.Effects.IDGen (runIDGen)
-import Nostr.Effects.Logging (runLoggingStdout)
-import Nostr.Effects.RelayPool (runRelayPool)
-import Nostr.Effects.WebSocket (runWebSocket)
+import Logging (runLoggingStdout)
+import Nostr.RelayPool (runRelayPool)
+import Nostr.WebSocket (runWebSocket)
+import Nostr.Util (runUtil)
 import Presentation.KeyMgmt qualified as KeyMgmt
 import UI qualified as UI
 import Types
@@ -34,8 +33,7 @@ main = do
         . runLoggingStdout
         . runEffectfulQML
         . runFileSystem
-        . runIDGen
-        . runCurrentTime
+        . runUtil
         . runConcurrent
         . evalState KeyMgmt.initialState
         . evalState Types.initialRelayPoolState
