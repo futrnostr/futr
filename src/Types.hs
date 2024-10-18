@@ -42,9 +42,10 @@ data ChatMessage = ChatMessage
   { chatMessageId :: EventId
   , chatMessage :: Text
   , author :: PubKeyXO
+  , chatMessageCreatedAt :: Int
   , timestamp :: Text
   , seenOn :: [RelayURI]
-  }
+  } deriving (Show)
 
 
 data EventConfirmation = EventConfirmation
@@ -63,9 +64,10 @@ data AppState = AppState
   , profiles :: Map PubKeyXO (Profile, Int)
   , follows :: FollowModel
   , confirmations :: Map EventId [EventConfirmation]
-  , currentChatRecipient :: Maybe PubKeyXO
+  , currentChatRecipient :: (Maybe PubKeyXO, Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
   , profileObjRef :: Maybe (ObjRef ())
+  , chatObjRef :: Maybe (ObjRef ())
   , activeConnections :: Int
   }
 
@@ -92,8 +94,9 @@ initialState = AppState
   , profiles = Map.empty
   , follows = FollowModel Map.empty Nothing
   , confirmations = Map.empty
-  , currentChatRecipient = Nothing
+  , currentChatRecipient = (Nothing, Nothing)
   , currentProfile = Nothing
   , profileObjRef = Nothing
+  , chatObjRef = Nothing
   , activeConnections = 0
   }

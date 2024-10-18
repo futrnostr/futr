@@ -10,9 +10,14 @@ import Data.Aeson
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import qualified Data.Text.Encoding as TE
+import qualified Data.ByteString.Lazy as BL
 
 import Nostr.Keys
 import Nostr.Types
+import Nostr.Encryption (decrypt, getConversationKey, encrypt)
+import Data.Time.Clock.POSIX (getCurrentTime, utcTimeToPOSIXSeconds)
+import Crypto.Random (getRandomBytes)
 
 
 -- | Sign an event.
@@ -115,6 +120,120 @@ createEventDeletion eids reason xo t =
     }
   where
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
+
+
+-- | Create a rumor from an event.
+createRumor :: PubKeyXO -> Int -> Kind -> [Tag] -> Text -> Rumor
+createRumor pubKey createdAt kind tags content =
+  let rumorId = calculateEventId pubKey createdAt kind tags content
+  in Rumor
+    { rumorId = rumorId
+    , rumorPubKey = pubKey
+    , rumorCreatedAt = createdAt
+    , rumorKind = kind
+    , rumorTags = tags
+    , rumorContent = content
+    }
+  where
+    calculateEventId :: PubKeyXO -> Int -> Kind -> [Tag] -> Text -> EventId
+    calculateEventId pubKey createdAt kind tags content =
+      let unsignedEvent = UnsignedEvent pubKey createdAt kind tags content
+          serializedEvent = toStrict $ encode unsignedEvent
+          computedId = SHA256.hash serializedEvent
+      in EventId computedId
+
+
+-- | Create a seal event.
+createSeal :: Rumor -> KeyPair -> PubKeyXO -> IO (Maybe Event)
+createSeal rumor kp pk = do
+  let rumorJson = encode rumor
+  nonce <- getRandomBytes 32
+  case getConversationKey (keyPairToSecKey kp) pk of
+    Nothing -> return Nothing
+    Just conversationKey -> do
+      case encrypt (decodeUtf8 $ BL.toStrict rumorJson) conversationKey nonce of
+        Left _ -> return Nothing
+        Right sealContent -> do
+          currentTime <- getCurrentTime
+          let sealEvent = UnsignedEvent
+                { pubKey' = keyPairToPubKeyXO kp
+                , createdAt' = floor $ utcTimeToPOSIXSeconds currentTime
+                , kind' = Seal
+                , tags' = []
+                , content' = sealContent
+                }
+          signEvent sealEvent kp
+
+
+-- | Create a gift wrap event.
+createGiftWrap :: Event -> PubKeyXO -> IO (Maybe Event)
+createGiftWrap sealEvent recipientPubKey = do
+  randomKeyPair <- createKeyPair
+  let sealJson = encode sealEvent
+  nonce <- getRandomBytes 32
+  case getConversationKey (keyPairToSecKey randomKeyPair) recipientPubKey of
+    Nothing -> return Nothing
+    Just conversationKey -> do
+      case encrypt (decodeUtf8 $ BL.toStrict sealJson) conversationKey nonce of
+        Left _ -> return Nothing
+        Right wrapContent -> do
+          currentTime <- getCurrentTime
+          let wrapEvent = UnsignedEvent
+                { pubKey' = keyPairToPubKeyXO randomKeyPair
+                , createdAt' = floor $ utcTimeToPOSIXSeconds currentTime
+                , kind' = GiftWrap
+                , tags' = [PTag recipientPubKey Nothing Nothing]
+                , content' = wrapContent
+                }
+          signEvent wrapEvent randomKeyPair
+
+
+-- | Unwrap a gift wrap event.
+unwrapGiftWrap :: Event -> KeyPair -> IO (Maybe Event)
+unwrapGiftWrap wrapEvent kp = do
+  let wrapContent = content wrapEvent
+      conversationKey = getConversationKey (keyPairToSecKey kp) (pubKey wrapEvent)
+  case conversationKey of
+    Nothing -> return Nothing
+    Just key -> case decrypt key wrapContent of
+      Left _ -> return Nothing
+      Right decryptedContent -> case eitherDecode (BL.fromStrict $ encodeUtf8 decryptedContent) of
+        Left _ -> return Nothing
+        Right sealEvent -> return $ Just sealEvent
+
+
+-- | Unseal a seal event.
+unwrapSeal :: Event -> KeyPair -> IO (Maybe Rumor)
+unwrapSeal sealEvent kp = do
+  let sealContent = content sealEvent
+      conversationKey = getConversationKey (keyPairToSecKey kp) (pubKey sealEvent)
+  case conversationKey of
+    Just key -> case decrypt key sealContent of
+      Right decryptedContent -> do
+        if not $ validateEvent sealEvent
+          then do
+            putStrLn $ "Seal event is not valid: " <> show sealEvent
+            return Nothing
+          else do
+            let sealPK = pubKey sealEvent
+            case eitherDecode (BL.fromStrict $ encodeUtf8 decryptedContent) of
+              Right rumor -> do
+                if rumorPubKey rumor == sealPK
+                  then do
+                    putStrLn $ "Unsealed rumor: " <> show rumor
+                    return $ Just rumor
+                  else do
+                    putStrLn $ "Rumor pubkey does not match seal pubkey: " <> show rumor
+                    return Nothing
+              Left err -> do
+                putStrLn $ "Error decoding rumor: " <> err
+                return Nothing
+      Left err -> do
+        putStrLn $ "Error decrypting rumor: " <> err
+        return Nothing
+    Nothing -> do
+      putStrLn "No conversation key found"
+      return Nothing
 
 
 -- | Read profile from event.

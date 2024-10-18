@@ -5,25 +5,33 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Nostr.Types where
 
 import Control.Applicative ((<|>))
 import Control.Monad (mzero)
 import Data.Aeson hiding (Error)
-import Data.Aeson.Encoding (list, text)
-import Data.Aeson.Types (Parser, parseEither)
+import Data.Aeson.Encoding (list, text, pairs, pair)
+import Data.Aeson.Types (Pair, Parser, parseEither)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.Foldable (toList)
 import Data.Function (on)
+import Data.Maybe (catMaybes)
 import Data.String.Conversions (ConvertibleStrings, cs)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8)
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
+import Data.Maybe (mapMaybe)
+import qualified Data.Map as Map
+import qualified Data.Aeson.KeyMap as KM
+import Data.Aeson.Key (fromText)
+import Data.Aeson (object)
+import Data.Scientific (toBoundedInteger)
 
 import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature)
 
@@ -61,13 +69,15 @@ data Subscription = Subscription
 
 
 -- | Represents a filter for events.
-data Filter
-  = MetadataFilter [PubKeyXO]
-  | FollowListFilter [PubKeyXO]
-  | ShortTextNoteFilter [PubKeyXO] Int
-  | LinkedEvents [EventId] Int
-  | AllNotes Int
-  | AllMetadata Int
+data Filter = Filter
+  { ids     :: Maybe [EventId]
+  , authors :: Maybe [PubKeyXO]
+  , kinds   :: Maybe [Kind]
+  , since   :: Maybe Int
+  , until   :: Maybe Int
+  , limit   :: Maybe Int
+  , fTags   :: Maybe (Map.Map Char [Text])
+  }
   deriving (Eq, Generic, Show)
 
 
@@ -104,7 +114,9 @@ data Kind
   | Repost          -- NIP-18
   | Reaction        -- NIP-25
   | Seal            -- NIP-59
+  | GiftWrap        -- NIP-59
   | DirectMessage   -- NIP-17
+  | UnknownKind Int
   deriving (Eq, Generic, Read, Show)
 
 
@@ -127,24 +139,36 @@ data Tag
 
 -- | Represents an event.
 data Event = Event
-  { eventId    :: EventId
-  , pubKey     :: PubKeyXO
+  { eventId   :: EventId
+  , pubKey    :: PubKeyXO
   , createdAt :: Int
-  , kind       :: Kind
-  , tags       :: [Tag]
-  , content    :: Text
-  , sig        :: Signature
+  , kind      :: Kind
+  , tags      :: [Tag]
+  , content   :: Text
+  , sig       :: Signature
   }
   deriving (Eq, Generic, Show)
 
 
 -- | Represents an unsigned event.
 data UnsignedEvent = UnsignedEvent
-  { pubKey'     :: PubKeyXO
+  { pubKey'    :: PubKeyXO
   , createdAt' :: Int
-  , kind'       :: Kind
-  , tags'       :: [Tag]
-  , content'    :: Text
+  , kind'      :: Kind
+  , tags'      :: [Tag]
+  , content'   :: Text
+  }
+  deriving (Eq, Generic, Show)
+
+
+-- | Represents a rumor (unsigned event).
+data Rumor = Rumor
+  { rumorId        :: EventId
+  , rumorPubKey    :: PubKeyXO
+  , rumorCreatedAt :: Int
+  , rumorKind      :: Kind
+  , rumorTags      :: [Tag]
+  , rumorContent   :: Text
   }
   deriving (Eq, Generic, Show)
 
@@ -202,7 +226,7 @@ noticeReason errMsg
   | "blocked:"      `T.isInfixOf` errMsg = Blocked
   | "rate-limited:" `T.isInfixOf` errMsg = RateLimited
   | "invalid:"      `T.isInfixOf` errMsg = Invalid
-  | otherwise                          = Error
+  | otherwise                            = Error
 
 
 -- | Decodes a hex string to a byte string.
@@ -275,6 +299,28 @@ instance ToJSON UnsignedEvent where
      , toEncoding tags'
      , text content'
      ]
+
+
+-- | 'FromJSON' instance for 'Rumor'.
+instance FromJSON Rumor where
+  parseJSON = withObject "rumor data" $ \r -> Rumor
+    <$> r .: "id"
+    <*> r .: "pubkey"
+    <*> r .: "created_at"
+    <*> r .: "kind"
+    <*> r .: "tags"
+    <*> r .: "content"
+
+-- | 'ToJSON' instance for 'Rumor'.
+instance ToJSON Rumor where
+  toEncoding Rumor {..} = pairs
+     ( "id"         .= (byteStringToHex $ getEventId rumorId)
+    <> "pubkey"     .= (byteStringToHex $ exportPubKeyXO rumorPubKey)
+    <> "created_at" .= rumorCreatedAt
+    <> "kind"       .= rumorKind
+    <> "tags"       .= rumorTags
+    <> "content"    .= rumorContent
+     )
 
 
 -- | Parses a 'Tag' from a JSON array.
@@ -469,16 +515,20 @@ instance ToJSON Relay where
 -- | 'FromJSON' instance for 'Kind'.
 -- This allows parsing JSON numbers into 'Kind' values.
 instance FromJSON Kind where
-  parseJSON = withScientific "kind" $ \k -> case k of
-    0  -> return Metadata
-    1  -> return ShortTextNote
-    3  -> return FollowList
-    5  -> return EventDeletion
-    6  -> return Repost
-    7  -> return Reaction
-    13 -> return Seal
-    14 -> return DirectMessage
-    _  -> mzero
+  parseJSON = withScientific "kind" $ \k -> case toBoundedInteger k of
+    Just n  -> case n of
+      0  -> return Metadata
+      1  -> return ShortTextNote
+      3  -> return FollowList
+      5  -> return EventDeletion
+      6  -> return Repost
+      7  -> return Reaction
+      13 -> return Seal
+      1059 -> return GiftWrap
+      14 -> return DirectMessage
+      _  -> return $ UnknownKind n
+    Nothing -> fail "Expected an integer for Kind"
+
 
 -- | 'ToJSON' instance for 'Kind'.
 -- This allows serializing 'Kind' values into JSON numbers.
@@ -490,37 +540,24 @@ instance ToJSON Kind where
   toEncoding Repost        = toEncoding (6 :: Int)
   toEncoding Reaction      = toEncoding (7 :: Int)
   toEncoding Seal          = toEncoding (13 :: Int)
+  toEncoding GiftWrap      = toEncoding (1059 :: Int)
   toEncoding DirectMessage = toEncoding (14 :: Int)
+  toEncoding (UnknownKind n) = toEncoding n
 
 
 -- | 'ToJSON' instance for 'Filter'.
 instance ToJSON Filter where
-  toEncoding (MetadataFilter xos) = pairs $
-    "authors" .= xos <>
-    "kinds" .= [Metadata] <>
-    "limit" .= (500 :: Int)
-  toEncoding (FollowListFilter xos) = pairs $
-    "authors" .= xos <>
-    "kinds" .= [FollowList] <>
-    "limit" .= (500 :: Int)
-  toEncoding (ShortTextNoteFilter xos now) = pairs $
-    "authors" .= xos <>
-    "kinds" .= [ShortTextNote, EventDeletion] <>
-    "until" .= (fromIntegral (now + 60) :: Integer) <>
-    "limit" .= (500 :: Int)
-  toEncoding (LinkedEvents eids now) = pairs $
-    "kinds" .= [ShortTextNote] <>
-    "#e" .= eids <>
-    "until" .= (fromIntegral (now + 60) :: Integer) <>
-    "limit" .= (500 :: Int)
-  toEncoding (AllNotes now) = pairs $
-    "kinds" .= [ShortTextNote] <>
-    "until" .= (fromIntegral (now + 60) :: Integer) <>
-    "limit" .= (500 :: Int)
-  toEncoding (AllMetadata now) = pairs $
-    "kinds" .= [Metadata] <>
-    "until" .= (fromIntegral (now + 60) :: Integer) <>
-    "limit" .= (500 :: Int)
+  toEncoding Filter {..} = pairs $ mconcat $ catMaybes
+    [ fmap (pair "ids" . toEncoding) ids
+    , fmap (pair "authors" . toEncoding) authors
+    , fmap (pair "kinds" . toEncoding) kinds
+    , fmap (pair "since" . toEncoding) since
+    , fmap (pair "until" . toEncoding) until
+    , fmap (pair "limit" . toEncoding) limit
+    ] ++ maybe [] (pure . encodeTags) fTags
+    where
+      encodeTags :: Map.Map Char [Text] -> Series
+      encodeTags = Map.foldrWithKey (\k v acc -> acc <> pair (fromText ("#" <> T.singleton k)) (toEncoding v)) mempty
 
 
 -- | 'ToJSON' instance for 'Profile'.
@@ -552,6 +589,7 @@ defaultRelays =
   [ Relay (RelayURI "wss://nos.lol") (RelayInfo True True)
   --, Relay (RelayURI "ws://127.0.0.1:7777") (RelayInfo True True)
   , Relay (RelayURI "wss://relay.damus.io") (RelayInfo True True)
+  --, Relay (RelayURI "wss://relay.0xchat.com") (RelayInfo True True)
   ]
 
 
@@ -607,3 +645,58 @@ extractPath (Relay (RelayURI u) _) =
 -- | Checks if two relays are the same based on URI.
 sameRelay :: Relay -> Relay -> Bool
 sameRelay = (==) `on` uri
+
+
+-- Helper functions to create specific filters
+
+-- | Creates a filter for metadata.
+metadataFilter :: [PubKeyXO] -> Filter
+metadataFilter authors = Filter
+  { ids = Nothing
+  , authors = Just authors
+  , kinds = Just [Metadata]
+  , since = Nothing
+  , until = Nothing
+  , limit = Just 500
+  , fTags = Nothing
+  }
+
+
+-- | Creates a filter for follow list.
+followListFilter :: [PubKeyXO] -> Filter
+followListFilter authors = Filter
+  { ids = Nothing
+  , authors = Just authors
+  , kinds = Just [FollowList]
+  , since = Nothing
+  , until = Nothing
+  , limit = Just 500
+  , fTags = Nothing
+  }
+
+
+-- | Creates a filter for short text notes.
+shortTextNoteFilter :: [PubKeyXO] -> Int -> Filter
+shortTextNoteFilter authors now = Filter
+  { ids = Nothing
+  , authors = Just authors
+  , kinds = Just [ShortTextNote, EventDeletion]
+  , since = Nothing
+  , until = Just (now + 60)
+  , limit = Just 500
+  , fTags = Nothing
+  }
+
+
+-- | Creates filter for gift wrapped messages.
+giftWrapFilter :: PubKeyXO -> Filter
+giftWrapFilter xo =
+  Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [GiftWrap]
+    , since = Nothing
+    , until = Nothing
+    , limit = Just 500
+    , fTags = Just $ Map.fromList [('p', [byteStringToHex $ exportPubKeyXO xo])]
+    }

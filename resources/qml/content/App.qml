@@ -15,7 +15,7 @@ ApplicationWindow {
     title: qsTr("Futr")
     font: Constants.font
 
-    property bool isDarkTheme: false
+    property bool isDarkTheme: true
     property color accentColor: "#9C27B0"
 
     Material.theme: isDarkTheme ? Material.Dark : Material.Light
