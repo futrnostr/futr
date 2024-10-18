@@ -109,6 +109,7 @@ Rectangle {
                         onExited: followItem.mouseHover = false
                         onClicked: {
                             setCurrentProfile(modelData.pubkey)
+                            openChat(modelData.pubkey)
                             profileLoader.setSource("Profile/Profile.ui.qml", {
                                 "profileData": currentProfile,
                                 "npub": modelData.pubkey

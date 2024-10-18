@@ -15,18 +15,6 @@ Rectangle {
 
     property string npub: ""
     property var profileData
-    property var messages: [
-        { content: "Hey there! How's it going?", isOwnMessage: false, timestamp: "10:00 AM" },
-        { content: "Hi! I'm doing great, thanks for asking. How about you?", isOwnMessage: true, timestamp: "10:02 AM" },
-        { content: "I'm good too! Just working on some new features for our app. Let's put a longer text here for demonstration purposes.", isOwnMessage: false, timestamp: "10:05 AM" },
-        { content: "That sounds exciting! Can't wait to see what you come up with.", isOwnMessage: true, timestamp: "10:07 AM" },
-        { content: "Thanks! I'll keep you updated on the progress.", isOwnMessage: false, timestamp: "10:10 AM" },
-        { content: "By the way, have you seen the latest design mockups?", isOwnMessage: true, timestamp: "10:15 AM" },
-        { content: "Not yet, could you send them over?", isOwnMessage: false, timestamp: "10:17 AM" },
-        { content: "Sure thing! I'll email them to you right away.", isOwnMessage: true, timestamp: "10:20 AM" },
-        { content: "Great, thanks! I'm looking forward to reviewing them.", isOwnMessage: false, timestamp: "10:22 AM" },
-        { content: "No problem! Let me know if you need any clarification on the designs.", isOwnMessage: true, timestamp: "10:25 AM" }
-    ]
 
     ColumnLayout {
         anchors.fill: parent
@@ -91,7 +79,7 @@ Rectangle {
                     }
                     width: Math.min(Math.max(messageContent.implicitWidth, timestampText.implicitWidth) + 24, parent.width * 0.8)
                     height: messageContent.height + timestampText.height + 20
-                    color: modelData.isOwnMessage ? Material.accentColor : Material.dividerColor
+                    color: modelData && modelData.isOwnMessage ? Material.accentColor : Material.dividerColor
                     radius: 10
 
                     ColumnLayout {

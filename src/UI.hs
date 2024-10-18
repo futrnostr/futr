@@ -6,11 +6,11 @@ module UI where
 
 import Data.Aeson (decode, encode)
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (find)
+import Data.List (find, intercalate, sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy(..))
-import Data.Text (pack, unpack)
+import Data.Text (Text, pack, unpack)
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
@@ -26,9 +26,9 @@ import Nostr.Effects.CurrentTime
 import Nostr.Effects.Logging
 import Nostr.Effects.RelayPool
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types (Profile(..), emptyProfile, relayURIToText)
+import Nostr.Types (EventId(..), Profile(..), emptyProfile, relayURIToText)
 import Presentation.KeyMgmt qualified as PKeyMgmt
-import Futr ( Futr, FutrEff, LoginStatusChanged, login, logout, followProfile,
+import Futr ( Futr, FutrEff, LoginStatusChanged, login, logout, followProfile, openChat,
               search, setCurrentProfile, unfollowProfile )
 import Types
 
@@ -135,6 +135,47 @@ runUI = interpret $ \_ -> \case
 
     followPool <- newFactoryPool (newObject followClass)
 
+    chatClass <- newClass [
+        defPropertySigRO' "content" changeKey' $ \obj -> do
+          st <- runE $ get @AppState
+          let eid = fromObjRef obj :: EventId
+          let currentRecipient = currentChatRecipient st
+          case currentRecipient of
+            (Just recipient, _) -> do
+              let chatMessages = Map.findWithDefault [] recipient (chats st)
+              case find (\msg -> chatMessageId msg == eid) chatMessages of
+                Just msg -> return $ chatMessage msg
+                Nothing -> return ""
+            _ -> return "",
+
+        defPropertySigRO' "isOwnMessage" changeKey' $ \obj -> do
+          st <- runE $ get @AppState
+          let eid = fromObjRef obj :: EventId
+          let pk = keyPairToPubKeyXO <$> keyPair st
+          let currentRecipient = currentChatRecipient st
+          case (pk, currentRecipient) of
+            (Just userPk, (Just recipient, _)) -> do
+              let chatMessages = Map.findWithDefault [] recipient (chats st)
+              case find (\msg -> chatMessageId msg == eid) chatMessages of
+                Just msg -> return $ author msg == userPk
+                Nothing -> return False
+            _ -> return False,
+
+        defPropertySigRO' "timestamp" changeKey' $ \obj -> do
+          st <- runE $ get @AppState
+          let eid = fromObjRef obj :: EventId
+          let currentRecipient = currentChatRecipient st
+          case currentRecipient of
+            (Just recipient, _) -> do
+              let chatMessages = Map.findWithDefault [] recipient (chats st)
+              case find (\msg -> chatMessageId msg == eid) chatMessages of
+                Just msg -> return $ timestamp msg
+                Nothing -> return ""
+            _ -> return ""
+      ]
+
+    chatPool <- newFactoryPool (newObject chatClass)
+
     rootClass <- newClass [
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
 
@@ -208,16 +249,26 @@ runUI = interpret $ \_ -> \case
               return objs
             Nothing -> return [],
 
+        defPropertySigRO' "messages" changeKey' $ \obj -> do
+          st <- runE $ get @AppState
+          case currentChatRecipient st of
+            (Just recipient, _) -> do
+              let chatMessages = Map.findWithDefault [] recipient (chats st)
+              let sortedChatMessages = sortOn (\msg -> chatMessageCreatedAt msg) chatMessages
+              objs <- mapM (getPoolObject chatPool) (map chatMessageId sortedChatMessages)
+              runE $ modify @AppState $ \s -> s { chatObjRef = Just obj }
+              return objs
+            _ -> do
+              runE $ logDebug $ "No current chat recipient"
+              return [],
+
         defMethod' "follow" $ \_ npubText -> runE $ followProfile npubText,
 
         defMethod' "unfollow" $ \_ npubText -> runE $ unfollowProfile npubText,
 
-        defMethod' "openChat" $ \obj npubText -> runE $ do
-            let npub = npubText
-            let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub
-            modify $ \st -> st { currentChatRecipient = Just pubKeyXO }
-            fireSignal obj
-
+        defMethod' "openChat" $ \_ npubText -> runE $ do
+            let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
+            openChat pubKeyXO
       ]
 
     rootObj <- newObject rootClass ()
