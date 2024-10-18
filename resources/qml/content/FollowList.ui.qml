@@ -10,8 +10,6 @@ Rectangle {
     width: parent.width * 0.3 - (parent.spacing * 2 / 3)
     height: parent.height
     color: Material.backgroundColor
-    border.color: Material.dividerColor
-    border.width: 1
     radius: 5
 
     ColumnLayout {
@@ -38,6 +36,14 @@ Rectangle {
                 model: AutoListModel {
                     id: followsModel
                     source: follows
+                    mode: AutoListModel.ByKey
+                    equalityTest: function (oldItem, newItem) {
+                        return oldItem.displayName === newItem.displayName
+                            && oldItem.name === newItem.name
+                            && oldItem.petname === newItem.petname
+                            && oldItem.relay === newItem.relay
+                            && oldItem.picture === newItem.picture
+                    }
                 }
 
                 ScrollBar.vertical: ScrollBar {
@@ -78,7 +84,7 @@ Rectangle {
                             spacing: 5
 
                             Text {
-                                text: modelData.displayName || modelData.name || modelData.pubkey
+                                text: modelData.petname ||modelData.displayName || modelData.name || modelData.pubkey
                                 font: Constants.font
                                 color: Material.primaryTextColor
                                 elide: Text.ElideRight
@@ -103,9 +109,14 @@ Rectangle {
                         onExited: followItem.mouseHover = false
                         onClicked: {
                             setCurrentProfile(modelData.pubkey)
-                            profileLoader.setSource("Profile/Profile.ui.qml", { 
-                                "profileData": currentProfile, 
-                                "npub": modelData.pubkey 
+                            openChat(modelData.pubkey)
+                            profileLoader.setSource("Profile/Profile.ui.qml", {
+                                "profileData": currentProfile,
+                                "npub": modelData.pubkey
+                            })
+                            chatLoader.setSource("Chat.ui.qml", {
+                                "profileData": currentProfile,
+                                "npub": modelData.pubkey
                             })
                         }
                     }

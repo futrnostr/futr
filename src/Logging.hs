@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Nostr.Effects.Logging where
+module Logging where
 
 import Data.Text (Text)
 import Effectful

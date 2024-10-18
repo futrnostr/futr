@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Nostr.Effects.WebSocket where
+module Nostr.WebSocket where
 
 import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
@@ -22,7 +22,7 @@ import Control.Exception qualified as E
 import Network.WebSockets qualified as WS
 import Wuss qualified as Wuss
 
-import Nostr.Effects.Logging
+import Logging
 import Nostr.Types
 
 

@@ -4,20 +4,16 @@
 
 module Futr where
 
-import Data.Aeson (ToJSON, eitherDecode, pairs, toEncoding, (.=))
-import Data.ByteString.Lazy qualified as BSL
 import Control.Monad (forM, forM_, void, unless, when)
-
+import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.Maybe (listToMaybe)
 import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy(..))
-import Data.Text (Text, isPrefixOf, pack)
-import Data.Text.Encoding qualified as TE
+import Data.Text (Text, isPrefixOf)
 import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (Async, async, waitAny)
-import Effectful.Concurrent.STM (TQueue, atomically, readTQueue, flushTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
@@ -26,24 +22,19 @@ import GHC.Generics (Generic)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 
--- uncomment to see the serialized event
-
---import Crypto.Hash.SHA256 qualified as SHA256
---import Data.ByteString.Lazy.Char8 qualified as BSL8
---import System.IO (hPutStrLn, stderr)
-
-
+import Logging
 import Nostr.Bech32
-import Nostr.Effects.CurrentTime
-import Nostr.Effects.Logging
-import Nostr.Effects.RelayPool
-import Nostr.Event (createFollowList, signEvent, validateEvent)
-import Nostr.Keys (KeyPair, PubKeyXO, byteStringToHex, keyPairToPubKeyXO, secKeyToKeyPair)
-import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Tag(..),
-                     RelayURI, Response(..), Relay(..), UnsignedEvent(..), relayName, relayURIToText)
+import Nostr.Event (createFollowList, signEvent)
+import Nostr.Keys (KeyPair, PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.GiftWrap
+import Nostr.RelayPool
+import Nostr.Subscription
+import Nostr.Types ( Event, RelayURI, Relay(..), UnsignedEvent(..),
+                     followListFilter, giftWrapFilter, metadataFilter,
+                     relayName, relayURIToText)
+import Nostr.Util
 import Presentation.KeyMgmt qualified as PKeyMgmt
 import Types
-
 
 -- | Signal key class for LoginStatusChanged.
 data LoginStatusChanged deriving Typeable
@@ -73,6 +64,7 @@ data Futr :: Effect where
   SetCurrentProfile :: Text -> Futr m ()
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
+  OpenChat :: PubKeyXO -> Futr m ()
   Logout :: ObjRef () -> Futr m ()
 
 
@@ -88,13 +80,15 @@ type FutrEff es = ( State AppState :> es
                   , PKeyMgmt.KeyMgmt :> es
                   , PKeyMgmt.KeyMgmtUI :> es
                   , RelayPool :> es
+                  , Subscription :> es
                   , State PKeyMgmt.KeyMgmtState :> es
                   , State RelayPoolState :> es
+                  , GiftWrap :> es
                   , EffectfulQML :> es
                   , Logging :> es
                   , IOE :> es
                   , Concurrent :> es
-                  , CurrentTime :> es
+                  , Util :> es
                   )
 
 
@@ -134,10 +128,10 @@ runFutr = interpret $ \_ -> \case
                         let relaysToSearch = Map.keys relays'
                         forM_ relaysToSearch $ \relay' -> do
                           void $ async $ do
-                            maybeSubInfo <- startSubscription relay' [MetadataFilter [pubkey']]
+                            maybeSubInfo <- startSubscription relay' [metadataFilter [pubkey']]
                             case maybeSubInfo of
                               Just (subId, queue) -> do
-                                handleSearchSubscription relay' queue
+                                handleResponsesUntilEOSE relay' queue
                                 stopSubscription subId
                               Nothing -> 
                                 logWarning $ "Failed to start search subscription for relay: " <> relayURIToText relay'
@@ -186,6 +180,16 @@ runFutr = interpret $ \_ -> \case
             notifyUI
             sendFollowListEvent
         Nothing -> return ()
+
+  OpenChat pubKeyXO -> do
+    st <- get @AppState
+
+    case currentChatRecipient st of
+      (Just _, Just subId') -> stopSubscription subId'
+      _ -> return ()
+
+    modify $ \st' -> st' { currentChatRecipient = (Just [pubKeyXO], Nothing) }
+    notifyUI
 
   Logout obj -> do
       modify @AppState $ \st -> st
@@ -240,8 +244,8 @@ loginWithAccount obj a = do
         
         -- Initial subscription (until EOSE)
         let initialFilters =
-              [ FollowListFilter [ xo ]
-              , MetadataFilter [ xo ]
+              [ followListFilter [ xo ]
+              , metadataFilter [ xo ]
               ]
 
         logDebug $ "Starting initial subscription for relay: " <> relayName relay'
@@ -259,9 +263,11 @@ loginWithAccount obj a = do
               st <- get @AppState
               let followedPubKeys = concatMap (\(_, follows') -> map (\(Follow pk _ _) -> pk) follows') $ Map.toList $ followList $ follows st
               let filters =
-                    [ FollowListFilter (xo : followedPubKeys)
-                    , MetadataFilter (xo : followedPubKeys)
+                    [ followListFilter (xo : followedPubKeys)
+                    , metadataFilter (xo : followedPubKeys)
+                    , giftWrapFilter xo
                     ]
+
               maybeSubInfo' <- startSubscription (uri relay') filters
               case maybeSubInfo' of
                 Nothing -> logWarning $ "Failed to start main subscription for relay: " <> (relayURIToText $ uri relay')
@@ -287,141 +293,7 @@ loginWithAccount obj a = do
           let remainingAsyncs = filter (/= completed) asyncs
           waitForFirstTrueOrAllFalse remainingAsyncs
 
-
--- | Handle responses until EOSE.
-handleResponsesUntilEOSE :: FutrEff es => RelayURI -> TQueue Response -> Eff es ()
-handleResponsesUntilEOSE relayURI' queue = do
-  msg <- atomically $ readTQueue queue
-  msgs <- atomically $ flushTQueue queue
-  stopped <- processResponsesUntilEOSE relayURI' (msg : msgs)
-  unless stopped $ handleResponsesUntilEOSE relayURI' queue
-
-
--- | Process responses until EOSE.
-processResponsesUntilEOSE :: FutrEff es => RelayURI -> [Response] -> Eff es Bool
-processResponsesUntilEOSE _ [] = return False
-processResponsesUntilEOSE relayURI' (r:rs) = case r of
-  EventReceived _ event' -> do
-    handleEvent event' relayURI'
-    processResponsesUntilEOSE relayURI' rs
-  Eose _ -> return True
-  Closed _ _ -> return True
-  Ok eventId' accepted' msg -> do
-    modify $ handleConfirmation eventId' accepted' msg relayURI'
-    processResponsesUntilEOSE relayURI' rs
-  Notice msg -> do
-    modify $ handleNotice relayURI' msg
-    processResponsesUntilEOSE relayURI' rs
-
-
--- | Handle responses until closed.
-handleResponsesUntilClosed :: FutrEff es => RelayURI -> TQueue Response -> Eff es ()
-handleResponsesUntilClosed relayURI' queue = do
-  msg <- atomically $ readTQueue queue
-  msgs <- atomically $ flushTQueue queue
-  stopped <- processResponses relayURI' (msg : msgs)
-  notifyUI
-  unless stopped $ handleResponsesUntilClosed relayURI' queue
-
-
--- | Notify the UI.
-notifyUI :: FutrEff es => Eff es ()
-notifyUI = do
-  st <- get @AppState
-  let notifyObjRef = maybe (pure ()) fireSignal
-
-  notifyObjRef (objRef $ follows st)
-  notifyObjRef (profileObjRef st)
-
-
--- | Process responses.
-processResponses :: FutrEff es => RelayURI -> [Response] -> Eff es Bool
-processResponses _ [] = return False
-processResponses relayURI' (r:rs) = case r of
-  EventReceived _ event' -> do
-    handleEvent event' relayURI'
-    processResponses relayURI' rs
-  Eose subId' -> do
-    logDebug $ "EOSE on subscription " <> subId'
-    processResponses relayURI' rs
-  Closed subId msg -> do
-    logDebug $ "Closed subscription " <> subId <> " with message " <> msg
-    return True
-  Ok eventId' accepted' msg -> do
-    logDebug $ "OK on subscription " <> pack ( show eventId' ) <> " with message " <> msg
-    modify $ handleConfirmation eventId' accepted' msg relayURI'
-    processResponses relayURI' rs
-  Notice msg -> do
-    modify $ handleNotice relayURI' msg
-    processResponses relayURI' rs
-
-
--- | Handle an event.
-handleEvent :: FutrEff es => Event -> RelayURI -> Eff es ()
-handleEvent event' relayURI' =
-  if not (validateEvent event')
-    then do
-      logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
-
-      -- uncomment to see the serialized event
-      -- so far most times the problem was json parsing / serialization bug
-
-      --let unsignedEvent = UnsignedEvent (pubKey event') (createdAt event') (kind event') (tags event') (content event')
-      --    serializedEvent = encode unsignedEvent
-      --liftIO $ hPutStrLn stderr $ "Serialized: " <> BSL8.unpack serializedEvent
-      --let computedId = SHA256.hash $ BSL.toStrict serializedEvent
-      --logWarning $ "Computed ID: " <> byteStringToHex computedId
-
-    else do
-      case kind event' of
-        Metadata -> case eitherDecode (BSL.fromStrict $ TE.encodeUtf8 $ content event') of
-          Right profile -> do
-            modify $ \st ->
-              st { profiles = Map.insertWith (\new old -> if snd new > snd old then new else old)
-                                      (pubKey event')
-                                      (profile, createdAt event')
-                                      (profiles st)
-                }
-          Left err -> logWarning $ "Failed to decode metadata: " <> pack err
-
-        FollowList -> do
-          let followList' = [Follow pk relayUri' displayName' | PTag pk relayUri' displayName' <- tags event']
-          modify $ \st -> st { follows = FollowModel (Map.insert (pubKey event') followList' (followList $ follows st)) (objRef $ follows st) }
-
-        _ -> logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
-
-
--- | Handle a notice.
-handleNotice :: RelayURI -> Text -> RelayPoolState -> RelayPoolState
-handleNotice relayURI' msg st =
-  st { relays = Map.adjust (\rd -> rd { notices = msg : notices rd }) relayURI' (relays st) }
-
-
--- | Handle a confirmation.
-handleConfirmation :: EventId -> Bool -> Text -> RelayURI -> AppState -> AppState
-handleConfirmation eventId' accepted' msg relayURI' st =
-  let updateConfirmation = EventConfirmation
-        { relay = relayURI'
-        , waitingForConfirmation = False
-        , accepted = accepted'
-        , message = msg
-        }
-
-      updateConfirmations :: [EventConfirmation] -> [EventConfirmation]
-      updateConfirmations [] = [updateConfirmation]
-      updateConfirmations (conf:confs)
-        | relay conf == relayURI' && waitingForConfirmation conf =
-            updateConfirmation : confs
-        | otherwise = conf : updateConfirmations confs
-  in st  { confirmations = Map.alter
-         (\case
-           Nothing -> Just [updateConfirmation]
-           Just confs -> Just $ updateConfirmations confs)
-         eventId'
-         (confirmations st)
-      }
-
-
+{-
 -- | Handle the search subscription, updating profiles and stopping on EOSE.
 handleSearchSubscription :: FutrEff es => RelayURI -> TQueue Response -> Eff es ()
 handleSearchSubscription relayURI' queue = do
@@ -429,7 +301,7 @@ handleSearchSubscription relayURI' queue = do
   msgs <- atomically $ flushTQueue queue
   void $ processResponses relayURI' (msg : msgs)
   notifyUI
-
+-}
 
 -- | Send a follow list event.
 sendFollowListEvent :: FutrEff es => Eff es ()
@@ -437,7 +309,7 @@ sendFollowListEvent = do
     st <- get @AppState
     case keyPair st of
         Just kp -> do
-          currentTime <- now
+          currentTime <- getCurrentTime
           let userPK = keyPairToPubKeyXO kp
           let followList' = Map.findWithDefault [] userPK (followList $ follows st)
           let followTuples = map (\(Follow pk _ petName') -> (pk, petName')) followList'

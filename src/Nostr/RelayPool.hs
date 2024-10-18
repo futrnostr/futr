@@ -1,6 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 
-module Nostr.Effects.RelayPool where
+module Nostr.RelayPool where
 
 import Control.Monad (forM, forM_, unless)
 import Data.Map.Strict qualified as Map
@@ -12,10 +12,10 @@ import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
 import Effectful.State.Static.Shared (State, evalState, get, modify)
 import Effectful.TH
 
-import Nostr.Effects.IDGen
-import Nostr.Effects.Logging
-import Nostr.Effects.WebSocket
+import Logging
+import Nostr.WebSocket
 import Nostr.Types
+import Nostr.Util
 import Types (RelayPoolState(..), RelayData(..), initialRelayPoolState)
 
 -- | Effect for handling RelayPool operations.
@@ -34,7 +34,7 @@ type instance DispatchOf RelayPool = Dynamic
 
 makeEffect ''RelayPool
 
-type RelayPoolEff es = (WebSocket :> es, State WebSocketState :> es, Concurrent :> es, Logging :> es, IDGen :> es)
+type RelayPoolEff es = (WebSocket :> es, State WebSocketState :> es, Concurrent :> es, Logging :> es, Util :> es)
 
 data RelayPoolError = RelayNotFound RelayURI
   deriving (Show, Eq)
@@ -102,7 +102,7 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
                 return False
               Right _ -> return True
 
-      Nostr.Effects.RelayPool.Disconnect relayURI -> do
+      Nostr.RelayPool.Disconnect relayURI -> do
         st <- get @RelayPoolState
         case Map.lookup relayURI (relays st) of
           Just relayData -> do
@@ -111,13 +111,13 @@ runRelayPool action = evalState initialRelayPoolState $ interpret handleRelayPoo
 
           Nothing -> return ()
 
-      Nostr.Effects.RelayPool.DisconnectAll -> do
+      Nostr.RelayPool.DisconnectAll -> do
         logDebug $ "Disconnecting from all relays ..."
         st <- get @RelayPoolState
         forM_ (Map.elems $ relays st) $ \relayData ->
           atomically $ writeTChan (requestChannel relayData) Nostr.Types.Disconnect
 
-      Nostr.Effects.RelayPool.SendEvent event rs -> do
+      Nostr.RelayPool.SendEvent event rs -> do
         st <- get @RelayPoolState
         forM_ rs $ \relayURI -> do
           case Map.lookup relayURI (relays st) of

@@ -9,11 +9,12 @@ import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
 import Futr qualified as Futr
-import Nostr.Effects.CurrentTime (runCurrentTime)
-import Nostr.Effects.IDGen (runIDGen)
-import Nostr.Effects.Logging (runLoggingStdout)
-import Nostr.Effects.RelayPool (runRelayPool)
-import Nostr.Effects.WebSocket (runWebSocket)
+import Logging (runLoggingStdout)
+import Nostr.GiftWrap (runGiftWrap)
+import Nostr.RelayPool (runRelayPool)
+import Nostr.Subscription (runSubscription)
+import Nostr.WebSocket (runWebSocket)
+import Nostr.Util (runUtil)
 import Presentation.KeyMgmt qualified as KeyMgmt
 import UI qualified as UI
 import Types
@@ -32,18 +33,19 @@ main = do
 
     runEff
         . runLoggingStdout
+        . evalState Types.initialState
         . runEffectfulQML
         . runFileSystem
-        . runIDGen
-        . runCurrentTime
+        . runUtil
         . runConcurrent
         . evalState KeyMgmt.initialState
         . evalState Types.initialRelayPoolState
         . KeyMgmt.runKeyMgmt
         . KeyMgmt.runKeyMgmtUI
-        . evalState Types.initialState
+        . runGiftWrap
         . runWebSocket 3 -- max 3 retries
         . runRelayPool
+        . runSubscription
         . Futr.runFutr
         . UI.runUI
         $ do
