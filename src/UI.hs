@@ -29,7 +29,7 @@ import Nostr.Types (EventId(..), Profile(..), emptyProfile, relayURIToText)
 import Nostr.Util
 import Presentation.KeyMgmt qualified as PKeyMgmt
 import Futr ( Futr, FutrEff, LoginStatusChanged, login, logout, followProfile, openChat,
-              search, setCurrentProfile, unfollowProfile )
+              search, sendMessage, setCurrentProfile, unfollowProfile )
 import Types
 
 -- | Key Management Effect for creating QML UI.
@@ -268,7 +268,9 @@ runUI = interpret $ \_ -> \case
 
         defMethod' "openChat" $ \_ npubText -> runE $ do
             let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
-            openChat pubKeyXO
+            openChat pubKeyXO,
+
+        defMethod' "sendMessage" $ \_ input -> runE $ sendMessage input
       ]
 
     rootObj <- newObject rootClass ()
