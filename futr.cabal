@@ -32,6 +32,7 @@ executable futr
         EffectfulQML
         Futr
         Logging
+        Nostr
         Nostr.Bech32
         Nostr.Encryption
         Nostr.Encryption.Internal

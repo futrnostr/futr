@@ -32,8 +32,10 @@ import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
 import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
+import Nostr
 import Nostr.Bech32
-import Nostr.Keys
+import Nostr.Keys ( KeyPair, PubKeyXO, SecKey, derivePublicKeyXO
+                  , keyPairToPubKeyXO, keyPairToSecKey, secKeyToKeyPair)
 import Nostr.Types hiding (displayName, picture)
 import System.FilePath (takeFileName, (</>))
 import Text.Read (readMaybe)
@@ -80,6 +82,7 @@ initialState =
 
 -- | Key Management Effect.
 type KeyMgmtEff es = ( State KeyMgmtState :> es
+                     , Nostr :> es
                      , FileSystem :> es
                      , IOE :> es
                      , EffectfulQML :> es )
@@ -129,7 +132,7 @@ runKeyMgmt = interpret $ \_ -> \case
         return False
 
   ImportSeedphrase obj input pwd -> do
-    mkp <- liftIO $ mnemonicToKeyPair input pwd
+    mkp <- mnemonicToKeyPair input pwd
     case mkp of
       Right kp -> do
         let secKey = keyPairToSecKey kp
@@ -150,11 +153,11 @@ runKeyMgmt = interpret $ \_ -> \case
         return False
 
   GenerateSeedphrase obj -> do
-    mnemonicResult <- liftIO createMnemonic
+    mnemonicResult <- createMnemonic
     case mnemonicResult of
       Left err -> modify $ \st -> st {errorMsg = "Error: " <> pack err}
       Right m' -> do
-        keyPairResult <- liftIO $ mnemonicToKeyPair m' ""
+        keyPairResult <- mnemonicToKeyPair m' ""
         case keyPairResult of
           Left err' -> modify $ \st -> st {errorMsg = "Error: " <> pack err'}
           Right mkp' -> do
