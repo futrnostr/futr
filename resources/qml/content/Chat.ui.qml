@@ -136,6 +136,7 @@ Rectangle {
                 font.pixelSize: 14
                 bottomPadding: 10
                 leftPadding: 10
+                onAccepted: sendMessageAndClear()
             }
 
             Button {
@@ -143,12 +144,15 @@ Rectangle {
                 highlighted: true
                 bottomPadding: 10
                 rightPadding: 10
-                onClicked: {
-                    // Here you would typically call a function to send the message
-                    console.log("Sending message:", messageInput.text)
-                    messageInput.text = ""
-                }
+                onClicked: sendMessageAndClear()
             }
+        }
+    }
+
+    function sendMessageAndClear() {
+        if (messageInput.text.trim() !== "") {
+            sendMessage(messageInput.text)
+            messageInput.text = ""
         }
     }
 }

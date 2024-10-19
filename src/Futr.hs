@@ -6,7 +6,7 @@ module Futr where
 
 import Control.Monad (forM, forM_, void, unless, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
-import Data.Maybe (listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, isPrefixOf)
@@ -23,13 +23,14 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 
 import Logging
+import Nostr
 import Nostr.Bech32
-import Nostr.Event (createFollowList, signEvent)
-import Nostr.Keys (KeyPair, PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.Event (createFollowList, createRumor)
+import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.GiftWrap
 import Nostr.RelayPool
 import Nostr.Subscription
-import Nostr.Types ( Event, RelayURI, Relay(..), UnsignedEvent(..),
+import Nostr.Types ( Kind(..), RelayURI, Relay(..), Tag(..),
                      followListFilter, giftWrapFilter, metadataFilter,
                      relayName, relayURIToText)
 import Nostr.Util
@@ -65,6 +66,7 @@ data Futr :: Effect where
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
   OpenChat :: PubKeyXO -> Futr m ()
+  SendMessage :: Text -> Futr m ()
   Logout :: ObjRef () -> Futr m ()
 
 
@@ -79,6 +81,7 @@ makeEffect ''Futr
 type FutrEff es = ( State AppState :> es
                   , PKeyMgmt.KeyMgmt :> es
                   , PKeyMgmt.KeyMgmtUI :> es
+                  , Nostr :> es
                   , RelayPool :> es
                   , Subscription :> es
                   , State PKeyMgmt.KeyMgmtState :> es
@@ -191,6 +194,23 @@ runFutr = interpret $ \_ -> \case
     modify $ \st' -> st' { currentChatRecipient = (Just [pubKeyXO], Nothing) }
     notifyUI
 
+  SendMessage input -> do
+    st <- get @AppState
+    case (keyPair st, currentChatRecipient st) of
+      (Just kp, (Just xos, _)) -> do
+        now <- getCurrentTime
+        let pubKeyXO = keyPairToPubKeyXO kp
+            rumor = createRumor pubKeyXO now ShortTextNote (map (\xo -> PTag xo Nothing Nothing) xos) input
+        giftWraps <- catMaybes <$> forM xos (\xo -> do
+          seal <- createSeal rumor kp xo
+          case seal of
+            Just seal' -> createGiftWrap seal' xo
+            Nothing -> logError "Failed to create seal" >> return Nothing)
+        relays' <- gets @RelayPoolState relays
+        mapM_ (\gw -> sendEvent gw (Map.keys relays')) giftWraps
+      (Nothing, _) -> logError "No key pair found"
+      (_, (Nothing, _)) -> logError "No current chat recipient"
+
   Logout obj -> do
       modify @AppState $ \st -> st
         { keyPair = Nothing
@@ -293,15 +313,6 @@ loginWithAccount obj a = do
           let remainingAsyncs = filter (/= completed) asyncs
           waitForFirstTrueOrAllFalse remainingAsyncs
 
-{-
--- | Handle the search subscription, updating profiles and stopping on EOSE.
-handleSearchSubscription :: FutrEff es => RelayURI -> TQueue Response -> Eff es ()
-handleSearchSubscription relayURI' queue = do
-  msg <- atomically $ readTQueue queue
-  msgs <- atomically $ flushTQueue queue
-  void $ processResponses relayURI' (msg : msgs)
-  notifyUI
--}
 
 -- | Send a follow list event.
 sendFollowListEvent :: FutrEff es => Eff es ()
@@ -314,7 +325,7 @@ sendFollowListEvent = do
           let followList' = Map.findWithDefault [] userPK (followList $ follows st)
           let followTuples = map (\(Follow pk _ petName') -> (pk, petName')) followList'
           let event = createFollowList followTuples userPK currentTime
-          signedEvent <- signEvent' event kp
+          signedEvent <- signEvent event kp
           case signedEvent of
             Just signedEvent' -> do
               relays' <- gets @RelayPoolState relays
@@ -323,8 +334,3 @@ sendFollowListEvent = do
               logError "Failed to sign follow list event"
               return ()
         Nothing -> return ()
-
-
--- | Sign an event.
-signEvent' :: FutrEff es => UnsignedEvent -> KeyPair -> Eff es (Maybe Event)
-signEvent' e kp = liftIO $ signEvent e kp
