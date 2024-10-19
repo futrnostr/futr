@@ -10,6 +10,7 @@ import System.Environment (setEnv)
 
 import Futr qualified as Futr
 import Logging (runLoggingStdout)
+import Nostr
 import Nostr.GiftWrap (runGiftWrap)
 import Nostr.RelayPool (runRelayPool)
 import Nostr.Subscription (runSubscription)
@@ -40,6 +41,7 @@ main = do
         . runConcurrent
         . evalState KeyMgmt.initialState
         . evalState Types.initialRelayPoolState
+        . runNostr
         . KeyMgmt.runKeyMgmt
         . KeyMgmt.runKeyMgmtUI
         . runGiftWrap

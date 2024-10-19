@@ -11,7 +11,6 @@ module Nostr.Bech32
     , nprofileToPubKeyXO
     , nrelayToRelay
     , relayToNrelay
-    , debugNprofileParsing
     ) where
 
 import Codec.Binary.Bech32 qualified as Bech32
@@ -113,33 +112,6 @@ nprofileToPubKeyXO txt = do
                  then pure $ RelayURI (decodeUtf8 $ BSS.fromShort v)
                  else Nothing) tlvs
   return (pubKey', relays)
-
--- Helper function to print debug information
-debugNprofileParsing :: T.Text -> IO ()
-debugNprofileParsing txt = do
-    putStrLn $ "Input: " ++ T.unpack txt
-    case Bech32.decodeLenient txt of
-        Left err -> putStrLn $ "Failed to decode bech32: " ++ show err
-        Right (prefix, dataPart) -> do
-            putStrLn $ "Decoded bech32 prefix: " ++ T.unpack (Bech32.humanReadablePartToText prefix)
-            case Bech32.dataPartToBytes dataPart of
-                Nothing -> putStrLn "Failed to convert data part to bytes"
-                Just bs -> do
-                    putStrLn $ "Decoded bytes: " ++ show bs
-                    let tlvs = decodeTLV bs
-                    putStrLn $ "Decoded TLVs: " ++ show tlvs
-                    case lookup 0 tlvs of
-                        Nothing -> putStrLn "No pubkey found in TLVs"
-                        Just pubKeyBS -> do
-                            putStrLn $ "PubKey bytes: " ++ show pubKeyBS
-                            case importPubKeyXO (BSS.fromShort pubKeyBS) of
-                                Nothing -> putStrLn "Failed to import PubKeyXO"
-                                Just _ -> putStrLn "Successfully imported PubKeyXO"
-                    let relays = mapMaybe (\(t, v) -> 
-                                 if t == 1 
-                                 then Just $ decodeUtf8 $ BSS.fromShort v
-                                 else Nothing) tlvs
-                    putStrLn $ "Relays: " ++ show relays
 
 
 -- | Convert a relay URI to nrelay bech32 encoding

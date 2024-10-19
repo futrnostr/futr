@@ -17,7 +17,8 @@ import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Time.Format (defaultTimeLocale, formatTime)
 
 import Logging
-import Nostr.Event
+import Nostr
+import Nostr.Event (validateEvent)
 import Nostr.Keys (KeyPair, PubKeyXO, byteStringToHex, keyPairToPubKeyXO)
 import Nostr.Types (Event(..), EventId(..), Kind(..), Rumor(..), Tag(..))
 import Types (AppState(..),ChatMessage(..))
@@ -35,9 +36,10 @@ makeEffect ''GiftWrap
 
 -- | Effectful type for GiftWrap.
 type GiftWrapEff es = ( State AppState :> es
-                  , Logging :> es
-                  , IOE :> es
-                  )
+                      , Logging :> es   
+                      , IOE :> es
+                      , Nostr :> es
+                      )
 
 
 -- Main effect handler
@@ -47,7 +49,7 @@ runGiftWrap = interpret $ \_ -> \case
     st <- get @AppState
     case keyPair st of
       Just kp -> do
-        unwrappedEvent <- liftIO $ unwrapGiftWrap event' kp
+        unwrappedEvent <- unwrapGiftWrap event' kp
         case unwrappedEvent of
           Just sealedEvent -> handleSealedEvent sealedEvent event' kp
           Nothing -> logInfo "Failed to unwrap gift wrap"
@@ -64,7 +66,7 @@ handleSealedEvent sealedEvent originalEvent kp
   | kind sealedEvent /= Seal =
       logInfo "Unwrapped event is not a Seal"
   | otherwise = do
-      unwrappedRumor <- liftIO $ unwrapSeal sealedEvent kp
+      unwrappedRumor <- unwrapSeal sealedEvent kp
       case unwrappedRumor of
         Just decryptedRumor -> processDecryptedRumor decryptedRumor sealedEvent originalEvent kp
         Nothing -> logInfo "Failed to decrypt sealed event"
