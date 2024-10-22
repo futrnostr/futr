@@ -64,6 +64,7 @@ Rectangle {
             model: AutoListModel {
                 id: messagesModel
                 source: messages
+                mode: AutoListModel.ByKey
             }
 
             delegate: Item {
@@ -79,7 +80,7 @@ Rectangle {
                     }
                     width: Math.min(Math.max(messageContent.implicitWidth, timestampText.implicitWidth) + 24, parent.width * 0.8)
                     height: messageContent.height + timestampText.height + 20
-                    color: modelData && modelData.isOwnMessage ? Material.accentColor : Material.dividerColor
+                    color: modelData.isOwnMessage ? Material.accentColor : Material.dividerColor
                     radius: 10
 
                     ColumnLayout {
