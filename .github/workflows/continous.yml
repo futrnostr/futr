@@ -1,0 +1,63 @@
+name: Flatpak Build and Release
+
+on:
+  push:
+    branches: ["master"]
+
+jobs:
+  flatpak-build-and-release:
+    name: Flatpak Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Flatpak and Flatpak Builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Set up Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.6'
+          cabal-version: '3.10.3.0'
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autogen automake libtool
+
+      - name: Install Qt5 Dependencies
+        run: |
+          sudo apt-get install -y qtdeclarative5-dev libqt5quick5 qt5-image-formats-plugins qttools5-dev-tools qtbase5-dev
+
+      - name: Install secp256k1 Library
+        run: |
+          git clone https://github.com/bitcoin-core/secp256k1 && \
+          cd secp256k1 && \
+          ./autogen.sh && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+          make && \
+          sudo make install && \
+          cd ..
+
+      - name: Set Library Path
+        run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
+
+      - name: Build with Cabal
+        run: cabal build
+
+      - name: Build Flatpak
+        run: ./build-flatpak.sh
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: continuous
+          name: Continuous
+          files: "futr.flatpak"
+          prerelease: true
+          body: "This is an automated continuous release."
+          token: ${{ secrets.GITHUB_TOKEN }}
+          overwrite: true
