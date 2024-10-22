@@ -16,6 +16,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y flathub org.kde.Platform//5.15-23.08 org.kde.Sdk//5.15-23.08
 
       - name: Set up Haskell
         uses: haskell-actions/setup@v2
