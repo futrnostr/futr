@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 
+import Dialogs 1.0
 import HsQML.Model 1.0
 import Futr 1.0
 import Profile 1.0
@@ -43,11 +44,15 @@ Item {
 
                 FollowList {}
 
-                // Center column: Chat window
                 Rectangle {
                     width: parent.width * 0.4 - (parent.spacing * 2 / 3)
                     height: parent.height
                     color: Material.backgroundColor
+
+                    DMRelays {
+                        anchors.fill: parent
+                        visible: ctxRelayMgmt.dmRelays.length == 0
+                    }
 
                     Loader {
                         id: chatLoader
@@ -55,7 +60,6 @@ Item {
                     }
                 }
 
-                // Right column: Profile view
                 Rectangle {
                     width: parent.width * 0.3 - (parent.spacing * 2 / 3)
                     height: parent.height
@@ -70,5 +74,9 @@ Item {
                 }
             }
         }
+    }
+
+    RelayMgmtDialog {
+        id: relayMgmtDialog
     }
 }

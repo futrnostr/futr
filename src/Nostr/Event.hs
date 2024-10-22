@@ -17,6 +17,7 @@ import Nostr.Types
 import Nostr.Encryption (decrypt, getConversationKey, encrypt)
 import Data.Time.Clock.POSIX (getCurrentTime, utcTimeToPOSIXSeconds)
 import Crypto.Random (getRandomBytes)
+import System.Random (randomRIO)
 
 
 -- | Sign an event.
@@ -102,7 +103,7 @@ createFollowList contacts xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = FollowList
-    , tags' = map (\c -> PTag (fst c) (Just (RelayURI "")) (snd c)) contacts
+    , tags' = map (\c -> PTag (fst c) (Just "") (snd c)) contacts
     , content' = ""
     }
 
@@ -121,13 +122,36 @@ createEventDeletion eids reason xo t =
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
 
 
+createRelayListMetadataEvent :: [Relay] -> PubKeyXO -> Int -> UnsignedEvent
+createRelayListMetadataEvent relays xo t =
+  UnsignedEvent
+    { pubKey' = xo
+    , createdAt' = t
+    , kind' = RelayListMetadata
+    , tags' = map (\r -> RelayTag r) relays
+    , content' = ""
+    }
+
+
+createPreferredDMRelaysEvent :: [RelayURI] -> PubKeyXO -> Int -> UnsignedEvent
+createPreferredDMRelaysEvent urls xo t =
+  UnsignedEvent
+    { pubKey' = xo
+    , createdAt' = t
+    , kind' = PreferredDMRelays
+    , tags' = map (\url -> RelayTag $ InboxOutboxRelay url) urls
+    , content' = ""
+    }
+
+
 createCanonicalAuthentication :: RelayURI -> Text -> PubKeyXO -> Int -> UnsignedEvent
-createCanonicalAuthentication relayURI' challenge xo t =
+createCanonicalAuthentication r challenge xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
     , kind' = CanonicalAuthentication
-    , tags' = [RelayTag relayURI', ChallengeTag challenge]
+    -- force the relay to be a InboxOutboxRelay for the purpose of authentication
+    , tags' = [RelayTag $ InboxOutboxRelay r, ChallengeTag challenge]
     , content' = ""
     }
 
@@ -165,9 +189,11 @@ createSeal rumor kp pk = do
         Left _ -> return Nothing
         Right sealContent -> do
           currentTime <- getCurrentTime
+          randomOffset <- randomRIO (0, 2 * 24 * 60 * 60 :: Int)
+          let timestamp = floor (utcTimeToPOSIXSeconds currentTime) - randomOffset
           let sealEvent = UnsignedEvent
                 { pubKey' = keyPairToPubKeyXO kp
-                , createdAt' = floor $ utcTimeToPOSIXSeconds currentTime
+                , createdAt' = timestamp
                 , kind' = Seal
                 , tags' = []
                 , content' = sealContent

@@ -23,11 +23,12 @@ import Text.Read (readMaybe)
 import Logging
 import Nostr.Bech32
 import Nostr.Event
-import Nostr.RelayPool
+import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types (EventId(..), Profile(..), emptyProfile, relayURIToText)
+import Nostr.Types (EventId(..), Profile(..), emptyProfile, getUri)
 import Nostr.Util
 import Presentation.KeyMgmt qualified as PKeyMgmt
+import Presentation.RelayMgmt qualified as PRelayMgmt
 import Futr ( Futr, FutrEff, LoginStatusChanged, login, logout, followProfile, openChat,
               search, sendMessage, setCurrentProfile, unfollowProfile )
 import Types
@@ -49,6 +50,7 @@ runUI :: (FutrEff es, Futr :> es) => Eff (UI : es) a -> Eff es a
 runUI = interpret $ \_ -> \case
   CreateUI changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
     keyMgmtObj <- runE $ PKeyMgmt.createUI changeKey'
+    relayMgmtObj <- runE $ PRelayMgmt.createUI changeKey'
 
     profileClass <- newClass [
         defPropertySigRO' "name" changeKey' $ \_ -> do
@@ -93,7 +95,7 @@ runUI = interpret $ \_ -> \case
           let profilePubKey = currentProfile st
           case (currentPubKey, profilePubKey) of
             (Just userPK, Just profilePK) -> do
-              let userFollows = Map.findWithDefault [] userPK (followList $ follows st)
+              let userFollows = Map.findWithDefault [] userPK (follows st)
               return $ any (\follow -> pubkey follow == profilePK) userFollows
             _ -> return False
         ]
@@ -101,7 +103,7 @@ runUI = interpret $ \_ -> \case
     let followProp name' accessor = defPropertySigRO' name' changeKey' $ \obj -> do
           let pubKeyXO = fromObjRef obj :: PubKeyXO
           st <- runE $ get @AppState
-          let followList' = followList $ follows st
+          let followList' = follows st
           let userPubKey = keyPairToPubKeyXO <$> keyPair st
           let followData = userPubKey >>= \upk -> Map.lookup upk followList' >>= find (\f -> pubkey f == pubKeyXO)
           return $ accessor st followData
@@ -110,7 +112,7 @@ runUI = interpret $ \_ -> \case
         followProp "pubkey" $ \_ followMaybe ->
             maybe "" (pubKeyXOToBech32 . pubkey) followMaybe,
         followProp "relay" $ \_ followMaybe ->
-            maybe "" (maybe "" relayURIToText . relayURI) followMaybe,
+            maybe "" (\f -> maybe "" getUri (followRelay f)) followMaybe,
         followProp "petname" $ \_ followMaybe ->
             maybe "" (fromMaybe "" . petName) followMaybe,
         followProp "displayName" $ \st followMaybe ->
@@ -179,9 +181,11 @@ runUI = interpret $ \_ -> \case
     rootClass <- newClass [
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
 
+        defPropertyConst' "ctxRelayMgmt" (\_ -> return relayMgmtObj),
+
         defPropertyConst' "currentProfile" (\_ -> do
           profileObj <- newObject profileClass ()
-          runE $ modify @AppState $ \st -> st { profileObjRef = Just profileObj }
+          runE $ modify @AppState $ \st -> st { uiRefs = (uiRefs st) { profileObjRef = Just profileObj } }
           return profileObj
         ),
 
@@ -226,37 +230,36 @@ runUI = interpret $ \_ -> \case
 
         defMethod' "saveProfile" $ \_ input -> do
           let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
-          st <- runE $ get @AppState
           n <- runE getCurrentTime
-          let kp = maybe (error "No key pair available") id $ keyPair st
+          kp <- runE getKeyPair
           let unsigned = createMetadata profile (keyPairToPubKeyXO kp) n
           signedMaybe <- signEvent unsigned kp
           case signedMaybe of
             Just signed -> do
-              st' <- runE $ get @RelayPoolState
-              runE $ sendEvent signed $ Map.keys (relays st')
+              runE $ broadcast signed
               runE $ logInfo "Profile successfully saved and sent to relay pool"
             Nothing -> runE $ logWarning "Failed to sign profile update event",
 
         defPropertySigRO' "follows" changeKey' $ \obj -> do
+          runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
           st <- runE $ get @AppState
           let maybeUserPubKey = keyPairToPubKeyXO <$> keyPair st
           case maybeUserPubKey of
             Just userPubKey -> do
-              let userFollows = Map.findWithDefault [] userPubKey (followList $ follows st)
+              let userFollows = Map.findWithDefault [] userPubKey (follows st)
+              runE $ logDebug $ "User follows: " <> pack (show userFollows)
               objs <- mapM (getPoolObject followPool) (map pubkey userFollows)
-              runE $ modify $ \s -> s { follows = (follows s) { objRef = Just obj } }
               return objs
             Nothing -> return [],
 
         defPropertySigRO' "messages" changeKey' $ \obj -> do
+          runE $ modify @AppState $ \s -> s { uiRefs = (uiRefs s) { chatObjRef = Just obj } }
           st <- runE $ get @AppState
           case currentChatRecipient st of
             (Just recipient, _) -> do
               let chatMessages = Map.findWithDefault [] recipient (chats st)
               let sortedChatMessages = sortOn (\msg -> chatMessageCreatedAt msg) chatMessages
               objs <- mapM (getPoolObject chatPool) (map chatMessageId sortedChatMessages)
-              runE $ modify @AppState $ \s -> s { chatObjRef = Just obj }
               return objs
             _ -> do
               runE $ logDebug $ "No current chat recipient"
