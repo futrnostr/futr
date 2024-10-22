@@ -121,22 +121,33 @@ createEventDeletion eids reason xo t =
     toDelete = map (\eid -> ETag eid Nothing Nothing) eids
 
 
+createCanonicalAuthentication :: RelayURI -> Text -> PubKeyXO -> Int -> UnsignedEvent
+createCanonicalAuthentication relayURI' challenge xo t =
+  UnsignedEvent
+    { pubKey' = xo
+    , createdAt' = t
+    , kind' = CanonicalAuthentication
+    , tags' = [RelayTag relayURI', ChallengeTag challenge]
+    , content' = ""
+    }
+
+
 -- | Create a rumor from an event.
-createRumor :: PubKeyXO -> Int -> Kind -> [Tag] -> Text -> Rumor
-createRumor pubKey' createdAt' kind' tags' content' =
-  let rumorId = calculateEventId pubKey' createdAt' kind' tags' content'
+createRumor :: PubKeyXO -> Int -> [Tag] -> Text -> Rumor
+createRumor pubKey' createdAt' tags' content' =
+  let rumorId = calculateEventId pubKey' createdAt' tags' content'
   in Rumor
     { rumorId = rumorId
     , rumorPubKey = pubKey'
     , rumorCreatedAt = createdAt'
-    , rumorKind = kind'
+    , rumorKind = DirectMessage
     , rumorTags = tags'
     , rumorContent = content'
     }
   where
-    calculateEventId :: PubKeyXO -> Int -> Kind -> [Tag] -> Text -> EventId
-    calculateEventId pubKey'' createdAt'' kind'' tags'' content'' =
-      let unsignedEvent = UnsignedEvent pubKey'' createdAt'' kind'' tags'' content''
+    calculateEventId :: PubKeyXO -> Int -> [Tag] -> Text -> EventId
+    calculateEventId pubKey'' createdAt'' tags'' content'' =
+      let unsignedEvent = UnsignedEvent pubKey'' createdAt'' DirectMessage tags'' content''
           serializedEvent = toStrict $ encode unsignedEvent
           computedId = SHA256.hash serializedEvent
       in EventId computedId
@@ -165,7 +176,7 @@ createSeal rumor kp pk = do
 
 
 -- | Create a gift wrap event.
-createGiftWrap :: Event -> PubKeyXO -> IO (Maybe Event)
+createGiftWrap :: Event -> PubKeyXO -> IO (Maybe (Event, KeyPair))
 createGiftWrap sealEvent recipientPubKey = do
   randomKeyPair <- createKeyPair
   let sealJson = encode sealEvent
@@ -184,7 +195,9 @@ createGiftWrap sealEvent recipientPubKey = do
                 , tags' = [PTag recipientPubKey Nothing Nothing]
                 , content' = wrapContent
                 }
-          signEvent wrapEvent randomKeyPair
+          signEvent wrapEvent randomKeyPair >>= \case
+            Just e -> return $ Just (e, randomKeyPair)
+            Nothing -> return Nothing
 
 
 -- | Unwrap a gift wrap event.

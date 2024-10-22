@@ -96,6 +96,7 @@ Item {
                         "profileData": currentProfile,
                         "npub": result.npub
                     })
+                    searchInput.text = ""
                 }
             }
         }

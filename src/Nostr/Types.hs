@@ -30,6 +30,7 @@ import Data.Text.Encoding (decodeUtf8)
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
 import Prelude hiding (until)
+import Text.Read (readMaybe)
 
 import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature)
 
@@ -85,16 +86,18 @@ data Request
   | Subscribe Subscription
   | Close SubscriptionId
   | Disconnect
+  | Authenticate Event
   deriving (Eq, Generic, Show)
 
 
 -- | Represents a response from the relay.
 data Response
   = EventReceived SubscriptionId Event
-  | Ok EventId Bool Text
+  | Ok (Maybe EventId) Bool Text
   | Eose SubscriptionId
   | Closed SubscriptionId Text
   | Notice Text
+  | Auth Text
   deriving (Eq, Show)
 
 
@@ -105,15 +108,16 @@ data StandardPrefix = Duplicate | Pow | Blocked | RateLimited | Invalid | Error
 
 -- | The 'Kind' data type represents different kinds of events in the Nostr protocol.
 data Kind
-  = Metadata        -- NIP-01
-  | ShortTextNote   -- NIP-01
-  | FollowList      -- NIP-02
-  | EventDeletion   -- NIP-09
-  | Repost          -- NIP-18
-  | Reaction        -- NIP-25
-  | Seal            -- NIP-59
-  | GiftWrap        -- NIP-59
-  | DirectMessage   -- NIP-17
+  = Metadata                -- NIP-01
+  | ShortTextNote           -- NIP-01
+  | FollowList              -- NIP-02
+  | EventDeletion           -- NIP-09
+  | Repost                  -- NIP-18
+  | Reaction                -- NIP-25
+  | Seal                    -- NIP-59
+  | GiftWrap                -- NIP-59
+  | DirectMessage           -- NIP-17
+  | CanonicalAuthentication -- NIP-42
   | UnknownKind Int
   deriving (Eq, Generic, Read, Show)
 
@@ -131,6 +135,8 @@ data Relationship = Reply | Root
 data Tag
   = ETag EventId (Maybe RelayURI) (Maybe Relationship)
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
+  | RelayTag RelayURI
+  | ChallengeTag Text
   | GenericTag [Value]
   deriving (Eq, Generic, Show)
 
@@ -327,6 +333,8 @@ instance FromJSON Tag where
     case V.toList arr of
       ("e":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseETag rest) v
       ("p":rest) -> parsePTag rest v
+      ("relay":rest) -> parseRelayTag rest v
+      ("challenge":rest) -> parseChallengeTag rest v
       _          -> parseGenericTag v
   parseJSON v = parseGenericTag v
 
@@ -395,6 +403,30 @@ parseMaybeDisplayName (String t) = return (Just t)
 parseMaybeDisplayName v = fail $ "Expected string for display name, got: " ++ show v
 
 
+-- | Parses a relay tag from a JSON array.
+parseRelayTag :: [Value] -> Value -> Parser Tag
+parseRelayTag rest _ = case rest of
+  [relayVal] -> do
+    relayURI' <- parseRelayURI relayVal
+    return $ RelayTag relayURI'
+  _ -> fail "Invalid RelayTag format"
+
+
+-- | Parses a RelayURI from a JSON value.
+parseRelayURI :: Value -> Parser RelayURI
+parseRelayURI (String s) = return (RelayURI s)
+parseRelayURI _ = fail "Expected string for RelayURI"
+
+
+-- | Parses a challenge tag from a JSON array.
+parseChallengeTag :: [Value] -> Value -> Parser Tag
+parseChallengeTag rest _ = case rest of
+  [challengeVal] -> do
+    challenge <- parseJSONSafe challengeVal
+    return $ ChallengeTag challenge
+  _ -> fail "Invalid ChallengeTag format"
+
+
 -- | Parses a generic tag from a JSON array.
 parseGenericTag :: Value -> Parser Tag
 parseGenericTag (Array arr) = return $ GenericTag (V.toList arr)
@@ -420,6 +452,8 @@ instance ToJSON Tag where
       ] ++
       (maybe [] (\r -> [text $ unRelayURI r]) relayURL) ++
       (maybe [] (\n -> [text n]) name)
+  toEncoding (RelayTag relayURI') = list id [text "relay", text (relayURIToText relayURI')]
+  toEncoding (ChallengeTag challenge) = list id [text "challenge", text challenge]
   toEncoding (GenericTag values) = list toEncoding values
 
 
@@ -448,20 +482,26 @@ instance FromJSON Response where
         event <- parseJSON $ arr V.! 2
         return $ EventReceived subId' event
       "OK" -> do
-        id' <- parseJSON $ arr V.! 1
+        id' <- parseJSON $ arr V.! 1 :: Parser (Maybe Text)
         bool <- parseJSON $ arr V.! 2
         message <- parseJSON $ arr V.! 3
-        return $ Ok id' bool message
+        let eventId = id' >>= \t -> if T.null t
+                                    then Nothing
+                                    else EventId <$> decodeHex t
+        return $ Ok eventId bool message
       "EOSE" -> do
         subId' <- parseJSON $ arr V.! 1
         return $ Eose subId'
-      "CLOSE" -> do
+      "CLOSED" -> do
         subId' <- parseJSON $ arr V.! 1
         message <- parseJSON $ arr V.! 2
         return $ Closed subId' message
       "NOTICE" -> do
         message <- parseJSON $ arr V.! 1
         return $ Notice message
+      "AUTH" -> do
+        challenge <- parseJSON $ arr V.! 1
+        return $ Auth challenge
       _ -> fail "Unknown response type"
 
 
@@ -473,6 +513,7 @@ instance ToJSON Subscription where
 -- | Converts a 'Request' to its JSON representation.
 instance ToJSON Request where
   toEncoding req = case req of
+    Authenticate event -> list id [text "AUTH", toEncoding event]
     SendEvent event -> list id [text "EVENT", toEncoding event]
     Subscribe (Subscription filters subId) -> list id $ text "REQ" : text subId : map toEncoding (toList filters)
     Close subId -> list text ["CLOSE", subId]
@@ -524,6 +565,7 @@ instance FromJSON Kind where
       13 -> return Seal
       1059 -> return GiftWrap
       14 -> return DirectMessage
+      22242 -> return CanonicalAuthentication
       _  -> return $ UnknownKind n
     Nothing -> fail "Expected an integer for Kind"
 
@@ -540,6 +582,7 @@ instance ToJSON Kind where
   toEncoding Seal          = toEncoding (13 :: Int)
   toEncoding GiftWrap      = toEncoding (1059 :: Int)
   toEncoding DirectMessage = toEncoding (14 :: Int)
+  toEncoding CanonicalAuthentication = toEncoding (22242 :: Int)
   toEncoding (UnknownKind n) = toEncoding n
 
 
@@ -585,9 +628,8 @@ instance FromJSON Profile where
 defaultRelays :: [Relay]
 defaultRelays =
   [ Relay (RelayURI "wss://nos.lol") (RelayInfo True True)
-  --, Relay (RelayURI "ws://127.0.0.1:7777") (RelayInfo True True)
-  , Relay (RelayURI "wss://relay.damus.io") (RelayInfo True True)
-  --, Relay (RelayURI "wss://relay.0xchat.com") (RelayInfo True True)
+  , Relay (RelayURI "wss://auth.nostr1.com") (RelayInfo True True)
+  , Relay (RelayURI "wss://nostr.mom") (RelayInfo True True)
   ]
 
 
@@ -624,10 +666,15 @@ extractHostname r =
 -- | Extracts the port of a relay's URI.
 extractPort :: Relay -> Int
 extractPort r =
-  case extractScheme r of
-    Just "wss" -> 443
-    Just "ws" -> 80
-    _ -> 80  -- Default to 80 if scheme is unknown
+  case T.splitOn ":" $ T.dropWhile (/= ':') $ T.dropWhile (/= '/') $ T.dropWhile (/= ':') u of
+    (_:portStr:_) -> maybe (defaultPort scheme) id $ readMaybe $ T.unpack portStr
+    _ -> defaultPort scheme
+  where
+    u = unRelayURI $ uri r
+    scheme = extractScheme r
+    defaultPort (Just "wss") = 443
+    defaultPort (Just "ws") = 80
+    defaultPort _ = 443
 
 
 -- | Extracts the path of a relay's URI.
