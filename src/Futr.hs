@@ -30,7 +30,7 @@ import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.GiftWrap
 import Nostr.RelayPool
 import Nostr.Subscription
-import Nostr.Types ( Kind(..), RelayURI, Relay(..), Tag(..),
+import Nostr.Types ( RelayURI, Relay(..), Tag(..),
                      followListFilter, giftWrapFilter, metadataFilter,
                      relayName, relayURIToText)
 import Nostr.Util
@@ -197,17 +197,25 @@ runFutr = interpret $ \_ -> \case
   SendMessage input -> do
     st <- get @AppState
     case (keyPair st, currentChatRecipient st) of
-      (Just kp, (Just xos, _)) -> do
+      (Just kp, (Just recipients, _)) -> do
         now <- getCurrentTime
-        let pubKeyXO = keyPairToPubKeyXO kp
-            rumor = createRumor pubKeyXO now ShortTextNote (map (\xo -> PTag xo Nothing Nothing) xos) input
-        giftWraps <- catMaybes <$> forM xos (\xo -> do
-          seal <- createSeal rumor kp xo
+        let senderPubKeyXO = keyPairToPubKeyXO kp
+            allRecipients = senderPubKeyXO : recipients
+            rumor = createRumor senderPubKeyXO now (map (\xo -> PTag xo Nothing Nothing) recipients) input
+
+        giftWraps <- forM allRecipients $ \recipient -> do
+          seal <- createSeal rumor kp recipient
           case seal of
-            Just seal' -> createGiftWrap seal' xo
-            Nothing -> logError "Failed to create seal" >> return Nothing)
+            Just seal' -> do
+              giftWrapResult <- createGiftWrap seal' recipient
+              case giftWrapResult of
+                Just (gw, _) -> return (Just gw)
+                Nothing -> logError "Failed to create gift wrap" >> return Nothing
+            Nothing -> logError "Failed to create seal" >> return Nothing
+
+        let validGiftWraps = catMaybes giftWraps
         relays' <- gets @RelayPoolState relays
-        mapM_ (\gw -> sendEvent gw (Map.keys relays')) giftWraps
+        mapM_ (\gw -> sendEvent gw (Map.keys relays')) validGiftWraps
       (Nothing, _) -> logError "No key pair found"
       (_, (Nothing, _)) -> logError "No current chat recipient"
 

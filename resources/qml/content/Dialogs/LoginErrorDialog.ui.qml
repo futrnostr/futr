@@ -11,10 +11,20 @@ Dialog {
 
     property string errorMessage: ""
 
-    Text {
-        text: loginErrorDialog.errorMessage
-        color: Material.foreground
-        font.pixelSize: 14
-        wrapMode: Text.WordWrap
+    width: Math.min(parent.width - 200, 400)
+    height: Math.min(contentColumn.implicitHeight + 80, parent.height - 40)
+
+    ColumnLayout {
+        id: contentColumn
+        width: parent.width
+        spacing: 10
+
+        Text {
+            Layout.fillWidth: true
+            text: errorMessage
+            color: Material.foreground
+            font.pixelSize: 14
+            wrapMode: Text.WordWrap
+        }
     }
 }

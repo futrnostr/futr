@@ -5,25 +5,27 @@
 module Nostr.Subscription where
 
 import Control.Monad (unless)
-import Data.Aeson (eitherDecode)
+import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack)
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.STM (TQueue, atomically, readTQueue, flushTQueue)
+import Effectful.Concurrent.STM (TQueue, atomically, readTQueue, flushTQueue, writeTChan)
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, modify)
+import Effectful.State.Static.Shared (State, get, modify, put)
 import Effectful.TH
 
 import EffectfulQML
 import Logging
-import Nostr.Event (validateEvent)
+import Nostr
+import Nostr.Event (createCanonicalAuthentication, validateEvent)
 import Nostr.GiftWrap
-import Nostr.Keys (byteStringToHex)
-import Nostr.Types (Event(..), EventId(..), Kind(..), RelayURI, Response(..), Tag(..))
+import Nostr.Keys (byteStringToHex, keyPairToPubKeyXO)
+import Nostr.Types (Event(..), EventId(..), Kind(..), RelayURI, Request(..), Response(..), Tag(..), relayURIToText)
 import Nostr.RelayPool
+import Nostr.Util
 import Types (AppState(..), EventConfirmation(..), Follow(..), FollowModel(..), RelayData(..), RelayPoolState(..))
 
 
@@ -42,6 +44,8 @@ type SubscriptionEff es = ( RelayPool :> es
                           , State RelayPoolState :> es
                           , State AppState :> es
                           , Logging :> es
+                          , Nostr :> es
+                          , Util :> es
                           , IOE :> es
                           , Concurrent :> es
                           , EffectfulQML :> es
@@ -81,10 +85,18 @@ processResponsesUntilEOSE relayURI' (r:rs) = case r of
   Eose _ -> return True
   Closed _ _ -> return True
   Ok eventId' accepted' msg -> do
-    modify $ handleConfirmation eventId' accepted' msg relayURI'
+    st <- get @AppState
+    case handleConfirmation eventId' accepted' msg relayURI' st of
+      Right st' -> do
+        put @AppState st'
+      Left err -> do
+        logWarning $ "Error handling confirmation: " <> err
     processResponsesUntilEOSE relayURI' rs
   Notice msg -> do
     modify $ handleNotice relayURI' msg
+    processResponsesUntilEOSE relayURI' rs
+  Auth challenge -> do
+    handleAuthChallenge relayURI' challenge
     processResponsesUntilEOSE relayURI' rs
 
 
@@ -102,12 +114,36 @@ processResponses relayURI' (r:rs) = case r of
     logDebug $ "Closed subscription " <> subId <> " with message " <> msg
     return True
   Ok eventId' accepted' msg -> do
-    logDebug $ "OK on subscription " <> pack ( show eventId' ) <> " with message " <> msg
-    modify $ handleConfirmation eventId' accepted' msg relayURI'
+    st <- get @AppState
+    case handleConfirmation eventId' accepted' msg relayURI' st of
+      Right st' -> do
+        put @AppState st'
+      Left err -> do
+        logWarning $ "Error handling confirmation: " <> err
     processResponses relayURI' rs
   Notice msg -> do
     modify $ handleNotice relayURI' msg
     processResponses relayURI' rs
+  Auth challenge -> do
+    handleAuthChallenge relayURI' challenge
+    processResponsesUntilEOSE relayURI' rs
+
+
+-- handle auth challenge
+handleAuthChallenge :: SubscriptionEff es => RelayURI -> Text -> Eff es ()
+handleAuthChallenge relayURI' challenge = do
+  st <- get @AppState
+  let kp = maybe (error "No key pair available") id $ keyPair st
+  now <- getCurrentTime
+  let unsignedEvent = createCanonicalAuthentication relayURI' challenge (keyPairToPubKeyXO kp) now
+  signedEventMaybe <- signEvent unsignedEvent kp
+  case signedEventMaybe of
+    Just signedEvent -> do
+      st' <- get @RelayPoolState
+      case Map.lookup relayURI' (relays st') of
+        Just relayData -> atomically $ writeTChan (requestChannel relayData) (Authenticate signedEvent)
+        Nothing -> logWarning $ "No channel found for relay: " <> relayURIToText relayURI'
+    Nothing -> logWarning "Failed to sign canonical authentication event"
 
 
 -- | Handle an event.
@@ -144,8 +180,8 @@ handleNotice relayURI' msg st =
 
 
 -- | Handle a confirmation.
-handleConfirmation :: EventId -> Bool -> Text -> RelayURI -> AppState -> AppState
-handleConfirmation eventId' accepted' msg relayURI' st =
+handleConfirmation :: Maybe EventId -> Bool -> Text -> RelayURI -> AppState -> Either Text AppState
+handleConfirmation mEventId accepted' msg relayURI' st =
   let updateConfirmation = EventConfirmation
         { relay = relayURI'
         , waitingForConfirmation = False
@@ -159,10 +195,17 @@ handleConfirmation eventId' accepted' msg relayURI' st =
         | relay conf == relayURI' && waitingForConfirmation conf =
             updateConfirmation : confs
         | otherwise = conf : updateConfirmations confs
-  in st  { confirmations = Map.alter
-         (\case
-           Nothing -> Just [updateConfirmation]
-           Just confs -> Just $ updateConfirmations confs)
-         eventId'
-         (confirmations st)
-      }
+
+  in case mEventId of
+    Just eventId' ->
+      Right $ st { confirmations = Map.alter
+                     (\case
+                       Nothing -> Just [updateConfirmation]
+                       Just confs -> Just $ updateConfirmations confs)
+                     eventId'
+                     (confirmations st)
+                 }
+    Nothing ->
+      if not accepted'
+        then Left msg
+        else Right st

@@ -23,7 +23,7 @@ data Nostr :: Effect where
   -- Event related
   SignEvent :: UnsignedEvent -> KeyPair -> Nostr m (Maybe Event)
   CreateSeal :: Rumor -> KeyPair -> PubKeyXO -> Nostr m (Maybe Event)
-  CreateGiftWrap :: Event -> PubKeyXO -> Nostr m (Maybe Event)
+  CreateGiftWrap :: Event -> PubKeyXO -> Nostr m (Maybe (Event, KeyPair))
   UnwrapGiftWrap :: Event -> KeyPair -> Nostr m (Maybe Event)
   UnwrapSeal :: Event -> KeyPair -> Nostr m (Maybe Rumor)
 
