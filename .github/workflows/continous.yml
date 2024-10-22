@@ -4,6 +4,9 @@ on:
   push:
     branches: ["master"]
 
+permissions:
+  contents: write
+
 jobs:
   flatpak-build-and-release:
     name: Flatpak Build and Release
@@ -76,5 +79,5 @@ jobs:
           files: "futr.flatpak"
           prerelease: true
           body: "This is an automated continuous release."
-          token: ${{ secrets.GITHUB_TOKEN }}
-          overwrite: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
