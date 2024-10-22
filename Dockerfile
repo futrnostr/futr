@@ -39,6 +39,7 @@ RUN ghcup install cabal 3.10.3.0 && ghcup set cabal 3.10.3.0
 # Install secp256k1 library
 RUN git clone https://github.com/bitcoin-core/secp256k1 && \
     cd secp256k1 && \
+    git checkout v0.5.1 && \
     ./autogen.sh && \
     ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
     make && \

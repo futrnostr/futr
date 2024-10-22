@@ -5,7 +5,7 @@
 module Nostr.Subscription where
 
 import Control.Monad (unless)
-import Data.Aeson (eitherDecode, encode)
+import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack)
