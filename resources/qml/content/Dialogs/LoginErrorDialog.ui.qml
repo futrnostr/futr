@@ -8,19 +8,21 @@ Dialog {
     standardButtons: Dialog.Ok
     modal: true
     anchors.centerIn: parent
+    width: Math.min(parent.width - 40, 300)
+    height: 160
 
     property string errorMessage: ""
 
-    width: Math.min(parent.width - 200, 400)
-    height: Math.min(contentColumn.implicitHeight + 80, parent.height - 40)
-
     ColumnLayout {
         id: contentColumn
-        width: parent.width
-        spacing: 10
+        anchors.fill: parent
+        anchors.margins: 0
 
         Text {
             Layout.fillWidth: true
+            Layout.alignment: Qt.AlignLeft
+            Layout.preferredWidth: contentColumn.width
+            horizontalAlignment: Text.AlignLeft
             text: errorMessage
             color: Material.foreground
             font.pixelSize: 14

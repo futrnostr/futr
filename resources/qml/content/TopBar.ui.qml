@@ -55,6 +55,14 @@ Item {
             }
 
             MenuItem {
+                text: qsTr("Relay Management")
+                onTriggered: {
+                    profileMenu.close()
+                    relayMgmtDialog.open()
+                }
+            }
+
+            MenuItem {
                 text: qsTr("Settings")
                 onTriggered: {
                     // Dummy for now, does nothing

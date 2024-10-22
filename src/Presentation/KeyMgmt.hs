@@ -7,7 +7,7 @@
 module Presentation.KeyMgmt where
 
 import Control.Monad (filterM)
-import Data.Aeson (FromJSON (..), eitherDecode)
+import Data.Aeson (FromJSON (..), eitherDecode, encode)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe)
@@ -28,10 +28,12 @@ import Effectful.FileSystem
   )
 import Effectful.FileSystem.IO.ByteString qualified as FIOE (readFile, writeFile)
 import Effectful.FileSystem.IO.ByteString.Lazy qualified as BL
-import Effectful.State.Static.Shared (State, get, modify)
+import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
 import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
+
+import Logging
 import Nostr
 import Nostr.Bech32
 import Nostr.Keys ( KeyPair, PubKeyXO, SecKey, derivePublicKeyXO
@@ -39,15 +41,16 @@ import Nostr.Keys ( KeyPair, PubKeyXO, SecKey, derivePublicKeyXO
 import Nostr.Types hiding (displayName, picture)
 import System.FilePath (takeFileName, (</>))
 import Text.Read (readMaybe)
+import qualified Nostr.Types as NT
 
 
 -- | Account.
 data Account = Account
-  { nsec :: SecKey,
-    npub :: PubKeyXO,
-    displayName :: Maybe Text,
-    picture :: Maybe Text,
-    relays :: [Relay]
+  { accountSecKey :: SecKey,
+    accountPubKeyXO :: PubKeyXO,
+    accountDisplayName :: Maybe Text,
+    accountPicture :: Maybe Text,
+    accountRelays :: ([Relay], Int)
   }
   deriving (Eq, Show)
 
@@ -85,7 +88,8 @@ type KeyMgmtEff es = ( State KeyMgmtState :> es
                      , Nostr :> es
                      , FileSystem :> es
                      , IOE :> es
-                     , EffectfulQML :> es )
+                     , EffectfulQML :> es
+                     , Logging :> es )
 
 -- | Key Management Effects.
 data KeyMgmt :: Effect where
@@ -93,6 +97,8 @@ data KeyMgmt :: Effect where
   ImportSeedphrase :: ObjRef () -> Text -> Text -> KeyMgmt m Bool
   GenerateSeedphrase :: ObjRef () -> KeyMgmt m ()
   RemoveAccount :: ObjRef () -> Text -> KeyMgmt m ()
+  UpdateRelays :: AccountId -> ([Relay], Int) -> KeyMgmt m ()
+  UpdateProfile :: AccountId -> Profile -> KeyMgmt m ()
 
 type instance DispatchOf KeyMgmt = Dynamic
 
@@ -115,7 +121,7 @@ type instance DispatchOf KeyMgmtUI = Dynamic
 makeEffect ''KeyMgmtUI
 
 
--- | Handler for the logging effect to stdout.
+-- | Run the Key Management effect.
 runKeyMgmt :: KeyMgmtEff es => Eff (KeyMgmt : es) a -> Eff es a
 runKeyMgmt = interpret $ \_ -> \case
   ImportSecretKey obj input -> do
@@ -185,6 +191,35 @@ runKeyMgmt = interpret $ \_ -> \case
       then removeDirectoryRecursive dir
       else return ()
 
+  UpdateRelays aid newRelays -> do
+    modify $ \st -> st 
+      { accountMap = Map.adjust (\acc -> acc { accountRelays = newRelays }) aid (accountMap st) }
+    accounts <- gets accountMap
+    case Map.lookup aid accounts of 
+      Just account -> do
+        let npubStr = unpack $ pubKeyXOToBech32 $ accountPubKeyXO account
+        dir <- getXdgDirectory XdgData $ "futrnostr/" ++ npubStr
+        BL.writeFile (dir </> "relays.json") (encode newRelays)
+      Nothing -> do
+        logError $ "Account not found: " <>accountId aid
+        return ()
+
+  UpdateProfile aid profile -> do
+    modify $ \st -> st 
+      { accountMap = Map.adjust (\acc -> acc 
+          { accountDisplayName = NT.displayName profile
+          , accountPicture = NT.picture profile
+          }) aid (accountMap st) 
+      }
+    accounts <- gets accountMap
+    case Map.lookup aid accounts of 
+      Just account -> do
+        let npubStr = unpack $ pubKeyXOToBech32 $ accountPubKeyXO account
+        dir <- getXdgDirectory XdgData $ "futrnostr/" ++ npubStr
+        BL.writeFile (dir </> "profile.json") (encode profile)
+      Nothing -> do
+        logError $ "Account not found: " <> accountId aid
+        return ()
 
 -- | Run the Key Management UI effect.
 runKeyMgmtUI :: KeyMgmgtUIEff es => Eff (KeyMgmtUI : es) a -> Eff es a
@@ -209,10 +244,10 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
 
         accountClass <-
           newClass
-            [ prop "nsec" (secKeyToBech32 . nsec),
-              prop "npub" (pubKeyXOToBech32 . npub),
-              mprop "displayName" displayName,
-              mprop "picture" picture
+            [ prop "nsec" (secKeyToBech32 . accountSecKey),
+              prop "npub" (pubKeyXOToBech32 . accountPubKeyXO),
+              mprop "displayName" accountDisplayName,
+              mprop "picture" accountPicture
             ]
 
         accountPool' <- newFactoryPool (newObject accountClass)
@@ -302,7 +337,7 @@ loadAccount :: (FileSystem :> es) => FilePath -> FilePath -> Eff es (Maybe Accou
 loadAccount storageDir npubDir = do
   let dirPath = storageDir </> npubDir
   nsecContent <- readFileMaybe (dirPath </> "nsec")
-  relayList <- readJSONFile (dirPath </> "relays.json")
+  relayData <- readJSONFile (dirPath </> "relays.json")
   profile <- readJSONFile (dirPath </> "profile.json")
 
   return $ do
@@ -311,11 +346,11 @@ loadAccount storageDir npubDir = do
 
     Just
       Account
-        { nsec = nsecKey,
-          npub = pubKeyXO,
-          relays = fromMaybe defaultRelays relayList,
-          displayName = profile >>= \(Profile _ d _ _ _ _) -> d,
-          picture = profile >>= \(Profile _ _ _ p _ _) -> p
+        { accountSecKey = nsecKey,
+          accountPubKeyXO = pubKeyXO,
+          accountRelays = fromMaybe defaultRelays relayData,
+          accountDisplayName = profile >>= \(Profile _ d _ _ _ _) -> d,
+          accountPicture = profile >>= \(Profile _ _ _ p _ _) -> p
         }
 
 -- | Read a file and return its contents as a Maybe Text.
@@ -343,9 +378,9 @@ accountFromKeyPair kp = (AccountId newNpub, account)
     newNpub = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
     account =
       Account
-        { nsec = keyPairToSecKey kp,
-          npub = keyPairToPubKeyXO kp,
-          relays = defaultRelays,
-          displayName = Nothing,
-          picture = Nothing
+        { accountSecKey = keyPairToSecKey kp,
+          accountPubKeyXO = keyPairToPubKeyXO kp,
+          accountRelays = defaultRelays,
+          accountDisplayName = Nothing,
+          accountPicture = Nothing
         }

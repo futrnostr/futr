@@ -4,7 +4,7 @@
 
 module Futr where
 
-import Control.Monad (forM, forM_, void, unless, when)
+import Control.Monad (forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.Map.Strict qualified as Map
@@ -13,9 +13,10 @@ import Data.Text (Text, isPrefixOf)
 import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (Async, async, waitAny)
+import Effectful.Concurrent.Async (async)
+import Effectful.Concurrent.STM (atomically, readTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, get, gets, modify)
+import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Effectful.TH
 import EffectfulQML
 import GHC.Generics (Generic)
@@ -28,13 +29,14 @@ import Nostr.Bech32
 import Nostr.Event (createFollowList, createRumor)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.GiftWrap
+import Nostr.Publisher
 import Nostr.RelayPool
 import Nostr.Subscription
-import Nostr.Types ( RelayURI, Relay(..), Tag(..),
-                     followListFilter, giftWrapFilter, metadataFilter,
-                     relayName, relayURIToText)
+import Nostr.Types ( Relay(..), RelayURI, Tag(..)
+                   , getUri, metadataFilter )
 import Nostr.Util
 import Presentation.KeyMgmt qualified as PKeyMgmt
+import Presentation.RelayMgmt qualified as PRelayMgmt
 import Types
 
 -- | Signal key class for LoginStatusChanged.
@@ -60,8 +62,8 @@ instance ToJSON SearchResult where
 
 -- | Futr Effects.
 data Futr :: Effect where
-  Login :: ObjRef () -> Text -> Futr m Bool
-  Search :: ObjRef () -> Text -> Futr m SearchResult
+  Login :: ObjRef () -> Text -> Futr m ()
+  Search :: ObjRef () -> Text -> Futr m ()
   SetCurrentProfile :: Text -> Futr m ()
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
@@ -81,9 +83,11 @@ makeEffect ''Futr
 type FutrEff es = ( State AppState :> es
                   , PKeyMgmt.KeyMgmt :> es
                   , PKeyMgmt.KeyMgmtUI :> es
+                  , PRelayMgmt.RelayMgmtUI :> es
                   , Nostr :> es
                   , RelayPool :> es
                   , Subscription :> es
+                  , Publisher :> es
                   , State PKeyMgmt.KeyMgmtState :> es
                   , State RelayPoolState :> es
                   , GiftWrap :> es
@@ -101,56 +105,32 @@ runFutr = interpret $ \_ -> \case
   Login obj input -> do
       kst <- get @PKeyMgmt.KeyMgmtState
       case Map.lookup (PKeyMgmt.AccountId input) (PKeyMgmt.accountMap kst) of
-        Just a -> do
-          success <- loginWithAccount obj a
-          return success
-        Nothing -> return False
+        Just a -> loginWithAccount obj a
+        Nothing -> liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Account not found"
 
   Search _ input -> do
     st <- get @AppState
     let myPubKey = keyPairToPubKeyXO <$> keyPair st
 
-    case input of
-      _ | "nprofile" `isPrefixOf` input || "npub" `isPrefixOf` input -> do
-        case parseNprofileOrNpub input of
-          Just (pubkey', maybeRelay) -> do
-            case myPubKey of
-              Just myKey | myKey == pubkey' -> do
-                return $ ProfileResult (pubKeyXOToBech32 pubkey') (relayURIToText <$> maybeRelay)
-
-              _ -> do
-                let userFollows = maybe [] (flip (Map.findWithDefault []) (followList $ follows st)) myPubKey
-                if any (\(Follow pk _ _) -> pk == pubkey') userFollows
-                  then do
-                    return $ ProfileResult (pubKeyXOToBech32 pubkey') (relayURIToText <$> maybeRelay)
-                  else do
-                    case maybeRelay of
-                      Just relay' -> return $ ProfileResult (pubKeyXOToBech32 pubkey') (Just $ relayURIToText relay')
-                      Nothing -> do
-                        relays' <- gets @RelayPoolState relays
-                        let relaysToSearch = Map.keys relays'
-                        forM_ relaysToSearch $ \relay' -> do
-                          void $ async $ do
-                            maybeSubInfo <- startSubscription relay' [metadataFilter [pubkey']]
-                            case maybeSubInfo of
-                              Just (subId, queue) -> do
-                                handleResponsesUntilEOSE relay' queue
-                                stopSubscription subId
-                              Nothing -> 
-                                logWarning $ "Failed to start search subscription for relay: " <> relayURIToText relay'
-
-                        return $ ProfileResult (pubKeyXOToBech32 pubkey') Nothing
-
-          Nothing -> return NoResult
-
-      _ -> return NoResult
+    if not ("nprofile" `isPrefixOf` input || "npub" `isPrefixOf` input)
+      then return ()
+      else case parseNprofileOrNpub input of
+        Nothing -> return ()
+        Just (pubkey', maybeRelay) 
+          | Just pubkey' == myPubKey -> 
+              return ()
+          | otherwise -> do
+              let userFollows = maybe [] (flip (Map.findWithDefault []) (follows st)) myPubKey
+              if any (\(Follow pk _ _) -> pk == pubkey') userFollows
+                then return ()
+                else searchInRelays pubkey' maybeRelay
 
   SetCurrentProfile npub' -> do
     case bech32ToPubKeyXO npub' of
       Just pk -> do
         modify @AppState $ \st -> st { currentProfile = Just pk }
-        obj <- gets @AppState profileObjRef
-        case obj of
+        refs <- gets @AppState uiRefs
+        case profileObjRef refs of
           Just obj' -> fireSignal obj'
           Nothing -> return ()
       Nothing -> do
@@ -162,12 +142,14 @@ runFutr = interpret $ \_ -> \case
     st <- get @AppState
     case keyPairToPubKeyXO <$> keyPair st of
         Just userPK -> do
-            let currentFollows = Map.findWithDefault [] userPK (followList $ follows st)
+            let currentFollows = Map.findWithDefault [] userPK (follows st)
             unless (any (\follow -> pubkey follow == pubKeyXO) currentFollows) $ do
                 let newFollow = Follow pubKeyXO Nothing Nothing
                 let newFollows = newFollow : currentFollows
-                modify $ \st' -> st' { follows = (follows st') { followList = Map.insert userPK newFollows (followList $ follows st') } }
-            notifyUI
+                modify $ \st' -> st' { follows = Map.insert userPK newFollows (follows st') }
+                -- Notify follows UI component
+                refs <- gets @AppState uiRefs
+                forM_ (followsObjRef refs) fireSignal
             sendFollowListEvent
         Nothing -> return ()
 
@@ -177,10 +159,12 @@ runFutr = interpret $ \_ -> \case
     let userPubKey = keyPairToPubKeyXO <$> keyPair st
     case userPubKey of
         Just userPK -> do
-            let currentFollows = Map.findWithDefault [] userPK (followList $ follows st)
+            let currentFollows = Map.findWithDefault [] userPK (follows st)
             let newFollows = filter (\follow -> pubkey follow /= pubKeyXO) currentFollows
-            modify $ \st' -> st' { follows = (follows st') { followList = Map.insert userPK newFollows (followList $ follows st') } }
-            notifyUI
+            modify $ \st' -> st' { follows = Map.insert userPK newFollows (follows st') }
+            -- Notify follows UI component
+            refs <- gets @AppState uiRefs
+            forM_ (followsObjRef refs) fireSignal
             sendFollowListEvent
         Nothing -> return ()
 
@@ -192,7 +176,8 @@ runFutr = interpret $ \_ -> \case
       _ -> return ()
 
     modify $ \st' -> st' { currentChatRecipient = (Just [pubKeyXO], Nothing) }
-    notifyUI
+    refs <- gets @AppState uiRefs
+    forM_ (chatObjRef refs) fireSignal  -- Notify chat UI component
 
   SendMessage input -> do
     st <- get @AppState
@@ -214,8 +199,8 @@ runFutr = interpret $ \_ -> \case
             Nothing -> logError "Failed to create seal" >> return Nothing
 
         let validGiftWraps = catMaybes giftWraps
-        relays' <- gets @RelayPoolState relays
-        mapM_ (\gw -> sendEvent gw (Map.keys relays')) validGiftWraps
+        forM_ validGiftWraps $ \gw -> publishGiftWrap gw senderPubKeyXO
+
       (Nothing, _) -> logError "No key pair found"
       (_, (Nothing, _)) -> logError "No current chat recipient"
 
@@ -223,17 +208,14 @@ runFutr = interpret $ \_ -> \case
       modify @AppState $ \st -> st
         { keyPair = Nothing
         , currentScreen = KeyMgmt
-        , follows = FollowModel Map.empty (objRef $ follows st)
+        , follows = Map.empty
         , profiles = Map.empty
-        , confirmations = Map.empty
         }
 
-      relays' <- gets @RelayPoolState relays
-      mapM_ disconnect (Map.keys relays')
+      conns <- gets @RelayPoolState activeConnections
+      mapM_ disconnect (Map.keys conns)
 
-      modify @RelayPoolState $ \st -> st
-        { relays = Map.empty
-        }
+      put initialRelayPoolState
 
       fireSignal obj
       logInfo "User logged out successfully"
@@ -243,102 +225,90 @@ runFutr = interpret $ \_ -> \case
 parseNprofileOrNpub :: Text -> Maybe (PubKeyXO, Maybe RelayURI)
 parseNprofileOrNpub input = 
   case bech32ToPubKeyXO input of
-    Just pubkey' -> Just (pubkey', Nothing)  -- For npub
+    Just pubkey' -> Just (pubkey', Nothing)  -- for npub
     Nothing -> case nprofileToPubKeyXO input of
-      Just (pubkey', relays') -> Just (pubkey', listToMaybe relays')  -- For nprofile
+      Just (pubkey', relays') -> Just (pubkey', listToMaybe relays')  -- for nprofile
       Nothing -> Nothing
 
 
 -- | Login with an account.
-loginWithAccount :: FutrEff es => ObjRef () -> PKeyMgmt.Account -> Eff es Bool
+loginWithAccount :: FutrEff es => ObjRef () -> PKeyMgmt.Account -> Eff es ()
 loginWithAccount obj a = do
-  let kp = secKeyToKeyPair $ PKeyMgmt.nsec a
-  let xo = keyPairToPubKeyXO kp 
-  let rs = PKeyMgmt.relays a
+    let (rs, t) = PKeyMgmt.accountRelays a
 
-  -- add all relays to the relay pool
-  mapM_ addRelay rs
+    modify @AppState $ \s -> s { keyPair = Just (secKeyToKeyPair $ PKeyMgmt.accountSecKey a) }
+    importGeneralRelays (PKeyMgmt.accountPubKeyXO a) rs t
 
-  -- For each relay, asynchronously connect and handle subscriptions
-  connectionResults <- forM rs $ \relay' -> async $ do
-    isConnected <- connect relay'
+    forM_ rs $ \relay' -> void $ async $ connect $ getUri relay'
 
-    if isConnected
-      then do
-        logDebug $ "Connected to relay: " <> relayName relay'
-        modify @AppState $ \st -> st { keyPair = Just kp, currentScreen = Home }
-        fireSignal obj
-        liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
+    void $ async $ do
+        threadDelay 100000 -- 100ms miinum delay to wait for connections to establish
         
-        -- Initial subscription (until EOSE)
-        let initialFilters =
-              [ followListFilter [ xo ]
-              , metadataFilter [ xo ]
-              ]
+        atLeastOneConnected <- awaitAtLeastOneConnected
+        -- Update UI state after connections are established
+        when atLeastOneConnected $ do
+            modify @AppState $ \s -> s { currentScreen = Home }
+            fireSignal obj
 
-        logDebug $ "Starting initial subscription for relay: " <> relayName relay'
-
-        maybeSubInfo <- startSubscription (uri relay') initialFilters
-        case maybeSubInfo of
-          Nothing -> logWarning $ "Failed to start initial subscription for relay: " <> relayName relay'
-          Just (subId', queue) -> do
-            void $ async $ do
-              handleResponsesUntilEOSE (uri relay') queue
-              stopSubscription subId'
-              fireSignal obj
-
-              -- Start the main subscription after EOSE
-              st <- get @AppState
-              let followedPubKeys = concatMap (\(_, follows') -> map (\(Follow pk _ _) -> pk) follows') $ Map.toList $ followList $ follows st
-              let filters =
-                    [ followListFilter (xo : followedPubKeys)
-                    , metadataFilter (xo : followedPubKeys)
-                    , giftWrapFilter xo
-                    ]
-
-              maybeSubInfo' <- startSubscription (uri relay') filters
-              case maybeSubInfo' of
-                Nothing -> logWarning $ "Failed to start main subscription for relay: " <> (relayURIToText $ uri relay')
-                Just (_, queue') -> do
-                  handleResponsesUntilClosed (uri relay') queue'
-        return True
-      else return False
-
-  atLeastOneConnected <- waitForFirstTrueOrAllFalse connectionResults
-
-  when (not atLeastOneConnected) $ do
-    liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Failed to connect to any relay"
-
-  return atLeastOneConnected
-  where
-    waitForFirstTrueOrAllFalse :: FutrEff es => [Async Bool] -> Eff es Bool
-    waitForFirstTrueOrAllFalse [] = return False
-    waitForFirstTrueOrAllFalse asyncs = do
-      (completed, result) <- waitAny asyncs
-      if result
-        then return True
-        else do
-          let remainingAsyncs = filter (/= completed) asyncs
-          waitForFirstTrueOrAllFalse remainingAsyncs
+        -- Fire final status
+        if not atLeastOneConnected 
+            then liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Failed to connect to any relay"
+            else liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
 
 
 -- | Send a follow list event.
 sendFollowListEvent :: FutrEff es => Eff es ()
 sendFollowListEvent = do
-    st <- get @AppState
-    case keyPair st of
-        Just kp -> do
-          currentTime <- getCurrentTime
-          let userPK = keyPairToPubKeyXO kp
-          let followList' = Map.findWithDefault [] userPK (followList $ follows st)
-          let followTuples = map (\(Follow pk _ petName') -> (pk, petName')) followList'
-          let event = createFollowList followTuples userPK currentTime
-          signedEvent <- signEvent event kp
-          case signedEvent of
-            Just signedEvent' -> do
-              relays' <- gets @RelayPoolState relays
-              sendEvent signedEvent' (Map.keys relays')
-            Nothing -> do
-              logError "Failed to sign follow list event"
-              return ()
-        Nothing -> return ()
+  st <- get @AppState
+  case keyPair st of
+    Nothing -> logError "No keypair found"
+    Just kp -> do
+      currentTime <- getCurrentTime
+      let userPK = keyPairToPubKeyXO kp
+          followList' = Map.findWithDefault [] userPK (follows st)
+          followTuples = map (\(Follow pk _ petName') -> (pk, petName')) followList'
+          event = createFollowList followTuples userPK currentTime
+      signedEvent <- signEvent event kp
+      case signedEvent of
+        Just signedEvent' -> publishToOutbox signedEvent'
+        Nothing -> do
+          logError "Failed to sign follow list event"
+          return ()
+
+
+-- | Search for a profile in relays.
+searchInRelays :: FutrEff es => PubKeyXO -> Maybe RelayURI -> Eff es ()
+searchInRelays pubkey' _ = do
+    -- @todo use relay hint
+    st <- get @RelayPoolState
+    let relays = case Map.lookup pubkey' (generalRelays st) of
+                   Just (rs, _) -> rs
+                   Nothing -> []
+    conns <- gets @RelayPoolState activeConnections
+    forM_ relays $ \r -> do
+      when (isInboxCapable r) $ do
+        let relayUri' = getUri r
+        when (Map.member relayUri' conns) $ do
+          subId' <- newSubscriptionId
+          mq <- subscribe relayUri' subId' [metadataFilter [pubkey']]
+          case mq of
+              Nothing -> return ()
+              Just q -> void $ async $ do
+                  let loop = do
+                        e <- atomically $ readTQueue q
+                        case e of
+                          EventAppeared event' -> do
+                            updates <- handleEvent relayUri' subId' [metadataFilter [pubkey']] event'
+                            notify updates
+                            loop
+                          SubscriptionEose -> do
+                            stopSubscription subId'
+                            loop
+                          SubscriptionClosed _ -> return () -- stop the loop
+                  loop
+
+
+isInboxCapable :: Relay -> Bool
+isInboxCapable (InboxRelay _) = True
+isInboxCapable (InboxOutboxRelay _) = True
+isInboxCapable _ = False

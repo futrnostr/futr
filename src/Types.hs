@@ -7,37 +7,124 @@ import Effectful.Concurrent.STM (TChan, TQueue)
 import Graphics.QML (ObjRef)
 
 import Nostr.Keys (KeyPair, PubKeyXO)
-import Nostr.Types (Event, EventId, Profile, RelayInfo, RelayURI, Request, Response, SubscriptionId)
+import Nostr.Types (Event, EventId, Filter, Profile, Relay, RelayURI, Request, SubscriptionId)
+
+
+-- | UI updates
+data UIUpdates = UIUpdates
+  { profilesChanged :: Bool
+  , followsChanged :: Bool
+  , chatsChanged :: Bool
+  , dmRelaysChanged :: Bool
+  , generalRelaysChanged :: Bool
+  , publishStatusChanged :: Bool
+  , noticesChanged :: Bool
+  } deriving (Eq, Show)
+
+
+instance Semigroup UIUpdates where
+  a <> b = UIUpdates
+    { profilesChanged = profilesChanged a || profilesChanged b
+    , followsChanged = followsChanged a || followsChanged b
+    , chatsChanged = chatsChanged a || chatsChanged b
+    , dmRelaysChanged = dmRelaysChanged a || dmRelaysChanged b
+    , generalRelaysChanged = generalRelaysChanged a || generalRelaysChanged b
+    , publishStatusChanged = publishStatusChanged a || publishStatusChanged b
+    , noticesChanged = noticesChanged a || noticesChanged b
+    }
+
+
+instance Monoid UIUpdates where
+  mempty = emptyUpdates
+
+
+-- | Empty UI updates.
+emptyUpdates :: UIUpdates
+emptyUpdates = UIUpdates False False False False False False False
+
+
+-- | Status of a publish operation
+data PublishStatus
+    = Publishing
+    | WaitingForConfirmation
+    | Success
+    | Failure Text
+    deriving (Eq, Show)
+
+
+-- | Subscription events
+data SubscriptionEvent
+    = EventAppeared Event
+    | SubscriptionEose
+    | SubscriptionClosed Text
+
 
 -- | State for RelayPool handling.
 data RelayPoolState = RelayPoolState
-    { relays        :: Map RelayURI RelayData
+    { activeConnections :: Map RelayURI RelayData
+    , publishStatus :: Map EventId (Map RelayURI PublishStatus)
+    , generalRelays :: Map PubKeyXO ([Relay], Int)
+    , dmRelays :: Map PubKeyXO ([Relay], Int)
     }
+
+
+-- | Subscription details.
+data SubscriptionDetails = SubscriptionDetails
+    { subscriptionId :: SubscriptionId
+    , subscriptionFilters :: [Filter]
+    , responseQueue :: TQueue SubscriptionEvent
+    , eventsProcessed :: Int
+    , newestCreatedAt :: Int
+    }
+
+
+-- | Connection errors.
+data ConnectionError 
+    = ConnectionFailed Text
+    | AuthenticationFailed Text
+    | NetworkError Text
+    | TimeoutError
+    | InvalidRelayConfig
+    | MaxRetriesReached
+    | UserDisconnected
+    deriving (Show, Eq)
+
+
+-- | Relay connection state.
+data ConnectionState = Connected | Disconnected | Connecting
+  deriving (Show, Eq)
 
 
 -- | Data for each relay.
 data RelayData = RelayData
-  { relayInfo      :: RelayInfo
+  { connectionState :: ConnectionState
   , requestChannel :: TChan Request
-  , responseQueue  :: TQueue Response
+  , activeSubscriptions :: Map SubscriptionId SubscriptionDetails
   , notices        :: [Text]
-  , subscriptions  :: [SubscriptionId]
+  , lastError      :: Maybe ConnectionError
+  , connectionAttempts :: Int
+  , authenticated :: Bool
   }
 
 
 -- | Initial state for RelayPool.
 initialRelayPoolState :: RelayPoolState
 initialRelayPoolState = RelayPoolState
-  { relays = Map.empty
+  { activeConnections = Map.empty
+  , publishStatus = Map.empty
+  , generalRelays = Map.empty
+  , dmRelays = Map.empty
   }
 
 
+-- | Application screens
 data AppScreen
     = KeyMgmt
     | Home
     deriving (Eq, Read, Show)
 
 
+-- | Chat message.
 data ChatMessage = ChatMessage
   { chatMessageId :: EventId
   , chatMessage :: Text
@@ -47,55 +134,53 @@ data ChatMessage = ChatMessage
   } deriving (Show)
 
 
-data EventConfirmation = EventConfirmation
-  { relay :: RelayURI
-  , waitingForConfirmation :: Bool
-  , accepted :: Bool
-  , message :: Text
-  }
-
-
+-- | Application state.
 data AppState = AppState
   { keyPair :: Maybe KeyPair
   , currentScreen :: AppScreen
-  , events :: Map EventId (Event, [RelayURI])
+  -- Relay management
+  , activeConnectionsCount :: Int
+  -- Data storage
+  , events :: Map EventId (Event, [Relay])
   , chats :: Map [PubKeyXO] [ChatMessage]
   , profiles :: Map PubKeyXO (Profile, Int)
-  , follows :: FollowModel
-  , confirmations :: Map EventId [EventConfirmation]
+  , follows :: Map PubKeyXO [Follow]
+  -- UI state
   , currentChatRecipient :: (Maybe [PubKeyXO], Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
-  , profileObjRef :: Maybe (ObjRef ())
+  -- QML References
+  , uiRefs :: UIReferences
+  }
+
+-- | UI object references grouped together
+data UIReferences = UIReferences
+  { profileObjRef :: Maybe (ObjRef ())
+  , followsObjRef :: Maybe (ObjRef ())
   , chatObjRef :: Maybe (ObjRef ())
-  , activeConnections :: Int
+  , dmRelaysObjRef :: Maybe (ObjRef ())
+  , generalRelaysObjRef :: Maybe (ObjRef ())
   }
 
 
-data FollowModel = FollowModel
-  { followList :: Map PubKeyXO [Follow]
-  , objRef :: Maybe (ObjRef ())
-  }
-
-
+-- | Follow.
 data Follow = Follow
   { pubkey :: PubKeyXO
-  , relayURI :: Maybe RelayURI
+  , followRelay :: Maybe Relay
   , petName :: Maybe Text
   } deriving (Show)
 
 
+-- | Initial application state.
 initialState :: AppState
 initialState = AppState
   { keyPair = Nothing
   , currentScreen = KeyMgmt
+  , activeConnectionsCount = 0
   , events = Map.empty
   , chats = Map.empty
   , profiles = Map.empty
-  , follows = FollowModel Map.empty Nothing
-  , confirmations = Map.empty
+  , follows = Map.empty
   , currentChatRecipient = (Nothing, Nothing)
   , currentProfile = Nothing
-  , profileObjRef = Nothing
-  , chatObjRef = Nothing
-  , activeConnections = 0
+  , uiRefs = UIReferences Nothing Nothing Nothing Nothing Nothing
   }

@@ -34,25 +34,49 @@ import Text.Read (readMaybe)
 
 import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature)
 
-
--- | Represents a wrapped URI used within a relay.
-newtype RelayURI = RelayURI { unRelayURI :: Text } deriving (Eq, Show, Ord)
-
-
--- | Represents the information associated with a relay.
-data RelayInfo = RelayInfo
-  { readable  :: Bool
-  , writable  :: Bool
-  }
-  deriving (Eq, Ord, Show, Generic, FromJSON, ToJSON)
+-- | Represents a relay URI.
+type RelayURI = Text
 
 
--- | Represents a relay entity containing URI, relay information, and connection status.
-data Relay = Relay
-  { uri       :: RelayURI
-  , info      :: RelayInfo
-  }
+-- | Represents a relay with its URI and type combined.
+data Relay
+  = InboxRelay RelayURI        -- Read-only relay
+  | OutboxRelay RelayURI       -- Write-only relay
+  | InboxOutboxRelay RelayURI  -- Both read and write (also for DM)
   deriving (Eq, Generic, Show)
+
+
+-- | Instance for ordering 'Relay' values based on their URI.
+instance Ord Relay where
+  compare r r' = compare (getUri r) (getUri r')
+
+
+-- | Get the URI from a Relay
+getUri :: Relay -> RelayURI
+getUri (InboxRelay uri)        = uri
+getUri (OutboxRelay uri)       = uri
+getUri (InboxOutboxRelay uri)  = uri
+
+
+-- | Instance for converting a 'Relay' to JSON.
+instance ToJSON Relay where
+  toEncoding relay = case relay of
+    InboxRelay uri -> list id [text "r", text uri, text "read"]
+    OutboxRelay uri -> list id [text "r", text uri, text "write"]
+    InboxOutboxRelay uri -> list id [text "r", text uri]
+
+
+-- | Instance for parsing a 'Relay' from JSON.
+instance FromJSON Relay where
+  parseJSON = withArray "Relay" $ \arr -> do
+    case V.toList arr of
+      ["r", String uri, String "read"] -> 
+        return $ InboxRelay uri
+      ["r", String uri, String "write"] -> 
+        return $ OutboxRelay uri
+      ["r", String uri] -> 
+        return $ InboxOutboxRelay uri
+      _ -> fail "Invalid relay format"
 
 
 -- | Represents a subscription id as text.
@@ -61,8 +85,8 @@ type SubscriptionId = Text
 
 -- | Represents a subscription.
 data Subscription = Subscription
-  { filters :: [Filter]
-  , subId   :: SubscriptionId
+  { subId   :: SubscriptionId
+  , filters :: [Filter]
   }
   deriving (Eq, Generic, Show)
 
@@ -93,7 +117,7 @@ data Request
 -- | Represents a response from the relay.
 data Response
   = EventReceived SubscriptionId Event
-  | Ok (Maybe EventId) Bool Text
+  | Ok EventId Bool Text
   | Eose SubscriptionId
   | Closed SubscriptionId Text
   | Notice Text
@@ -108,16 +132,18 @@ data StandardPrefix = Duplicate | Pow | Blocked | RateLimited | Invalid | Error
 
 -- | The 'Kind' data type represents different kinds of events in the Nostr protocol.
 data Kind
-  = Metadata                -- NIP-01
-  | ShortTextNote           -- NIP-01
-  | FollowList              -- NIP-02
-  | EventDeletion           -- NIP-09
-  | Repost                  -- NIP-18
-  | Reaction                -- NIP-25
-  | Seal                    -- NIP-59
-  | GiftWrap                -- NIP-59
-  | DirectMessage           -- NIP-17
-  | CanonicalAuthentication -- NIP-42
+  = Metadata                -- NIP-01 (kind 0)
+  | ShortTextNote           -- NIP-01 (kind 1)
+  | FollowList              -- NIP-02 (kind 3)
+  | EventDeletion           -- NIP-09 (kind 5)
+  | Repost                  -- NIP-18 (kind 6)
+  | Reaction                -- NIP-25 (kind 7)
+  | Seal                    -- NIP-59 (kind 13)
+  | GiftWrap                -- NIP-59 (kind 1059)
+  | DirectMessage           -- NIP-17 (kind 14)
+  | PreferredDMRelays       -- NIP-17 (kind 10050)
+  | CanonicalAuthentication -- NIP-42 (kind 22242)
+  | RelayListMetadata       -- NIP-65 (kind 10002)
   | UnknownKind Int
   deriving (Eq, Generic, Read, Show)
 
@@ -135,7 +161,7 @@ data Relationship = Reply | Root
 data Tag
   = ETag EventId (Maybe RelayURI) (Maybe Relationship)
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
-  | RelayTag RelayURI
+  | RelayTag Relay
   | ChallengeTag Text
   | GenericTag [Value]
   deriving (Eq, Generic, Show)
@@ -385,7 +411,7 @@ parseJSONSafe v = case parseEither parseJSON v of
 
 -- | Parses a maybe relay URI from a JSON value.
 parseMaybeRelayURI :: Value -> Parser (Maybe RelayURI)
-parseMaybeRelayURI (String s) = pure (Just (RelayURI s))
+parseMaybeRelayURI (String s) = pure (Just s)
 parseMaybeRelayURI Null = pure Nothing
 parseMaybeRelayURI _ = fail "Expected string or null for RelayURI"
 
@@ -406,15 +432,22 @@ parseMaybeDisplayName v = fail $ "Expected string for display name, got: " ++ sh
 -- | Parses a relay tag from a JSON array.
 parseRelayTag :: [Value] -> Value -> Parser Tag
 parseRelayTag rest _ = case rest of
+  [relayVal, markerVal] -> do
+    relayURI' <- parseRelayURI relayVal
+    marker <- parseJSON markerVal :: Parser Text
+    case T.toLower marker of
+      "write" -> return $ RelayTag (OutboxRelay relayURI')
+      "read"  -> return $ RelayTag (InboxRelay relayURI')
+      _ -> fail "Invalid RelayTag marker"
   [relayVal] -> do
     relayURI' <- parseRelayURI relayVal
-    return $ RelayTag relayURI'
+    return $ RelayTag (InboxOutboxRelay relayURI')
   _ -> fail "Invalid RelayTag format"
 
 
 -- | Parses a RelayURI from a JSON value.
 parseRelayURI :: Value -> Parser RelayURI
-parseRelayURI (String s) = return (RelayURI s)
+parseRelayURI (String s) = return s
 parseRelayURI _ = fail "Expected string for RelayURI"
 
 
@@ -440,7 +473,7 @@ instance ToJSON Tag where
       [ text "e"
       , text $ decodeUtf8 $ B16.encode $ getEventId eventId
       ] ++
-      (maybe [] (\r -> [text $ unRelayURI r]) relayURL) ++
+      (maybe [] (\r -> [text r]) relayURL) ++
       (case marker of
          Just Reply -> [text "reply"]
          Just Root -> [text "root"]
@@ -450,9 +483,13 @@ instance ToJSON Tag where
       [ text "p"
       , toEncoding xo
       ] ++
-      (maybe [] (\r -> [text $ unRelayURI r]) relayURL) ++
+      (maybe [] (\r -> [text r]) relayURL) ++
       (maybe [] (\n -> [text n]) name)
-  toEncoding (RelayTag relayURI') = list id [text "relay", text (relayURIToText relayURI')]
+  toEncoding (RelayTag relay) = 
+    list id $ case relay of
+      InboxRelay uri -> [text "relay", text uri, text "read"]
+      OutboxRelay uri -> [text "relay", text uri, text "write"]
+      InboxOutboxRelay uri -> [text "relay", text uri]
   toEncoding (ChallengeTag challenge) = list id [text "challenge", text challenge]
   toEncoding (GenericTag values) = list toEncoding values
 
@@ -482,13 +519,10 @@ instance FromJSON Response where
         event <- parseJSON $ arr V.! 2
         return $ EventReceived subId' event
       "OK" -> do
-        id' <- parseJSON $ arr V.! 1 :: Parser (Maybe Text)
+        id' <- parseJSON $ arr V.! 1 :: Parser EventId
         bool <- parseJSON $ arr V.! 2
         message <- parseJSON $ arr V.! 3
-        let eventId = id' >>= \t -> if T.null t
-                                    then Nothing
-                                    else EventId <$> decodeHex t
-        return $ Ok eventId bool message
+        return $ Ok id' bool message
       "EOSE" -> do
         subId' <- parseJSON $ arr V.! 1
         return $ Eose subId'
@@ -515,40 +549,9 @@ instance ToJSON Request where
   toEncoding req = case req of
     Authenticate event -> list id [text "AUTH", toEncoding event]
     SendEvent event -> list id [text "EVENT", toEncoding event]
-    Subscribe (Subscription filters subId) -> list id $ text "REQ" : text subId : map toEncoding (toList filters)
+    Subscribe (Subscription subId filters) -> list id $ text "REQ" : text subId : map toEncoding (toList filters)
     Close subId -> list text ["CLOSE", subId]
     Disconnect -> list text ["DISCONNECT"]
-
-
--- | Converts a `RelayURI` into its JSON representation.
-instance FromJSON RelayURI where
-  parseJSON = withText "RelayURI" (pure . RelayURI)
-
-
--- | Parses a JSON value into a `RelayURI`.
-instance ToJSON RelayURI where
-  toJSON (RelayURI uri) = String uri
-  toEncoding (RelayURI uri) = toEncoding uri
-
-
--- | Instance for ordering 'Relay' values based on their 'uri'.
-instance Ord Relay where
-  compare (Relay r _) (Relay r' _) = compare r r'
-
-
--- | Instance for parsing a 'Relay' from JSON.
-instance FromJSON Relay where
-  parseJSON = withObject "Relay" $ \r -> do
-    uri'  <- r .: "uri"
-    info' <- r .: "info"
-    return $ Relay uri' info'
-
-
--- | Instance for converting a 'Relay' to JSON.
-instance ToJSON Relay where
-  toEncoding r = pairs $
-    "uri" .= unRelayURI (uri r) <>
-    "info" .= info r
 
 
 -- | 'FromJSON' instance for 'Kind'.
@@ -565,7 +568,9 @@ instance FromJSON Kind where
       13 -> return Seal
       1059 -> return GiftWrap
       14 -> return DirectMessage
+      10050 -> return PreferredDMRelays
       22242 -> return CanonicalAuthentication
+      10002 -> return RelayListMetadata
       _  -> return $ UnknownKind n
     Nothing -> fail "Expected an integer for Kind"
 
@@ -582,7 +587,9 @@ instance ToJSON Kind where
   toEncoding Seal          = toEncoding (13 :: Int)
   toEncoding GiftWrap      = toEncoding (1059 :: Int)
   toEncoding DirectMessage = toEncoding (14 :: Int)
+  toEncoding PreferredDMRelays = toEncoding (10050 :: Int)
   toEncoding CanonicalAuthentication = toEncoding (22242 :: Int)
+  toEncoding RelayListMetadata = toEncoding (10002 :: Int)
   toEncoding (UnknownKind n) = toEncoding n
 
 
@@ -625,61 +632,47 @@ instance FromJSON Profile where
 -- Relay Helper functions
 
 -- | Provides a default list of relays.
-defaultRelays :: [Relay]
+defaultRelays :: ([Relay], Int)
 defaultRelays =
-  [ Relay (RelayURI "wss://nos.lol") (RelayInfo True True)
-  , Relay (RelayURI "wss://auth.nostr1.com") (RelayInfo True True)
-  , Relay (RelayURI "wss://nostr.mom") (RelayInfo True True)
-  ]
-
-
--- | Retrieves the textual representation of the relay's URI.
-relayName :: Relay -> Text
-relayName r = unRelayURI $ uri r
-
-
--- | Converts a 'RelayURI' to a 'Text'.
-relayURIToText :: RelayURI -> Text
-relayURIToText = unRelayURI
+  ( [ InboxOutboxRelay "wss://nos.lol"
+    , InboxOutboxRelay "wss://nostr.mom"
+    ],
+    0
+  )
 
 
 -- | Extracts the scheme of a relay's URI.
-extractScheme :: Relay -> Maybe Text
-extractScheme r =
+extractScheme :: RelayURI -> Maybe Text
+extractScheme u =
   case T.splitOn "://" u of
     (scheme:_) -> Just scheme
     _ -> Nothing
-  where
-    u = unRelayURI $ uri r
 
 
 -- | Extracts the hostname of a relay's URI.
-extractHostname :: Relay -> Maybe Text
-extractHostname r =
+extractHostname :: RelayURI -> Maybe Text
+extractHostname u =
   case T.splitOn "://" u of
     (_:rest:_) -> Just $ T.takeWhile (/= ':') $ T.dropWhile (== '/') rest
     _ -> Nothing
-  where
-    u = unRelayURI $ uri r
 
 
 -- | Extracts the port of a relay's URI.
-extractPort :: Relay -> Int
-extractPort r =
+extractPort :: RelayURI -> Int
+extractPort u =
   case T.splitOn ":" $ T.dropWhile (/= ':') $ T.dropWhile (/= '/') $ T.dropWhile (/= ':') u of
     (_:portStr:_) -> maybe (defaultPort scheme) id $ readMaybe $ T.unpack portStr
     _ -> defaultPort scheme
   where
-    u = unRelayURI $ uri r
-    scheme = extractScheme r
+    scheme = extractScheme u
     defaultPort (Just "wss") = 443
     defaultPort (Just "ws") = 80
     defaultPort _ = 443
 
 
 -- | Extracts the path of a relay's URI.
-extractPath :: Relay -> Text
-extractPath (Relay (RelayURI u) _) =
+extractPath :: RelayURI -> Text
+extractPath u =
   case T.splitOn "://" u of
     (_:rest:_) ->
       let withoutHost = T.dropWhile (/= '/') rest
@@ -689,7 +682,7 @@ extractPath (Relay (RelayURI u) _) =
 
 -- | Checks if two relays are the same based on URI.
 sameRelay :: Relay -> Relay -> Bool
-sameRelay = (==) `on` uri
+sameRelay = (==) `on` getUri
 
 
 -- Helper functions to create specific filters
@@ -745,3 +738,28 @@ giftWrapFilter xo =
     , limit = Just 500
     , fTags = Just $ Map.fromList [('p', [byteStringToHex $ exportPubKeyXO xo])]
     }
+
+
+-- | Creates a filter for preferred DM relays.
+preferredDMRelaysFilter :: [PubKeyXO] -> Filter
+preferredDMRelaysFilter authors = Filter
+  { ids = Nothing
+  , authors = Just authors
+  , kinds = Just [PreferredDMRelays]
+  , since = Nothing
+  , until = Nothing
+  , limit = Just 500
+  , fTags = Nothing
+  }
+
+
+eventFilter :: EventId -> Filter
+eventFilter eid = Filter
+  { ids = Just [eid]
+  , authors = Nothing
+  , kinds = Nothing
+  , since = Nothing
+  , until = Nothing
+  , limit = Nothing
+  , fTags = Nothing
+  }

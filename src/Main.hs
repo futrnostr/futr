@@ -3,7 +3,7 @@ module Main where
 import Effectful
 import Effectful.Concurrent (runConcurrent)
 import Effectful.FileSystem (runFileSystem)
-import Effectful.State.Static.Shared (evalState)
+import Effectful.State.Static.Shared (State,evalState)
 import EffectfulQML
 import Graphics.QML qualified as QML
 import System.Environment (setEnv)
@@ -12,14 +12,18 @@ import Futr qualified as Futr
 import Logging (runLoggingStdout)
 import Nostr
 import Nostr.GiftWrap (runGiftWrap)
+import Nostr.Publisher (runPublisher)
+import Nostr.RelayConnection (runRelayConnection)
 import Nostr.RelayPool (runRelayPool)
 import Nostr.Subscription (runSubscription)
-import Nostr.WebSocket (runWebSocket)
 import Nostr.Util (runUtil)
 import Presentation.KeyMgmt qualified as KeyMgmt
+import Presentation.RelayMgmt qualified as RelayMgmtUI
+import RelayMgmt (runRelayMgmt)
 import UI qualified as UI
 import Types
 
+-- | Main function for the app.
 main :: IO ()
 main = do
     let path = "qrc:/qml/main.qml"
@@ -34,20 +38,26 @@ main = do
 
     runEff
         . runLoggingStdout
-        . evalState Types.initialState
+        -- state related
+        . withInitialState
+        -- app related
         . runEffectfulQML
         . runFileSystem
         . runUtil
         . runConcurrent
-        . evalState KeyMgmt.initialState
-        . evalState Types.initialRelayPoolState
+        -- nostr related
         . runNostr
         . KeyMgmt.runKeyMgmt
-        . KeyMgmt.runKeyMgmtUI
         . runGiftWrap
-        . runWebSocket 3 -- max 3 retries
-        . runRelayPool
+        . runRelayConnection
+        . runPublisher
+        . runRelayMgmt
         . runSubscription
+        . runRelayPool
+        -- presentation related
+        . KeyMgmt.runKeyMgmtUI
+        . RelayMgmtUI.runRelayMgmtUI
+        -- run futr
         . Futr.runFutr
         . UI.runUI
         $ do
@@ -62,3 +72,16 @@ main = do
                     }
 
             runEngineLoop config changeKey ctx
+
+
+-- | Initialize the state for the app.
+withInitialState
+    :: Eff ( State RelayPoolState
+           : State KeyMgmt.KeyMgmtState
+           : State AppState
+           : es) a
+    -> Eff es a
+withInitialState = 
+    evalState Types.initialState
+    . evalState KeyMgmt.initialState
+    . evalState Types.initialRelayPoolState

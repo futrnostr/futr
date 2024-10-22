@@ -1,8 +1,10 @@
 module content
 AccountList 1.0 AccountList.ui.qml
 App 1.0 App.qml
+DMRelays 1.0 DMRelays.ui.qml
 FollowList 1.0 FollowList.ui.qml
 FollowListFilter 1.0 FollowListFilter.ui.qml
 HomeScreen 1.0 HomeScreen.ui.qml
 KeyMgmtScreen 1.0 KeyMgmtScreen.ui.qml
+RelayStatusIcon 1.0 RelayStatusIcon.ui.qml
 TopBar 1.0 TopBar.ui.qml

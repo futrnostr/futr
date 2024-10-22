@@ -105,8 +105,10 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent
                         hoverEnabled: true
+
                         onEntered: followItem.mouseHover = true
                         onExited: followItem.mouseHover = false
+
                         onClicked: {
                             setCurrentProfile(modelData.pubkey)
                             openChat(modelData.pubkey)
@@ -114,10 +116,12 @@ Rectangle {
                                 "profileData": currentProfile,
                                 "npub": modelData.pubkey
                             })
-                            chatLoader.setSource("Chat.ui.qml", {
-                                "profileData": currentProfile,
-                                "npub": modelData.pubkey
-                            })
+                            if (ctxRelayMgmt.dmRelays.length > 0) {
+                                chatLoader.setSource("Chat.ui.qml", {
+                                    "profileData": currentProfile,
+                                    "npub": modelData.pubkey
+                                })
+                            }
                         }
                     }
                 }

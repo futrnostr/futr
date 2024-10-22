@@ -26,7 +26,7 @@ import Data.Word (Word8)
 import Text.Read (readMaybe)
 
 import Nostr.Keys (SecKey, PubKeyXO, importPubKeyXO, exportPubKeyXO, importSecKey, exportSecKey)
-import Nostr.Types (Event(..), EventId(..), Kind, RelayURI(..), relayURIToText)
+import Nostr.Types (Event(..), EventId(..), Kind, RelayURI)
 
 
 -- | Bech32 encoding for SecKey
@@ -78,7 +78,7 @@ eventToNevent event relayURI' = toBech32 "nevent" $ encodeTLV tlvData
               , (3, BSS.toShort $ encodeUtf8 $ T.pack $ show $ kind event)
               ]
     tlvData = case relayURI' of
-      Just r  -> (1, BSS.toShort $ encodeUtf8 $ relayURIToText r) : baseTLV
+      Just r  -> (1, BSS.toShort $ encodeUtf8 r) : baseTLV
       Nothing -> baseTLV
 
 
@@ -96,7 +96,7 @@ neventToEvent txt = do
 -- | Convert a PubKeyXO and list of relays to nprofile bech32 encoding
 pubKeyXOToNprofile :: PubKeyXO -> [RelayURI] -> T.Text
 pubKeyXOToNprofile pubKey' relays = toBech32 "nprofile" $ encodeTLV $
-  (0, BSS.toShort $ exportPubKeyXO pubKey') : map (\r -> (1, BSS.toShort $ encodeUtf8 $ relayURIToText r)) relays
+  (0, BSS.toShort $ exportPubKeyXO pubKey') : map (\r -> (1, BSS.toShort $ encodeUtf8 r)) relays
 
 
 -- | Decode nprofile bech32 encoding to PubKeyXO and relays
@@ -109,14 +109,14 @@ nprofileToPubKeyXO txt = do
                Nothing -> Nothing
   let relays = mapMaybe (\(t, v) -> 
                  if t == 1 
-                 then pure $ RelayURI (decodeUtf8 $ BSS.fromShort v)
+                 then pure $ decodeUtf8 $ BSS.fromShort v
                  else Nothing) tlvs
   return (pubKey', relays)
 
 
 -- | Convert a relay URI to nrelay bech32 encoding
 relayToNrelay :: RelayURI -> T.Text
-relayToNrelay relay = toBech32 "nrelay" $ encodeTLV [(0, BSS.toShort $ encodeUtf8 $ relayURIToText relay)]
+relayToNrelay relay = toBech32 "nrelay" $ encodeTLV [(0, BSS.toShort $ encodeUtf8 relay)]
 
 
 -- | Decode nrelay bech32 encoding to RelayURI
@@ -125,7 +125,7 @@ nrelayToRelay txt = do
   bs <- fromBech32 "nrelay" txt
   let tlvs = decodeTLV bs
   relayText <- lookup 0 tlvs >>= (Just . decodeUtf8 . BSS.fromShort)
-  pure $ RelayURI relayText
+  pure relayText
 
 
 -- | Convert from bech32 to ByteString
