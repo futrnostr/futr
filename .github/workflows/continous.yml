@@ -72,7 +72,7 @@ jobs:
         run: ./build-flatpak.sh
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: continuous
           name: Continuous
