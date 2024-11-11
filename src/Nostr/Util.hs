@@ -3,10 +3,6 @@
 
 module Nostr.Util where
 
-import Data.ByteString qualified as BS
-import Data.ByteString.Base16 qualified as B16
-import Data.Text (Text)
-import Data.Text.Encoding qualified as TE
 import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
@@ -18,7 +14,6 @@ import Types (AppState(..))
 
 -- | Effect for generating unique IDs.
 data Util :: Effect where
-  GenerateID :: Int -> Util m Text
   GetCurrentTime :: Util m Int
   GetKeyPair :: Util m KeyPair
 

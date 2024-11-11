@@ -72,7 +72,6 @@ runRelayConnection
 runRelayConnection = interpret $ \_ -> \case
     ConnectRelay r -> do
         conns <- gets @RelayPoolState activeConnections
-        logDebug $ "Current connections: " <> T.pack (show $ Map.keys conns)
         if Map.member r conns
             then return True -- Just return if we already have an active connection
             else do
@@ -88,8 +87,6 @@ runRelayConnection = interpret $ \_ -> \case
                             }
                 modify @RelayPoolState $ \st ->
                     st { activeConnections = Map.insert r rd (activeConnections st) }
-                newConns <- gets @RelayPoolState activeConnections
-                logDebug $ "After insert connections: " <> T.pack (show $ Map.keys newConns)
                 connectWithRetry r 5 chan
 
     DisconnectRelay r -> do
@@ -106,7 +103,6 @@ runRelayConnection = interpret $ \_ -> \case
 connectWithRetry :: RelayConnectionEff es => RelayURI -> Int -> TChan Request -> Eff es Bool
 connectWithRetry r maxRetries requestChan = do
     st <- get @RelayPoolState
-    logDebug $ "Before connection attempt: " <> T.pack (show $ Map.keys $ activeConnections st)
     
     let attempts = maybe 0 connectionAttempts $ Map.lookup r (activeConnections st)
     if attempts >= maxRetries
