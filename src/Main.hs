@@ -3,11 +3,11 @@ module Main where
 import Effectful
 import Effectful.Concurrent (runConcurrent)
 import Effectful.FileSystem (runFileSystem)
-import Effectful.State.Static.Shared (State,evalState)
-import EffectfulQML
+import Effectful.State.Static.Shared (State, evalState)
 import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
+import EffectfulQML
 import Futr qualified as Futr
 import Logging (runLoggingStdout)
 import Nostr
@@ -38,13 +38,14 @@ main = do
 
     runEff
         . runLoggingStdout
+        . runConcurrent
         -- state related
         . withInitialState
         -- app related
+        . evalState initialEffectfulQMLState
         . runEffectfulQML
         . runFileSystem
         . runUtil
-        . runConcurrent
         -- nostr related
         . runNostr
         . KeyMgmt.runKeyMgmt
@@ -81,7 +82,7 @@ withInitialState
            : State AppState
            : es) a
     -> Eff es a
-withInitialState = 
-    evalState Types.initialState
+withInitialState
+    = evalState Types.initialState
     . evalState KeyMgmt.initialState
     . evalState Types.initialRelayPoolState

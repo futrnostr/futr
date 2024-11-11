@@ -20,6 +20,7 @@ import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Text.Read (readMaybe)
 
+import EffectfulQML (EffectfulQMLState(..))
 import Logging
 import Nostr.Bech32
 import Nostr.Event
@@ -185,7 +186,7 @@ runUI = interpret $ \_ -> \case
 
         defPropertyConst' "currentProfile" (\_ -> do
           profileObj <- newObject profileClass ()
-          runE $ modify @AppState $ \st -> st { uiRefs = (uiRefs st) { profileObjRef = Just profileObj } }
+          runE $ modify @EffectfulQMLState $ \st -> st { uiRefs = (uiRefs st) { profileObjRef = Just profileObj } }
           return profileObj
         ),
 
@@ -253,7 +254,7 @@ runUI = interpret $ \_ -> \case
             Nothing -> return [],
 
         defPropertySigRO' "messages" changeKey' $ \obj -> do
-          runE $ modify @AppState $ \s -> s { uiRefs = (uiRefs s) { chatObjRef = Just obj } }
+          runE $ modify @EffectfulQMLState $ \s -> s { uiRefs = (uiRefs s) { chatObjRef = Just obj } }
           st <- runE $ get @AppState
           case currentChatRecipient st of
             (Just recipient, _) -> do
