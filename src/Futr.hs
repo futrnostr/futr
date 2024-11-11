@@ -90,6 +90,7 @@ type FutrEff es = ( State AppState :> es
                   , Publisher :> es
                   , State PKeyMgmt.KeyMgmtState :> es
                   , State RelayPoolState :> es
+                  , State EffectfulQMLState :> es
                   , GiftWrap :> es
                   , EffectfulQML :> es
                   , Logging :> es
@@ -129,10 +130,7 @@ runFutr = interpret $ \_ -> \case
     case bech32ToPubKeyXO npub' of
       Just pk -> do
         modify @AppState $ \st -> st { currentProfile = Just pk }
-        refs <- gets @AppState uiRefs
-        case profileObjRef refs of
-          Just obj' -> fireSignal obj'
-          Nothing -> return ()
+        notify $ emptyUpdates { profilesChanged = True }
       Nothing -> do
         logError $ "Invalid npub, cannot set current profile: " <> npub'
         return ()
@@ -147,9 +145,7 @@ runFutr = interpret $ \_ -> \case
                 let newFollow = Follow pubKeyXO Nothing Nothing
                 let newFollows = newFollow : currentFollows
                 modify $ \st' -> st' { follows = Map.insert userPK newFollows (follows st') }
-                -- Notify follows UI component
-                refs <- gets @AppState uiRefs
-                forM_ (followsObjRef refs) fireSignal
+                notify $ emptyUpdates { followsChanged = True }
             sendFollowListEvent
         Nothing -> return ()
 
@@ -162,9 +158,7 @@ runFutr = interpret $ \_ -> \case
             let currentFollows = Map.findWithDefault [] userPK (follows st)
             let newFollows = filter (\follow -> pubkey follow /= pubKeyXO) currentFollows
             modify $ \st' -> st' { follows = Map.insert userPK newFollows (follows st') }
-            -- Notify follows UI component
-            refs <- gets @AppState uiRefs
-            forM_ (followsObjRef refs) fireSignal
+            notify $ emptyUpdates { followsChanged = True }
             sendFollowListEvent
         Nothing -> return ()
 
@@ -176,8 +170,7 @@ runFutr = interpret $ \_ -> \case
       _ -> return ()
 
     modify $ \st' -> st' { currentChatRecipient = (Just [pubKeyXO], Nothing) }
-    refs <- gets @AppState uiRefs
-    forM_ (chatObjRef refs) fireSignal  -- Notify chat UI component
+    notify $ emptyUpdates { chatsChanged = True }
 
   SendMessage input -> do
     st <- get @AppState

@@ -148,8 +148,6 @@ data AppState = AppState
   -- UI state
   , currentChatRecipient :: (Maybe [PubKeyXO], Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
-  -- QML References
-  , uiRefs :: UIReferences
   }
 
 -- | UI object references grouped together
@@ -182,5 +180,4 @@ initialState = AppState
   , follows = Map.empty
   , currentChatRecipient = (Nothing, Nothing)
   , currentProfile = Nothing
-  , uiRefs = UIReferences Nothing Nothing Nothing Nothing Nothing
   }
