@@ -11,8 +11,10 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent (Concurrent, forkIO)
-import Effectful.Concurrent.STM ( TChan, atomically, newTChanIO, newTQueueIO, newTMVarIO, readTChan
-                                , readTMVar, tryPutTMVar, tryReadTMVar, writeTChan, writeTQueue )
+import Effectful.Concurrent.Async (async)
+import Effectful.Concurrent.STM ( TChan, TMVar, atomically, newTChanIO, newTQueueIO
+                                , newEmptyTMVarIO, newTMVarIO, putTMVar, readTChan, readTMVar
+                                , tryPutTMVar, tryReadTMVar, takeTMVar, writeTChan, writeTQueue )
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
@@ -73,7 +75,22 @@ runRelayConnection = interpret $ \_ -> \case
     ConnectRelay r -> do
         conns <- gets @RelayPoolState activeConnections
         if Map.member r conns
-            then return True -- Just return if we already have an active connection
+            then do
+                let connState = connectionState <$> Map.lookup r conns
+                case connState of
+                    Just Connected -> do
+                        logDebug $ "Already connected to " <> r
+                        return True
+                    Just Connecting -> do
+                        logDebug $ "Connection already in progress for " <> r
+                        return False
+                    Just Disconnected -> do
+                        -- Try to reconnect
+                        chan <- newTChanIO
+                        connectWithRetry r 5 chan
+                    Nothing -> do
+                        logWarning $ "No connection state found for relay: " <> r
+                        return False
             else do
                 chan <- newTChanIO
                 let rd = RelayData
@@ -117,33 +134,40 @@ connectWithRetry r maxRetries requestChan = do
                 }
             return False
         else do
+            connectionMVar <- newEmptyTMVarIO
+
             let connectAction = if "wss://" `T.isPrefixOf` r
                     then Wuss.runSecureClient (T.unpack $ T.drop 6 r) 443 "/"
                     else WS.runClient (T.unpack $ T.drop 5 r) 80 "/"
 
-            result <- withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-                try @SomeException $ connectAction (nostrClient r requestChan (maxRetries - attempts - 1) runE)
-            case result of
-                Right _ -> return True
-                Left e -> do
-                    logError $ "Connection error: " <> T.pack (show e)
-                    st' <- get @RelayPoolState
-                    when (Map.member r (activeConnections st')) $
-                        modify @RelayPoolState $ \s ->
-                            s { activeConnections = Map.adjust 
-                                (\d -> d { connectionState = Disconnected
-                                        , lastError = Just $ ConnectionFailed $ T.pack (show e)
-                                        }) 
-                                r 
-                                (activeConnections s) 
-                            }
-                    return False
+            void $ forkIO $ withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
+                let runClient = nostrClient connectionMVar r requestChan (maxRetries - attempts - 1) runE
+                result <- try @SomeException $ connectAction runClient
+                case result of
+                    Right _ -> return ()
+                    Left e -> runE $ do
+                        atomically $ putTMVar connectionMVar False
+                        logError $ "Connection error: " <> T.pack (show e)
+                        st' <- get @RelayPoolState
+                        when (Map.member r (activeConnections st')) $
+                            modify @RelayPoolState $ \s ->
+                                s { activeConnections = Map.adjust
+                                    (\d -> d { connectionState = Disconnected
+                                            , lastError = Just $ ConnectionFailed $ T.pack (show e)
+                                            })
+                                    r
+                                    (activeConnections s)
+                                }
+
+            result <- atomically $ takeTMVar connectionMVar
+            return result
 
 
 -- | Nostr client for relay connections.
-nostrClient :: RelayConnectionEff es => RelayURI -> TChan Request -> Int -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
-nostrClient r requestChan remainingRetries runE conn = runE $ do
+nostrClient :: RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan Request -> Int -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
+nostrClient connectionMVar r requestChan remainingRetries runE conn = runE $ do
     logDebug $ "Connected to " <> r
+    void $ atomically $ putTMVar connectionMVar True
     modify @RelayPoolState $ \st ->
         st { activeConnections = Map.adjust (\d -> d { connectionState = Connected }) r (activeConnections st) }
     notifyRelayStatus

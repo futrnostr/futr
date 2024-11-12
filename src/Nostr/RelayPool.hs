@@ -4,6 +4,7 @@ module Nostr.RelayPool where
 
 import Control.Monad (forM, forM_, when)
 import Data.Map.Strict qualified as Map
+import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent (Concurrent, threadDelay)
 import Effectful.Concurrent.STM (atomically, flushTQueue, readTQueue, newTVarIO, readTVar, writeTVar)
@@ -159,6 +160,8 @@ handleRelaySubscription r = do
     let fs = if isDM then Just $ createDMRelayFilters pk followPks
             else if isInbox then Just $ createInboxRelayFilters pk followPks
             else Nothing
+
+    logInfo $ "Starting subscription for " <> r <> " with filters " <> T.pack (show fs)
 
     case fs of
         Just fs' -> do
