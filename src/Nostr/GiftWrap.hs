@@ -46,7 +46,6 @@ type GiftWrapEff es = ( State AppState :> es
 runGiftWrap :: GiftWrapEff es => Eff (GiftWrap : es) a -> Eff es a
 runGiftWrap = interpret $ \_ -> \case
   HandleGiftWrapEvent event' -> do
-    logDebug $ "Handling gift wrap event: " <> pack (show event')
     st <- get @AppState
     case keyPair st of
       Just kp -> do

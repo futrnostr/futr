@@ -4,13 +4,13 @@
 
 module EffectfulQML where
 
-import Control.Monad (forM_, void, when)
+import Control.Monad (forever, forM_, void, when)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTQueueIO, readTQueue, writeTQueue)
-import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
-import Effectful.State.Static.Shared (State, evalState, get, gets, put)
+import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.State.Static.Shared (State, get, gets, put)
 import Effectful.TH
 import Graphics.QML qualified as QML
 
@@ -61,7 +61,7 @@ runEffectfulQML = interpret $ \_ -> \case
     RunEngineLoop config changeKey ctx -> do
         q <- newTQueueIO
         put $ EffectfulQMLState (Just changeKey) (Just ctx) initialUIRefs (Just q)
-        void $ async $ do
+        void $ async $ forever $ do
           uiUpdates <- atomically $ readTQueue q
           moreUpdates <- atomically $ flushTQueue q
           let combinedUpdates = uiUpdates <> mconcat moreUpdates

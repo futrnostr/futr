@@ -20,7 +20,6 @@ import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Text.Read (readMaybe)
 
-import EffectfulQML (EffectfulQMLState(..))
 import Logging
 import Nostr.Bech32
 import Nostr.Event

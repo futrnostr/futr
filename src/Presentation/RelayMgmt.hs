@@ -18,6 +18,7 @@ import Effectful.TH
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 
 import EffectfulQML (EffectfulQMLState(..))
+import Logging
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.RelayPool
 import Nostr.Types hiding (displayName, picture)
@@ -33,6 +34,7 @@ type RelayMgmgtUIEff es =
   , State RelayPoolState :> es
   , State EffectfulQMLState :> es
   , RelayPool :> es
+  , Logging :> es
   , Concurrent :> es
   , Util :> es
   , IOE :> es
@@ -124,6 +126,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
         contextClass <- newClass [
           defPropertySigRO' "dmRelays" changeKey $ \obj -> do
+            runE $ logDebug "dmRelays property"
             runE $ modify @EffectfulQMLState $ \s -> s { 
               uiRefs = (uiRefs s) { dmRelaysObjRef = Just obj } 
             }
@@ -136,6 +139,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
                 mapM (\(relay, _status) -> getPoolObject dmRelayPool (getUri relay)) relaysWithStatus,
 
           defPropertySigRO' "generalRelays" changeKey $ \obj -> do
+            runE $ logDebug "generalRelays property"
             runE $ modify @EffectfulQMLState $ \s -> s { 
               uiRefs = (uiRefs s) { generalRelaysObjRef = Just obj } 
             }
