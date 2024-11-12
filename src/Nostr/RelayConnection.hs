@@ -3,18 +3,17 @@
 module Nostr.RelayConnection where
 
 import Control.Exception (SomeException, try)
-import Control.Monad (forM_, unless, void, when)
+import Control.Monad (void, when)
 import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent (Concurrent, forkIO)
-import Effectful.Concurrent.Async (async)
+import Effectful.Concurrent.Async (async, waitAnyCancel)
 import Effectful.Concurrent.STM ( TChan, TMVar, atomically, newTChanIO, newTQueueIO
-                                , newEmptyTMVarIO, newTMVarIO, putTMVar, readTChan, readTMVar
-                                , tryPutTMVar, tryReadTMVar, takeTMVar, writeTChan, writeTQueue )
+                                , newEmptyTMVarIO, putTMVar, readTChan
+                                , takeTMVar, writeTChan, writeTQueue )
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
@@ -141,7 +140,7 @@ connectWithRetry r maxRetries requestChan = do
                     else WS.runClient (T.unpack $ T.drop 5 r) 80 "/"
 
             void $ forkIO $ withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-                let runClient = nostrClient connectionMVar r requestChan (maxRetries - attempts - 1) runE
+                let runClient = nostrClient connectionMVar r requestChan runE
                 result <- try @SomeException $ connectAction runClient
                 case result of
                     Right _ -> return ()
@@ -164,70 +163,53 @@ connectWithRetry r maxRetries requestChan = do
 
 
 -- | Nostr client for relay connections.
-nostrClient :: RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan Request -> Int -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
-nostrClient connectionMVar r requestChan remainingRetries runE conn = runE $ do
+nostrClient :: RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan Request -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
+nostrClient connectionMVar r requestChan runE conn = runE $ do
     logDebug $ "Connected to " <> r
     void $ atomically $ putTMVar connectionMVar True
     modify @RelayPoolState $ \st ->
         st { activeConnections = Map.adjust (\d -> d { connectionState = Connected }) r (activeConnections st) }
     notifyRelayStatus
     updateQueue <- newTQueueIO
-    terminateThreads <- newTMVarIO Nothing
 
-    -- Websocket reading thread
-    void $ forkIO $ let
-        readLoop = do
-            shouldTerminate <- atomically $ tryReadTMVar terminateThreads
-            unless (isJust shouldTerminate) $ do
-                msg <- liftIO (try (WS.receiveData conn) :: IO (Either SomeException BSL.ByteString))
-                case msg of
-                    Left ex -> do
-                        logError $ "Error receiving data from " <> r <> ": " <> T.pack (show ex)
-                        void $ atomically $ tryPutTMVar terminateThreads (Just ConnectionFailure)
-                    Right msg' -> case eitherDecode msg' of
-                        Right response -> do
-                            updates <- handleResponse r response
-                            atomically $ writeTQueue updateQueue updates
-                            readLoop
-                        Left err -> do
-                            logError $ "Could not decode server response from " <> r <> ": " <> T.pack err
-                            readLoop
-        in readLoop
+    -- Start receive and send loops as async tasks
+    receiveThread <- async $ receiveLoop updateQueue
+    sendThread <- async $ sendLoop
 
-    -- Main message handling loop
-    let loop = do
-            msg <- atomically $ readTChan requestChan
-            case msg of
-                NT.Disconnect -> do
-                    liftIO $ WS.sendClose conn (T.pack "Bye!")
-                    void $ atomically $ tryPutTMVar terminateThreads (Just UserInitiated)
-                _ -> do
-                    result <- liftIO $ try @SomeException $ WS.sendTextData conn $ encode msg
-                    case result of
-                        Left ex -> do
-                            logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
-                            void $ atomically $ tryPutTMVar terminateThreads (Just ConnectionFailure)
-                        Right _ -> loop
-    loop
-
-    -- Handle cleanup and potential reconnection
-    reason <- atomically $ fromMaybe ConnectionFailure <$> readTMVar terminateThreads
+    -- Wait for either thread to finish
+    void $ waitAnyCancel [receiveThread, sendThread]
     modify @RelayPoolState $ \st ->
         st { activeConnections = Map.adjust (\d -> d { connectionState = Disconnected }) r (activeConnections st) }
     notifyRelayStatus
+  where
+    receiveLoop q = do
+        msg <- liftIO (try (WS.receiveData conn) :: IO (Either SomeException BSL.ByteString))
+        case msg of
+            Left ex -> do
+                logError $ "Error receiving data from " <> r <> ": " <> T.pack (show ex)
+                return ()  -- Exit the loop on error
+            Right msg' -> case eitherDecode msg' of
+                Right response -> do
+                    updates <- handleResponse r response
+                    atomically $ writeTQueue q updates
+                    receiveLoop q
+                Left err -> do
+                    logError $ "Could not decode server response from " <> r <> ": " <> T.pack err
+                    receiveLoop q
 
-    unless (reason == UserInitiated) $ do
-        logDebug $ "Reconnecting to: " <> r
-        -- Only attempt reconnection for non-user-initiated disconnects
-        void $ connectWithRetry r remainingRetries requestChan
-        -- Resubscribe active subscriptions
-        st <- get @RelayPoolState
-        let relaySubs = case Map.lookup r (activeConnections st) of
-                Just rd -> Map.elems (activeSubscriptions rd)
-                Nothing -> []
-        forM_ relaySubs $ \sub -> do
-            let sub' = NT.Subscription (subscriptionId sub) (subscriptionFilters sub)
-            atomically $ writeTChan requestChan (NT.Subscribe sub')
+    sendLoop = do
+        msg <- atomically $ readTChan requestChan
+        case msg of
+            NT.Disconnect -> do
+                liftIO $ WS.sendClose conn (T.pack "Bye!")
+                return ()  -- Exit the loop after disconnect
+            _ -> do
+                result <- liftIO $ try @SomeException $ WS.sendTextData conn $ encode msg
+                case result of
+                    Left ex -> do
+                        logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
+                        return ()  -- Exit the loop on error
+                    Right _ -> sendLoop
 
 
 -- | Handle responses.
