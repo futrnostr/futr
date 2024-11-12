@@ -68,8 +68,21 @@ jobs:
       - name: Build with Cabal
         run: cabal build
 
+      - name: Update appdata.xml
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          sed -i "s/<release version=\".*\" date=\".*\">/<release version=\"continuous\" date=\"$TODAY\">/" flatpak/com.futrnostr.futr.appdata.xml
+
       - name: Build Flatpak
         run: ./build-flatpak.sh
+
+      - name: Delete existing release and tag
+        uses: dev-drprasad/delete-tag-and-release@v1.0
+        with:
+          tag_name: continuous
+          delete_release: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

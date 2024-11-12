@@ -18,9 +18,9 @@
     </screenshot>
   </screenshots>
   <releases>
-    <release version="0.0.3" date="2024-10-14">
+    <release version="continuous" date="2024-03-19">
       <description>
-        <p>Alpha release of Futr</p>
+        <p>Continuous development build</p>
       </description>
     </release>
   </releases>
