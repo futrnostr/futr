@@ -112,6 +112,10 @@ Rectangle {
                 positionViewAtEnd()
             }
 
+            onContentHeightChanged: {
+                positionViewAtEnd()
+            }
+
             Component.onCompleted: {
                 positionViewAtEnd()
             }

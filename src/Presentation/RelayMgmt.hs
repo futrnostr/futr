@@ -126,7 +126,6 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
         contextClass <- newClass [
           defPropertySigRO' "dmRelays" changeKey $ \obj -> do
-            runE $ logDebug "dmRelays property"
             runE $ modify @EffectfulQMLState $ \s -> s { 
               uiRefs = (uiRefs s) { dmRelaysObjRef = Just obj } 
             }
@@ -139,7 +138,6 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
                 mapM (\(relay, _status) -> getPoolObject dmRelayPool (getUri relay)) relaysWithStatus,
 
           defPropertySigRO' "generalRelays" changeKey $ \obj -> do
-            runE $ logDebug "generalRelays property"
             runE $ modify @EffectfulQMLState $ \s -> s { 
               uiRefs = (uiRefs s) { generalRelaysObjRef = Just obj } 
             }

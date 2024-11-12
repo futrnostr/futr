@@ -168,7 +168,9 @@ handleEvent' event' = do
                                 importDMRelays (pubKey event') preferredRelays (createdAt event')
                                 forM_ preferredRelays $ \r -> async $ do
                                     connected <- connectRelay $ getUri r
-                                    when connected $ handleRelaySubscription $ getUri r
+                                    when connected $ do
+                                        threadDelay 100000  -- 100ms delay to wait for auth
+                                        handleRelaySubscription $ getUri r
 
                         pure $ emptyUpdates { dmRelaysChanged = True }
 
