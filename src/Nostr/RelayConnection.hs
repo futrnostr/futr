@@ -381,26 +381,20 @@ handleResponse relayURI' r = case r of
 
 -- | Handle authentication required.
 handleAuthRequired :: RelayConnectionEff es => RelayURI -> Request -> Eff es ()
-handleAuthRequired relayURI' request = do
-    logDebug $ "Handling auth required for " <> relayURI' <> " with request: " <> T.pack (show request)
-    st <- get @RelayPoolState
-    case Map.lookup relayURI' (activeConnections st) of
-        Just rd -> do
-            case request of
-                SendEvent evt -> do
-                    logDebug $ "Queueing event for retry: " <> T.pack (show $ eventId evt)
-                    modify @RelayPoolState $ \st' ->
-                        st' { activeConnections = Map.adjust
-                            (\rd' -> rd' { pendingEvents = evt : pendingEvents rd' })
-                            relayURI'
-                            (activeConnections st')
-                        }
-                _ -> do
-                    logDebug $ "Queueing request for retry: " <> T.pack (show request)
-                    modify @RelayPoolState $ \st' ->
-                        st' { activeConnections = Map.adjust
-                            (\rd' -> rd' { pendingRequests = request : pendingRequests rd' })
-                            relayURI'
-                            (activeConnections st')
-                        }
-        Nothing -> logError $ "Cannot queue request for retry - no connection found: " <> relayURI'
+handleAuthRequired relayURI' request = case request of
+    SendEvent evt -> do
+        logDebug $ "Queueing event for retry: " <> T.pack (show $ eventId evt)
+        modify @RelayPoolState $ \st' ->
+            st' { activeConnections = Map.adjust
+                (\rd' -> rd' { pendingEvents = evt : pendingEvents rd' })
+                relayURI'
+                (activeConnections st')
+            }
+    _ -> do
+        logDebug $ "Queueing request for retry: " <> T.pack (show request)
+        modify @RelayPoolState $ \st' ->
+            st' { activeConnections = Map.adjust
+                (\rd' -> rd' { pendingRequests = request : pendingRequests rd' })
+                relayURI'
+                (activeConnections st')
+            }

@@ -139,9 +139,9 @@ handleEvent' event' = do
                             <> (pubKeyXOToBech32 pk)
                         pure emptyUpdates
                     relays -> do
-                        importGeneralRelays pk relays ts
-                        -- @todo auto connect to new relays, disconnect from old ones
-                        -- IF the event is from our pubkey
+                        handleRelayListUpdate pk relays ts
+                            importGeneralRelays
+                            generalRelays
                         logDebug $ "Updated relay list for " <> (pubKeyXOToBech32 pk)
                             <> " with " <> pack (show $ length relays) <> " relays"
                         pure $ emptyUpdates { generalRelaysChanged = True }
@@ -154,22 +154,10 @@ handleEvent' event' = do
                         logWarning $ "No valid relay URIs found in PreferredDMRelays event from "
                             <> (pubKeyXOToBech32 $ pubKey event')
                         pure emptyUpdates
-                    preferredRelays -> do
-                        st <- get @RelayPoolState
-                        case Map.lookup (pubKey event') (dmRelays st) of
-                            Just (existingRelays, ts) -> do
-                                when (ts < createdAt event') $ do
-                                    forM_ existingRelays $ \r -> disconnectRelay $ getUri r
-                                    importDMRelays (pubKey event') preferredRelays (createdAt event')
-                                    forM_ preferredRelays $ \r -> async $ do
-                                        connected <- connectRelay $ getUri r
-                                        when connected $ handleRelaySubscription $ getUri r
-                            _ -> do
-                                importDMRelays (pubKey event') preferredRelays (createdAt event')
-                                forM_ preferredRelays $ \r -> async $ do
-                                    connected <- connectRelay $ getUri r
-                                    when connected $ handleRelaySubscription $ getUri r
-
+                    relays -> do
+                        handleRelayListUpdate (pubKey event') relays (createdAt event')
+                            importDMRelays
+                            dmRelays
                         pure $ emptyUpdates { dmRelaysChanged = True }
 
             _ -> do
@@ -271,6 +259,38 @@ handleRelaySubscription r = do
                     loop
                 Nothing -> logWarning $ "Failed to start subscription for " <> r
         Nothing -> return () -- Outbox only relay or unknown relay, no subscriptions needed
+
+
+-- | Handle relay list updates with connection management
+handleRelayListUpdate :: SubscriptionEff es
+                      => PubKeyXO                                             -- ^ Public key of the event author
+                      -> [Relay]                                              -- ^ New relay list
+                      -> Int                                                  -- ^ Event timestamp
+                      -> (PubKeyXO -> [Relay] -> Int -> Eff es ())            -- ^ Import function
+                      -> (RelayPoolState -> Map.Map PubKeyXO ([Relay], Int))  -- ^ Relay map selector
+                      -> Eff es ()
+handleRelayListUpdate pk relays ts importFn getRelayMap = do
+    st <- get @RelayPoolState
+    case Map.lookup pk (getRelayMap st) of
+        Just (existingRelays, oldTs) -> do
+            when (oldTs < ts) $ do
+                -- Disconnect from relays that aren't in the new list
+                forM_ existingRelays $ \r ->
+                    when (getUri r `notElem` map getUri relays) $
+                        disconnectRelay $ getUri r
+
+                importFn pk relays ts
+
+                -- Connect to new relays that weren't in the old list
+                let newRelays = filter (\r -> getUri r `notElem` map getUri existingRelays) relays
+                forM_ newRelays $ \r -> async $ do
+                    connected <- connectRelay $ getUri r
+                    when connected $ handleRelaySubscription $ getUri r
+        Nothing -> do
+            importFn pk relays ts
+            forM_ relays $ \r -> async $ do
+                connected <- connectRelay $ getUri r
+                when connected $ handleRelaySubscription $ getUri r
 
 
 -- | Create DM relay subscription filters
