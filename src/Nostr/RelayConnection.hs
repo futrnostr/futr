@@ -3,9 +3,10 @@
 module Nostr.RelayConnection where
 
 import Control.Exception (SomeException, try)
-import Control.Monad (void, when)
+import Control.Monad (forM_,void, when)
 import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
+import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Effectful
@@ -31,7 +32,7 @@ import Nostr.Types ( Event(..), RelayURI
 import Nostr.Types qualified as NT
 import Nostr.Util
 import Types ( AppState(..), ConnectionError(..), ConnectionState(..)
-             , PublishStatus(..),RelayPoolState(..), RelayData(..)
+             , RelayPoolState(..), RelayData(..)
              , SubscriptionDetails(..), SubscriptionEvent(..), UIUpdates(..), emptyUpdates )
 
 
@@ -99,7 +100,9 @@ runRelayConnection = interpret $ \_ -> \case
                             , lastError = Nothing
                             , connectionAttempts = 0
                             , notices = []
-                            , authenticated = False
+                            , pendingRequests = []
+                            , pendingEvents = []
+                            , pendingAuthId = Nothing
                             }
                 modify @RelayPoolState $ \st ->
                     st { activeConnections = Map.insert r rd (activeConnections st) }
@@ -124,12 +127,12 @@ connectWithRetry r maxRetries requestChan = do
     if attempts >= maxRetries
         then do
             modify @RelayPoolState $ \st' ->
-                st' { activeConnections = Map.adjust 
+                st' { activeConnections = Map.adjust
                     (\d -> d { connectionState = Disconnected
-                            , lastError = Just MaxRetriesReached 
-                            }) 
-                    r 
-                    (activeConnections st') 
+                            , lastError = Just MaxRetriesReached
+                            })
+                    r
+                    (activeConnections st')
                 }
             return False
         else do
@@ -202,13 +205,28 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
         case msg of
             NT.Disconnect -> do
                 liftIO $ WS.sendClose conn (T.pack "Bye!")
-                return ()  -- Exit the loop after disconnect
+                return ()
+            NT.SendEvent event -> do
+                result <- liftIO $ try @SomeException $ WS.sendTextData conn $ encode msg
+                case result of
+                    Left ex -> do
+                        logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
+                        return ()
+                    Right _ -> do
+                        -- Store the event in the state for potential retry
+                        modify @RelayPoolState $ \st ->
+                            st { activeConnections = Map.adjust
+                                (\rd -> rd { pendingEvents = event : pendingEvents rd })
+                                r
+                                (activeConnections st)
+                            }
+                        sendLoop
             _ -> do
                 result <- liftIO $ try @SomeException $ WS.sendTextData conn $ encode msg
                 case result of
                     Left ex -> do
                         logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
-                        return ()  -- Exit the loop on error
+                        return ()
                     Right _ -> sendLoop
 
 
@@ -239,20 +257,78 @@ handleResponse relayURI' r = case r of
         return emptyUpdates
 
     Closed subId' msg -> do
-        enqueueEvent subId' (SubscriptionClosed msg)
-        modify @RelayPoolState $ \st ->
-            st { activeConnections = Map.adjust
-                (\rd -> rd { activeSubscriptions = Map.delete subId' (activeSubscriptions rd) })
-                relayURI'
-                (activeConnections st)
-            }
+        if "auth-required" `T.isPrefixOf` msg
+            then do
+                logDebug $ "Auth required for subscription " <> T.pack (show subId') <> " from " <> relayURI'
+                -- Queue the subscription for retry after authentication
+                st <- get @RelayPoolState
+                case Map.lookup relayURI' (activeConnections st) of
+                    Just rd ->
+                        case Map.lookup subId' (activeSubscriptions rd) of
+                            Just subDetails -> do
+                                let subscription = NT.Subscription
+                                        { NT.subId = subId'
+                                        , NT.filters = subscriptionFilters subDetails
+                                        }
+                                handleAuthRequired relayURI' (NT.Subscribe subscription)
+                            Nothing -> logError $ "No subscription found for " <> T.pack (show subId')
+                    Nothing -> logError $ "Received auth-required but no connection found: " <> relayURI'
+            else do
+                enqueueEvent subId' (SubscriptionClosed msg)
+                modify @RelayPoolState $ \st ->
+                    st { activeConnections = Map.adjust
+                        (\rd -> rd { activeSubscriptions = Map.delete subId' (activeSubscriptions rd) })
+                        relayURI'
+                        (activeConnections st)
+                    }
         return emptyUpdates
 
     Ok eventId' accepted' msg -> do
-        modify @RelayPoolState $ \st ->
-            st { publishStatus = Map.adjust (\relayMap -> 
-                    Map.insert relayURI' (if accepted' then Success else Failure msg) relayMap
-                ) eventId' (publishStatus st) }
+        if "auth-required" `T.isPrefixOf` msg
+            then do
+                st <- get @RelayPoolState
+                case Map.lookup relayURI' (activeConnections st) of
+                    Just rd ->
+                        case find (\e -> NT.eventId e == eventId') (pendingEvents rd) of
+                            Just event -> handleAuthRequired relayURI' (NT.SendEvent event)
+                            Nothing -> logDebug $ "No pending event found for " <> T.pack (show eventId')
+                    Nothing -> logError $ "Received auth-required but no connection found: " <> relayURI'
+            else do
+                st <- get @RelayPoolState
+                case Map.lookup relayURI' (activeConnections st) of
+                    Just rd ->
+                        case pendingAuthId rd of
+                            Just authId | authId == eventId' && accepted' -> do
+                                let pendingReqs = pendingRequests rd
+                                let pendingEvts = pendingEvents rd
+
+                                logDebug $ "Auth successful, retrying " <> T.pack (show (length pendingReqs))
+                                        <> " pending requests and "
+                                        <> T.pack (show (length pendingEvts))
+                                        <> " pending events for " <> relayURI'
+
+                                -- Clear pending lists and auth ID
+                                modify @RelayPoolState $ \st' ->
+                                    st' { activeConnections = Map.adjust
+                                        (\rd' -> rd' { pendingRequests = []
+                                                   , pendingEvents = []
+                                                   , pendingAuthId = Nothing
+                                                   })
+                                        relayURI'
+                                        (activeConnections st')
+                                    }
+
+                                -- Retry events and requests
+                                forM_ pendingEvts $ \evt -> do
+                                    logDebug $ "Retrying event: " <> T.pack (show $ eventId evt)
+                                    atomically $ writeTChan (requestChannel rd) (SendEvent evt)
+
+                                forM_ pendingReqs $ \req -> do
+                                    logDebug $ "Retrying request: " <> T.pack (show req)
+                                    atomically $ writeTChan (requestChannel rd) req
+                            _ -> logDebug $ "Received OK for event " <> T.pack (show eventId')
+                                        <> " (accepted: " <> T.pack (show accepted') <> ")"
+                    Nothing -> logError $ "Received OK but no connection found: " <> relayURI'
         return $ emptyUpdates { publishStatusChanged = True }
         
     Notice msg -> do
@@ -265,22 +341,33 @@ handleResponse relayURI' r = case r of
         return $ emptyUpdates { noticesChanged = True }
 
     Auth challenge -> do
-        now <- getCurrentTime
-        kp <- getKeyPair
-        let unsignedEvent = createCanonicalAuthentication relayURI' challenge (keyPairToPubKeyXO kp) now
-        signedEventMaybe <- signEvent unsignedEvent kp
-        case signedEventMaybe of
-            Just signedEvent -> do
-                st <- get @RelayPoolState
-                case Map.lookup relayURI' (activeConnections st) of
-                    Just rd -> do
-                        atomically $ writeTChan (requestChannel rd) (Authenticate signedEvent)
+        logDebug $ "Received auth challenge from " <> relayURI' <> ": " <> challenge
+        st <- get @RelayPoolState
+        case Map.lookup relayURI' (activeConnections st) of
+            Just rd -> do
+                now <- getCurrentTime
+                kp <- getKeyPair
+                let unsignedEvent = createCanonicalAuthentication relayURI' challenge (keyPairToPubKeyXO kp) now
+                logDebug $ "Created unsigned auth event: " <> T.pack (show unsignedEvent)
+                signedEventMaybe <- signEvent unsignedEvent kp
+                case signedEventMaybe of
+                    Just signedEvent -> do
+                        logDebug $ "Successfully signed auth event: " <> T.pack (show signedEvent)
                         modify @RelayPoolState $ \st' ->
-                            st' { activeConnections = Map.adjust (\rd' -> rd' { authenticated = True }) relayURI' (activeConnections st') }
-                        -- @todo re-sending events?
-                    Nothing -> logError $ "Error handling relay authentication, no channel found: " <> relayURI'
-            Nothing -> logError "Failed to sign canonical authentication event"
-        return emptyUpdates
+                            st' { activeConnections = Map.adjust
+                                (\rd' -> rd' { pendingAuthId = Just (eventId signedEvent) })
+                                relayURI'
+                                (activeConnections st')
+                            }
+                        atomically $ writeTChan (requestChannel rd) (Authenticate signedEvent)
+                        return emptyUpdates
+                    Nothing -> do
+                        logError "Failed to sign canonical authentication event"
+                        return emptyUpdates
+            Nothing -> do
+                logError $ "Error handling relay authentication, no channel found: " <> relayURI'
+                return emptyUpdates
+
     where
         enqueueEvent :: RelayConnectionEff es => SubscriptionId -> SubscriptionEvent -> Eff es ()
         enqueueEvent subId' event' = do
@@ -290,3 +377,30 @@ handleResponse relayURI' r = case r of
                     Just sd -> atomically $ writeTQueue (responseQueue sd) event'
                     Nothing -> error $ "No subscription found for " <> show subId'
                 Nothing -> error $ "No connection found for " <> show relayURI'
+
+
+-- | Handle authentication required.
+handleAuthRequired :: RelayConnectionEff es => RelayURI -> Request -> Eff es ()
+handleAuthRequired relayURI' request = do
+    logDebug $ "Handling auth required for " <> relayURI' <> " with request: " <> T.pack (show request)
+    st <- get @RelayPoolState
+    case Map.lookup relayURI' (activeConnections st) of
+        Just rd -> do
+            case request of
+                SendEvent evt -> do
+                    logDebug $ "Queueing event for retry: " <> T.pack (show $ eventId evt)
+                    modify @RelayPoolState $ \st' ->
+                        st' { activeConnections = Map.adjust
+                            (\rd' -> rd' { pendingEvents = evt : pendingEvents rd' })
+                            relayURI'
+                            (activeConnections st')
+                        }
+                _ -> do
+                    logDebug $ "Queueing request for retry: " <> T.pack (show request)
+                    modify @RelayPoolState $ \st' ->
+                        st' { activeConnections = Map.adjust
+                            (\rd' -> rd' { pendingRequests = request : pendingRequests rd' })
+                            relayURI'
+                            (activeConnections st')
+                        }
+        Nothing -> logError $ "Cannot queue request for retry - no connection found: " <> relayURI'

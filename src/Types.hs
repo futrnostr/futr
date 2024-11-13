@@ -103,7 +103,9 @@ data RelayData = RelayData
   , notices        :: [Text]
   , lastError      :: Maybe ConnectionError
   , connectionAttempts :: Int
-  , authenticated :: Bool
+  , pendingRequests :: [Request]
+  , pendingEvents :: [Event]
+  , pendingAuthId :: Maybe EventId
   }
 
 

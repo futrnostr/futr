@@ -235,8 +235,6 @@ loginWithAccount obj a = do
     forM_ rs $ \relay' -> void $ async $ connect $ getUri relay'
 
     void $ async $ do
-        threadDelay 100000 -- 100ms miinum delay to wait for connections to establish
-        
         atLeastOneConnected <- awaitAtLeastOneConnected
         -- Update UI state after connections are established
         when atLeastOneConnected $ do

@@ -114,7 +114,7 @@ runRelayPool = interpret $ \_ -> \case
                         else if all (== Disconnected) states
                             then return False
                             else do
-                                threadDelay 100000  -- 100ms delay
+                                threadDelay 50000  -- 50ms delay
                                 loop
         loop
 

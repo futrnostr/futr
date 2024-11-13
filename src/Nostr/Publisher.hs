@@ -5,7 +5,7 @@ import Data.List (nub, partition)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack)
 import Effectful
-import Effectful.Concurrent (Concurrent, threadDelay)
+import Effectful.Concurrent (Concurrent)
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (atomically, writeTChan)
 import Effectful.Dispatch.Dynamic (interpret)
@@ -96,7 +96,6 @@ runPublisher =  interpret $ \_ -> \case
         forM_ newRelays $ \r -> async $ do
             connected <- connectRelay r
             when connected $ do
-                threadDelay 100000 -- wait 100ms for authentication
                 writeToChannel event r
                 disconnectRelay r
 
@@ -155,7 +154,6 @@ runPublisher =  interpret $ \_ -> \case
                 forM_ newRelays $ \r -> async $ do
                     connected <- connectRelay r
                     when connected $ do
-                        threadDelay 100000 -- wait 100ms for authentication
                         writeToChannel event' r
                         disconnectRelay r
 
