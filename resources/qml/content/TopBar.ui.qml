@@ -46,6 +46,7 @@ Item {
                 text: qsTr("My Profile")
                 onTriggered: {
                     setCurrentProfile(mynpub)
+                    chatLoader.source = ""
                     profileLoader.setSource(
                         "Profile/Profile.ui.qml",
                         { "profileData": currentProfile, "npub": mynpub }

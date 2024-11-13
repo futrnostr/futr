@@ -19,8 +19,10 @@ Dialog {
         switch (relayType) {
             case "dm":
                 ctxRelayMgmt.removeDMRelay(relayToRemove)
+                break;
             case "general":
                 ctxRelayMgmt.removeGeneralRelay(relayToRemove)
+                break;
         }
     }
 
