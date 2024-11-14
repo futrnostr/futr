@@ -58,7 +58,11 @@ jobs:
 
       - name: Setup GPG
         run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+          # Create .gnupg directory with correct permissions
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
+          # Import the private key
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
 
       - name: Create/Update Repository
         env:
