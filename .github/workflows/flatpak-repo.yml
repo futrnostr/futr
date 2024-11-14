@@ -133,7 +133,7 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
         with:
-          token: ${{ secrets.TOKEN }}token: ${{ secrets.TOKEN }}
+          token: ${{ secrets.TOKEN }}
 
       - name: Create index.html
         run: |
