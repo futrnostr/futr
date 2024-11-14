@@ -50,18 +50,24 @@ jobs:
           workflow: ${{ github.event.workflow_run.workflow_id }}
           run_id: ${{ github.event.workflow_run.id }}
 
+      - name: Install ostree
+        run: |
+          sudo apt-get install -y ostree
+
       - name: Create/Update Repository
+        env:
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
         run: |
           # Create directories if they don't exist
           mkdir -p repo-stable repo-continuous
 
           # Initialize repos only if they don't exist
-          [ ! -d "repo-stable/objects" ] && flatpak build-init-repo repo-stable
-          [ ! -d "repo-continuous/objects" ] && flatpak build-init-repo repo-continuous
+          [ ! -d "repo-stable/objects" ] && ostree init --mode=archive-z2 --repo=repo-stable
+          [ ! -d "repo-continuous/objects" ] && ostree init --mode=archive-z2 --repo=repo-continuous
 
           if [ -f "futr.flatpak" ]; then
             # Determine which repo to update based on the source workflow
-            if [[ "${{ github.event.workflow_run.name }}" == "Flatpak Tagged Release" ]]; then
+            if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
               flatpak build-import-bundle repo-stable futr.flatpak
               flatpak build-update-repo --generate-static-deltas repo-stable
             else
