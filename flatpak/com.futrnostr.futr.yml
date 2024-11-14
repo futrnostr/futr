@@ -5,6 +5,14 @@ sdk: org.kde.Sdk
 command: futr
 copy-icon: true
 
+x-flatpak-refs:
+  - type: runtime
+    name: org.kde.Platform
+    branch: 5.15-23.08
+  - type: repository
+    url: https://futrnostr.github.io/futr-flatpak/repo
+    branch: master
+
 finish-args:
   - --share=network
   - --share=ipc

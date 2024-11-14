@@ -1,0 +1,155 @@
+name: Update Flatpak Repository
+
+on:
+  workflow_run:
+    workflows: ["Flatpak Tagged Release", "Flatpak Build and Release"]
+    types:
+      - completed
+
+# Add concurrency to prevent multiple runs from interfering with each other
+concurrency:
+  group: "flatpak-repo-${{ github.ref }}"
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  update-repo:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: futrnostr/futr-flatpak
+          ref: gh-pages
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Setup Flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Download Flatpak Bundle
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          name: flatpak-bundle
+          path: .
+          workflow: ${{ github.event.workflow_run.workflow_id }}
+          run_id: ${{ github.event.workflow_run.id }}
+
+      - name: Create/Update Repository
+        run: |
+          # Create separate repos for stable and continuous
+          mkdir -p repo-stable repo-continuous
+
+          # Initialize repos if they don't exist
+          [ ! -d "repo-stable/objects" ] && flatpak build-update-repo repo-stable
+          [ ! -d "repo-continuous/objects" ] && flatpak build-update-repo repo-continuous
+
+          if [ -f "futr.flatpak" ]; then
+            # Determine which repo to update based on the source workflow
+            if [[ "${{ github.event.workflow_run.name }}" == "Flatpak Tagged Release" ]]; then
+              flatpak build-import-bundle repo-stable futr.flatpak
+              flatpak build-update-repo --generate-static-deltas repo-stable
+            else
+              flatpak build-import-bundle repo-continuous futr.flatpak
+              flatpak build-update-repo --generate-static-deltas repo-continuous
+            fi
+          fi
+
+      - name: Create .flatpakrepo files
+        run: |
+          # Create stable repo file
+          cat > futr-stable.flatpakrepo << EOF
+          [Flatpak Repo]
+          Title=Futr Stable Repository
+          Url=https://futrnostr.github.io/futr-flatpak/repo-stable
+          Homepage=https://github.com/futrnostr/futr
+          Comment=Stable releases of Futr
+          Description=Official Flatpak repository for Futr stable releases
+          Icon=https://raw.githubusercontent.com/futrnostr/futr/master/flatpak/nostr-purple.png
+          GPGVerify=false
+          EOF
+
+          # Create continuous repo file
+          cat > futr-continuous.flatpakrepo << EOF
+          [Flatpak Repo]
+          Title=Futr Development Repository
+          Url=https://futrnostr.github.io/futr-flatpak/repo-continuous
+          Homepage=https://github.com/futrnostr/futr
+          Comment=Development builds of Futr
+          Description=Official Flatpak repository for Futr development builds
+          Icon=https://raw.githubusercontent.com/futrnostr/futr/master/flatpak/nostr-purple.png
+          GPGVerify=false
+          EOF
+
+          # Add the repo files to git
+          git add *.flatpakrepo
+
+      - name: Update Repository
+        run: |
+          flatpak build-update-repo repo-continuous --no-gpg-verify
+          if [ -d "repo-stable" ]; then
+            flatpak build-update-repo repo-stable --no-gpg-verify
+          fi
+
+      - name: Commit Repository Updates
+        run: |
+          git add repo-stable repo-continuous *.flatpakrepo
+          if ! git commit -m "Update Flatpak repositories"; then
+            echo "::warning::No changes to commit"
+            exit 0
+          fi
+          if ! git push origin gh-pages; then
+            echo "::error::Failed to push to gh-pages branch"
+            exit 1
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Repository
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Create index.html
+        run: |
+          cat > index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Futr Flatpak Repository</title>
+          </head>
+          <body>
+            <h1>Futr Flatpak Repository</h1>
+            <h2>Stable Repository</h2>
+            <p>To add the stable repository:</p>
+            <pre>flatpak remote-add --if-not-exists --no-gpg-verify futr-stable https://futrnostr.github.io/futr-flatpak/repo-stable</pre>
+            <p>Or download the <a href="futr-stable.flatpakrepo">repository file</a></p>
+
+            <h2>Development Repository</h2>
+            <p>To add the development repository:</p>
+            <pre>flatpak remote-add --if-not-exists --no-gpg-verify futr-continuous https://futrnostr.github.io/futr-flatpak/repo-continuous</pre>
+            <p>Or download the <a href="futr-continuous.flatpakrepo">repository file</a></p>
+          </body>
+          </html>
+          EOF
+          git add index.html
