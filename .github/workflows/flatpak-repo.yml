@@ -15,9 +15,15 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: read
 
 jobs:
   update-repo:
+    permissions:
+      pages: write
+      id-token: write
+      contents: write
+      actions: read
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
