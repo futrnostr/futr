@@ -52,12 +52,12 @@ jobs:
 
       - name: Create/Update Repository
         run: |
-          # Create separate repos for stable and continuous
+          # Create directories if they don't exist
           mkdir -p repo-stable repo-continuous
 
-          # Initialize repos if they don't exist
-          [ ! -d "repo-stable/objects" ] && flatpak build-update-repo repo-stable
-          [ ! -d "repo-continuous/objects" ] && flatpak build-update-repo repo-continuous
+          # Initialize repos only if they don't exist
+          [ ! -d "repo-stable/objects" ] && flatpak build-init-repo repo-stable
+          [ ! -d "repo-continuous/objects" ] && flatpak build-init-repo repo-continuous
 
           if [ -f "futr.flatpak" ]; then
             # Determine which repo to update based on the source workflow
