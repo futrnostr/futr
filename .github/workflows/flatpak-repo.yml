@@ -56,30 +56,37 @@ jobs:
           workflow: ${{ github.event.workflow_run.workflow_id }}
           run_id: ${{ github.event.workflow_run.id }}
 
+      - name: Setup GPG
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+
       - name: Create/Update Repository
         env:
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
-          # Create directories if they don't exist
           mkdir -p repo-stable repo-continuous
 
-          # Initialize repos only if they don't exist
           [ ! -d "repo-stable/objects" ] && ostree init --mode=archive-z2 --repo=repo-stable
           [ ! -d "repo-continuous/objects" ] && ostree init --mode=archive-z2 --repo=repo-continuous
 
           if [ -f "futr.flatpak" ]; then
-            # Determine which repo to update based on the source workflow
             if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
               flatpak build-import-bundle repo-stable futr.flatpak
-              flatpak build-update-repo repo-stable
+              flatpak build-sign repo-stable --gpg-sign=$GPG_KEY_ID
+              flatpak build-update-repo repo-stable --gpg-sign=$GPG_KEY_ID
             else
               flatpak build-import-bundle repo-continuous futr.flatpak
-              flatpak build-update-repo repo-continuous
+              flatpak build-sign repo-continuous --gpg-sign=$GPG_KEY_ID
+              flatpak build-update-repo repo-continuous --gpg-sign=$GPG_KEY_ID
             fi
           fi
 
       - name: Create .flatpakrepo files
         run: |
+          # Get public key in base64
+          GPG_KEY=$(gpg --export ${{ secrets.GPG_KEY_ID }} | base64 -w 0)
+          
           # Create stable repo file
           cat > futr-stable.flatpakrepo << EOF
           [Flatpak Repo]
@@ -89,7 +96,7 @@ jobs:
           Comment=Stable releases of Futr
           Description=Official Flatpak repository for Futr stable releases
           Icon=https://raw.githubusercontent.com/futrnostr/futr/master/flatpak/nostr-purple.png
-          GPGVerify=false
+          GPGKey=${GPG_KEY}
           EOF
 
           # Create continuous repo file
@@ -101,7 +108,7 @@ jobs:
           Comment=Development builds of Futr
           Description=Official Flatpak repository for Futr development builds
           Icon=https://raw.githubusercontent.com/futrnostr/futr/master/flatpak/nostr-purple.png
-          GPGVerify=false
+          GPGKey=${GPG_KEY}
           EOF
 
           # Add the repo files to git
