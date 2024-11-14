@@ -64,7 +64,7 @@ instance ToJSON SearchResult where
 -- | Futr Effects.
 data Futr :: Effect where
   Login :: ObjRef () -> Text -> Futr m ()
-  Search :: ObjRef () -> Text -> Futr m ()
+  Search :: ObjRef () -> Text -> Futr m SearchResult
   SetCurrentProfile :: Text -> Futr m ()
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
@@ -115,17 +115,18 @@ runFutr = interpret $ \_ -> \case
     let myPubKey = keyPairToPubKeyXO <$> keyPair st
 
     if not ("nprofile" `isPrefixOf` input || "npub" `isPrefixOf` input)
-      then return ()
+      then return NoResult
       else case parseNprofileOrNpub input of
-        Nothing -> return ()
+        Nothing -> return NoResult
         Just (pubkey', maybeRelay) 
-          | Just pubkey' == myPubKey -> 
-              return ()
+          | Just pubkey' == myPubKey -> return NoResult
           | otherwise -> do
               let userFollows = maybe [] (flip (Map.findWithDefault []) (follows st)) myPubKey
               if any (\(Follow pk _ _) -> pk == pubkey') userFollows
-                then return ()
-                else searchInRelays pubkey' maybeRelay
+                then return $ ProfileResult (pubKeyXOToBech32 pubkey') maybeRelay
+                else do
+                  searchInRelays pubkey' maybeRelay
+                  return $ ProfileResult (pubKeyXOToBech32 pubkey') maybeRelay
 
   SetCurrentProfile npub' -> do
     case bech32ToPubKeyXO npub' of

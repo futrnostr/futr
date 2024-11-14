@@ -100,6 +100,7 @@ Item {
                 var result = JSON.parse(search(input))
                 if (result && result.npub) {
                     setCurrentProfile(result.npub)
+                    chatLoader.source = ""
                     profileLoader.setSource("Profile/Profile.ui.qml", {
                         "profileData": currentProfile,
                         "npub": result.npub
