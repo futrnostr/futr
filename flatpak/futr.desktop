@@ -1,6 +1,7 @@
 [Desktop Entry]
-Name=futr
+Name=Futr
+Comment=Native nostr client for your Linux desktop
 Exec=futr
 Icon=com.futrnostr.futr
 Type=Application
-Categories=Network
+Categories=Network;Chat;

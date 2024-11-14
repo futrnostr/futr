@@ -1,16 +1,15 @@
-name: Flatpak Tagged Release
+name: Flatpak Build and Release (Continuous)
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: ["continuous"]
 
 permissions:
   contents: write
 
 jobs:
-  flatpak-build-and-release:
-    name: Flatpak Build and Release (Stable)
+  build-and-publish:
+    name: Build and Publish Flatpak (Continuous)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -76,12 +75,6 @@ jobs:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
-      - name: Update appdata.xml for tagged release
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          TODAY=$(date +%Y-%m-%d)
-          sed -i "/<releases>/a \    <release version=\"$VERSION\" date=\"$TODAY\">\n      <description>\n        <p>Release version $VERSION</p>\n      </description>\n    </release>" flatpak/com.futrnostr.futr.appdata.xml
-
       - name: Build with Flatter
         uses: andyholmes/flatter@v0
         with:
@@ -91,25 +84,16 @@ jobs:
           gpg-sign: ${{ secrets.GPG_FINGERPRINT }}
           upload-bundles: true
           upload-pages-artifact: true
-          upload-pages-prefix: stable
+          upload-pages-prefix: continuous
           upload-pages-includes: |
             flatpak/index.html
-            flatpak/futr-stable.flatpakrepo
+            flatpak/futr-continuous.flatpakrepo
           flatpak-builder-args: |
-            --default-branch=stable
+            --default-branch=continuous
 
       - name: Upload Flatpak Bundle
         uses: actions/upload-artifact@v3
         with:
-          name: futr-flatpak-stable
+          name: futr-flatpak-continuous
           path: com.futrnostr.futr-x86_64
           retention-days: 7
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: com.futrnostr.futr-x86_64
-          tag_name: ${{ github.ref }}
-          prerelease: false
-          generate_release_notes: true
-          token: ${{ secrets.GITHUB_TOKEN }}

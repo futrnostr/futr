@@ -24,5 +24,11 @@
       </description>
     </release>
   </releases>
-  <content_rating type="oars-1.1" />
+  <content_rating type="oars-1.1">
+    <violence>none</violence>
+    <drugs>none</drugs>
+    <sex>none</sex>
+    <language>none</language>
+    <social-info>true</social-info>
+  </content_rating>
 </component>

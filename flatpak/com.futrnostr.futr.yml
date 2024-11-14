@@ -1,39 +1,28 @@
 app-id: com.futrnostr.futr
 runtime: org.kde.Platform
-runtime-version: 5.15-23.08
+runtime-version: '5.15-23.08'
 sdk: org.kde.Sdk
 command: futr
 copy-icon: true
-
-x-flatpak-refs:
-  - type: runtime
-    name: org.kde.Platform
-    branch: 5.15-23.08
-  - type: repository
-    url: https://futrnostr.github.io/futr-flatpak/repo
-    branch: master
-
 finish-args:
   - --share=network
-  - --share=ipc
-  - --socket=fallback-x11
   - --socket=wayland
+  - --socket=x11
   - --device=dri
-  - --socket=session-bus
 
 modules:
   - name: libsecp256k1
     buildsystem: autotools
+    config-opts:
+      - --enable-module-schnorrsig
+      - --enable-module-extrakeys
+      - --enable-module-ecdh
+      - --enable-experimental
+      - --enable-module-recovery
     sources:
       - type: git
         url: https://github.com/bitcoin-core/secp256k1.git
         tag: v0.3.2
-    config-opts:
-      - --enable-module-recovery
-      - --enable-experimental
-      - --enable-module-ecdh
-      - --enable-module-schnorrsig
-      - --enable-module-extrakeys
 
   - name: futr
     buildsystem: simple
@@ -44,7 +33,7 @@ modules:
       - install -D com.futrnostr.futr.appdata.xml /app/share/appdata/com.futrnostr.futr.appdata.xml
     sources:
       - type: file
-        path: ../dist-newstyle/build/x86_64-linux/ghc-9.6.6/futr-0.1.0.0/build/futr/futr
+        path: futr
       - type: file
         path: futr.desktop
       - type: file
