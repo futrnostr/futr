@@ -24,6 +24,12 @@ ScrollView {
         model: AutoListModel {
             source: ctxKeyMgmt.accounts
             mode: AutoListModel.ByKey
+            equalityTest: function (oldItem, newItem) {
+                return oldItem.displayName === newItem.displayName
+                    && oldItem.nsec === newItem.nsec
+                    && oldItem.npub === newItem.npub
+                    && oldItem.picture === newItem.picture
+            }
         }
 
         delegate: Rectangle {

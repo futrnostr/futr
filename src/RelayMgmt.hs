@@ -13,6 +13,7 @@ import Effectful.TH
 import Network.URI (URI(..), parseURI, uriAuthority, uriPort, uriRegName, uriScheme)
 
 import EffectfulQML
+import KeyMgmt (AccountId(..), KeyMgmt, updateRelays)
 import Logging
 import Nostr
 import Nostr.Bech32 (pubKeyXOToBech32)
@@ -22,7 +23,6 @@ import Nostr.Publisher
 import Nostr.RelayConnection
 import Nostr.Types (Relay(..), RelayURI, getUri)
 import Nostr.Util
-import Presentation.KeyMgmt (AccountId(..), KeyMgmt, updateRelays)
 import Types (ConnectionState(..), RelayPoolState(..), RelayData(..))
 
 

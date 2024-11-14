@@ -64,11 +64,10 @@ Item {
             }
 
             MenuItem {
-                text: qsTr("Settings")
+                text: qsTr("My Keys")
                 onTriggered: {
-                    // Dummy for now, does nothing
-                    console.log("Settings clicked")
                     profileMenu.close()
+                    showKeysDialog.open()
                 }
             }
 

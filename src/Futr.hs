@@ -16,7 +16,7 @@ import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (atomically, readTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, get, gets, modify, put)
+import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
 import EffectfulQML
 import GHC.Generics (Generic)
@@ -24,10 +24,11 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 
 import Logging
+import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
 import Nostr
 import Nostr.Bech32
 import Nostr.Event (createFollowList, createRumor)
-import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.GiftWrap
 import Nostr.Publisher
 import Nostr.RelayPool
@@ -35,8 +36,8 @@ import Nostr.Subscription
 import Nostr.Types ( Relay(..), RelayURI, Tag(..)
                    , getUri, metadataFilter )
 import Nostr.Util
-import Presentation.KeyMgmt qualified as PKeyMgmt
-import Presentation.RelayMgmt qualified as PRelayMgmt
+import Presentation.KeyMgmtUI (KeyMgmtUI)
+import Presentation.RelayMgmtUI (RelayMgmtUI)
 import Types
 
 -- | Signal key class for LoginStatusChanged.
@@ -81,14 +82,14 @@ makeEffect ''Futr
 
 -- | Effectful type for Futr.
 type FutrEff es = ( State AppState :> es
-                  , PKeyMgmt.KeyMgmt :> es
-                  , PKeyMgmt.KeyMgmtUI :> es
-                  , PRelayMgmt.RelayMgmtUI :> es
+                  , KeyMgmt :> es
+                  , KeyMgmtUI :> es
+                  , RelayMgmtUI :> es
                   , Nostr :> es
                   , RelayPool :> es
                   , Subscription :> es
                   , Publisher :> es
-                  , State PKeyMgmt.KeyMgmtState :> es
+                  , State KeyMgmtState :> es
                   , State RelayPoolState :> es
                   , State EffectfulQMLState :> es
                   , GiftWrap :> es
@@ -104,8 +105,8 @@ type FutrEff es = ( State AppState :> es
 runFutr :: FutrEff es => Eff (Futr : es) a -> Eff es a
 runFutr = interpret $ \_ -> \case
   Login obj input -> do
-      kst <- get @PKeyMgmt.KeyMgmtState
-      case Map.lookup (PKeyMgmt.AccountId input) (PKeyMgmt.accountMap kst) of
+      kst <- get @KeyMgmtState
+      case Map.lookup (AccountId input) (accountMap kst) of
         Just a -> loginWithAccount obj a
         Nothing -> liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Account not found"
 
@@ -208,7 +209,10 @@ runFutr = interpret $ \_ -> \case
       conns <- gets @RelayPoolState activeConnections
       mapM_ disconnect (Map.keys conns)
 
-      put initialRelayPoolState
+      -- Wait a moment for disconnects to process
+      threadDelay 100000  -- 100ms delay
+
+      modify @RelayPoolState $ const initialRelayPoolState
 
       fireSignal obj
       logInfo "User logged out successfully"
@@ -225,12 +229,18 @@ parseNprofileOrNpub input =
 
 
 -- | Login with an account.
-loginWithAccount :: FutrEff es => ObjRef () -> PKeyMgmt.Account -> Eff es ()
+loginWithAccount :: FutrEff es => ObjRef () -> Account -> Eff es ()
 loginWithAccount obj a = do
-    let (rs, t) = PKeyMgmt.accountRelays a
+    let (rs, t) = accountRelays a
 
-    modify @AppState $ \s -> s { keyPair = Just (secKeyToKeyPair $ PKeyMgmt.accountSecKey a) }
-    importGeneralRelays (PKeyMgmt.accountPubKeyXO a) rs t
+    modify @AppState $ \s -> s { keyPair = Just (secKeyToKeyPair $ accountSecKey a) }
+
+    modify @KeyMgmtState $ \st -> st
+        { nsecView = secKeyToBech32 $ accountSecKey a
+        , npubView = pubKeyXOToBech32 $ derivePublicKeyXO $ accountSecKey a
+        }
+
+    importGeneralRelays (accountPubKeyXO a) rs t
 
     forM_ rs $ \relay' -> void $ async $ connect $ getUri relay'
 

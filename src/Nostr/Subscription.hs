@@ -19,6 +19,7 @@ import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
 import System.Random (randomIO)
 
 import EffectfulQML
+import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Event (validateEvent)
@@ -29,7 +30,6 @@ import Nostr.Types ( Event(..), EventId(..), Filter, Kind(..), Relay(..)
                    , RelayURI, SubscriptionId, Tag(..), getUri )
 import Nostr.Types qualified as NT
 import Nostr.Util
-import Presentation.KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
 import RelayMgmt
 import Types
 
@@ -147,7 +147,6 @@ handleEvent' event' = do
                         pure $ emptyUpdates { generalRelaysChanged = True }
 
             PreferredDMRelays -> do
-                logDebug $ "Handling PreferredDMRelays event: " <> pack (show event')
                 let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
                 case validRelayTags of
                     [] -> do
@@ -227,7 +226,7 @@ handleRelaySubscription r = do
             else if isInbox then Just $ createInboxRelayFilters pk followPks
             else Nothing
 
-    logInfo $ "Starting subscription for " <> r <> " with filters " <> pack (show fs)
+    --logInfo $ "Starting subscription for " <> r <> " with filters " <> pack (show fs)
 
     case fs of
         Just fs' -> do

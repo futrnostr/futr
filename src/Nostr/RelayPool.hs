@@ -11,6 +11,7 @@ import Effectful.State.Static.Shared (State, get)
 import Effectful.TH
 
 import EffectfulQML
+import KeyMgmt (KeyMgmt)
 import Logging
 import Nostr
 import Nostr.GiftWrap
@@ -20,7 +21,6 @@ import Nostr.RelayConnection
 import Nostr.Subscription
 import Nostr.Types (Event(..), Kind(..), Relay(..), RelayURI)
 import Nostr.Util
-import Presentation.KeyMgmt (KeyMgmt)
 import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..))
 import RelayMgmt (RelayMgmt)
 import RelayMgmt qualified as RM
@@ -38,6 +38,7 @@ data RelayPool :: Effect where
     RemoveGeneralRelay :: PubKeyXO -> RelayURI -> RelayPool m ()
     GetGeneralRelays :: PubKeyXO -> RelayPool m ([(Relay, ConnectionState)], Int)
     -- DM Relay Management
+    ImportDMRelays :: PubKeyXO -> [Relay] -> Int -> RelayPool m ()
     AddDMRelay :: PubKeyXO -> RelayURI -> RelayPool m Bool
     RemoveDMRelay :: PubKeyXO -> RelayURI -> RelayPool m ()
     GetDMRelays :: PubKeyXO -> RelayPool m ([(Relay, ConnectionState)], Int)
@@ -86,6 +87,8 @@ runRelayPool = interpret $ \_ -> \case
     RemoveGeneralRelay pk r -> RM.removeGeneralRelay pk r
 
     GetGeneralRelays pk -> RM.getGeneralRelays pk
+
+    ImportDMRelays pk rs ts -> RM.importDMRelays pk rs ts
 
     AddDMRelay pk r -> RM.addDMRelay pk r
 

@@ -136,15 +136,16 @@ Rectangle {
 
                     Button {
                         id: generatebutton
-                        text: qsTr("Generate new keys")
+                        text: qsTr("Create new account")
                         font: Constants.font
                         highlighted: true
                         Layout.alignment: Qt.AlignRight
                         width: implicitWidth + 80
 
                         onClicked: function () {
-                            ctxKeyMgmt.generateSeedphrase()
-                            keysGeneratedDialog.visible = true
+                            if (ctxKeyMgmt.createAccount()) {
+                                showKeysDialog.visible = true
+                            }
                         }
                     }
                 }
@@ -156,8 +157,8 @@ Rectangle {
         id: importAccountDialog
     }
 
-    KeysGeneratedDialog {
-        id: keysGeneratedDialog
+    ShowKeysDialog {
+        id: showKeysDialog
     }
 
     ConnectingModal {

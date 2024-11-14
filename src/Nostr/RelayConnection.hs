@@ -188,9 +188,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
     receiveLoop q = do
         msg <- liftIO (try (WS.receiveData conn) :: IO (Either SomeException BSL.ByteString))
         case msg of
-            Left ex -> do
-                logError $ "Error receiving data from " <> r <> ": " <> T.pack (show ex)
-                return ()  -- Exit the loop on error
+            Left _ -> return ()  -- Exit the loop on error
             Right msg' -> case eitherDecode msg' of
                 Right response -> do
                     updates <- handleResponse r response
@@ -259,7 +257,6 @@ handleResponse relayURI' r = case r of
     Closed subId' msg -> do
         if "auth-required" `T.isPrefixOf` msg
             then do
-                logDebug $ "Auth required for subscription " <> T.pack (show subId') <> " from " <> relayURI'
                 -- Queue the subscription for retry after authentication
                 st <- get @RelayPoolState
                 case Map.lookup relayURI' (activeConnections st) of
@@ -319,13 +316,9 @@ handleResponse relayURI' r = case r of
                                     }
 
                                 -- Retry events and requests
-                                forM_ pendingEvts $ \evt -> do
-                                    logDebug $ "Retrying event: " <> T.pack (show $ eventId evt)
-                                    atomically $ writeTChan (requestChannel rd) (SendEvent evt)
+                                forM_ pendingEvts $ \evt -> atomically $ writeTChan (requestChannel rd) (SendEvent evt)
+                                forM_ pendingReqs $ \req -> atomically $ writeTChan (requestChannel rd) req
 
-                                forM_ pendingReqs $ \req -> do
-                                    logDebug $ "Retrying request: " <> T.pack (show req)
-                                    atomically $ writeTChan (requestChannel rd) req
                             _ -> logDebug $ "Received OK for event " <> T.pack (show eventId')
                                         <> " (accepted: " <> T.pack (show accepted') <> ")"
                     Nothing -> logError $ "Received OK but no connection found: " <> relayURI'
@@ -341,18 +334,15 @@ handleResponse relayURI' r = case r of
         return $ emptyUpdates { noticesChanged = True }
 
     Auth challenge -> do
-        logDebug $ "Received auth challenge from " <> relayURI' <> ": " <> challenge
         st <- get @RelayPoolState
         case Map.lookup relayURI' (activeConnections st) of
             Just rd -> do
                 now <- getCurrentTime
                 kp <- getKeyPair
                 let unsignedEvent = createCanonicalAuthentication relayURI' challenge (keyPairToPubKeyXO kp) now
-                logDebug $ "Created unsigned auth event: " <> T.pack (show unsignedEvent)
                 signedEventMaybe <- signEvent unsignedEvent kp
                 case signedEventMaybe of
                     Just signedEvent -> do
-                        logDebug $ "Successfully signed auth event: " <> T.pack (show signedEvent)
                         modify @RelayPoolState $ \st' ->
                             st' { activeConnections = Map.adjust
                                 (\rd' -> rd' { pendingAuthId = Just (eventId signedEvent) })
@@ -383,7 +373,6 @@ handleResponse relayURI' r = case r of
 handleAuthRequired :: RelayConnectionEff es => RelayURI -> Request -> Eff es ()
 handleAuthRequired relayURI' request = case request of
     SendEvent evt -> do
-        logDebug $ "Queueing event for retry: " <> T.pack (show $ eventId evt)
         modify @RelayPoolState $ \st' ->
             st' { activeConnections = Map.adjust
                 (\rd' -> rd' { pendingEvents = evt : pendingEvents rd' })
@@ -391,7 +380,6 @@ handleAuthRequired relayURI' request = case request of
                 (activeConnections st')
             }
     _ -> do
-        logDebug $ "Queueing request for retry: " <> T.pack (show request)
         modify @RelayPoolState $ \st' ->
             st' { activeConnections = Map.adjust
                 (\rd' -> rd' { pendingRequests = request : pendingRequests rd' })

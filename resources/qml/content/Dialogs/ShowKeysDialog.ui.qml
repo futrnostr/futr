@@ -42,6 +42,7 @@ Dialog {
                     text: qsTr("Important: Store your keys securely!")
                     font.pixelSize: 24
                     font.bold: true
+                    color: Material.foreground
                     wrapMode: Text.WordWrap
                     Layout.alignment: Qt.AlignLeft
                 }
@@ -53,11 +54,13 @@ Dialog {
                 font: Constants.font
                 color: Material.foreground
                 horizontalAlignment: Text.AlignLeft
+                visible: ctxKeyMgmt.seedphrase !== ""
             }
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 10
+                visible: ctxKeyMgmt.seedphrase !== ""
 
                 TextArea {
                     id: seedPhraseText
@@ -177,6 +180,7 @@ Dialog {
     }
 
     onAccepted: {
-        keysGeneratedDialog.visible = false
+        showKeysDialog.visible = false
+        currentScreen = "Home"
     }
 }

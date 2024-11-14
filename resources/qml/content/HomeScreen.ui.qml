@@ -79,4 +79,8 @@ Item {
     RelayMgmtDialog {
         id: relayMgmtDialog
     }
+
+    ShowKeysDialog {
+        id: showKeysDialog
+    }
 }

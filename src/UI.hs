@@ -27,8 +27,8 @@ import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Types (EventId(..), Profile(..), emptyProfile, getUri)
 import Nostr.Util
-import Presentation.KeyMgmt qualified as PKeyMgmt
-import Presentation.RelayMgmt qualified as PRelayMgmt
+import Presentation.KeyMgmtUI qualified as KeyMgmtUI
+import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr ( Futr, FutrEff, LoginStatusChanged, login, logout, followProfile, openChat,
               search, sendMessage, setCurrentProfile, unfollowProfile )
 import Types
@@ -49,8 +49,8 @@ makeEffect ''UI
 runUI :: (FutrEff es, Futr :> es) => Eff (UI : es) a -> Eff es a
 runUI = interpret $ \_ -> \case
   CreateUI changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-    keyMgmtObj <- runE $ PKeyMgmt.createUI changeKey'
-    relayMgmtObj <- runE $ PRelayMgmt.createUI changeKey'
+    keyMgmtObj <- runE $ KeyMgmtUI.createUI changeKey'
+    relayMgmtObj <- runE $ RelayMgmtUI.createUI changeKey'
 
     profileClass <- newClass [
         defPropertySigRO' "name" changeKey' $ \_ -> do
@@ -247,7 +247,6 @@ runUI = interpret $ \_ -> \case
           case maybeUserPubKey of
             Just userPubKey -> do
               let userFollows = Map.findWithDefault [] userPubKey (follows st)
-              runE $ logDebug $ "User follows: " <> pack (show userFollows)
               objs <- mapM (getPoolObject followPool) (map pubkey userFollows)
               return objs
             Nothing -> return [],

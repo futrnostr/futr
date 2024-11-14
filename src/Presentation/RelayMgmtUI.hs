@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Presentation.RelayMgmt where
+module Presentation.RelayMgmtUI where
 
 import Control.Monad (void)
 import Data.Map.Strict qualified as Map

@@ -631,14 +631,22 @@ instance FromJSON Profile where
 
 -- Relay Helper functions
 
--- | Provides a default list of relays.
-defaultRelays :: ([Relay], Int)
-defaultRelays =
-  ( [ InboxOutboxRelay "wss://nos.lol"
+-- | Provides a default list of general relays.
+defaultGeneralRelays :: ([Relay], Int)
+defaultGeneralRelays =
+  ( [ InboxRelay "wss://nos.lol"
+    , InboxOutboxRelay "wss://nostr.fmt.wiz.biz"
     , InboxOutboxRelay "wss://nostr.mom"
+    , InboxOutboxRelay "wss://offchain.pub"
     ],
     0
   )
+
+
+-- | Provides a default list of DM relays.
+defaultDMRelays :: ([Relay], Int)
+defaultDMRelays =
+  ( [ InboxOutboxRelay "wss://auth.nostr1.com" ], 0 )
 
 
 -- | Extracts the scheme of a relay's URI.

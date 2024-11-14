@@ -4,18 +4,19 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Presentation.KeyMgmt where
+module KeyMgmt where
 
-import Control.Monad (filterM)
+import Control.Monad (filterM, replicateM)
 import Data.Aeson (FromJSON (..), eitherDecode, encode)
+import Data.List (nub)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe (catMaybes)
 import Data.Text (Text, isPrefixOf, pack, strip, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable (Typeable)
 import Effectful
-import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
+import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.FileSystem
   ( FileSystem,
     XdgDirectory (XdgData),
@@ -28,11 +29,12 @@ import Effectful.FileSystem
   )
 import Effectful.FileSystem.IO.ByteString qualified as FIOE (readFile, writeFile)
 import Effectful.FileSystem.IO.ByteString.Lazy qualified as BL
-import Effectful.State.Static.Shared (State, get, gets, modify)
+import Effectful.State.Static.Shared (State, gets, modify)
 import Effectful.TH
-import EffectfulQML
 import Graphics.QML hiding (fireSignal, runEngineLoop)
+import System.Random (randomRIO)
 
+import EffectfulQML
 import Logging
 import Nostr
 import Nostr.Bech32
@@ -95,7 +97,7 @@ type KeyMgmtEff es = ( State KeyMgmtState :> es
 data KeyMgmt :: Effect where
   ImportSecretKey :: ObjRef () -> Text -> KeyMgmt m Bool
   ImportSeedphrase :: ObjRef () -> Text -> Text -> KeyMgmt m Bool
-  GenerateSeedphrase :: ObjRef () -> KeyMgmt m ()
+  GenerateSeedphrase :: ObjRef () -> KeyMgmt m (Maybe KeyPair)
   RemoveAccount :: ObjRef () -> Text -> KeyMgmt m ()
   UpdateRelays :: AccountId -> ([Relay], Int) -> KeyMgmt m ()
   UpdateProfile :: AccountId -> Profile -> KeyMgmt m ()
@@ -106,21 +108,6 @@ type instance DispatchOf KeyMgmt = Dynamic
 makeEffect ''KeyMgmt
 
 
--- | Key Management UI Effect.
-type KeyMgmgtUIEff es = (KeyMgmt :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es, FileSystem :> es)
-
--- | Key Management Effect for creating QML UI.
-data KeyMgmtUI :: Effect where
-  CreateUI :: SignalKey (IO ()) -> KeyMgmtUI m (ObjRef ())
-
-
--- | Dispatch for Key Management UI Effect.
-type instance DispatchOf KeyMgmtUI = Dynamic
-
-
-makeEffect ''KeyMgmtUI
-
-
 -- | Run the Key Management effect.
 runKeyMgmt :: KeyMgmtEff es => Eff (KeyMgmt : es) a -> Eff es a
 runKeyMgmt = interpret $ \_ -> \case
@@ -128,7 +115,7 @@ runKeyMgmt = interpret $ \_ -> \case
     mkp <- tryImportSecretKeyAndPersist input
     case mkp of
       Just kp -> do
-        let (ai, ad) = accountFromKeyPair kp
+        (ai, ad) <- accountFromKeyPair kp
         modify $ \st -> st {accountMap = Map.insert ai ad (accountMap st)}
         fireSignal obj
         return True
@@ -145,7 +132,7 @@ runKeyMgmt = interpret $ \_ -> \case
         tryImportSecretKeyAndPersist (secKeyToBech32 secKey) >>= \mkp' ->
           case mkp' of
             Just _ -> do
-              let (ai, ad) = accountFromKeyPair kp
+              (ai, ad) <- accountFromKeyPair kp
               modify $ \st -> st {accountMap = Map.insert ai ad (accountMap st)}
               fireSignal obj
               return True
@@ -161,17 +148,23 @@ runKeyMgmt = interpret $ \_ -> \case
   GenerateSeedphrase obj -> do
     mnemonicResult <- createMnemonic
     case mnemonicResult of
-      Left err -> modify $ \st -> st {errorMsg = "Error: " <> pack err}
+      Left err -> do
+        modify $ \st -> st {errorMsg = "Error: " <> pack err}
+        fireSignal obj
+        return Nothing
       Right m' -> do
         keyPairResult <- mnemonicToKeyPair m' ""
         case keyPairResult of
-          Left err' -> modify $ \st -> st {errorMsg = "Error: " <> pack err'}
+          Left err' -> do
+            modify $ \st -> st {errorMsg = "Error: " <> pack err'}
+            fireSignal obj
+            return Nothing
           Right mkp' -> do
             let secKey = keyPairToSecKey mkp'
             maybeKeyPair <- tryImportSecretKeyAndPersist (secKeyToBech32 secKey)
             case maybeKeyPair of
               Just kp -> do
-                let (ai, ad) = accountFromKeyPair kp
+                (ai, ad) <- accountFromKeyPair kp
                 modify $ \st ->
                   st
                     { accountMap = Map.insert ai ad (accountMap st),
@@ -179,8 +172,12 @@ runKeyMgmt = interpret $ \_ -> \case
                       nsecView = secKeyToBech32 $ keyPairToSecKey kp,
                       npubView = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
                     }
-              Nothing -> modify $ \st -> st {errorMsg = "Error: Unknown error generating new keys"}
-    fireSignal obj
+                fireSignal obj
+                return (Just kp)
+              Nothing -> do
+                modify $ \st -> st {errorMsg = "Error: Unknown error generating new keys"}
+                fireSignal obj
+                return Nothing
 
   RemoveAccount obj input -> do
     modify $ \st -> st {accountMap = Map.delete (AccountId input) (accountMap st)}
@@ -221,76 +218,8 @@ runKeyMgmt = interpret $ \_ -> \case
         logError $ "Account not found: " <> accountId aid
         return ()
 
--- | Run the Key Management UI effect.
-runKeyMgmtUI :: KeyMgmgtUIEff es => Eff (KeyMgmtUI : es) a -> Eff es a
-runKeyMgmtUI action = interpret handleKeyMgmtUI action
-  where
-    handleKeyMgmtUI :: KeyMgmgtUIEff es => EffectHandler KeyMgmtUI es
-    handleKeyMgmtUI _ = \case
-      CreateUI changeKey -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-        runE loadAccounts
-
-        let prop n f = defPropertySigRO' n changeKey ( \obj -> runE $ do
-              st <- get
-              let res = maybe "" f $ Map.lookup (fromObjRef obj) (accountMap st)
-              return res)
-
-        let mprop n f = defPropertySigRO' n changeKey ( \obj -> runE $ do
-              st <- get
-              let res = case Map.lookup (fromObjRef obj) (accountMap st) of
-                    Just acc -> f acc
-                    Nothing -> Nothing
-              return res)
-
-        accountClass <-
-          newClass
-            [ prop "nsec" (secKeyToBech32 . accountSecKey),
-              prop "npub" (pubKeyXOToBech32 . accountPubKeyXO),
-              mprop "displayName" accountDisplayName,
-              mprop "picture" accountPicture
-            ]
-
-        accountPool' <- newFactoryPool (newObject accountClass)
-
-        runE $ modify $ \st -> st {accountPool = Just accountPool'}
-
-        contextClass <-
-          newClass
-            [ defPropertySigRO' "accounts" changeKey $ \_ -> do
-                st <- runE get
-                mapM (getPoolObject accountPool') $ Map.keys (accountMap st),
-              defMethod' "removeAccount" $ \obj input -> runE $ removeAccount obj input,
-              defPropertySigRO' "seedphrase" changeKey $ \_ -> do
-                st <- runE get
-                return $ seedphrase st,
-              defPropertySigRO' "nsec" changeKey $ \_ -> do
-                st <- runE get
-                return $ nsecView st,
-              defPropertySigRO' "npub" changeKey $ \_ -> do
-                st <- runE get
-                return $ npubView st,
-              defPropertySigRW'
-                "errorMsg"
-                changeKey
-                ( \_ -> do
-                    st <- runE get
-                    return $ errorMsg st
-                )
-                ( \obj newErrorMsg -> runE $ do
-                    modify $ \st -> st {errorMsg = newErrorMsg}
-                    fireSignal obj
-                    return ()
-                ),
-              defMethod' "importSecretKey" $ \obj (input :: Text) -> runE $ importSecretKey obj input,
-              defMethod' "importSeedphrase" $ \obj input pwd -> runE $ importSeedphrase obj input pwd,
-              defMethod' "generateSeedphrase" $ \obj -> runE $ generateSeedphrase obj
-            ]
-
-        newObject contextClass ()
-
-
 -- | Load all accounts from the Nostr data directory.
-loadAccounts :: (FileSystem :> es, State KeyMgmtState :> es) => Eff es ()
+loadAccounts :: (FileSystem :> es, State KeyMgmtState :> es, IOE :> es) => Eff es ()
 loadAccounts = do
   storageDir <- getXdgDirectory XdgData "futrnostr"
   directoryExists <- doesDirectoryExist storageDir
@@ -333,12 +262,28 @@ isNpubDirectory storageDir dirName = do
 
 
 -- | Load an account from a Nostr pubkey directory.
-loadAccount :: (FileSystem :> es) => FilePath -> FilePath -> Eff es (Maybe Account)
+loadAccount :: (FileSystem :> es, IOE :> es) => FilePath -> FilePath -> Eff es (Maybe Account)
 loadAccount storageDir npubDir = do
   let dirPath = storageDir </> npubDir
   nsecContent <- readFileMaybe (dirPath </> "nsec")
   relayData <- readJSONFile (dirPath </> "relays.json")
   profile <- readJSONFile (dirPath </> "profile.json")
+
+  -- Get and persist 3 random relays if no relay data exists
+  finalRelays <- case relayData of
+    Just r -> return r
+    Nothing -> do
+      randomRelays <- liftIO $ do
+        let (allRelays, _) = defaultGeneralRelays
+        indices <- randomRIO (0, length allRelays - 1) >>= \i1 -> do
+                    i2 <- randomRIO (0, length allRelays - 1)
+                    i3 <- randomRIO (0, length allRelays - 1)
+                    return [i1, i2, i3]
+        let selectedRelays = nub $ map (allRelays !!) indices
+        return (selectedRelays, 0) -- 0 timestamp
+      -- Write the random selection to relays.json
+      BL.writeFile (dirPath </> "relays.json") (encode randomRelays)
+      return randomRelays
 
   return $ do
     nsecKey <- bech32ToSecKey . strip =<< nsecContent
@@ -348,7 +293,7 @@ loadAccount storageDir npubDir = do
       Account
         { accountSecKey = nsecKey,
           accountPubKeyXO = pubKeyXO,
-          accountRelays = fromMaybe defaultRelays relayData,
+          accountRelays = finalRelays,
           accountDisplayName = profile >>= \(Profile _ d _ _ _ _) -> d,
           accountPicture = profile >>= \(Profile _ _ _ p _ _) -> p
         }
@@ -371,16 +316,24 @@ readJSONFile path = do
     else return Nothing
 
 
+-- | Select random relays from a list
+selectRandomRelays :: Int -> [Relay] -> IO [Relay]
+selectRandomRelays count relays = do
+  indices <- replicateM count $ randomRIO (0, length relays - 1)
+  return $ nub $ map (relays !!) indices
+
 -- | Create an AccountId and Account from a KeyPair.
-accountFromKeyPair :: KeyPair -> (AccountId, Account)
-accountFromKeyPair kp = (AccountId newNpub, account)
-  where
-    newNpub = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
-    account =
-      Account
-        { accountSecKey = keyPairToSecKey kp,
-          accountPubKeyXO = keyPairToPubKeyXO kp,
-          accountRelays = defaultRelays,
-          accountDisplayName = Nothing,
-          accountPicture = Nothing
-        }
+accountFromKeyPair :: (IOE :> es) => KeyPair -> Eff es (AccountId, Account)
+accountFromKeyPair kp = do
+  let (allRelays, _) = defaultGeneralRelays
+  selectedRelays <- liftIO $ selectRandomRelays 3 allRelays
+  let newNpub = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+  let account =
+        Account
+          { accountSecKey = keyPairToSecKey kp,
+            accountPubKeyXO = keyPairToPubKeyXO kp,
+            accountRelays = (selectedRelays, 0),  -- 0 for initial timestamp
+            accountDisplayName = Nothing,
+            accountPicture = Nothing
+          }
+  return (AccountId newNpub, account)
