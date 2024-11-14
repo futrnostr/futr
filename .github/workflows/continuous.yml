@@ -2,7 +2,7 @@ name: Flatpak Build and Release (Continuous)
 
 on:
   push:
-    branches: ["continuous"]
+    branches: ["flatter"]
 
 permissions:
   contents: write
