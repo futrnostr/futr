@@ -37,10 +37,10 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      - name: Setup Flatpak
+      - name: Setup Flatpak and ostree
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak flatpak-builder ostree
 
       - name: Download Flatpak Bundle
         uses: dawidd6/action-download-artifact@v2
@@ -49,10 +49,6 @@ jobs:
           path: .
           workflow: ${{ github.event.workflow_run.workflow_id }}
           run_id: ${{ github.event.workflow_run.id }}
-
-      - name: Install ostree
-        run: |
-          sudo apt-get install -y ostree
 
       - name: Create/Update Repository
         env:
@@ -69,10 +65,10 @@ jobs:
             # Determine which repo to update based on the source workflow
             if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
               flatpak build-import-bundle repo-stable futr.flatpak
-              flatpak build-update-repo --generate-static-deltas repo-stable
+              flatpak build-update-repo repo-stable
             else
               flatpak build-import-bundle repo-continuous futr.flatpak
-              flatpak build-update-repo --generate-static-deltas repo-continuous
+              flatpak build-update-repo repo-continuous
             fi
           fi
 
@@ -105,19 +101,11 @@ jobs:
           # Add the repo files to git
           git add *.flatpakrepo
 
-      - name: Update Repository
-        run: |
-          flatpak build-update-repo repo-continuous --no-gpg-verify
-          if [ -d "repo-stable" ]; then
-            flatpak build-update-repo repo-stable --no-gpg-verify
-          fi
-
       - name: Commit Repository Updates
         run: |
           git add repo-stable repo-continuous *.flatpakrepo
           if ! git commit -m "Update Flatpak repositories"; then
             echo "::warning::No changes to commit"
-            exit 0
           fi
           if ! git push origin gh-pages; then
             echo "::error::Failed to push to gh-pages branch"
@@ -159,3 +147,13 @@ jobs:
           </html>
           EOF
           git add index.html
+
+      - name: Commit index.html
+        run: |
+          if ! git commit -m "Update index.html"; then
+            echo "::warning::No changes to index.html"
+          fi
+          if ! git push origin gh-pages; then
+            echo "::error::Failed to push index.html to gh-pages branch"
+            exit 1
+          fi
