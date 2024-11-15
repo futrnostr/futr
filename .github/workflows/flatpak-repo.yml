@@ -92,18 +92,13 @@ jobs:
 
           # Trust the key in the repository
           echo "Setting up repository GPG trust..."
-          echo "Available GPG keys:"
-          gpg --list-keys
-          
-          echo "Trying to export key $GPG_KEY_ID"
-          gpg --export $GPG_KEY_ID | hexdump -C
-          
+
           if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
             ostree --repo="$TARGET_REPO" remote add futr-stable https://flatpak.futrnostr.com/repo-stable
-            ostree --repo="$TARGET_REPO" remote gpg-import futr-stable < <(gpg --export $GPG_KEY_ID)
+            ostree --repo="$TARGET_REPO" remote gpg-import --stdin futr-stable < <(gpg --export $GPG_KEY_ID)
           else
             ostree --repo="$TARGET_REPO" remote add futr-continuous https://flatpak.futrnostr.com/repo-continuous
-            ostree --repo="$TARGET_REPO" remote gpg-import futr-continuous < <(gpg --export $GPG_KEY_ID)
+            ostree --repo="$TARGET_REPO" remote gpg-import --stdin futr-continuous < <(gpg --export $GPG_KEY_ID)
           fi
 
           if [ -f "../futr.flatpak" ]; then
