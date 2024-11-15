@@ -93,7 +93,10 @@ jobs:
           if [ -f "../futr.flatpak" ]; then
             # Import the Flatpak bundle
             echo "Importing bundle to $TARGET_REPO..."
-            flatpak build-import-bundle --no-update-summary "$TARGET_REPO" ../futr.flatpak || exit 1
+            flatpak build-import-bundle \
+              --no-update-summary \
+              --gpg-sign="$GPG_KEY_ID" \
+              "$TARGET_REPO" ../futr.flatpak || exit 1
             
             # Update the repository properly
             echo "Updating repository..."
@@ -106,7 +109,7 @@ jobs:
 
             # Debug: Check if commits are signed
             echo "Checking repository signatures..."
-            ostree show --repo="$TARGET_REPO" $(ostree rev-parse --repo="$TARGET_REPO" main)
+            ostree show --repo="$TARGET_REPO" app/com.futrnostr.futr/x86_64/master
 
             # Verify repository contents
             echo "Verifying repository structure..."
