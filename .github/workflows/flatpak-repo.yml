@@ -121,6 +121,7 @@ jobs:
 
       - name: Commit Repository Updates
         run: |
+          cd flatpak-repo
           git add repo-stable repo-continuous *.flatpakrepo
           if ! git commit -m "Update Flatpak repositories"; then
             echo "::warning::No changes to commit"
