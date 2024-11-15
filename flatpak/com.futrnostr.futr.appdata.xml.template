@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<components version="0.8">
+  <component type="desktop-application">
+    <id>com.futrnostr.futr</id>
+    <metadata_license>CC0-1.0</metadata_license>
+    <project_license>GPL-3.0-or-later</project_license>
+    <name>Futr</name>
+    <summary>Native nostr client for your Linux desktop</summary>
+    <description>
+        <p>
+        Futr is a native nostr client for Linux desktops. It provides a user-friendly interface for interacting with the nostr protocol, allowing users to publish and read posts, follow other users, and participate in the decentralized social network. Built with Haskell and Qt5, Futr offers a fast and responsive experience while maintaining the principles of privacy and censorship resistance that are core to the nostr ecosystem.
+        </p>
+    </description>
+    <url type="homepage">https://futrnostr.com</url>
+    <screenshots>
+        <screenshot type="default">
+            <image>https://image.nostr.build/8f5e8a02465f0a9f01b68e2038a259867a7ac8fd4aa274463e8d047a36b188a5.png</image>
+            <caption>Main window of Futr</caption>
+        </screenshot>
+    </screenshots>
+    <releases>
+    </releases>
+  </component>
+</components>

@@ -83,28 +83,18 @@ jobs:
       - name: Build with Cabal
         run: cabal build
 
-      - name: Update Repository appdata.xml
+      - name: Update appdata.xml
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}  # Extract version from tag
           TODAY=$(date +%Y-%m-%d)
           APPDATA="flatpak/com.futrnostr.futr.appdata.xml"
           
-          # Ensure the basic structure exists
+          # Copy template if appdata.xml doesn't exist
           if [ ! -f "$APPDATA" ]; then
-            mkdir -p $(dirname "$APPDATA")
-            cat > "$APPDATA" << 'EOF'
-            <?xml version="1.0" encoding="UTF-8"?>
-            <components version="0.8">
-              <component type="desktop-application">
-                <id>com.futrnostr.futr</id>
-                <releases>
-                </releases>
-              </component>
-            </components>
-            EOF
+            cp flatpak/com.futrnostr.futr.appdata.xml.template "$APPDATA"
           fi
           
-          # Add the new release entry at the top of the releases section
+          # Add new release entry at the top of releases section
           sed -i "/<releases>/a \    <release version=\"$VERSION\" date=\"$TODAY\">\n      <description>\n        <p>Release version $VERSION</p>\n      </description>\n    </release>" "$APPDATA"
 
       - name: Build Flatpak
