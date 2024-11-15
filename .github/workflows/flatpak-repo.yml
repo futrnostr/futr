@@ -56,13 +56,12 @@ jobs:
           workflow: ${{ github.event.workflow_run.workflow_id }}
           run_id: ${{ github.event.workflow_run.id }}
 
-      - name: Setup GPG
-        run: |
-          # Create .gnupg directory with correct permissions
-          mkdir -p ~/.gnupg
-          chmod 700 ~/.gnupg
-          # Import the private key
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
 
       - name: Create/Update Repository
         env:
