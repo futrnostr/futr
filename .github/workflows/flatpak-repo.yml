@@ -93,8 +93,7 @@ jobs:
             flatpak build-update-repo "$TARGET_REPO" \
               --gpg-sign="$GPG_KEY_ID" \
               --generate-static-deltas \
-              --prune \
-              --enable-http-keep-alive || exit 1
+              --prune || exit 1
           fi
 
       - name: Create .flatpakrepo files
