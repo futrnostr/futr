@@ -102,7 +102,6 @@ jobs:
               --generate-static-deltas \
               --prune \
               --prune-depth=20 \
-              --generate-summary \
               --static-delta-jobs=4 || exit 1
 
             # Verify repository contents
