@@ -68,28 +68,45 @@ jobs:
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
-          mkdir -p repo-stable repo-continuous
+          # Create all necessary directories
+          mkdir -p repo-stable/{objects,refs/{heads,mirrors,remotes},state} \
+                  repo-continuous/{objects,refs/{heads,mirrors,remotes},state}
 
-          # Initialize stable repo if needed
-          if [ ! -d "repo-stable/objects" ]; then
-            ostree init --mode=archive-z2 --repo=repo-stable
-            ostree --repo=repo-stable refs
-          fi
-
-          # Initialize continuous repo if needed
-          if [ ! -d "repo-continuous/objects" ]; then
-            ostree init --mode=archive-z2 --repo=repo-continuous
-            ostree --repo=repo-continuous refs
-          fi
+          # Initialize repos with explicit config
+          for repo in repo-stable repo-continuous; do
+            if [ ! -f "$repo/config" ]; then
+              ostree init --mode=archive-z2 --repo=$repo
+              
+              # Configure the repository
+              cat > $repo/config << EOF
+          [core]
+          repo_version=1
+          mode=archive-z2
+          EOF
+            fi
+            
+            # Ensure refs are initialized
+            ostree --repo=$repo refs || true
+          done
 
           # Import bundle based on workflow type
           if [ -f "futr.flatpak" ]; then
             if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
-              flatpak build-import-bundle --no-update-summary repo-stable futr.flatpak
+              flatpak build-import-bundle --no-update-summary repo-stable futr.flatpak || {
+                echo "Error importing to stable repo"
+                ls -la repo-stable
+                cat repo-stable/config
+                exit 1
+              }
               flatpak build-sign repo-stable --gpg-sign=$GPG_KEY_ID
               flatpak build-update-repo repo-stable --gpg-sign=$GPG_KEY_ID
             else
-              flatpak build-import-bundle --no-update-summary repo-continuous futr.flatpak
+              flatpak build-import-bundle --no-update-summary repo-continuous futr.flatpak || {
+                echo "Error importing to continuous repo"
+                ls -la repo-continuous
+                cat repo-continuous/config
+                exit 1
+              }
               flatpak build-sign repo-continuous --gpg-sign=$GPG_KEY_ID
               flatpak build-update-repo repo-continuous --gpg-sign=$GPG_KEY_ID
             fi
