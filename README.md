@@ -12,23 +12,17 @@ Install via Flatpak:
 
 #### Stable Release
 
-First, import the repository signing key:
-
-```bash
-curl -fsSL https://flatpak.futrnostr.com/futr.gpg | gpg --import
-```
-
 Then add the repository and install:
 
 ```bash
-flatpak remote-add --if-not-exists futr-stable https://flatpak.futrnostr.com/futr-stable
-flatpak install futr-stable com.futrnostr.futr
+flatpak remote-add --if-not-exists futr-stable https://flatpak.futrnostr.com/futr-stable.flatpakrepo
+flatpak install com.futrnostr.futr
 ```
 
 #### Development Builds
 
 ```bash
-flatpak remote-add --if-not-exists futr-continuous https://flatpak.futrnostr.com/repo-continuous
+flatpak remote-add --if-not-exists futr-continuous https://flatpak.futrnostr.com/futr-continuous.flatpakrepo
 flatpak install com.futrnostr.futr
 ```
 
