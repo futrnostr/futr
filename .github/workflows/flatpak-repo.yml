@@ -71,18 +71,30 @@ jobs:
           # Create repositories if they don't exist
           for repo in repo-stable repo-continuous; do
             if [ ! -d "$repo" ]; then
+              # Initialize with archive-z2 mode as recommended for Flatpak repos
               ostree init --mode=archive-z2 --repo=$repo
             fi
           done
-
+          
           if [ -f "futr.flatpak" ]; then
+            TARGET_REPO=""
             if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
-              flatpak build-import-bundle repo-stable futr.flatpak || exit 1
-              flatpak build-update-repo repo-stable --gpg-sign=$GPG_KEY_ID --generate-static-deltas --prune
+              TARGET_REPO="repo-stable"
             else
-              flatpak build-import-bundle repo-continuous futr.flatpak || exit 1
-              flatpak build-update-repo repo-continuous --gpg-sign=$GPG_KEY_ID --generate-static-deltas --prune
+              TARGET_REPO="repo-continuous"
             fi
+            
+            # Import the Flatpak bundle
+            echo "Importing bundle to $TARGET_REPO..."
+            flatpak build-import-bundle --no-update-summary "$TARGET_REPO" futr.flatpak || exit 1
+            
+            # Update the repository with static deltas for faster downloads
+            echo "Updating repository..."
+            flatpak build-update-repo "$TARGET_REPO" \
+              --gpg-sign="$GPG_KEY_ID" \
+              --generate-static-deltas \
+              --prune \
+              --enable-http-keep-alive || exit 1
           fi
 
       - name: Create .flatpakrepo files
