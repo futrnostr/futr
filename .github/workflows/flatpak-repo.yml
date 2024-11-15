@@ -198,23 +198,13 @@ jobs:
           cd flatpak-repo
           REPO_TYPE="${{ github.event.workflow_run.name == 'Flatpak Tagged Release' && 'stable' || 'continuous' }}"
           APPDATA="repo-${REPO_TYPE}/appstream/x86_64/appdata.xml"
-          TODAY=$(date +%Y-%m-%d)
 
           # Create directory if it doesn't exist
           mkdir -p "repo-${REPO_TYPE}/appstream/x86_64"
 
-          # If appdata.xml doesn't exist, create it with basic structure
+          # Copy template if appdata.xml doesn't exist
           if [ ! -f "$APPDATA" ]; then
-            cat > "$APPDATA" << 'EOF'
-            <?xml version="1.0" encoding="UTF-8"?>
-            <components version="0.8">
-              <component type="desktop-application">
-                <id>com.futrnostr.futr</id>
-                <releases>
-                </releases>
-              </component>
-            </components>
-            EOF
+            cp "../futr/flatpak/com.futrnostr.futr.appdata.xml.template" "$APPDATA"
           fi
 
           # Get new release info from the artifact
