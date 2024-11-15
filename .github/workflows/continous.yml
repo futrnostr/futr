@@ -15,43 +15,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache Flatpak installations
-        id: flatpak-cache
-        uses: actions/cache@v4.1.2
-        with:
-          path: /var/lib/flatpak
-          key: ${{ runner.os }}-flatpak-${{ hashFiles('flatpak/**') }}
-          restore-keys: |
-            ${{ runner.os }}-flatpak-
-
       - name: Install Flatpak and Flatpak Builder
-        if: steps.flatpak-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
           sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           sudo flatpak install -y flathub org.kde.Platform//5.15-23.08 org.kde.Sdk//5.15-23.08
 
-      - name: Cache GHC and Cabal
-        id: haskell-cache
-        uses: actions/cache@v4.1.2
-        with:
-          path: |
-            ~/.ghcup
-            ~/.cabal/packages
-            ~/.cabal/store
-            dist-newstyle
-            cabal.project.local
-          key: ${{ runner.os }}-ghc-${{ hashFiles('**/*.cabal', 'cabal.project') }}
-          restore-keys: |
-            ${{ runner.os }}-ghc-
-
       - name: Set up Haskell
-        if: steps.haskell-cache.outputs.cache-hit != 'true'
         uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.6.6'
           cabal-version: '3.10.3.0'
+
+      - name: Cache Cabal packages
+        uses: actions/cache@v4.1.2
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc-9.6.6-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-9.6.6-cabal-
 
       - name: Update Cabal package list
         run: cabal update
