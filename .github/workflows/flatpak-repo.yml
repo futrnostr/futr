@@ -231,7 +231,6 @@ jobs:
           # Add to git
           git add "$APPDATA"
 
-      # Add a commit step for the appdata changes
       - name: Commit appdata changes
         run: |
           cd flatpak-repo
@@ -240,5 +239,23 @@ jobs:
           fi
           if ! git push origin gh-pages; then
             echo "::error::Failed to push appdata.xml to gh-pages branch"
+            exit 1
+          fi
+
+      - name: Export Public Key
+        run: |
+          cd flatpak-repo
+          # Export the public key in ASCII armor format
+          gpg --armor --export ${{ secrets.GPG_KEY_ID }} > futr.gpg
+          git add futr.gpg
+
+      - name: Commit GPG key
+        run: |
+          cd flatpak-repo
+          if ! git commit -m "Update GPG public key"; then
+            echo "::warning::No changes to GPG key"
+          fi
+          if ! git push origin gh-pages; then
+            echo "::error::Failed to push GPG key to gh-pages branch"
             exit 1
           fi

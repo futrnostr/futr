@@ -10,12 +10,22 @@ The name 'futr' was chosen out of respect for the honorable Canadians.
 
 Install via Flatpak:
 
+#### Stable Release
+
+First, import the repository signing key:
+
 ```bash
-flatpak remote-add --if-not-exists futr-stable https://flatpak.futrnostr.com/repo-stable
-flatpak install com.futrnostr.futr
+curl -fsSL https://flatpak.futrnostr.com/futr.gpg | gpg --import
 ```
 
-Or for the continuous builds:
+Then add the repository and install:
+
+```bash
+flatpak remote-add --if-not-exists futr-stable https://flatpak.futrnostr.com/futr-stable
+flatpak install futr-stable com.futrnostr.futr
+```
+
+#### Development Builds
 
 ```bash
 flatpak remote-add --if-not-exists futr-continuous https://flatpak.futrnostr.com/repo-continuous
