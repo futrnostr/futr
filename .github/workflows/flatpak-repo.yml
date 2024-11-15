@@ -68,47 +68,38 @@ jobs:
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
-          # Create all necessary directories
-          mkdir -p repo-stable/{objects,refs/{heads,mirrors,remotes},state} \
-                  repo-continuous/{objects,refs/{heads,mirrors,remotes},state}
-
-          # Initialize repos with explicit config
+          # Create repositories if they don't exist
           for repo in repo-stable repo-continuous; do
-            if [ ! -f "$repo/config" ]; then
+            if [ ! -d "$repo" ]; then
+              # Initialize new repository
               ostree init --mode=archive-z2 --repo=$repo
-              
-              # Configure the repository
-              cat > $repo/config << EOF
-          [core]
-          repo_version=1
-          mode=archive-z2
-          EOF
             fi
-            
-            # Ensure refs are initialized
-            ostree --repo=$repo refs || true
           done
 
           # Import bundle based on workflow type
           if [ -f "futr.flatpak" ]; then
             if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
-              flatpak build-import-bundle --no-update-summary repo-stable futr.flatpak || {
+              # Import to stable repo
+              flatpak build-import-bundle repo-stable futr.flatpak || {
                 echo "Error importing to stable repo"
                 ls -la repo-stable
                 cat repo-stable/config
                 exit 1
               }
+              # Sign and update with static deltas
               flatpak build-sign repo-stable --gpg-sign=$GPG_KEY_ID
-              flatpak build-update-repo repo-stable --gpg-sign=$GPG_KEY_ID
+              flatpak build-update-repo repo-stable --gpg-sign=$GPG_KEY_ID --generate-static-deltas
             else
-              flatpak build-import-bundle --no-update-summary repo-continuous futr.flatpak || {
+              # Import to continuous repo
+              flatpak build-import-bundle repo-continuous futr.flatpak || {
                 echo "Error importing to continuous repo"
                 ls -la repo-continuous
                 cat repo-continuous/config
                 exit 1
               }
+              # Sign and update with static deltas
               flatpak build-sign repo-continuous --gpg-sign=$GPG_KEY_ID
-              flatpak build-update-repo repo-continuous --gpg-sign=$GPG_KEY_ID
+              flatpak build-update-repo repo-continuous --gpg-sign=$GPG_KEY_ID --generate-static-deltas
             fi
           fi
 
