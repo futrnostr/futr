@@ -30,13 +30,20 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Checkout
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          repository: futrnostr/futr
+          path: futr
+
+      - name: Checkout flatpak repo
         uses: actions/checkout@v4
         with:
           repository: futrnostr/futr-flatpak
           ref: gh-pages
           token: ${{ secrets.TOKEN }}
           fetch-depth: 0
+          path: flatpak-repo
 
       - name: Configure Git
         run: |
@@ -101,12 +108,13 @@ jobs:
 
       - name: Create .flatpakrepo files
         run: |
+          cd flatpak-repo
           # Get public key in base64
           GPG_KEY=$(gpg --export ${{ secrets.GPG_KEY_ID }} | base64 -w 0)
 
           # Copy and update the repo files
           for TYPE in continuous stable; do
-            cp "flatpak/futr-${TYPE}.flatpakrepo.template" "futr-${TYPE}.flatpakrepo"
+            cp "../futr/flatpak/futr-${TYPE}.flatpakrepo.template" "futr-${TYPE}.flatpakrepo"
             sed -i "s/GPGKEY_PLACEHOLDER/${GPG_KEY}/g" "futr-${TYPE}.flatpakrepo"
           done
 
