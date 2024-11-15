@@ -68,16 +68,17 @@ jobs:
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
-          # Create repositories if they don't exist
+          # Clean and recreate repositories
           for repo in repo-stable repo-continuous; do
-            if [ ! -d "$repo" ]; then
-              # Initialize with archive-z2 mode as recommended for Flatpak repos
-              ostree init --mode=archive-z2 --repo=$repo
-              # Add a remote to the repository
-              ostree remote add --repo=$repo origin https://dl.flathub.org/repo/flathub.flatpakrepo  || true
-            fi
+            # Remove existing repo if it exists
+            rm -rf "$repo"
+
+            # Initialize fresh repository
+            ostree init --mode=archive-z2 --repo=$repo
+            # Add a remote to the repository
+            ostree remote add --repo=$repo origin https://dl.flathub.org/repo/flathub.flatpakrepo  || true
           done
-          
+
           if [ -f "futr.flatpak" ]; then
             TARGET_REPO=""
             if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
@@ -85,11 +86,11 @@ jobs:
             else
               TARGET_REPO="repo-continuous"
             fi
-            
+
             # Import the Flatpak bundle
             echo "Importing bundle to $TARGET_REPO..."
             flatpak build-import-bundle --no-update-summary "$TARGET_REPO" futr.flatpak || exit 1
-            
+
             # Update the repository with static deltas for faster downloads
             echo "Updating repository..."
             flatpak build-update-repo "$TARGET_REPO" \
@@ -102,7 +103,7 @@ jobs:
         run: |
           # Get public key in base64
           GPG_KEY=$(gpg --export ${{ secrets.GPG_KEY_ID }} | base64 -w 0)
-          
+
           # Copy and update the repo files
           for TYPE in continuous stable; do
             cp "flatpak/futr-${TYPE}.flatpakrepo.template" "futr-${TYPE}.flatpakrepo"
@@ -201,13 +202,13 @@ jobs:
             </components>
             EOF
           fi
-          
+
           # Get new release info from the artifact
           NEW_RELEASE=$(grep -A 4 '<release' temp/flatpak/com.futrnostr.futr.appdata.xml | head -n 5)
-          
+
           # Create temporary file
           TEMP_FILE=$(mktemp)
-          
+
           # Insert new release at the top of the releases section
           awk -v new="$NEW_RELEASE" '
             /<releases>/ {
@@ -217,10 +218,10 @@ jobs:
             }
             {print}
           ' "$APPDATA" > "$TEMP_FILE"
-          
+
           # Replace original file
           mv "$TEMP_FILE" "$APPDATA"
-          
+
           # Add to git
           git add "$APPDATA"
 
