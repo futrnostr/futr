@@ -86,14 +86,20 @@ jobs:
 
           # Remove existing repo if it exists
           rm -rf "$TARGET_REPO"
-          
+
           # Initialize fresh repository
           ostree init --mode=archive-z2 --repo=$TARGET_REPO
-          
+
           # Trust the key in the repository
           echo "Setting up repository GPG trust..."
-          ostree remote --repo="$TARGET_REPO" add-gpg-key futr-continuous --gpg-import=<(gpg --export $GPG_KEY_ID)
-          
+          if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
+            ostree --repo="$TARGET_REPO" remote add futr-stable https://flatpak.futrnostr.com/repo-stable
+            ostree --repo="$TARGET_REPO" remote gpg-import futr-stable < <(gpg --export $GPG_KEY_ID)
+          else
+            ostree --repo="$TARGET_REPO" remote add futr-continuous https://flatpak.futrnostr.com/repo-continuous
+            ostree --repo="$TARGET_REPO" remote gpg-import futr-continuous < <(gpg --export $GPG_KEY_ID)
+          fi
+
           if [ -f "../futr.flatpak" ]; then
             # Import the Flatpak bundle
             echo "Importing bundle to $TARGET_REPO..."
@@ -101,7 +107,7 @@ jobs:
               --no-update-summary \
               --gpg-sign="$GPG_KEY_ID" \
               "$TARGET_REPO" ../futr.flatpak || exit 1
-            
+
             # Update the repository properly
             echo "Updating repository..."
             flatpak build-update-repo "$TARGET_REPO" \
