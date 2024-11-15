@@ -76,6 +76,7 @@ jobs:
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
+          cd flatpak-repo
           # Clean and recreate repositories
           for repo in repo-stable repo-continuous; do
             # Remove existing repo if it exists
@@ -150,6 +151,7 @@ jobs:
 
       - name: Create index.html
         run: |
+          cd flatpak-repo
           cat > index.html << EOF
           <!DOCTYPE html>
           <html>
@@ -174,6 +176,7 @@ jobs:
 
       - name: Commit index.html
         run: |
+          cd flatpak-repo
           if ! git commit -m "Update index.html"; then
             echo "::warning::No changes to index.html"
           fi
@@ -192,6 +195,7 @@ jobs:
 
       - name: Update Repository appdata.xml
         run: |
+          cd flatpak-repo
           REPO_TYPE="${{ github.event.workflow_run.name == 'Flatpak Tagged Release' && 'stable' || 'continuous' }}"
           APPDATA="repo-${REPO_TYPE}/appstream/x86_64/appdata.xml"
           TODAY=$(date +%Y-%m-%d)
@@ -238,6 +242,7 @@ jobs:
       # Add a commit step for the appdata changes
       - name: Commit appdata changes
         run: |
+          cd flatpak-repo
           if ! git commit -m "Update appdata.xml"; then
             echo "::warning::No changes to appdata.xml"
           fi
