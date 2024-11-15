@@ -70,16 +70,26 @@ jobs:
         run: |
           mkdir -p repo-stable repo-continuous
 
-          [ ! -d "repo-stable/objects" ] && ostree init --mode=archive-z2 --repo=repo-stable
-          [ ! -d "repo-continuous/objects" ] && ostree init --mode=archive-z2 --repo=repo-continuous
+          # Initialize stable repo if needed
+          if [ ! -d "repo-stable/objects" ]; then
+            ostree init --mode=archive-z2 --repo=repo-stable
+            ostree --repo=repo-stable refs
+          fi
 
+          # Initialize continuous repo if needed
+          if [ ! -d "repo-continuous/objects" ]; then
+            ostree init --mode=archive-z2 --repo=repo-continuous
+            ostree --repo=repo-continuous refs
+          fi
+
+          # Import bundle based on workflow type
           if [ -f "futr.flatpak" ]; then
             if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
-              flatpak build-import-bundle repo-stable futr.flatpak
+              flatpak build-import-bundle --no-update-summary repo-stable futr.flatpak
               flatpak build-sign repo-stable --gpg-sign=$GPG_KEY_ID
               flatpak build-update-repo repo-stable --gpg-sign=$GPG_KEY_ID
             else
-              flatpak build-import-bundle repo-continuous futr.flatpak
+              flatpak build-import-bundle --no-update-summary repo-continuous futr.flatpak
               flatpak build-sign repo-continuous --gpg-sign=$GPG_KEY_ID
               flatpak build-update-repo repo-continuous --gpg-sign=$GPG_KEY_ID
             fi
