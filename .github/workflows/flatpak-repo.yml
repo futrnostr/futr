@@ -104,6 +104,10 @@ jobs:
               --prune-depth=20 \
               --static-delta-jobs=4 || exit 1
 
+            # Debug: Check if commits are signed
+            echo "Checking repository signatures..."
+            ostree show --repo="$TARGET_REPO" $(ostree rev-parse --repo="$TARGET_REPO" main)
+
             # Verify repository contents
             echo "Verifying repository structure..."
             ostree summary --view --repo="$TARGET_REPO"
