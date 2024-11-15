@@ -73,11 +73,8 @@ jobs:
             if [ ! -d "$repo" ]; then
               # Initialize with archive-z2 mode as recommended for Flatpak repos
               ostree init --mode=archive-z2 --repo=$repo
-              # Configure the repository
-              ostree config --repo=$repo set core.min-free-space-size 500MB
-              # Create necessary directories
-              mkdir -p $repo/refs/remotes
-              mkdir -p $repo/refs/heads
+              # Add a remote to the repository
+              ostree remote add --repo=$repo origin https://dl.flathub.org/repo/flathub.flatpakrepo  || true
             fi
           done
           
@@ -98,8 +95,7 @@ jobs:
             flatpak build-update-repo "$TARGET_REPO" \
               --gpg-sign="$GPG_KEY_ID" \
               --generate-static-deltas \
-              --prune \
-              --prune-depth=20 || exit 1
+              --prune || exit 1
           fi
 
       - name: Create .flatpakrepo files
