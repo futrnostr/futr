@@ -157,12 +157,12 @@ jobs:
             <h1>Futr Flatpak Repository</h1>
             <h2>Stable Repository</h2>
             <p>To add the stable repository:</p>
-            <pre>flatpak remote-add --if-not-exists --no-gpg-verify futr-stable https://futrnostr.github.io/futr-flatpak/repo-stable</pre>
+            <pre>flatpak remote-add --if-not-exists futr-stable https://futrnostr.github.io/futr-flatpak/repo-stable</pre>
             <p>Or download the <a href="futr-stable.flatpakrepo">repository file</a>.</p>
 
             <h2>Development Repository</h2>
             <p>To add the development repository:</p>
-            <pre>flatpak remote-add --if-not-exists --no-gpg-verify futr-continuous https://futrnostr.github.io/futr-flatpak/repo-continuous</pre>
+            <pre>flatpak remote-add --if-not-exists futr-continuous https://futrnostr.github.io/futr-flatpak/repo-continuous</pre>
             <p>Or download the <a href="futr-continuous.flatpakrepo">repository file</a>.</p>
           </body>
           </html>
