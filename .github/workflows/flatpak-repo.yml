@@ -90,10 +90,10 @@ jobs:
           # Initialize fresh repository
           ostree init --mode=archive-z2 --repo=$TARGET_REPO
           
-          if [ -f "futr.flatpak" ]; then
+          if [ -f "../futr.flatpak" ]; then
             # Import the Flatpak bundle
             echo "Importing bundle to $TARGET_REPO..."
-            flatpak build-import-bundle --no-update-summary "$TARGET_REPO" futr.flatpak || exit 1
+            flatpak build-import-bundle --no-update-summary "$TARGET_REPO" ../futr.flatpak || exit 1
             
             # Update the repository properly
             echo "Updating repository..."
