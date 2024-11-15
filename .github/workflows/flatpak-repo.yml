@@ -90,6 +90,10 @@ jobs:
           # Initialize fresh repository
           ostree init --mode=archive-z2 --repo=$TARGET_REPO
           
+          # Trust the key in the repository
+          echo "Setting up repository GPG trust..."
+          ostree remote --repo="$TARGET_REPO" add-gpg-key futr-continuous --gpg-import=<(gpg --export $GPG_KEY_ID)
+          
           if [ -f "../futr.flatpak" ]; then
             # Import the Flatpak bundle
             echo "Importing bundle to $TARGET_REPO..."
