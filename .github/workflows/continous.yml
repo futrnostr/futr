@@ -102,7 +102,7 @@ jobs:
           retention-days: 7
 
       - name: Delete existing release and tag
-        uses: dev-drprasad/delete-tag-and-release@v1.0
+        uses: dev-drprasad/delete-tag-and-release@v1.1
         with:
           tag_name: continuous
           delete_release: true
