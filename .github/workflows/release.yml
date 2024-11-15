@@ -13,17 +13,106 @@ jobs:
     name: Flatpak Build and Release
     runs-on: ubuntu-latest
     steps:
-      # Use the same steps as continuous.yml until the "Update appdata.xml" step
-      # Copy all previous steps...
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Update appdata.xml
+      - name: Install Flatpak and Flatpak Builder
         run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.kde.Platform//5.15-23.08 org.kde.Sdk//5.15-23.08
+
+      - name: Set up Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.6'
+          cabal-version: '3.10.3.0'
+
+      - name: Cache Cabal packages
+        uses: actions/cache@v4.1.2
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc-9.6.6-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-9.6.6-cabal-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autogen automake libtool
+
+      - name: Install Qt5 Dependencies
+        run: |
+          sudo apt-get install -y qtdeclarative5-dev libqt5quick5 qt5-image-formats-plugins qttools5-dev-tools qtbase5-dev
+
+      - name: Install secp256k1 Library
+        run: |
+          git clone https://github.com/bitcoin-core/secp256k1 && \
+          cd secp256k1 && \
+          git checkout v0.5.1 && \
+          ./autogen.sh && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+          make && \
+          sudo make install && \
+          cd ..
+
+      - name: Set Library Path
+        run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
+
+      - name: Build with Cabal
+        run: cabal build
+
+      - name: Update Repository appdata.xml
+        run: |
+          REPO_TYPE="${{ github.event.workflow_run.name == 'Flatpak Tagged Release' && 'stable' || 'continuous' }}"
+          APPDATA="repo-${REPO_TYPE}/appstream/x86_64/appdata.xml"
           TODAY=$(date +%Y-%m-%d)
-          APPDATA="flatpak/com.futrnostr.futr.appdata.xml"
-          VERSION=${GITHUB_REF#refs/tags/v}
           
-          # Update or add the release entry
-          sed -i "/<releases>/a \    <release version=\"$VERSION\" date=\"$TODAY\">\n      <description>\n        <p>${{ github.event.release.body || 'Release version $VERSION' }}</p>\n      </description>\n    </release>" "$APPDATA"
+          # Create directory if it doesn't exist
+          mkdir -p "repo-${REPO_TYPE}/appstream/x86_64"
+          
+          # If appdata.xml doesn't exist, create it with basic structure
+          if [ ! -f "$APPDATA" ]; then
+            cat > "$APPDATA" << 'EOF'
+            <?xml version="1.0" encoding="UTF-8"?>
+            <components version="0.8">
+              <component type="desktop-application">
+                <id>com.futrnostr.futr</id>
+                <releases>
+                </releases>
+              </component>
+            </components>
+            EOF
+          fi
+          
+          # Get new release info from the artifact
+          NEW_RELEASE=$(grep -A 4 '<release' temp/flatpak/com.futrnostr.futr.appdata.xml | head -n 5)
+          
+          # Create temporary file
+          TEMP_FILE=$(mktemp)
+          
+          # Insert new release at the top of the releases section
+          awk -v new="$NEW_RELEASE" '
+            /<releases>/ {
+              print $0
+              print new
+              next
+            }
+            {print}
+          ' "$APPDATA" > "$TEMP_FILE"
+          
+          # Replace original file
+          mv "$TEMP_FILE" "$APPDATA"
+          
+          # Add to git
+          git add "$APPDATA"
 
       - name: Build Flatpak
         run: ./build-flatpak.sh

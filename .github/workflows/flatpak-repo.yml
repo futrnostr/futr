@@ -189,22 +189,56 @@ jobs:
 
       - name: Update Repository appdata.xml
         run: |
-          REPO_APPDATA="repo-${{ github.event.workflow_run.name == 'Flatpak Tagged Release' && 'stable' || 'continuous' }}/appdata.xml"
-          
-          if [ ! -f "$REPO_APPDATA" ]; then
-            # Initialize with base structure if doesn't exist
-            cat > "$REPO_APPDATA" << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <component type="desktop-application">
-            <releases>
-            </releases>
-          </component>
-          EOF
+          REPO_TYPE="${{ github.event.workflow_run.name == 'Flatpak Tagged Release' && 'stable' || 'continuous' }}"
+          APPDATA="repo-${REPO_TYPE}/appstream/x86_64/appdata.xml"
+          TODAY=$(date +%Y-%m-%d)
+
+          # Create directory if it doesn't exist
+          mkdir -p "repo-${REPO_TYPE}/appstream/x86_64"
+
+          # If appdata.xml doesn't exist, create it with basic structure
+          if [ ! -f "$APPDATA" ]; then
+            cat > "$APPDATA" << 'EOF'
+            <?xml version="1.0" encoding="UTF-8"?>
+            <components version="0.8">
+              <component type="desktop-application">
+                <id>com.futrnostr.futr</id>
+                <releases>
+                </releases>
+              </component>
+            </components>
+            EOF
           fi
           
-          # Merge new release into existing history
+          # Get new release info from the artifact
           NEW_RELEASE=$(grep -A 4 '<release' temp/flatpak/com.futrnostr.futr.appdata.xml | head -n 5)
-          sed -i "/<releases>/a $NEW_RELEASE" "$REPO_APPDATA"
+          
+          # Create temporary file
+          TEMP_FILE=$(mktemp)
+          
+          # Insert new release at the top of the releases section
+          awk -v new="$NEW_RELEASE" '
+            /<releases>/ {
+              print $0
+              print new
+              next
+            }
+            {print}
+          ' "$APPDATA" > "$TEMP_FILE"
+          
+          # Replace original file
+          mv "$TEMP_FILE" "$APPDATA"
           
           # Add to git
-          git add "$REPO_APPDATA"
+          git add "$APPDATA"
+
+      # Add a commit step for the appdata changes
+      - name: Commit appdata changes
+        run: |
+          if ! git commit -m "Update appdata.xml"; then
+            echo "::warning::No changes to appdata.xml"
+          fi
+          if ! git push origin gh-pages; then
+            echo "::error::Failed to push appdata.xml to gh-pages branch"
+            exit 1
+          fi

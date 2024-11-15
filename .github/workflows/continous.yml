@@ -72,7 +72,24 @@ jobs:
         run: |
           TODAY=$(date +%Y-%m-%d)
           APPDATA="flatpak/com.futrnostr.futr.appdata.xml"
-          sed -i "s/<release version=\"continuous\" date=\"[^\"]*\"/<release version=\"continuous\" date=\"$TODAY\"/" "$APPDATA"
+          
+          # Ensure the basic structure exists
+          if [ ! -f "$APPDATA" ]; then
+            mkdir -p $(dirname "$APPDATA")
+            cat > "$APPDATA" << 'EOF'
+            <?xml version="1.0" encoding="UTF-8"?>
+            <components version="0.8">
+              <component type="desktop-application">
+                <id>com.futrnostr.futr</id>
+                <releases>
+                </releases>
+              </component>
+            </components>
+            EOF
+          fi
+          
+          # Just add/update the continuous release
+          sed -i "/<releases>/a \    <release version=\"continuous\" date=\"$TODAY\">\n      <description>\n        <p>Development build</p>\n      </description>\n    </release>" "$APPDATA"
 
       - name: Build Flatpak
         run: ./build-flatpak.sh
