@@ -77,35 +77,39 @@ jobs:
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
           cd flatpak-repo
-          # Clean and recreate repositories
-          for repo in repo-stable repo-continuous; do
-            # Remove existing repo if it exists
-            rm -rf "$repo"
+          TARGET_REPO=""
+          if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
+            TARGET_REPO="repo-stable"
+          else
+            TARGET_REPO="repo-continuous"
+          fi
 
-            # Initialize fresh repository
-            ostree init --mode=archive-z2 --repo=$repo
-            # Add a remote to the repository
-            ostree remote add --repo=$repo origin https://dl.flathub.org/repo/flathub.flatpakrepo  || true
-          done
-
+          # Remove existing repo if it exists
+          rm -rf "$TARGET_REPO"
+          
+          # Initialize fresh repository
+          ostree init --mode=archive-z2 --repo=$TARGET_REPO
+          
           if [ -f "futr.flatpak" ]; then
-            TARGET_REPO=""
-            if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
-              TARGET_REPO="repo-stable"
-            else
-              TARGET_REPO="repo-continuous"
-            fi
-
             # Import the Flatpak bundle
             echo "Importing bundle to $TARGET_REPO..."
             flatpak build-import-bundle --no-update-summary "$TARGET_REPO" futr.flatpak || exit 1
-
-            # Update the repository with static deltas for faster downloads
+            
+            # Update the repository properly
             echo "Updating repository..."
             flatpak build-update-repo "$TARGET_REPO" \
               --gpg-sign="$GPG_KEY_ID" \
               --generate-static-deltas \
-              --prune || exit 1
+              --prune \
+              --prune-depth=20 \
+              --update-appstream \
+              --generate-summary \
+              --static-delta-jobs=4 || exit 1
+
+            # Verify repository contents
+            echo "Verifying repository structure..."
+            ostree summary --view --repo="$TARGET_REPO"
+            ls -la "$TARGET_REPO"
           fi
 
       - name: Create .flatpakrepo files
