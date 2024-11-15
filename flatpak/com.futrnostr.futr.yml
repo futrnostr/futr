@@ -27,7 +27,7 @@ modules:
     sources:
       - type: git
         url: https://github.com/bitcoin-core/secp256k1.git
-        tag: v0.3.2
+        tag: v0.5.1
     config-opts:
       - --enable-module-recovery
       - --enable-experimental

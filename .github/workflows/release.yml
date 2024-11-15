@@ -16,15 +16,24 @@ jobs:
       # Use the same steps as continuous.yml until the "Update appdata.xml" step
       # Copy all previous steps...
 
-      - name: Update appdata.xml for tagged release
+      - name: Update appdata.xml
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
           TODAY=$(date +%Y-%m-%d)
-          # Add new release entry at the top of releases section
-          sed -i "/<releases>/a \    <release version=\"$VERSION\" date=\"$TODAY\">\n      <description>\n        <p>Release version $VERSION</p>\n      </description>\n    </release>" flatpak/com.futrnostr.futr.appdata.xml
+          APPDATA="flatpak/com.futrnostr.futr.appdata.xml"
+          VERSION=${GITHUB_REF#refs/tags/v}
+          
+          # Update or add the release entry
+          sed -i "/<releases>/a \    <release version=\"$VERSION\" date=\"$TODAY\">\n      <description>\n        <p>${{ github.event.release.body || 'Release version $VERSION' }}</p>\n      </description>\n    </release>" "$APPDATA"
 
       - name: Build Flatpak
         run: ./build-flatpak.sh
+
+      - name: Upload appdata.xml
+        uses: actions/upload-artifact@v4
+        with:
+          name: appdata-xml
+          path: flatpak/com.futrnostr.futr.appdata.xml
+          retention-days: 7
 
       - name: Upload Flatpak Bundle
         uses: actions/upload-artifact@v4

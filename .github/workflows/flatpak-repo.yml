@@ -205,3 +205,33 @@ jobs:
             echo "::error::Failed to push index.html to gh-pages branch"
             exit 1
           fi
+
+      - name: Download appdata.xml
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          name: appdata-xml
+          workflow: ${{ github.event.workflow_run.workflow_id }}
+          run_id: ${{ github.event.workflow_run.id }}
+          path: temp
+
+      - name: Update Repository appdata.xml
+        run: |
+          REPO_APPDATA="repo-${{ github.event.workflow_run.name == 'Flatpak Tagged Release' && 'stable' || 'continuous' }}/appdata.xml"
+          
+          if [ ! -f "$REPO_APPDATA" ]; then
+            # Initialize with base structure if doesn't exist
+            cat > "$REPO_APPDATA" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <component type="desktop-application">
+            <releases>
+            </releases>
+          </component>
+          EOF
+          fi
+          
+          # Merge new release into existing history
+          NEW_RELEASE=$(grep -A 4 '<release' temp/flatpak/com.futrnostr.futr.appdata.xml | head -n 5)
+          sed -i "/<releases>/a $NEW_RELEASE" "$REPO_APPDATA"
+          
+          # Add to git
+          git add "$REPO_APPDATA"

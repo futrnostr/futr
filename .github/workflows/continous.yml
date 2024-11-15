@@ -71,10 +71,18 @@ jobs:
       - name: Update appdata.xml
         run: |
           TODAY=$(date +%Y-%m-%d)
-          sed -i "s/<release version=\".*\" date=\".*\">/<release version=\"continuous\" date=\"$TODAY\">/" flatpak/com.futrnostr.futr.appdata.xml
+          APPDATA="flatpak/com.futrnostr.futr.appdata.xml"
+          sed -i "s/<release version=\"continuous\" date=\"[^\"]*\"/<release version=\"continuous\" date=\"$TODAY\"/" "$APPDATA"
 
       - name: Build Flatpak
         run: ./build-flatpak.sh
+
+      - name: Upload appdata.xml
+        uses: actions/upload-artifact@v4
+        with:
+          name: appdata-xml
+          path: flatpak/com.futrnostr.futr.appdata.xml
+          retention-days: 7
 
       - name: Upload Flatpak Bundle
         uses: actions/upload-artifact@v4
