@@ -110,13 +110,13 @@ jobs:
       - name: Create .flatpakrepo files
         run: |
           cd flatpak-repo
-          # Get public key in base64
-          GPG_KEY=$(gpg --export ${{ secrets.GPG_KEY_ID }} | base64 -w 0)
+          # Get public key in raw base64 format (no ASCII armor)
+          GPG_KEY=$(gpg --export --no-armor ${{ secrets.GPG_KEY_ID }} | base64 -w 0)
 
           # Copy and update the repo files
           for TYPE in continuous stable; do
             cp "../futr/flatpak/futr-${TYPE}.flatpakrepo.template" "futr-${TYPE}.flatpakrepo"
-            sed -i "s/GPGKEY_PLACEHOLDER/${GPG_KEY}/g" "futr-${TYPE}.flatpakrepo"
+            sed -i "s|GPGKEY_PLACEHOLDER|${GPG_KEY}|g" "futr-${TYPE}.flatpakrepo"
           done
 
       - name: Commit Repository Updates
