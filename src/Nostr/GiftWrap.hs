@@ -12,15 +12,14 @@ import Effectful.TH (makeEffect)
 import Data.List (sort)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
-import Data.Text (pack)
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Data.Time.Format (defaultTimeLocale, formatTime)
 
 import Logging
 import Nostr
 import Nostr.Event (validateEvent)
 import Nostr.Keys (KeyPair, PubKeyXO, byteStringToHex, keyPairToPubKeyXO)
 import Nostr.Types (Event(..), EventId(..), Kind(..), Rumor(..), Tag(..))
+import Nostr.Util (Util, getCurrentTime)
+import TimeFormatter (Language(..), formatDateTime)
 import Types (AppState(..),ChatMessage(..))
 
 -- | GiftWrap Effects.
@@ -36,9 +35,10 @@ makeEffect ''GiftWrap
 
 -- | Effectful type for GiftWrap.
 type GiftWrapEff es = ( State AppState :> es
+                      , Nostr :> es
+                      , Util :> es
                       , Logging :> es   
                       , IOE :> es
-                      , Nostr :> es
                       )
 
 
@@ -82,13 +82,16 @@ processDecryptedRumor decryptedRumor sealedEvent originalEvent kp
             then sort $ getAllPTags (rumorTags decryptedRumor)
             else filter (/= keyPairToPubKeyXO kp) $ rumorPubKey decryptedRumor : sort (getAllPTags (rumorTags decryptedRumor))
       let senderPubKey = rumorPubKey decryptedRumor
-      let chatMsg = createChatMessage originalEvent decryptedRumor senderPubKey
-      updateChats chatKey chatMsg
+      ct <- getCurrentTime
+      updateChats chatKey $ createChatMessage originalEvent decryptedRumor senderPubKey ct
 
 
 -- | Update chats.
 updateChats :: State AppState :> es => [PubKeyXO] -> ChatMessage -> Eff es ()
-updateChats chatKey chatMsg = do
+updateChats chatKeys chatMsg = do
+  let chatKey = case chatKeys of
+        (k:_) -> k
+        [] -> error "Empty chat key list"
   modify $ \s -> s { chats = mergeMessageIntoChats chatKey chatMsg (chats s) }
 
 
@@ -101,19 +104,19 @@ getAllPTags = mapMaybe extractPubKey
 
 
 -- | Create a chat message.
-createChatMessage :: Event -> Rumor -> PubKeyXO -> ChatMessage
-createChatMessage originalEvent decryptedRumor senderPubKey =
+createChatMessage :: Event -> Rumor -> PubKeyXO -> Int -> ChatMessage
+createChatMessage originalEvent decryptedRumor senderPubKey currentTimestamp =
   ChatMessage
     { chatMessageId = eventId originalEvent
     , chatMessage = rumorContent decryptedRumor
     , author = senderPubKey
     , chatMessageCreatedAt = rumorCreatedAt decryptedRumor
-    , timestamp = pack $ formatTime defaultTimeLocale "%FT%T%QZ" $ posixSecondsToUTCTime $ fromIntegral $ rumorCreatedAt decryptedRumor
+    , timestamp = formatDateTime English currentTimestamp (rumorCreatedAt decryptedRumor)
     }
 
 
 -- | Merge a new chat message into the existing chat map
-mergeMessageIntoChats :: [PubKeyXO] -> ChatMessage -> Map.Map [PubKeyXO] [ChatMessage] -> Map.Map [PubKeyXO] [ChatMessage]
+mergeMessageIntoChats :: PubKeyXO -> ChatMessage -> Map.Map PubKeyXO [ChatMessage] -> Map.Map PubKeyXO [ChatMessage]
 mergeMessageIntoChats chatKey chatMsg = Map.alter (addOrUpdateChatThread chatMsg) chatKey
 
 

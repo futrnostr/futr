@@ -6,7 +6,7 @@ import Control.Exception (SomeException, try)
 import Control.Monad (forM_,void, when)
 import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (find)
+import Data.List (dropWhileEnd, find)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Effectful
@@ -18,6 +18,7 @@ import Effectful.Concurrent.STM ( TChan, TMVar, atomically, newTChanIO, newTQueu
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
+import Network.URI (URI(..), parseURI, uriAuthority, uriPort, uriRegName, uriScheme)
 import Network.WebSockets qualified as WS
 import Wuss qualified as Wuss
 
@@ -73,23 +74,24 @@ runRelayConnection
   -> Eff es a
 runRelayConnection = interpret $ \_ -> \case
     ConnectRelay r -> do
+        let r' = normalizeRelayURI r
         conns <- gets @RelayPoolState activeConnections
-        if Map.member r conns
+        if Map.member r' conns
             then do
-                let connState = connectionState <$> Map.lookup r conns
+                let connState = connectionState <$> Map.lookup r' conns
                 case connState of
                     Just Connected -> do
-                        logDebug $ "Already connected to " <> r
+                        logDebug $ "Already connected to " <> r'
                         return True
                     Just Connecting -> do
-                        logDebug $ "Connection already in progress for " <> r
+                        logDebug $ "Connection already in progress for " <> r'
                         return False
                     Just Disconnected -> do
                         -- Try to reconnect
                         chan <- newTChanIO
-                        connectWithRetry r 5 chan
+                        connectWithRetry r' 5 chan
                     Nothing -> do
-                        logWarning $ "No connection state found for relay: " <> r
+                        logWarning $ "No connection state found for relay: " <> r'
                         return False
             else do
                 chan <- newTChanIO
@@ -105,16 +107,17 @@ runRelayConnection = interpret $ \_ -> \case
                             , pendingAuthId = Nothing
                             }
                 modify @RelayPoolState $ \st ->
-                    st { activeConnections = Map.insert r rd (activeConnections st) }
-                connectWithRetry r 5 chan
+                    st { activeConnections = Map.insert r' rd (activeConnections st) }
+                connectWithRetry r' 5 chan
 
     DisconnectRelay r -> do
+        let r' = normalizeRelayURI r
         st <- get @RelayPoolState
-        case Map.lookup r (activeConnections st) of
+        case Map.lookup r'   (activeConnections st) of
             Just rd -> do
                 void $ atomically $ writeTChan (requestChannel rd) NT.Disconnect
                 modify @RelayPoolState $ \st' ->
-                    st' { activeConnections = Map.delete r (activeConnections st') }
+                    st' { activeConnections = Map.delete r' (activeConnections st') }
             Nothing -> return ()
 
 
@@ -386,3 +389,22 @@ handleAuthRequired relayURI' request = case request of
                 relayURI'
                 (activeConnections st')
             }
+
+
+-- | Normalize a relay URI according to RFC 3986
+normalizeRelayURI :: RelayURI -> RelayURI
+normalizeRelayURI uri = case parseURI (T.unpack uri) of
+    Just uri' -> T.pack $ 
+        (if uriScheme uri' == "wss:" then "wss://" else "ws://") ++
+        maybe "" (\auth -> 
+            -- Remove default ports
+            let hostPort = uriRegName auth ++ 
+                    case uriPort auth of
+                        ":80" | uriScheme uri' == "ws:" -> ""
+                        ":443" | uriScheme uri' == "wss:" -> ""
+                        p -> p
+            in hostPort
+        ) (uriAuthority uri') ++
+        -- Remove trailing slash
+        dropWhileEnd (== '/') (uriPath uri' ++ uriQuery uri' ++ uriFragment uri')
+    Nothing -> uri  -- If parsing fails, return original URI

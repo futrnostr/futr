@@ -34,7 +34,7 @@ initialEffectfulQMLState = EffectfulQMLState Nothing Nothing initialUIRefs Nothi
 
 -- | Initial UI references.
 initialUIRefs :: UIReferences
-initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing
+initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 -- | Define the effects for QML operations.
@@ -67,14 +67,21 @@ runEffectfulQML = interpret $ \_ -> \case
           let combinedUpdates = uiUpdates <> mconcat moreUpdates
 
           refs <- gets uiRefs
+          -- Define update checks and their corresponding refs
+          let updates = [ (profilesChanged, profileObjRef)
+                        , (followsChanged, followsObjRef)
+                        , (postsChanged, postsObjRef)
+                        , (privateMessagesChanged, privateMessagesObjRef)
+                        , (dmRelaysChanged, dmRelaysObjRef)
+                        , (generalRelaysChanged, generalRelaysObjRef)
+                        , (tempRelaysChanged, tempRelaysObjRef)
+                        ]
 
-          when (profilesChanged combinedUpdates) $ forM_ (profileObjRef refs) (liftIO . QML.fireSignal changeKey)
-          when (followsChanged combinedUpdates) $ forM_ (followsObjRef refs) (liftIO . QML.fireSignal changeKey)
-          when (chatsChanged combinedUpdates) $ forM_ (chatObjRef refs) (liftIO . QML.fireSignal changeKey)
-          when (dmRelaysChanged combinedUpdates) $ forM_ (dmRelaysObjRef refs) (liftIO . QML.fireSignal changeKey)
-          when (generalRelaysChanged combinedUpdates) $ forM_ (generalRelaysObjRef refs) (liftIO . QML.fireSignal changeKey)
+          forM_ updates $ \(checkFn, getRef) ->
+            when (checkFn combinedUpdates) $
+              forM_ (getRef refs) (liftIO . QML.fireSignal changeKey)
 
-          threadDelay 100000 -- max 10 UI updates per second
+          threadDelay 200000  -- 0.2 second delay for UI updates
 
         liftIO $ QML.runEngineLoop config
 
@@ -90,7 +97,7 @@ runEffectfulQML = interpret $ \_ -> \case
         st <- get
         case queue st of
           Just q -> do
-            let updates = emptyUpdates { dmRelaysChanged = True, generalRelaysChanged = True }
+            let updates = emptyUpdates { dmRelaysChanged = True, generalRelaysChanged = True, tempRelaysChanged = True }
             atomically $ writeTQueue q updates
           Nothing -> logError "No queue available"
 
