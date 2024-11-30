@@ -158,6 +158,7 @@ data NoteType
 data Post = Post
   { postId :: EventId          -- ID of this post
   , postType :: NoteType       -- Type of post and its references
+  , postCreatedAt :: Int       -- Creation timestamp
   } deriving (Show)
 
 

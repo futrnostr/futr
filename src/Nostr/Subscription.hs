@@ -8,7 +8,7 @@ import Data.ByteString.Lazy (fromStrict)
 import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Ord (comparing)
-import Data.Text (pack, unpack, isInfixOf)
+import Data.Text (pack, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Effectful
 import Effectful.Concurrent
@@ -113,48 +113,26 @@ handleEvent' event' r = do
 
         case kind event' of
             ShortTextNote -> do
-                -- Check for q-tag to identify quote reposts
-                let qTags = [t | t@(QTag _ _ _) <- tags event']
-                case qTags of
-                    (QTag quotedId _ _:_) -> do
-                        -- Verify content contains NIP-21 identifier
-                        let contentText = content event'
-                            hasNIP21 = "nostr:" `isInfixOf` contentText &&
-                                     (any (`isInfixOf` contentText) ["note1", "nevent1", "naddr1"])
-                        
-                        if hasNIP21
-                            then do
-                                let note = Types.Post
-                                        { postId = eventId event'
-                                        , postType = Types.QuoteRepost quotedId
-                                        }
+                let note = Types.Post
+                        { postId = eventId event'
+                        , postType = Types.ShortTextNote
+                        , postCreatedAt = createdAt event'
+                        }
 
-                                modify @AppState $ \st ->
-                                    st { posts = Map.insertWith
-                                            (\new old -> sortBy (comparing (\p -> createdAt . fst . (events st Map.!) . postId $ p)) (new ++ old))
-                                            (pubKey event')
-                                            [note]
-                                            (posts st)
-                                        }
+                -- Check if this post already exists for this pubkey
+                st <- get @AppState
+                let existingPosts = Map.findWithDefault [] (pubKey event') (posts st)
+                    alreadyExists = any (\p -> postId p == eventId event') existingPosts
 
-                                pure $ emptyUpdates { postsChanged = True }
-                            else do
-                                logWarning $ "Quote repost missing required NIP-21 identifier: " <> 
-                                    (byteStringToHex $ getEventId (eventId event'))
-                                pure emptyUpdates
-                    
-                    _ -> do
-                        let note = Types.Post
-                                { postId = eventId event'
-                                , postType = Types.ShortTextNote
-                                }
-
-                        modify @AppState $ \st ->
-                            st { posts = Map.insertWith
-                                    (\new old -> sortBy (comparing (\p -> createdAt . fst . (events st Map.!) . postId $ p)) (new ++ old))
+                if alreadyExists
+                    then pure emptyUpdates
+                    else do
+                        modify @AppState $ \st' ->
+                            st' { posts = Map.insertWith
+                                    (\new old -> sortBy (comparing postCreatedAt) (new ++ old))
                                     (pubKey event')
                                     [note]
-                                    (posts st)
+                                    (posts st')
                                 }
 
                         pure $ emptyUpdates { postsChanged = True }
@@ -179,17 +157,26 @@ handleEvent' event' r = do
                                         let note = Types.Post
                                                 { postId = eventId event'
                                                 , postType = Types.Repost eid
+                                                , postCreatedAt = createdAt event'
                                                 }
 
-                                        modify @AppState $ \st ->
-                                            st { posts = Map.insertWith
-                                                    (\new old -> sortBy (comparing (\p -> createdAt . fst . (events st Map.!) . postId $ p)) (new ++ old))
-                                                    (pubKey event')
-                                                    [note]
-                                                    (posts st)
-                                                }
+                                        -- Check if this post already exists for this pubkey
+                                        st <- get @AppState
+                                        let existingPosts = Map.findWithDefault [] (pubKey event') (posts st)
+                                            alreadyExists = any (\p -> postId p == eventId event') existingPosts
 
-                                        pure $ emptyUpdates { postsChanged = True }
+                                        if alreadyExists
+                                            then pure emptyUpdates
+                                            else do
+                                                modify @AppState $ \st' ->
+                                                    st' { posts = Map.insertWith
+                                                            (\new old -> sortBy (comparing postCreatedAt) (new ++ old))
+                                                            (pubKey event')
+                                                            [note]
+                                                            (posts st')
+                                                        }
+
+                                                pure $ emptyUpdates { postsChanged = True }
                                     else do
                                         logWarning $ "Invalid original event in repost: " <> 
                                             (byteStringToHex $ getEventId (eventId event'))
@@ -204,16 +191,16 @@ handleEvent' event' r = do
 
             EventDeletion -> do
                 let eventIdsToDelete = [eid | ETag eid _ _ <- tags event']
-                
-                modify @AppState $ \st -> st 
+
+                modify @AppState $ \st -> st
                     { events = foldr Map.delete (events st) eventIdsToDelete
                     , posts = Map.map (filter (\p -> postId p `notElem` eventIdsToDelete)) (posts st)
                     , chats = Map.map (filter (\dm -> chatMessageId dm `notElem` eventIdsToDelete)) (chats st)
                     }
 
-                pure $ emptyUpdates 
+                pure $ emptyUpdates
                     { postsChanged = True
-                    , privateMessagesChanged = True 
+                    , privateMessagesChanged = True
                     }
 
             Metadata -> do
