@@ -293,6 +293,7 @@ Rectangle {
                         height: active ? item.height : 0
 
                         sourceComponent: Item {
+                            property var message: modelData
                             height: privateRowLayout.height + 8
 
                             RowLayout {
@@ -300,22 +301,22 @@ Rectangle {
                                 width: parent.width
                                 spacing: Constants.spacing_m
                                 y: Constants.spacing_m
-                                layoutDirection: modelData.isOwnMessage ? Qt.RightToLeft : Qt.LeftToRight
+                                layoutDirection: message ? (message.isOwnMessage ? Qt.RightToLeft : Qt.LeftToRight) : Qt.LeftToRight
 
                                 ProfilePicture {
-                                    imageSource: modelData.isOwnMessage ?
+                                    imageSource: message ? (message.isOwnMessage ?
                                         Util.getProfilePicture(mypicture, mynpub) :
-                                        Util.getProfilePicture(profileData.picture, profileData.npub)
+                                        Util.getProfilePicture(profileData.picture, profileData.npub)) : ""
                                 }
 
                                 Pane {
                                     Layout.fillWidth: true
                                     Layout.maximumWidth: parent.width * 0.7
-                                    Layout.rightMargin: modelData.isOwnMessage ? 0 : Constants.spacing_m
-                                    Layout.leftMargin: modelData.isOwnMessage ? Constants.spacing_m : 0
+                                    Layout.rightMargin: message ? (message.isOwnMessage ? 0 : Constants.spacing_m) : Constants.spacing_m
+                                    Layout.leftMargin: message ? Constants.spacing_m : 0
                                     padding: Constants.spacing_m
                                     background: Rectangle {
-                                        color: modelData.isOwnMessage ? Material.accentColor : Material.dividerColor
+                                        color: message ? (message.isOwnMessage ? Material.accentColor : Material.dividerColor) : Material.dividerColor
                                         radius: 10
                                     }
 
@@ -325,14 +326,14 @@ Rectangle {
 
                                         Text {
                                             Layout.fillWidth: true
-                                            text: modelData.content
+                                            text: message ? message.content : ""
                                             wrapMode: Text.Wrap
                                             color: Material.foreground
                                         }
 
                                         Text {
-                                            Layout.alignment: modelData.isOwnMessage ? Qt.AlignRight : Qt.AlignLeft
-                                            text: modelData.timestamp
+                                            Layout.alignment: message ? (message.isOwnMessage ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
+                                            text: message ? message.timestamp : ""
                                             font: Constants.smallFontMedium
                                             color: Material.secondaryTextColor
                                             opacity: 0.9

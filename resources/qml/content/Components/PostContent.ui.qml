@@ -166,7 +166,7 @@ Pane {
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
         anchors.centerIn: parent
-        width: 300
+        width: 350
 
         ColumnLayout {
             spacing: Constants.spacing_m
