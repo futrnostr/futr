@@ -29,7 +29,7 @@ executable futr
     hs-source-dirs:   src
 
     other-modules:
-        EffectfulQML
+        QtQuick
         Futr
         KeyMgmt
         Logging

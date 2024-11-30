@@ -34,7 +34,7 @@ import Effectful.TH
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import System.Random (randomRIO)
 
-import EffectfulQML
+import QtQuick
 import Logging
 import Nostr
 import Nostr.Bech32
@@ -90,7 +90,7 @@ type KeyMgmtEff es = ( State KeyMgmtState :> es
                      , Nostr :> es
                      , FileSystem :> es
                      , IOE :> es
-                     , EffectfulQML :> es
+                     , QtQuick :> es
                      , Logging :> es )
 
 -- | Key Management Effects.
