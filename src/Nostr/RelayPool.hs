@@ -10,7 +10,7 @@ import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get)
 import Effectful.TH
 
-import EffectfulQML
+import QtQuick
 import KeyMgmt (KeyMgmt)
 import Logging
 import Nostr
@@ -66,7 +66,7 @@ type RelayPoolEff es =
   , Subscription :> es
   , KeyMgmt :> es
   , GiftWrap :> es
-  , EffectfulQML :> es
+  , QtQuick :> es
   , Concurrent :> es
   , Logging :> es
   , Util :> es
