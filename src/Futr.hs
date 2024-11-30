@@ -28,7 +28,9 @@ import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
 import Nostr
 import Nostr.Bech32
-import Nostr.Event (createComment, createFollowList, createQuoteRepost, createRepost, createRumor, createShortTextNote)  
+import Nostr.Event ( createComment, createEventDeletion, createFollowList
+                   , createQuoteRepost, createRepost, createRumor, createShortTextNote
+                   )
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.GiftWrap
 import Nostr.Publisher
@@ -76,6 +78,7 @@ data Futr :: Effect where
   Repost :: EventId -> Futr m ()
   QuoteRepost :: EventId -> Text -> Futr m ()
   Comment :: EventId -> Text -> Futr m ()
+  DeleteEvent :: EventId -> Text -> Futr m ()
 
 
 -- | Dispatch type for Futr effect.
@@ -288,7 +291,7 @@ runFutr = interpret $ \_ -> \case
               Just s -> publishToOutbox s
               Nothing -> logError "Failed to sign quote repost"
 
-  Comment eid comment -> do
+  Comment eid comment' -> do
     st <- get @AppState
     case keyPair st of
       Nothing -> logError "No keypair found"
@@ -298,7 +301,7 @@ runFutr = interpret $ \_ -> \case
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
           Just (event, _) -> do
-            let c = createComment event comment (Right eid) Nothing Nothing (keyPairToPubKeyXO kp) now
+            let c = createComment event comment' (Right eid) Nothing Nothing (keyPairToPubKeyXO kp) now
             signed <- signEvent c kp
             case signed of
               Just s -> do
@@ -318,6 +321,18 @@ runFutr = interpret $ \_ -> \case
                       Nothing -> return ()
                   Nothing -> return ()
               Nothing -> logError "Failed to sign comment"
+
+  DeleteEvent eid reason -> do
+    st <- get @AppState
+    case keyPair st of
+      Nothing -> logError "No keypair found"
+      Just kp -> do
+        now <- getCurrentTime
+        let deletion = createEventDeletion [eid] reason (keyPairToPubKeyXO kp) now
+        signed <- signEvent deletion kp
+        case signed of
+          Just s -> publishToOutbox s
+          Nothing -> logError "Failed to sign event deletion"
 
 
 -- Helper function to fetch an event

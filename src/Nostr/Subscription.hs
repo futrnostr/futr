@@ -5,7 +5,7 @@ import Data.Aeson (eitherDecode)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy (fromStrict)
-import Data.List (nubBy, sortBy)
+import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Ord (comparing)
 import Data.Text (pack, unpack, isInfixOf)
@@ -34,7 +34,6 @@ import Nostr.Types ( Event(..), EventId(..), Filter, Kind(..), Relay(..)
 import Nostr.Types qualified as NT
 import Nostr.Util
 import RelayMgmt
-import TimeFormatter (Language(..), formatDateTime)
 import Types hiding (Repost, ShortTextNote)
 import Types qualified as Types
 
@@ -117,7 +116,7 @@ handleEvent' event' r = do
                 -- Check for q-tag to identify quote reposts
                 let qTags = [t | t@(QTag _ _ _) <- tags event']
                 case qTags of
-                    (QTag quotedId mRelay _:_) -> do
+                    (QTag quotedId _ _:_) -> do
                         -- Verify content contains NIP-21 identifier
                         let contentText = content event'
                             hasNIP21 = "nostr:" `isInfixOf` contentText &&
@@ -144,8 +143,7 @@ handleEvent' event' r = do
                                     (byteStringToHex $ getEventId (eventId event'))
                                 pure emptyUpdates
                     
-                    [] -> do
-                        -- Regular short text note
+                    _ -> do
                         let note = Types.Post
                                 { postId = eventId event'
                                 , postType = Types.ShortTextNote
@@ -205,7 +203,18 @@ handleEvent' event' r = do
                         pure emptyUpdates
 
             EventDeletion -> do
-                pure emptyUpdates
+                let eventIdsToDelete = [eid | ETag eid _ _ <- tags event']
+                
+                modify @AppState $ \st -> st 
+                    { events = foldr Map.delete (events st) eventIdsToDelete
+                    , posts = Map.map (filter (\p -> postId p `notElem` eventIdsToDelete)) (posts st)
+                    , chats = Map.map (filter (\dm -> chatMessageId dm `notElem` eventIdsToDelete)) (chats st)
+                    }
+
+                pure $ emptyUpdates 
+                    { postsChanged = True
+                    , privateMessagesChanged = True 
+                    }
 
             Metadata -> do
                 case eitherDecode (fromStrict $ encodeUtf8 $ content event') of

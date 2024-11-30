@@ -449,7 +449,12 @@ runUI = interpret $ \_ -> \case
         defMethod' "comment" $ \_ eid input -> runE $ do -- NIP-22 comment
           let unquoted = read (unpack eid) :: String
           let eid' = read unquoted :: EventId
-          comment eid' input
+          comment eid' input,
+
+        defMethod' "deleteEvent" $ \_ eid input -> runE $ do -- NIP-09 delete post
+          let unquoted = read (unpack eid) :: String
+          let eid' = read unquoted :: EventId
+          deleteEvent eid' input
       ]
 
     rootObj <- newObject rootClass ()

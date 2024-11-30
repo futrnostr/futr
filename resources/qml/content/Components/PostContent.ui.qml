@@ -134,6 +134,18 @@ Pane {
                 }
             }
 
+            Button {
+                flat: true
+                icon.source: "qrc:/icons/delete.svg"
+                icon.width: 20
+                icon.height: 20
+                implicitWidth: 36
+                implicitHeight: 36
+                padding: 8
+                icon.color: Material.secondaryTextColor
+                onClicked: deleteDialog.open()
+            }
+
             Item { Layout.fillWidth: true }
         }
 
@@ -145,6 +157,38 @@ Pane {
             color: Material.secondaryTextColor
             horizontalAlignment: Text.AlignRight
             Layout.topMargin: Constants.spacing_xs
+        }
+    }
+
+    Dialog {
+        id: deleteDialog
+        title: "Delete Post"
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        anchors.centerIn: parent
+        width: 300
+
+        ColumnLayout {
+            spacing: Constants.spacing_m
+            width: parent.width
+
+            Text {
+                text: "Are you sure you want to delete this post?"
+                color: Material.foreground
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            TextField {
+                id: reasonField
+                placeholderText: "Reason for deletion (optional)"
+                Layout.fillWidth: true
+            }
+        }
+
+        onAccepted: {
+            deleteEvent(post.id, reasonField.text)
+            reasonField.text = "" // Clear the field after use
         }
     }
 }
