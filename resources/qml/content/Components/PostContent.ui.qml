@@ -38,17 +38,19 @@ Pane {
         Rectangle {
             visible: post.postType === "repost" || post.postType === "quote_repost"
             Layout.fillWidth: true
-            color: Qt.rgba(0, 0, 0, 0.1) // Blackish background
+            color: Qt.rgba(0, 0, 0, 0.1)
             radius: 8
             border.width: 1
             border.color: Material.dividerColor
-            height: contentColumn.height + 2 * Constants.spacing_m
+
+            implicitHeight: contentColumn.implicitHeight + 2 * Constants.spacing_m
             
             ColumnLayout {
                 id: contentColumn
-                width: parent.width - 2 * Constants.spacing_m
-                x: Constants.spacing_m
-                y: Constants.spacing_m
+                anchors {
+                    fill: parent
+                    margins: Constants.spacing_m
+                }
                 spacing: Constants.spacing_s
 
                 // Author info row
@@ -143,6 +145,8 @@ Pane {
                 implicitHeight: 36
                 padding: 8
                 icon.color: Material.secondaryTextColor
+                visible: mynpub == npub
+
                 onClicked: deleteDialog.open()
             }
 

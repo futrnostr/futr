@@ -113,13 +113,22 @@ handleEvent' event' r = do
 
         case kind event' of
             ShortTextNote -> do
-                let note = Types.Post
-                        { postId = eventId event'
-                        , postType = Types.ShortTextNote
-                        , postCreatedAt = createdAt event'
-                        }
+                -- Check for q-tag to identify quote reposts
+                let qTags = [t | t@(QTag _ _ _) <- tags event']
+                let note = case qTags of
+                        (QTag quotedId _ _:_) ->
+                            Types.Post
+                                { postId = eventId event'
+                                , postType = Types.QuoteRepost quotedId
+                                , postCreatedAt = createdAt event'
+                                }
+                        _ ->
+                            Types.Post
+                                { postId = eventId event'
+                                , postType = Types.ShortTextNote
+                                , postCreatedAt = createdAt event'
+                                }
 
-                -- Check if this post already exists for this pubkey
                 st <- get @AppState
                 let existingPosts = Map.findWithDefault [] (pubKey event') (posts st)
                     alreadyExists = any (\p -> postId p == eventId event') existingPosts
@@ -149,7 +158,7 @@ handleEvent' event' r = do
                                             st { events = Map.insertWith
                                                     (\_ (oldEvent, oldRelays) -> 
                                                         (oldEvent, maybe oldRelays (:oldRelays) mRelay))
-                                                    (eventId originalEvent)
+                                                    eid
                                                     (originalEvent, maybe [] (:[]) mRelay)
                                                     (events st)
                                                 }

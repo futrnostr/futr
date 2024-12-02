@@ -208,9 +208,12 @@ runUI = interpret $ \_ -> \case
               let notes = Map.findWithDefault [] recipient (posts st)
               case find (\msg -> postId msg == eid) notes of
                 Just msg -> case postType msg of
-                  Repost ref -> runE $ getReferencedContent ref
-                  QuoteRepost ref -> runE $ getReferencedContent ref
-                  Comment{rootScope=ref} -> runE $ getReferencedContent ref
+                  Repost ref -> do
+                    content <- runE $ getReferencedContent ref
+                    return $ Just content
+                  QuoteRepost ref -> do
+                    content <- runE $ getReferencedContent ref
+                    return $ Just content
                   _ -> return Nothing
                 Nothing -> return Nothing,
 
@@ -291,6 +294,10 @@ runUI = interpret $ \_ -> \case
     postsPool <- newFactoryPool (newObject postClass)
 
     chatClass <- newClass [
+        defPropertySigRO' "id" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          return $ pack $ show eid,
+
         defPropertySigRO' "content" changeKey' $ \obj -> do
           st <- runE $ get @AppState
           let eid = fromObjRef obj :: EventId
@@ -432,7 +439,7 @@ runUI = interpret $ \_ -> \case
             let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
             openChat pubKeyXO,
 
-        defMethod' "sendMessage" $ \_ input -> runE $ sendMessage input, -- NIP-17 private direct message
+        defMethod' "sendPrivateMessage" $ \_ input -> runE $ sendPrivateMessage input, -- NIP-17 private direct message
 
         defMethod' "sendShortTextNote" $ \_ input -> runE $ sendShortTextNote input, -- NIP-01 short text note
 

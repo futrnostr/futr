@@ -10,7 +10,6 @@ Pane {
     
     property string placeholderText: qsTr("Type a message...")
     property string buttonText: qsTr("Send")
-    property alias textArea: messageInput
     
     signal messageSent(string text)
     

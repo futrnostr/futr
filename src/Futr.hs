@@ -6,6 +6,7 @@ module Futr where
 
 import Control.Monad (forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
+import Data.List (nub)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
 import Data.Proxy (Proxy(..))
@@ -72,7 +73,7 @@ data Futr :: Effect where
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
   OpenChat :: PubKeyXO -> Futr m ()
-  SendMessage :: Text -> Futr m ()
+  SendPrivateMessage :: Text -> Futr m ()
   SendShortTextNote :: Text -> Futr m ()
   Logout :: ObjRef () -> Futr m ()
   Repost :: EventId -> Futr m ()
@@ -182,13 +183,13 @@ runFutr = interpret $ \_ -> \case
     modify $ \st' -> st' { currentContact = (Just pubKeyXO, Nothing) }
     notify $ emptyUpdates { privateMessagesChanged = True }
 
-  SendMessage input -> do
+  SendPrivateMessage input -> do
     st <- get @AppState
     case (keyPair st, currentContact st) of
       (Just kp, (Just recipient, _)) -> do
         now <- getCurrentTime
         let senderPubKeyXO = keyPairToPubKeyXO kp
-            allRecipients = senderPubKeyXO : recipient : []
+            allRecipients = nub [senderPubKeyXO, recipient]
             rumor = createRumor senderPubKeyXO now (map (\xo -> PTag xo Nothing Nothing) [recipient]) input
 
         giftWraps <- forM allRecipients $ \recipient' -> do
@@ -443,6 +444,7 @@ getPostContent :: FutrEff es => Post -> Eff es (Maybe Text)
 getPostContent post = do
     st <- get @AppState 
     return $ Map.lookup (postId post) (events st) >>= Just . content . fst
+
 
 -- | Get the creation timestamp of a post.
 getPostCreatedAt :: FutrEff es => Post -> Eff es (Maybe Int)

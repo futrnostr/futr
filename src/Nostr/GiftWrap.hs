@@ -9,9 +9,10 @@ import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH (makeEffect)
-import Data.List (sort)
+import Data.List (sort, sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
+import Data.Ord (comparing)
 
 import Logging
 import Nostr
@@ -117,19 +118,15 @@ createChatMessage originalEvent decryptedRumor senderPubKey currentTimestamp =
 
 -- | Merge a new chat message into the existing chat map
 mergeMessageIntoChats :: PubKeyXO -> ChatMessage -> Map.Map PubKeyXO [ChatMessage] -> Map.Map PubKeyXO [ChatMessage]
-mergeMessageIntoChats chatKey chatMsg = Map.alter (addOrUpdateChatThread chatMsg) chatKey
+mergeMessageIntoChats chatKey chatMsg = Map.alter (addMessageIfUnique chatMsg) chatKey
 
 
--- | Add a new message to an existing chat thread or create a new thread
-addOrUpdateChatThread :: ChatMessage -> Maybe [ChatMessage] -> Maybe [ChatMessage]
-addOrUpdateChatThread chatMsg = \case
-  Just msgs -> Just $ insertUniqueMessage chatMsg msgs
-  Nothing -> Just [chatMsg]
-
--- | Insert a message into a list, ensuring no duplicates
-insertUniqueMessage :: ChatMessage -> [ChatMessage] -> [ChatMessage]
-insertUniqueMessage newMsg = foldr insertIfUnique [newMsg]
-  where
-    insertIfUnique msg acc
-      | chatMessageId msg == chatMessageId newMsg = acc
-      | otherwise = msg : acc
+-- | Add a message to a chat thread only if it doesn't already exist
+-- Messages are sorted by creation time, newest last
+addMessageIfUnique :: ChatMessage -> Maybe [ChatMessage] -> Maybe [ChatMessage]
+addMessageIfUnique chatMsg = \case
+    Nothing -> Just [chatMsg]
+    Just msgs ->
+        if any (\msg -> chatMessageId msg == chatMessageId chatMsg) msgs
+            then Just msgs
+            else Just $ sortBy (comparing chatMessageCreatedAt) (chatMsg : msgs)

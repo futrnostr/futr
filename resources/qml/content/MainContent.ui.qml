@@ -26,7 +26,11 @@ Rectangle {
         isQuoteMode: true
 
         onMessageSubmitted: function(text) {
-            quoteRepost(targetPost.id, text)
+            if (targetPost.postType == "repost") {
+                quoteRepost(targetPost.referencedEventId, text)
+            } else {
+                quoteRepost(targetPost.id, text)
+            }
         }
     }
 
@@ -48,7 +52,11 @@ Rectangle {
         MenuItem {
             text: qsTr("Repost")
             onTriggered: {
-                repost(repostMenu.targetPost.id)
+                if (repostMenu.targetPost.postType == "repost") {
+                    repost(repostMenu.targetPost.referencedEventId, text)
+                } else {
+                    repost(repostMenu.targetPost.id, text)
+                }
             }
         }
 
@@ -62,6 +70,7 @@ Rectangle {
     }
 
     ColumnLayout {
+        id: mainContentArea
         anchors.fill: parent
         anchors.margins: Constants.spacing_xs
         spacing: Constants.spacing_m
@@ -369,7 +378,7 @@ Rectangle {
                     placeholderText: qsTr("Type a message...")
                     buttonText: qsTr("Send")
                     onMessageSent: function(text) {
-                        sendMessage(text)
+                        sendPrivateMessage(text)
                     }
                 }
             }
@@ -421,7 +430,7 @@ Rectangle {
         State {
             name: "loading"
             PropertyChanges { target: loadingIndicator; visible: true }
-            PropertyChanges { target: contentArea; opacity: 0.5 }
+            PropertyChanges { target: mainContentArea; opacity: 0.5 }
         },
         State {
             name: "error"
@@ -429,7 +438,7 @@ Rectangle {
         },
         State {
             name: "ready"
-            PropertyChanges { target: contentArea; opacity: 1.0 }
+            PropertyChanges { target: mainContentArea; opacity: 1.0 }
         }
     ]
 
