@@ -136,12 +136,7 @@ runUI = interpret $ \_ -> \case
 
     followPool <- newFactoryPool (newObject followClass)
 
-    postClass <- newClass [
-        defPropertySigRO' "id" changeKey' $ \obj -> do
-          let eid = fromObjRef obj :: EventId
-          return $ pack $ show eid,
-
-        defPropertySigRO' "postType" changeKey' $ \obj -> do
+    let getPostProperty obj extractor = do
           st <- runE $ get @AppState
           let eid = fromObjRef obj :: EventId
           case currentContact st of
@@ -150,146 +145,93 @@ runUI = interpret $ \_ -> \case
               let notes = Map.findWithDefault [] recipient (posts st)
               case find (\msg -> postId msg == eid) notes of
                 Nothing -> return Nothing
-                Just msg -> return $ Just $ pack $ case postType msg of
+                Just msg -> extractor msg
+
+    postClass <- newClass [
+            defPropertySigRO' "id" changeKey' $ \obj -> do
+              let eid = fromObjRef obj :: EventId
+              return $ pack $ show eid,
+
+            defPropertySigRO' "postType" changeKey' $ \obj -> do
+              getPostProperty obj $ \msg ->
+                return $ Just $ pack $ case postType msg of
                   ShortTextNote -> "short_text_note"
                   Repost _ -> "repost"
                   QuoteRepost _ -> "quote_repost"
-                  Comment{rootScope=_} -> "comment",
+                  Comment _ _ _ _ -> "comment",
 
-        defPropertySigRO' "referencedEventId" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
-          let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Nothing, _) -> return Nothing
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              case find (\msg -> postId msg == eid) notes of
-                Just msg -> return $ Just $ pack $ case postType msg of
+            defPropertySigRO' "referencedEventId" changeKey' $ \obj -> do
+              getPostProperty obj $ \msg ->
+                return $ Just $ pack $ case postType msg of
                   Repost ref -> show ref
                   QuoteRepost ref -> show ref
                   Comment{rootScope=ref} -> show ref
-                  _ -> ""
-                Nothing -> return Nothing,
+                  _ -> "",
 
-        defPropertySigRO' "content" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
-          let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              case find (\msg -> postId msg == eid) notes of
-                Just msg -> runE $ getPostContent msg
-                Nothing -> return Nothing
-            _ -> return Nothing,
+            defPropertySigRO' "content" changeKey' $ \obj -> do
+              getPostProperty obj $ \msg ->
+                runE $ getPostContent msg,
 
-        defPropertySigRO' "timestamp" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
-          let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Nothing, _) -> return Nothing
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              case find (\msg -> postId msg == eid) notes of
-                Just msg -> do
-                  ts <- runE $ getPostCreatedAt msg
-                  case ts of
-                    Just ts' -> do
-                      now <- runE getCurrentTime
-                      return $ Just $ formatDateTime English now ts'
-                    Nothing -> return Nothing
-                Nothing -> return Nothing,
-
-        defPropertySigRO' "referencedContent" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
-          let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Nothing, _) -> return Nothing
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              case find (\msg -> postId msg == eid) notes of
-                Just msg -> case postType msg of
-                  Repost ref -> do
-                    content <- runE $ getReferencedContent ref
-                    return $ Just content
-                  QuoteRepost ref -> do
-                    content <- runE $ getReferencedContent ref
-                    return $ Just content
-                  _ -> return Nothing
-                Nothing -> return Nothing,
-
-        defPropertySigRO' "referencedAuthorPubkey" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
-          let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Nothing, _) -> return Nothing
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              case find (\msg -> postId msg == eid) notes of
-                Just msg -> case postType msg of
-                  Repost ref -> do
-                    authorMaybe <- runE $ getReferencedAuthor ref
-                    return $ fmap pubKeyXOToBech32 authorMaybe
-                  QuoteRepost ref -> do
-                    authorMaybe <- runE $ getReferencedAuthor ref
-                    return $ fmap pubKeyXOToBech32 authorMaybe
-                  Comment{rootScope=ref} -> do
-                    authorMaybe <- runE $ getReferencedAuthor ref
-                    return $ fmap pubKeyXOToBech32 authorMaybe
-                  _ -> return Nothing
-                Nothing -> return Nothing,
-
-        defPropertySigRO' "referencedAuthorName" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
-          let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Nothing, _) -> return Nothing
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              case find (\msg -> postId msg == eid) notes of
-                Nothing -> return Nothing
-                Just msg -> case postType msg of
-                  Repost ref -> runE $ getReferencedAuthorName ref
-                  QuoteRepost ref -> runE $ getReferencedAuthorName ref
-                  Comment{rootScope=ref} -> runE $ getReferencedAuthorName ref
-                  _ -> return Nothing,
-
-        defPropertySigRO' "referencedAuthorPicture" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
-          let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Nothing, _) -> return Nothing
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              case find (\msg -> postId msg == eid) notes of
-                Nothing -> return Nothing
-                Just msg -> case postType msg of
-                  Repost ref -> runE $ getReferencedAuthorPicture ref
-                  QuoteRepost ref -> runE $ getReferencedAuthorPicture ref
-                  Comment{rootScope=ref} -> runE $ getReferencedAuthorPicture ref
-                  _ -> return Nothing,
-
-        defPropertySigRO' "referencedCreatedAt" changeKey' $ \obj -> do
-          let getFormattedTime ref = do
-                tsM <- runE $ getReferencedCreatedAt ref
-                case tsM of
-                  Just ts -> do
+            defPropertySigRO' "timestamp" changeKey' $ \obj -> do
+              getPostProperty obj $ \msg -> do
+                ts <- runE $ getPostCreatedAt msg
+                case ts of
+                  Just ts' -> do
                     now <- runE getCurrentTime
-                    return $ Just $ formatDateTime English now ts
-                  Nothing -> return Nothing
-          st <- runE $ get @AppState
-          let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Nothing, _) -> return Nothing
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              case find (\msg -> postId msg == eid) notes of
-                Nothing -> return Nothing
-                Just msg -> case postType msg of
-                  Repost ref -> getFormattedTime ref
-                  QuoteRepost ref -> getFormattedTime ref
-                  Comment{rootScope=ref} -> getFormattedTime ref
-                  _ -> return Nothing
-        ]
+                    return $ Just $ formatDateTime English now ts'
+                  Nothing -> return Nothing,
+
+            defPropertySigRO' "referencedContent" changeKey' $ \obj -> do
+              getPostProperty obj $ \msg -> case postType msg of
+                Repost ref -> do
+                  content <- runE $ getReferencedContent ref
+                  return $ content
+                QuoteRepost ref -> do
+                  content <- runE $ getReferencedContent ref
+                  return $ content
+                _ -> return Nothing,
+
+            defPropertySigRO' "referencedAuthorPubkey" changeKey' $ \obj -> do
+              getPostProperty obj $ \msg -> case postType msg of
+                Repost ref -> do
+                  authorMaybe <- runE $ getReferencedAuthor ref
+                  return $ fmap pubKeyXOToBech32 authorMaybe
+                QuoteRepost ref -> do
+                  authorMaybe <- runE $ getReferencedAuthor ref
+                  return $ fmap pubKeyXOToBech32 authorMaybe
+                Comment{rootScope=ref} -> do
+                  authorMaybe <- runE $ getReferencedAuthor ref
+                  return $ fmap pubKeyXOToBech32 authorMaybe
+                _ -> return Nothing,
+
+            defPropertySigRO' "referencedAuthorName" changeKey' $ \obj -> do
+              getPostProperty obj $ \msg -> case postType msg of
+                Repost ref -> runE $ getReferencedAuthorName ref
+                QuoteRepost ref -> runE $ getReferencedAuthorName ref
+                Comment{rootScope=ref} -> runE $ getReferencedAuthorName ref
+                _ -> return Nothing,
+
+            defPropertySigRO' "referencedAuthorPicture" changeKey' $ \obj -> do
+              getPostProperty obj $ \msg -> case postType msg of
+                Repost ref -> runE $ getReferencedAuthorPicture ref
+                QuoteRepost ref -> runE $ getReferencedAuthorPicture ref
+                Comment{rootScope=ref} -> runE $ getReferencedAuthorPicture ref
+                _ -> return Nothing,
+
+            defPropertySigRO' "referencedCreatedAt" changeKey' $ \obj -> do
+              let getFormattedTime ref = do
+                    tsM <- runE $ getReferencedCreatedAt ref
+                    case tsM of
+                      Just ts -> do
+                        now <- runE getCurrentTime
+                        return $ Just $ formatDateTime English now ts
+                      Nothing -> return Nothing
+              getPostProperty obj $ \msg -> case postType msg of
+                Repost ref -> getFormattedTime ref
+                QuoteRepost ref -> getFormattedTime ref
+                Comment{rootScope=ref} -> getFormattedTime ref
+                _ -> return Nothing
+          ]
 
     postsPool <- newFactoryPool (newObject postClass)
 
