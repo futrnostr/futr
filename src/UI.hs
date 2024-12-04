@@ -25,11 +25,12 @@ import Nostr.Bech32
 import Nostr.Event
 import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types (EventId(..), Profile(..), emptyProfile, getUri)
+import Nostr.Types (EventId(..), Profile(..), getUri)
 import Nostr.Util
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
+import Store.Profile (getProfile)
 import TimeFormatter
 import Types
 
@@ -56,37 +57,37 @@ runUI = interpret $ \_ -> \case
         defPropertySigRO' "name" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          (profile, _) <- runE $ getProfile pk
           return $ name profile,
 
         defPropertySigRO' "displayName" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          (profile, _) <- runE $ getProfile pk
           return $ displayName profile,
 
         defPropertySigRO' "about" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          (profile, _) <- runE $ getProfile pk
           return $ about profile,
 
         defPropertySigRO' "picture" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          (profile, _) <- runE $ getProfile pk
           return $ picture profile,
 
         defPropertySigRO' "nip05" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          (profile, _) <- runE $ getProfile pk
           return $ nip05 profile,
 
         defPropertySigRO' "banner" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          let (profile, _) = Map.findWithDefault (emptyProfile, 0) pk (profiles st)
+          (profile, _) <- runE $ getProfile pk
           return $ banner profile,
 
         defPropertySigRO' "isFollow" changeKey' $ \_ -> do
@@ -103,35 +104,27 @@ runUI = interpret $ \_ -> \case
     let followProp name' accessor = defPropertySigRO' name' changeKey' $ \obj -> do
           let pubKeyXO = fromObjRef obj :: PubKeyXO
           st <- runE $ get @AppState
-          let followList' = follows st
-          let userPubKey = keyPairToPubKeyXO <$> keyPair st
-          let followData = case userPubKey of
+          let followData = case keyPairToPubKeyXO <$> keyPair st of
                 Just upk | upk == pubKeyXO ->
                   Just Follow { pubkey = pubKeyXO, followRelay = Nothing, petName = Nothing }
                 Just upk ->
-                  Map.lookup upk followList' >>= find (\f -> pubkey f == pubKeyXO)
+                  Map.lookup upk (follows st) >>= find (\f -> pubkey f == pubKeyXO)
                 Nothing -> Nothing
-          return $ accessor st followData
+          accessor st followData
 
     followClass <- newClass [
-        followProp "pubkey" $ \_ followMaybe -> maybe "" (pubKeyXOToBech32 . pubkey) followMaybe,
-        followProp "relay" $ \_ followMaybe -> maybe "" (\f -> maybe "" getUri (followRelay f)) followMaybe,
-        followProp "petname" $ \_ followMaybe -> maybe "" (fromMaybe "" . petName) followMaybe,
-        followProp "displayName" $ \st followMaybe -> case followMaybe of
-            Just follow ->
-              let (profile', _) = Map.findWithDefault (emptyProfile, 0) (pubkey follow) (profiles st)
-              in fromMaybe "" (displayName profile')
-            Nothing -> "",
-        followProp "name" $ \st followMaybe -> case followMaybe of
-            Just follow ->
-              let (profile', _) = Map.findWithDefault (emptyProfile, 0) (pubkey follow) (profiles st)
-              in fromMaybe "" (name profile')
-            Nothing -> "",
-        followProp "picture" $ \st followMaybe -> case followMaybe of
-            Just follow ->
-              let (profile', _) = Map.findWithDefault (emptyProfile, 0) (pubkey follow) (profiles st)
-              in fromMaybe "" (picture profile')
-            Nothing -> ""
+        followProp "pubkey" $ \_ -> return . maybe "" (pubKeyXOToBech32 . pubkey),
+        followProp "relay" $ \_ -> return . maybe "" (\f -> maybe "" getUri (followRelay f)),
+        followProp "petname" $ \_ -> return . maybe "" (fromMaybe "" . petName),
+        followProp "displayName" $ \_ -> maybe (return "") (\follow -> do
+            (profile, _) <- runE $ getProfile (pubkey follow)
+            return $ fromMaybe "" (displayName profile)),
+        followProp "name" $ \_ -> maybe (return "") (\follow -> do
+            (profile, _) <- runE $ getProfile (pubkey follow)
+            return $ fromMaybe "" (name profile)),
+        followProp "picture" $ \_ -> maybe (return "") (\follow -> do
+            (profile, _) <- runE $ getProfile (pubkey follow)
+            return $ fromMaybe "" (picture profile))
       ]
 
     followPool <- newFactoryPool (newObject followClass)
@@ -304,18 +297,17 @@ runUI = interpret $ \_ -> \case
 
         defPropertySigRO' "mynpub" changeKey' $ \_ -> do
           st <- runE $ get @AppState
-          case keyPair st of
-            Just kp -> return $ Just $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp
-            Nothing -> return Nothing,
+          return $ case keyPair st of
+            Just kp -> pubKeyXOToBech32 $ keyPairToPubKeyXO kp
+            Nothing -> "",
 
         defPropertySigRO' "mypicture" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           case keyPair st of
             Just kp -> do
-              let p = keyPairToPubKeyXO kp
-              let (profile', _) = Map.findWithDefault (emptyProfile, 0) p (profiles st)
-              return $ picture profile'
-            Nothing -> return Nothing,
+              (profile', _) <- runE $ getProfile $ keyPairToPubKeyXO kp
+              return $ fromMaybe "" $ picture profile'
+            Nothing -> return "",
 
         defSignal "loginStatusChanged" (Proxy :: Proxy LoginStatusChanged),
 

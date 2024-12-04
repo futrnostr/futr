@@ -27,7 +27,6 @@ import Logging
 import Nostr
 import Nostr.Event (createCanonicalAuthentication)
 import Nostr.Keys (keyPairToPubKeyXO)
---import Nostr.Subscription
 import Nostr.Types ( Event(..), RelayURI
                    , Request(..), Response(..), SubscriptionId )
 import Nostr.Types qualified as NT
@@ -177,12 +176,8 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
         st { activeConnections = Map.adjust (\d -> d { connectionState = Connected }) r (activeConnections st) }
     notifyRelayStatus
     updateQueue <- newTQueueIO
-
-    -- Start receive and send loops as async tasks
     receiveThread <- async $ receiveLoop updateQueue
     sendThread <- async $ sendLoop
-
-    -- Wait for either thread to finish
     void $ waitAnyCancel [receiveThread, sendThread]
     modify @RelayPoolState $ \st ->
         st { activeConnections = Map.adjust (\d -> d { connectionState = Disconnected }) r (activeConnections st) }
@@ -394,17 +389,15 @@ handleAuthRequired relayURI' request = case request of
 -- | Normalize a relay URI according to RFC 3986
 normalizeRelayURI :: RelayURI -> RelayURI
 normalizeRelayURI uri = case parseURI (T.unpack uri) of
-    Just uri' -> T.pack $ 
+    Just uri' -> T.pack $
         (if uriScheme uri' == "wss:" then "wss://" else "ws://") ++
-        maybe "" (\auth -> 
-            -- Remove default ports
-            let hostPort = uriRegName auth ++ 
+        maybe "" (\auth ->
+            let hostPort = uriRegName auth ++
                     case uriPort auth of
                         ":80" | uriScheme uri' == "ws:" -> ""
                         ":443" | uriScheme uri' == "wss:" -> ""
                         p -> p
             in hostPort
         ) (uriAuthority uri') ++
-        -- Remove trailing slash
         dropWhileEnd (== '/') (uriPath uri' ++ uriQuery uri' ++ uriFragment uri')
-    Nothing -> uri  -- If parsing fails, return original URI
+    Nothing -> uri
