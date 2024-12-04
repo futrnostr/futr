@@ -17,13 +17,13 @@ import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 
-import EffectfulQML (EffectfulQMLState(..))
+import QtQuick (QtQuickState(..), UIReferences(..))
 import Logging
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.RelayPool
 import Nostr.Types hiding (displayName, picture)
 import Nostr.Util
-import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..), UIReferences(..))
+import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..))
 
 
 data RelayType = DMRelays | InboxRelays | OutboxRelays
@@ -32,7 +32,7 @@ data RelayType = DMRelays | InboxRelays | OutboxRelays
 type RelayMgmgtUIEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
-  , State EffectfulQMLState :> es
+  , State QtQuickState :> es
   , RelayPool :> es
   , Logging :> es
   , Concurrent :> es
@@ -127,7 +127,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
         contextClass <- newClass [
           defPropertySigRO' "dmRelays" changeKey $ \obj -> do
-            runE $ modify @EffectfulQMLState $ \s -> s { 
+            runE $ modify @QtQuickState $ \s -> s { 
               uiRefs = (uiRefs s) { dmRelaysObjRef = Just obj } 
             }
             appState <- runE $ get @AppState
@@ -139,7 +139,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
                 mapM (\(relay, _status) -> getPoolObject dmRelayPool (getUri relay)) relaysWithStatus,
 
           defPropertySigRO' "generalRelays" changeKey $ \obj -> do
-            runE $ modify @EffectfulQMLState $ \s -> s { 
+            runE $ modify @QtQuickState $ \s -> s { 
               uiRefs = (uiRefs s) { generalRelaysObjRef = Just obj } 
             }
             appState <- runE $ get @AppState
@@ -154,7 +154,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
                     mapM (getPoolObject generalRelayPool) rs,
 
           defPropertySigRO' "tempRelays" changeKey $ \obj -> do
-            runE $ modify @EffectfulQMLState $ \s -> s {
+            runE $ modify @QtQuickState $ \s -> s {
               uiRefs = (uiRefs s) { tempRelaysObjRef = Just obj }
             }
             poolState <- runE $ get @RelayPoolState

@@ -4,47 +4,8 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Effectful.Concurrent.STM (TChan, TQueue)
-import Graphics.QML (ObjRef)
-
 import Nostr.Keys (KeyPair, PubKeyXO)
 import Nostr.Types (Event, EventId, Filter, Profile, Relay, RelayURI, Request, SubscriptionId)
-
-
--- | UI updates
-data UIUpdates = UIUpdates
-  { profilesChanged :: Bool
-  , followsChanged :: Bool
-  , postsChanged :: Bool
-  , privateMessagesChanged :: Bool
-  , dmRelaysChanged :: Bool
-  , generalRelaysChanged :: Bool
-  , tempRelaysChanged :: Bool
-  , publishStatusChanged :: Bool
-  , noticesChanged :: Bool
-  } deriving (Eq, Show)
-
-
-instance Semigroup UIUpdates where
-  a <> b = UIUpdates
-    { profilesChanged = profilesChanged a || profilesChanged b
-    , followsChanged = followsChanged a || followsChanged b
-    , postsChanged = postsChanged a || postsChanged b
-    , privateMessagesChanged = privateMessagesChanged a || privateMessagesChanged b
-    , dmRelaysChanged = dmRelaysChanged a || dmRelaysChanged b
-    , generalRelaysChanged = generalRelaysChanged a || generalRelaysChanged b
-    , tempRelaysChanged = tempRelaysChanged a || tempRelaysChanged b
-    , publishStatusChanged = publishStatusChanged a || publishStatusChanged b
-    , noticesChanged = noticesChanged a || noticesChanged b
-    }
-
-
-instance Monoid UIUpdates where
-  mempty = emptyUpdates
-
-
--- | Empty UI updates.
-emptyUpdates :: UIUpdates
-emptyUpdates = UIUpdates False False False False False False False False False
 
 
 -- | Status of a publish operation
@@ -166,8 +127,6 @@ data Post = Post
 data AppState = AppState
   { keyPair :: Maybe KeyPair
   , currentScreen :: AppScreen
-  -- Relay management
-  , activeConnectionsCount :: Int
   -- Data storage
   , posts :: Map PubKeyXO [Post]
   , events :: Map EventId (Event, [RelayURI])
@@ -177,17 +136,6 @@ data AppState = AppState
   -- UI state
   , currentContact :: (Maybe PubKeyXO, Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
-  }
-
--- | UI object references grouped together
-data UIReferences = UIReferences
-  { profileObjRef :: Maybe (ObjRef ())
-  , followsObjRef :: Maybe (ObjRef ())
-  , postsObjRef :: Maybe (ObjRef ())
-  , privateMessagesObjRef :: Maybe (ObjRef ())
-  , dmRelaysObjRef :: Maybe (ObjRef ())
-  , generalRelaysObjRef :: Maybe (ObjRef ())
-  , tempRelaysObjRef :: Maybe (ObjRef ())
   }
 
 
@@ -204,7 +152,6 @@ initialState :: AppState
 initialState = AppState
   { keyPair = Nothing
   , currentScreen = KeyMgmt
-  , activeConnectionsCount = 0
   , events = Map.empty
   , posts = Map.empty
   , chats = Map.empty

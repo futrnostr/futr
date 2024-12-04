@@ -9,7 +9,7 @@ import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
 
-import EffectfulQML
+import QtQuick
 import KeyMgmt (AccountId(..), KeyMgmt, updateRelays)
 import Logging
 import Nostr
@@ -49,7 +49,7 @@ type RelayMgmtEff es =
   , Publisher :> es
   , KeyMgmt :> es
   , Logging :> es
-  , EffectfulQML :> es
+  , QtQuick :> es
   , Util :> es
   )
 

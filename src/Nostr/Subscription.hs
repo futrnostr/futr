@@ -21,7 +21,7 @@ import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
 import System.Random (randomIO)
 
 
-import EffectfulQML
+import QtQuick
 import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
@@ -61,7 +61,7 @@ type SubscriptionEff es =
   , Util :> es
   , Logging :> es
   , Concurrent :> es
-  , EffectfulQML :> es
+  , QtQuick :> es
   , IOE :> es
   )
 

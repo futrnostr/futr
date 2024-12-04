@@ -2,7 +2,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module EffectfulQML where
+module QtQuick where
 
 import Control.Monad (forever, forM_, void, when)
 import Effectful
@@ -15,11 +15,11 @@ import Effectful.TH
 import Graphics.QML qualified as QML
 
 import Logging
-import Types (AppState(..), UIReferences(..), UIUpdates(..), emptyUpdates)
+import Types (AppState(..))
 
 
 -- | Effectful QML state.
-data EffectfulQMLState = EffectfulQMLState
+data QtQuickState = QtQuickState
   { signalKey :: Maybe (QML.SignalKey (IO ()))
   , rootObjRef :: Maybe (QML.ObjRef ())
   , uiRefs :: UIReferences
@@ -27,9 +27,59 @@ data EffectfulQMLState = EffectfulQMLState
   }
 
 
+-- | UI object references grouped together
+data UIReferences = UIReferences
+  { profileObjRef :: Maybe (QML.ObjRef ())
+  , followsObjRef :: Maybe (QML.ObjRef ())
+  , postsObjRef :: Maybe (QML.ObjRef ())
+  , privateMessagesObjRef :: Maybe (QML.ObjRef ())
+  , dmRelaysObjRef :: Maybe (QML.ObjRef ())
+  , generalRelaysObjRef :: Maybe (QML.ObjRef ())
+  , tempRelaysObjRef :: Maybe (QML.ObjRef ())
+  }
+
+
+
+-- | UI updates
+data UIUpdates = UIUpdates
+  { profilesChanged :: Bool
+  , followsChanged :: Bool
+  , postsChanged :: Bool
+  , privateMessagesChanged :: Bool
+  , dmRelaysChanged :: Bool
+  , generalRelaysChanged :: Bool
+  , tempRelaysChanged :: Bool
+  , publishStatusChanged :: Bool
+  , noticesChanged :: Bool
+  } deriving (Eq, Show)
+
+
+instance Semigroup UIUpdates where
+  a <> b = UIUpdates
+    { profilesChanged = profilesChanged a || profilesChanged b
+    , followsChanged = followsChanged a || followsChanged b
+    , postsChanged = postsChanged a || postsChanged b
+    , privateMessagesChanged = privateMessagesChanged a || privateMessagesChanged b
+    , dmRelaysChanged = dmRelaysChanged a || dmRelaysChanged b
+    , generalRelaysChanged = generalRelaysChanged a || generalRelaysChanged b
+    , tempRelaysChanged = tempRelaysChanged a || tempRelaysChanged b
+    , publishStatusChanged = publishStatusChanged a || publishStatusChanged b
+    , noticesChanged = noticesChanged a || noticesChanged b
+    }
+
+
+instance Monoid UIUpdates where
+  mempty = emptyUpdates
+
+
+-- | Empty UI updates.
+emptyUpdates :: UIUpdates
+emptyUpdates = UIUpdates False False False False False False False False False
+
+
 -- | Initial effectful QML state.
-initialEffectfulQMLState :: EffectfulQMLState
-initialEffectfulQMLState = EffectfulQMLState Nothing Nothing initialUIRefs Nothing
+initialQtQuickState :: QtQuickState
+initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs Nothing
 
 
 -- | Initial UI references.
@@ -38,29 +88,29 @@ initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Not
 
 
 -- | Define the effects for QML operations.
-data EffectfulQML :: Effect where
-  RunEngineLoop :: QML.EngineConfig -> QML.SignalKey (IO ()) -> QML.ObjRef () -> EffectfulQML m ()
-  CreateSignalKey :: EffectfulQML m (QML.SignalKey (IO ()))
-  FireSignal :: QML.ObjRef () -> EffectfulQML m ()
+data QtQuick :: Effect where
+  RunEngineLoop :: QML.EngineConfig -> QML.SignalKey (IO ()) -> QML.ObjRef () -> QtQuick m ()
+  CreateSignalKey :: QtQuick m (QML.SignalKey (IO ()))
+  FireSignal :: QML.ObjRef () -> QtQuick m ()
   -- object specific signals
-  Notify :: UIUpdates -> EffectfulQML m ()
-  NotifyRelayStatus :: EffectfulQML m ()
+  Notify :: UIUpdates -> QtQuick m ()
+  NotifyRelayStatus :: QtQuick m ()
 
 
-type instance DispatchOf EffectfulQML = Dynamic
+type instance DispatchOf QtQuick = Dynamic
 
-makeEffect ''EffectfulQML
+makeEffect ''QtQuick
 
 
 -- | Handler for the QML effects.
-runEffectfulQML
-  :: (IOE :> es, Concurrent :> es, Logging :> es, State EffectfulQMLState :> es, State AppState :> es)
-  => Eff (EffectfulQML : es) a
+runQtQuick
+  :: (IOE :> es, Concurrent :> es, Logging :> es, State QtQuickState :> es, State AppState :> es)
+  => Eff (QtQuick : es) a
   -> Eff es a
-runEffectfulQML = interpret $ \_ -> \case
+runQtQuick = interpret $ \_ -> \case
     RunEngineLoop config changeKey ctx -> do
         q <- newTQueueIO
-        put $ EffectfulQMLState (Just changeKey) (Just ctx) initialUIRefs (Just q)
+        put $ QtQuickState (Just changeKey) (Just ctx) initialUIRefs (Just q)
         void $ async $ forever $ do
           uiUpdates <- atomically $ readTQueue q
           moreUpdates <- atomically $ flushTQueue q

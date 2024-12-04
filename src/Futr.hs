@@ -20,7 +20,7 @@ import Effectful.Concurrent.STM (atomically, readTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
-import EffectfulQML
+import QtQuick
 import GHC.Generics (Generic)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
@@ -100,9 +100,9 @@ type FutrEff es = ( State AppState :> es
                   , Publisher :> es
                   , State KeyMgmtState :> es
                   , State RelayPoolState :> es
-                  , State EffectfulQMLState :> es
+                  , State QtQuickState :> es
                   , GiftWrap :> es
-                  , EffectfulQML :> es
+                  , QtQuick :> es
                   , Logging :> es
                   , IOE :> es
                   , Concurrent :> es

@@ -22,7 +22,7 @@ import Network.URI (URI(..), parseURI, uriAuthority, uriPort, uriRegName, uriSch
 import Network.WebSockets qualified as WS
 import Wuss qualified as Wuss
 
-import EffectfulQML
+import QtQuick
 import Logging
 import Nostr
 import Nostr.Event (createCanonicalAuthentication)
@@ -34,7 +34,7 @@ import Nostr.Types qualified as NT
 import Nostr.Util
 import Types ( AppState(..), ConnectionError(..), ConnectionState(..)
              , RelayPoolState(..), RelayData(..)
-             , SubscriptionDetails(..), SubscriptionEvent(..), UIUpdates(..), emptyUpdates )
+             , SubscriptionDetails(..), SubscriptionEvent(..))
 
 
 -- | Reason for disconnecting from a relay.
@@ -59,7 +59,7 @@ type RelayConnectionEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
   , Nostr :> es
-  , EffectfulQML :> es
+  , QtQuick :> es
   , Concurrent :> es
   , Logging :> es
   , Util :> es

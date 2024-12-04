@@ -16,7 +16,7 @@ import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (get, modify)
 import Effectful.TH
-import EffectfulQML
+import QtQuick
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Text.Read (readMaybe)
 
@@ -286,7 +286,7 @@ runUI = interpret $ \_ -> \case
 
         defPropertyConst' "currentProfile" (\_ -> do
           profileObj <- newObject profileClass ()
-          runE $ modify @EffectfulQMLState $ \st -> st { uiRefs = (uiRefs st) { profileObjRef = Just profileObj } }
+          runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { profileObjRef = Just profileObj } }
           return profileObj
         ),
 
@@ -354,7 +354,7 @@ runUI = interpret $ \_ -> \case
             Nothing -> return [],
 
         defPropertySigRO' "posts" changeKey' $ \obj -> do
-          runE $ modify @EffectfulQMLState $ \s -> s { uiRefs = (uiRefs s) { postsObjRef = Just obj } }
+          runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { postsObjRef = Just obj } }
           st <- runE $ get @AppState
           case currentContact st of
             (Just recipient, _) -> do
@@ -364,7 +364,7 @@ runUI = interpret $ \_ -> \case
             _ -> do return [],
 
         defPropertySigRO' "privateMessages" changeKey' $ \obj -> do
-          runE $ modify @EffectfulQMLState $ \s -> s { uiRefs = (uiRefs s) { privateMessagesObjRef = Just obj } }
+          runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { privateMessagesObjRef = Just obj } }
           st <- runE $ get @AppState
           case currentContact st of
             (Just recipient, _) -> do
