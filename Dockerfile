@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     qtdeclarative5-dev \
     libqt5quick5 \
+    librocksdb-dev \
     qt5-image-formats-plugins \
     qttools5-dev-tools \
     qtbase5-dev \

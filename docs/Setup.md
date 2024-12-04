@@ -46,7 +46,7 @@ You might need to adjust the package names for your distro.
 You can grab GHCUp from the [GHCUp website](https://www.haskell.org/ghcup/).
 
 ```bash
-sudo apt-get install build-essential zlib1g-dev
+sudo apt-get install build-essential zlib1g-dev librocksdb-dev
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
 ghcup install ghc 9.6.6
 ghcup install cabal 3.10.3.0

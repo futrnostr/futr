@@ -32,6 +32,7 @@ import Nostr.Bech32
 import Nostr.Event ( createComment, createEventDeletion, createFollowList
                    , createQuoteRepost, createRepost, createRumor, createShortTextNote
                    )
+import Nostr.EventStore (EventStore, initEventDB)
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.GiftWrap
 import Nostr.Publisher
@@ -91,6 +92,7 @@ makeEffect ''Futr
 
 -- | Effectful type for Futr.
 type FutrEff es = ( State AppState :> es
+                  , EventStore :> es
                   , KeyMgmt :> es
                   , KeyMgmtUI :> es
                   , RelayMgmtUI :> es
@@ -116,7 +118,9 @@ runFutr = interpret $ \_ -> \case
   Login obj input -> do
       kst <- get @KeyMgmtState
       case Map.lookup (AccountId input) (accountMap kst) of
-        Just a -> loginWithAccount obj a
+        Just a -> do
+          loginWithAccount obj a
+          initEventDB (accountPubKeyXO a)
         Nothing -> liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Account not found"
 
   Search _ input -> do
@@ -221,6 +225,9 @@ runFutr = interpret $ \_ -> \case
       modify @AppState $ \st -> st
         { keyPair = Nothing
         , currentScreen = KeyMgmt
+        , eventDb = Nothing
+        , profileDb = Nothing
+        , appDb = Nothing
         , follows = Map.empty
         , profiles = Map.empty
         }

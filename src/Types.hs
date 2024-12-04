@@ -3,6 +3,7 @@ module Types where
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
+import Database.RocksDB
 import Effectful.Concurrent.STM (TChan, TQueue)
 import Nostr.Keys (KeyPair, PubKeyXO)
 import Nostr.Types (Event, EventId, Filter, Profile, Relay, RelayURI, Request, SubscriptionId)
@@ -126,7 +127,10 @@ data Post = Post
 -- | Application state.
 data AppState = AppState
   { keyPair :: Maybe KeyPair
-  , currentScreen :: AppScreen
+  , currentScreen :: AppScreen -- @todo remove maybe?
+  , eventDb :: Maybe DB
+  , profileDb :: Maybe DB
+  , appDb :: Maybe DB
   -- Data storage
   , posts :: Map PubKeyXO [Post]
   , events :: Map EventId (Event, [RelayURI])
@@ -152,6 +156,9 @@ initialState :: AppState
 initialState = AppState
   { keyPair = Nothing
   , currentScreen = KeyMgmt
+  , eventDb = Nothing
+  , profileDb = Nothing
+  , appDb = Nothing
   , events = Map.empty
   , posts = Map.empty
   , chats = Map.empty
