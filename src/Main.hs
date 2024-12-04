@@ -22,7 +22,10 @@ import Presentation.KeyMgmtUI (runKeyMgmtUI)
 import Presentation.RelayMgmtUI (runRelayMgmtUI)
 import RelayMgmt (runRelayMgmt)
 import UI qualified as UI
-import Types
+import Store.Event (runEventStore)
+import Store.Profile (runProfileStore)
+import Types (AppState(..), RelayPoolState(..))
+import Types qualified as Types
 
 -- | Main function for the app.
 main :: IO ()
@@ -48,6 +51,8 @@ main = do
         . runFileSystem
         . runUtil
         -- nostr related
+        . runEventStore
+        . runProfileStore
         . runNostr
         . runKeyMgmt
         . runGiftWrap

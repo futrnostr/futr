@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Futr where
 
@@ -11,19 +12,31 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
-import Data.Text (Text, isPrefixOf, pack)
+import Data.Text (Text, isPrefixOf, pack, unpack)
 import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (atomically, readTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Exception (SomeException, try)
+import Effectful.FileSystem
+  ( FileSystem,
+    XdgDirectory (XdgData),
+    createDirectoryIfMissing,
+    getXdgDirectory
+  )
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
+import Lmdb.Connection (closeEnvironment, withCursor, withTransaction)
+import Lmdb.Map qualified as LMap
+import Lmdb.Types (KeyValue(..))
 import QtQuick
 import GHC.Generics (Generic)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
+import Pipes.Prelude qualified as Pipes
+import System.FilePath ((</>))
 
 import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
@@ -35,6 +48,7 @@ import Nostr.Event ( createComment, createEventDeletion, createFollowList
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.GiftWrap
 import Nostr.Publisher
+import Nostr.RelayConnection (RelayConnection)
 import Nostr.RelayPool
 import Nostr.Subscription
 import Nostr.Types ( Event(..), EventId, Profile(..), Relay(..), RelayURI, Tag(..)
@@ -42,6 +56,10 @@ import Nostr.Types ( Event(..), EventId, Profile(..), Relay(..), RelayURI, Tag(.
 import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
+import RelayMgmt (RelayMgmt)
+import Store.LMDB (initializeEnv)
+import Store.Event (EventStore, getEvent, initEventDb)
+import Store.Profile (ProfileStore, getProfile, initProfileDb)
 import Types hiding (Comment, QuoteRepost, Repost)
 
 -- | Signal key class for LoginStatusChanged.
@@ -91,10 +109,14 @@ makeEffect ''Futr
 
 -- | Effectful type for Futr.
 type FutrEff es = ( State AppState :> es
+                  , EventStore :> es
+                  , ProfileStore :> es
                   , KeyMgmt :> es
                   , KeyMgmtUI :> es
                   , RelayMgmtUI :> es
                   , Nostr :> es
+                  , RelayConnection :> es
+                  , RelayMgmt :> es
                   , RelayPool :> es
                   , Subscription :> es
                   , Publisher :> es
@@ -105,6 +127,7 @@ type FutrEff es = ( State AppState :> es
                   , QtQuick :> es
                   , Logging :> es
                   , IOE :> es
+                  , FileSystem :> es
                   , Concurrent :> es
                   , Util :> es
                   )
@@ -116,8 +139,44 @@ runFutr = interpret $ \_ -> \case
   Login obj input -> do
       kst <- get @KeyMgmtState
       case Map.lookup (AccountId input) (accountMap kst) of
-        Just a -> loginWithAccount obj a
-        Nothing -> liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Account not found"
+        Just a -> do
+          logInfo $ "Starting login for account: " <> pack (show $ accountPubKeyXO a)
+          let pk = accountPubKeyXO a
+
+          dbResult <- try @SomeException $ do
+              baseDir <- getXdgDirectory XdgData ("futrnostr" </> unpack (pubKeyXOToBech32 pk))
+              let lmdbDir = baseDir </> "db"
+              createDirectoryIfMissing True lmdbDir
+              env <- liftIO $ initializeEnv lmdbDir
+              (eventsDb, profilesDb) <- liftIO $ withTransaction env $ \txn -> do
+                  events <- initEventDb txn
+                  profiles <- initProfileDb txn
+                  pure (events, profiles)
+              modify @AppState $ \st -> st {
+                  lmdbEnv = Just env,
+                  eventDb = Just eventsDb,
+                  profileDb = Just profilesDb
+              }
+
+              -- Load existing events from database asynchronously
+              withEffToIO (ConcUnlift Persistent Unlimited) $ \runE ->
+                liftIO $ withTransaction env $ \txn -> do
+                  withCursor txn eventsDb $ \cur -> do
+                    events <- Pipes.toListM (LMap.firstForward cur)
+                    runE $ do
+                        logInfo $ "Reading " <> pack (show (length events)) <> " events from local storage"
+                        void $ async $ do
+                          forM_ events $ \kv -> do
+                            let firstRelay = maybe "local" id $ Set.lookupMin $ relays $ keyValueValue kv
+                            handleEvent' (event $ keyValueValue kv) firstRelay True
+
+          case dbResult of
+            Left e -> do
+              logError $ "Database initialization failed: " <> pack (show e)
+              liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Database initialization failed"
+              return ()
+            Right _ -> do
+              loginWithAccount obj a
 
   Search _ input -> do
     st <- get @AppState
@@ -218,13 +277,23 @@ runFutr = interpret $ \_ -> \case
       Nothing -> logError "Failed to sign short text note"
 
   Logout obj -> do
+      -- Close LMDB environment if it exists
+      st <- get @AppState
+      case lmdbEnv st of
+        Just env -> liftIO $ closeEnvironment env
+        Nothing -> return ()
+
+      -- Reset application state
       modify @AppState $ \st -> st
         { keyPair = Nothing
         , currentScreen = KeyMgmt
+        , lmdbEnv = Nothing
+        , eventDb = Nothing
+        , profileDb = Nothing
         , follows = Map.empty
-        , profiles = Map.empty
         }
 
+      -- Close relay connections
       conns <- gets @RelayPoolState activeConnections
       mapM_ disconnect (Map.keys conns)
 
@@ -242,32 +311,27 @@ runFutr = interpret $ \_ -> \case
       Nothing -> logError "No keypair found"
       Just kp -> do
         now <- getCurrentTime
-        mEvent <- fetchEvent eid
+        mEvent <- getEvent eid
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just (_, []) -> do
-            logError "Failed to fetch event: no relays"
-          Just (event, r:_) -> do
-            let e = createRepost event r (keyPairToPubKeyXO kp) now
+          Just EventWithRelays{event, relays} -> do
+            let e = createRepost event (Set.findMin relays) (keyPairToPubKeyXO kp) now
             signed <- signEvent e kp
             case signed of
               Just s -> do
                 publishToOutbox s
-                case Map.lookup eid (events st) of
-                  Just (origEvent, relays) -> do
-                    genRelays <- gets @RelayPoolState generalRelays
-                    let outboxUris = Set.fromList $ map getUri $ 
-                          filter isOutboxCapable $ concatMap fst $ Map.elems genRelays
+                mEventAndRelays <- getEvent eid
+                case mEventAndRelays of
+                  Just EventWithRelays{event = origEvent, relays = relaySet} -> do
+                    let eventRelayUris = Set.fromList $ map getUri $
+                          catMaybes [Just r | RelayTag r <- tags origEvent]
 
-                    let eventRelayUris = Set.fromList relays
-                    rps <- gets @RelayPoolState generalRelays
-                    let authorInboxUris = case Map.lookup (pubKey origEvent) rps of
-                          Just (authorRelays, _) -> 
-                            Set.fromList $ map getUri $ filter isInboxCapable authorRelays
-                          Nothing -> Set.empty
+                    authorRelays <- gets @RelayPoolState $ \st' ->
+                      maybe [] (filter isInboxCapable . fst) $
+                      Map.lookup (pubKey origEvent) (generalRelays st')
 
-                    let targetUris = (eventRelayUris `Set.union` authorInboxUris) 
-                                    `Set.difference` outboxUris
+                    let authorInboxUris = Set.fromList $ map getUri authorRelays
+                        targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
                     forM_ (Set.toList targetUris) $ \relay ->
                       publishToRelay s relay
@@ -280,13 +344,13 @@ runFutr = interpret $ \_ -> \case
       Nothing -> logError "No keypair found"
       Just kp -> do
         now <- getCurrentTime
-        mEvent <- fetchEvent eid
+        mEvent <- getEvent eid
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just (_, []) -> do
+          Just EventWithRelays{relays} | Set.null relays -> do
             logError "Failed to fetch event: no relays"
-          Just (event, r:_) -> do
-            let q = createQuoteRepost event r quote (keyPairToPubKeyXO kp) now
+          Just EventWithRelays{event, relays} -> do
+            let q = createQuoteRepost event (Set.findMin relays) quote (keyPairToPubKeyXO kp) now
             signed <- signEvent q kp
             case signed of
               Just s -> publishToOutbox s
@@ -298,28 +362,30 @@ runFutr = interpret $ \_ -> \case
       Nothing -> logError "No keypair found"
       Just kp -> do
         now <- getCurrentTime
-        mEvent <- fetchEvent eid
+        mEvent <- getEvent eid
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just (event, _) -> do
+          Just EventWithRelays{event, relays} -> do
             let c = createComment event comment' (Right eid) Nothing Nothing (keyPairToPubKeyXO kp) now
             signed <- signEvent c kp
             case signed of
               Just s -> do
                 publishToOutbox s
-                -- Publish to relays where the original event was seen
-                case Map.lookup eid (events st) of
-                  Just (origEvent, relays) -> do
-                    -- Publish to all relays where we saw the original event
-                    forM_ relays $ \relay -> publishToRelay s relay
-                    -- Also publish to inbox relays of the original author
-                    let authorPk = pubKey origEvent
-                    rps <- gets @RelayPoolState generalRelays
-                    case Map.lookup authorPk rps of
-                      Just (authorRelays, _) -> 
-                        forM_ (filter isInboxCapable authorRelays) $ \relay ->
-                          publishToRelay s (getUri relay)
-                      Nothing -> return ()
+                mEventAndRelays <- getEvent eid
+                case mEventAndRelays of
+                  Just EventWithRelays{event = origEvent, relays = relaySet} -> do
+                    let eventRelayUris = Set.fromList $ map getUri $
+                          catMaybes [Just r | RelayTag r <- tags origEvent]
+
+                    authorRelays <- gets @RelayPoolState $ \st' ->
+                      maybe [] (filter isInboxCapable . fst) $
+                      Map.lookup (pubKey origEvent) (generalRelays st')
+
+                    let authorInboxUris = Set.fromList $ map getUri authorRelays
+                        targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
+
+                    forM_ (Set.toList targetUris) $ \relay ->
+                      publishToRelay s relay
                   Nothing -> return ()
               Nothing -> logError "Failed to sign comment"
 
@@ -335,12 +401,6 @@ runFutr = interpret $ \_ -> \case
           Just s -> publishToOutbox s
           Nothing -> logError "Failed to sign event deletion"
 
-
--- Helper function to fetch an event
-fetchEvent :: EventId -> FutrEff es => Eff es (Maybe (Event, [RelayURI]))
-fetchEvent eid = do
-  es <- gets @AppState events
-  return $ Map.lookup eid es
 
 -- Helper function to parse nprofile or npub
 parseNprofileOrNpub :: Text -> Maybe (PubKeyXO, Maybe RelayURI)
@@ -442,57 +502,58 @@ isInboxCapable _ = False
 -- | Get the content of a post.
 getPostContent :: FutrEff es => Post -> Eff es (Maybe Text)
 getPostContent post = do
-    st <- get @AppState 
-    return $ Map.lookup (postId post) (events st) >>= Just . content . fst
+    mEvent <- getEvent (postId post)
+    return $ fmap (content . event) mEvent
 
 
 -- | Get the creation timestamp of a post.
 getPostCreatedAt :: FutrEff es => Post -> Eff es (Maybe Int)
 getPostCreatedAt post = do
-    st <- get @AppState
-    return $ Map.lookup (postId post) (events st) >>= Just . createdAt . fst
+    mEvent <- getEvent (postId post)
+    return $ fmap (createdAt . event) mEvent
 
 
 -- | Get the content of a referenced post.
 getReferencedContent :: FutrEff es => EventId -> Eff es (Maybe Text)
 getReferencedContent eid = do
-    st <- get @AppState
-    return $ Map.lookup eid (events st) >>= Just . content . fst
+    mEvent <- getEvent eid
+    return $ fmap (content . event) mEvent
+
 
 -- | Get the author of a referenced post.
 getReferencedAuthor :: FutrEff es => EventId -> Eff es (Maybe PubKeyXO)
 getReferencedAuthor eid = do
-    st <- get @AppState
-    return $ Map.lookup eid (events st) >>= Just . pubKey . fst
+    mEvent <- getEvent eid
+    return $ fmap (pubKey . event) mEvent
 
 
 -- | Get the author name of a referenced post.
 getReferencedAuthorName :: FutrEff es => EventId -> Eff es (Maybe Text)
 getReferencedAuthorName eid = do
-    st <- get @AppState
-    case Map.lookup eid (events st) of
+    mEvent <- getEvent eid
+    case mEvent of
         Nothing -> return Nothing
-        Just (event, _) -> do
+        Just EventWithRelays{event} -> do
             let authorPubKey = pubKey event
-                authorProfile = Map.lookup authorPubKey (profiles st)
-            return $ case authorProfile of
-                Just profileData -> Just $ fromMaybe 
-                    (fromMaybe (pubKeyXOToBech32 authorPubKey) (name $ fst profileData))
-                    (displayName $ fst profileData)
-                Nothing -> Just $ pubKeyXOToBech32 authorPubKey
+            (profile, _) <- getProfile authorPubKey
+            return $ Just $ fromMaybe
+                (fromMaybe (pubKeyXOToBech32 authorPubKey) (name profile))
+                (displayName profile)
+
 
 -- | Get the author picture of a referenced post.
 getReferencedAuthorPicture :: FutrEff es => EventId -> Eff es (Maybe Text)
 getReferencedAuthorPicture eid = do
-    st <- get @AppState
-    case Map.lookup eid (events st) of
+    mEvent <- getEvent eid
+    case mEvent of
         Nothing -> return Nothing
-        Just (event, _) -> do
-            let authorPubKey = pubKey event
-            return $ Map.lookup authorPubKey (profiles st) >>= picture . fst
+        Just EventWithRelays{event} -> do
+            (profile, _) <- getProfile (pubKey event)
+            return $ picture profile
+
 
 -- | Get the creation timestamp of a referenced post.
 getReferencedCreatedAt :: FutrEff es => EventId -> Eff es (Maybe Int)
 getReferencedCreatedAt eid = do
-    st <- get @AppState
-    return $ Map.lookup eid (events st) >>= Just . createdAt . fst
+    mEvent <- getEvent eid
+    return $ fmap (createdAt . event) mEvent

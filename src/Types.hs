@@ -1,9 +1,16 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 module Types where
 
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Set (Set)
 import Data.Text (Text)
 import Effectful.Concurrent.STM (TChan, TQueue)
+import Lmdb.Types (Database, Environment, Mode(..))
+import GHC.Generics (Generic)
 import Nostr.Keys (KeyPair, PubKeyXO)
 import Nostr.Types (Event, EventId, Filter, Profile, Relay, RelayURI, Request, SubscriptionId)
 
@@ -101,8 +108,8 @@ data ChatMessage = ChatMessage
   } deriving (Show)
 
 
--- | Type of note
-data NoteType
+-- | Type of post
+data PostType
   = ShortTextNote
   | Repost EventId             -- kind 6, references original note
   | QuoteRepost EventId      -- kind 1 with q tag, includes quoted event and additional content
@@ -118,22 +125,28 @@ data NoteType
 -- | Simplified note reference that proxies most data through events map
 data Post = Post
   { postId :: EventId          -- ID of this post
-  , postType :: NoteType       -- Type of post and its references
+  , postType :: PostType       -- Type of post and its references
   , postCreatedAt :: Int       -- Creation timestamp
   } deriving (Show)
+
+
+-- | Data type to store event with its relay sources
+data EventWithRelays = EventWithRelays
+    { event :: Event
+    , relays :: Set RelayURI
+    } deriving (Show, Generic, ToJSON, FromJSON)
 
 
 -- | Application state.
 data AppState = AppState
   { keyPair :: Maybe KeyPair
-  , currentScreen :: AppScreen
-  -- Data storage
+  , currentScreen :: AppScreen -- @todo remove maybe?
+  , lmdbEnv :: Maybe (Environment ReadWrite)
+  , eventDb :: Maybe (Database EventId EventWithRelays)
+  , profileDb :: Maybe (Database PubKeyXO (Profile, Int))
   , posts :: Map PubKeyXO [Post]
-  , events :: Map EventId (Event, [RelayURI])
   , chats :: Map PubKeyXO [ChatMessage]
-  , profiles :: Map PubKeyXO (Profile, Int)
   , follows :: Map PubKeyXO [Follow]
-  -- UI state
   , currentContact :: (Maybe PubKeyXO, Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
   }
@@ -152,10 +165,11 @@ initialState :: AppState
 initialState = AppState
   { keyPair = Nothing
   , currentScreen = KeyMgmt
-  , events = Map.empty
+  , lmdbEnv = Nothing
+  , eventDb = Nothing
+  , profileDb = Nothing
   , posts = Map.empty
   , chats = Map.empty
-  , profiles = Map.empty
   , follows = Map.empty
   , currentContact = (Nothing, Nothing)
   , currentProfile = Nothing
