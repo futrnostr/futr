@@ -46,7 +46,7 @@ You might need to adjust the package names for your distro.
 You can grab GHCUp from the [GHCUp website](https://www.haskell.org/ghcup/).
 
 ```bash
-sudo apt-get install build-essential zlib1g-dev librocksdb-dev
+sudo apt-get install build-essential zlib1g-dev
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
 ghcup install ghc 9.6.6
 ghcup install cabal 3.10.3.0
@@ -54,14 +54,15 @@ ghcup set ghc 9.6.6
 ghcup set cabal 3.10.3.0
 ```
 
-### Qt5
+### Qt5 & LMDB
 
 ```bash
 sudo apt-get install qtdeclarative5-dev \
                      libqt5quick5 \
                      qttools5-dev-tools \
                      qtbase5-dev \
-                     qt5-image-formats-plugins
+                     qt5-image-formats-plugins \
+                     liblmdb-dev
 ```
 
 ### secp256k1 (from source)
@@ -77,6 +78,7 @@ git clone https://github.com/bitcoin-core/secp256k1 && \
     make install && \
     cd ..
 ```
+
 
 ### Building
 

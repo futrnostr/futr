@@ -8,6 +8,7 @@ import Data.ByteString.Lazy (fromStrict)
 import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Ord (comparing)
+import Data.Set qualified as Set
 import Data.Text (pack, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Effectful
@@ -34,6 +35,8 @@ import Nostr.Types ( Event(..), EventId(..), Filter, Kind(..), Relay(..)
 import Nostr.Types qualified as NT
 import Nostr.Util
 import RelayMgmt
+import Store.Event
+import Store.Profile
 import Types hiding (Repost, ShortTextNote)
 import Types qualified as Types
 
@@ -54,6 +57,8 @@ makeEffect ''Subscription
 type SubscriptionEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
+  , EventStore :> es
+  , ProfileStore :> es
   , GiftWrap :> es
   , RelayConnection :> es
   , KeyMgmt :> es
@@ -94,26 +99,18 @@ runSubscription = interpret $ \_ -> \case
 
 handleEvent' :: SubscriptionEff es => Event -> RelayURI -> Eff es UIUpdates
 handleEvent' event' r = do
-    -- @todo validate event against filters ??
+    -- logDebug $ "Starting handleEvent' for event: " <> pack (show $ eventId event')
+
+    -- Validate event
     if not (validateEvent event')
     then do
         logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
         pure emptyUpdates
     else do
-        --logDebug $ "Handling event of kind " <> pack (show $ kind event') <> " with id " <> (byteStringToHex $ getEventId (eventId event'))
-
-        -- store into our events map
-        modify @AppState $ \st ->
-            st { events = Map.insertWith
-                    (\_ (oldEvent, oldRelays) -> (oldEvent, if r `elem` oldRelays then oldRelays else r:oldRelays))
-                    (eventId event')
-                    (event', [r])
-                    (events st)
-                }
+        putEvent (eventId event') (EventWithRelays event' (Set.singleton r))
 
         case kind event' of
             ShortTextNote -> do
-                -- Check for q-tag to identify quote reposts
                 let qTags = [t | t@(QTag _ _ _) <- tags event']
                 let note = case qTags of
                         (QTag quotedId _ _:_) ->
@@ -147,29 +144,19 @@ handleEvent' event' r = do
                         pure $ emptyUpdates { postsChanged = True }
 
             Repost -> do
-                -- Check for ETag (required for reposts)
                 case [t | t@(ETag _ _ _) <- tags event'] of
-                    (ETag eid mRelay _:_) -> do
+                    (ETag eid _ _:_) -> do
                         case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
                             Right originalEvent -> do
                                 if validateEvent originalEvent
                                     then do
-                                        modify @AppState $ \st ->
-                                            st { events = Map.insertWith
-                                                    (\_ (oldEvent, oldRelays) -> 
-                                                        (oldEvent, maybe oldRelays (:oldRelays) mRelay))
-                                                    eid
-                                                    (originalEvent, maybe [] (:[]) mRelay)
-                                                    (events st)
-                                                }
-
+                                        putEvent (eventId originalEvent) (EventWithRelays originalEvent (Set.singleton r))
                                         let note = Types.Post
                                                 { postId = eventId event'
                                                 , postType = Types.Repost eid
                                                 , postCreatedAt = createdAt event'
                                                 }
 
-                                        -- Check if this post already exists for this pubkey
                                         st <- get @AppState
                                         let existingPosts = Map.findWithDefault [] (pubKey event') (posts st)
                                             alreadyExists = any (\p -> postId p == eventId event') existingPosts
@@ -201,9 +188,11 @@ handleEvent' event' r = do
             EventDeletion -> do
                 let eventIdsToDelete = [eid | ETag eid _ _ <- tags event']
 
+                forM_ eventIdsToDelete $ \eid -> do
+                    deleteEvent eid
+
                 modify @AppState $ \st -> st
-                    { events = foldr Map.delete (events st) eventIdsToDelete
-                    , posts = Map.map (filter (\p -> postId p `notElem` eventIdsToDelete)) (posts st)
+                    { posts = Map.map (filter (\p -> postId p `notElem` eventIdsToDelete)) (posts st)
                     , chats = Map.map (filter (\dm -> chatMessageId dm `notElem` eventIdsToDelete)) (chats st)
                     }
 
@@ -215,15 +204,10 @@ handleEvent' event' r = do
             Metadata -> do
                 case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
                     Right profile -> do
+                        putProfile (pubKey event') (profile, (createdAt event'))
+                        
                         st <- get @AppState
                         let isOwnProfile = maybe False (\kp -> pubKey event' == keyPairToPubKeyXO kp) (keyPair st)
-
-                        modify $ \s -> s { profiles = Map.insertWith (\new old -> if snd new > snd old then new else old)
-                                            (pubKey event')
-                                            (profile, createdAt event')
-                                            (profiles s)
-                                        }
-
                         when isOwnProfile $ do
                             let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
                             updateProfile aid profile
@@ -243,7 +227,6 @@ handleEvent' event' r = do
                 pure $ emptyUpdates { privateMessagesChanged = True }
 
             RelayListMetadata -> do
-                logDebug $ pack $ show event'
                 let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
                     ts = createdAt event'
                     pk = pubKey event'

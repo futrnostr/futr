@@ -15,7 +15,6 @@ import Data.Maybe (catMaybes)
 import Data.Text (Text, isPrefixOf, pack, strip, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable (Typeable)
-import Database.RocksDB
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.FileSystem

@@ -1,10 +1,16 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 module Types where
 
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Set (Set)
 import Data.Text (Text)
-import Database.RocksDB
 import Effectful.Concurrent.STM (TChan, TQueue)
+import Lmdb.Types (Database, Environment, Mode(..))
+import GHC.Generics (Generic)
 import Nostr.Keys (KeyPair, PubKeyXO)
 import Nostr.Types (Event, EventId, Filter, Profile, Relay, RelayURI, Request, SubscriptionId)
 
@@ -124,20 +130,23 @@ data Post = Post
   } deriving (Show)
 
 
+-- | Data type to store event with its relay sources
+data EventWithRelays = EventWithRelays
+    { event :: Event
+    , relays :: Set RelayURI
+    } deriving (Show, Generic, ToJSON, FromJSON)
+
+
 -- | Application state.
 data AppState = AppState
   { keyPair :: Maybe KeyPair
   , currentScreen :: AppScreen -- @todo remove maybe?
-  , eventDb :: Maybe DB
-  , profileDb :: Maybe DB
-  , appDb :: Maybe DB
-  -- Data storage
+  , lmdbEnv :: Maybe (Environment ReadWrite)
+  , eventDb :: Maybe (Database EventId EventWithRelays)
+  , profileDb :: Maybe (Database PubKeyXO (Profile, Int))
   , posts :: Map PubKeyXO [Post]
-  , events :: Map EventId (Event, [RelayURI])
   , chats :: Map PubKeyXO [ChatMessage]
-  , profiles :: Map PubKeyXO (Profile, Int)
   , follows :: Map PubKeyXO [Follow]
-  -- UI state
   , currentContact :: (Maybe PubKeyXO, Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
   }
@@ -156,13 +165,11 @@ initialState :: AppState
 initialState = AppState
   { keyPair = Nothing
   , currentScreen = KeyMgmt
+  , lmdbEnv = Nothing
   , eventDb = Nothing
   , profileDb = Nothing
-  , appDb = Nothing
-  , events = Map.empty
   , posts = Map.empty
   , chats = Map.empty
-  , profiles = Map.empty
   , follows = Map.empty
   , currentContact = (Nothing, Nothing)
   , currentProfile = Nothing
