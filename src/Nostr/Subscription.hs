@@ -5,7 +5,10 @@ import Data.Aeson (eitherDecode)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy (fromStrict)
+import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
+import Data.Ord (comparing)
+import Data.Set qualified as Set
 import Data.Text (pack, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Effectful
@@ -18,7 +21,8 @@ import Effectful.TH
 import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
 import System.Random (randomIO)
 
-import EffectfulQML
+
+import QtQuick
 import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
@@ -31,7 +35,10 @@ import Nostr.Types ( Event(..), EventId(..), Filter, Kind(..), Relay(..)
 import Nostr.Types qualified as NT
 import Nostr.Util
 import RelayMgmt
-import Types
+import Store.Event
+import Store.Profile
+import Types hiding (Repost, ShortTextNote)
+import Types qualified as Types
 
 
 -- | Subscription effects
@@ -50,6 +57,8 @@ makeEffect ''Subscription
 type SubscriptionEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
+  , EventStore :> es
+  , ProfileStore :> es
   , GiftWrap :> es
   , RelayConnection :> es
   , KeyMgmt :> es
@@ -57,7 +66,7 @@ type SubscriptionEff es =
   , Util :> es
   , Logging :> es
   , Concurrent :> es
-  , EffectfulQML :> es
+  , QtQuick :> es
   , IOE :> es
   )
 
@@ -85,31 +94,120 @@ runSubscription = interpret $ \_ -> \case
                         }
                 Nothing -> return ()
 
-    HandleEvent _ _ _ event' -> handleEvent' event'
+    HandleEvent r _ _ event' -> handleEvent' event' r
 
 
-handleEvent' :: SubscriptionEff es => Event -> Eff es UIUpdates
-handleEvent' event' = do
-    -- @todo validate event against filters ??
+handleEvent' :: SubscriptionEff es => Event -> RelayURI -> Eff es UIUpdates
+handleEvent' event' r = do
+    -- logDebug $ "Starting handleEvent' for event: " <> pack (show $ eventId event')
+
+    -- Validate event
     if not (validateEvent event')
     then do
         logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
         pure emptyUpdates
     else do
-        logDebug $ "Handling event of kind " <> pack (show $ kind event') <> " with id " <> (byteStringToHex $ getEventId (eventId event'))
+        putEvent (eventId event') (EventWithRelays event' (Set.singleton r))
+
         case kind event' of
+            ShortTextNote -> do
+                let qTags = [t | t@(QTag _ _ _) <- tags event']
+                let note = case qTags of
+                        (QTag quotedId _ _:_) ->
+                            Types.Post
+                                { postId = eventId event'
+                                , postType = Types.QuoteRepost quotedId
+                                , postCreatedAt = createdAt event'
+                                }
+                        _ ->
+                            Types.Post
+                                { postId = eventId event'
+                                , postType = Types.ShortTextNote
+                                , postCreatedAt = createdAt event'
+                                }
+
+                st <- get @AppState
+                let existingPosts = Map.findWithDefault [] (pubKey event') (posts st)
+                    alreadyExists = any (\p -> postId p == eventId event') existingPosts
+
+                if alreadyExists
+                    then pure emptyUpdates
+                    else do
+                        modify @AppState $ \st' ->
+                            st' { posts = Map.insertWith
+                                    (\new old -> sortBy (comparing postCreatedAt) (new ++ old))
+                                    (pubKey event')
+                                    [note]
+                                    (posts st')
+                                }
+
+                        pure $ emptyUpdates { postsChanged = True }
+
+            Repost -> do
+                case [t | t@(ETag _ _ _) <- tags event'] of
+                    (ETag eid _ _:_) -> do
+                        case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
+                            Right originalEvent -> do
+                                if validateEvent originalEvent
+                                    then do
+                                        putEvent (eventId originalEvent) (EventWithRelays originalEvent (Set.singleton r))
+                                        let note = Types.Post
+                                                { postId = eventId event'
+                                                , postType = Types.Repost eid
+                                                , postCreatedAt = createdAt event'
+                                                }
+
+                                        st <- get @AppState
+                                        let existingPosts = Map.findWithDefault [] (pubKey event') (posts st)
+                                            alreadyExists = any (\p -> postId p == eventId event') existingPosts
+
+                                        if alreadyExists
+                                            then pure emptyUpdates
+                                            else do
+                                                modify @AppState $ \st' ->
+                                                    st' { posts = Map.insertWith
+                                                            (\new old -> sortBy (comparing postCreatedAt) (new ++ old))
+                                                            (pubKey event')
+                                                            [note]
+                                                            (posts st')
+                                                        }
+
+                                                pure $ emptyUpdates { postsChanged = True }
+                                    else do
+                                        logWarning $ "Invalid original event in repost: " <> 
+                                            (byteStringToHex $ getEventId (eventId event'))
+                                        pure emptyUpdates
+                            Left err -> do
+                                logWarning $ "Failed to decode original event in repost: " <> pack err
+                                pure emptyUpdates
+                    _ -> do
+                        logWarning $ "Repost without e-tag ignored: " <> 
+                            (byteStringToHex $ getEventId (eventId event'))
+                        pure emptyUpdates
+
+            EventDeletion -> do
+                let eventIdsToDelete = [eid | ETag eid _ _ <- tags event']
+
+                forM_ eventIdsToDelete $ \eid -> do
+                    deleteEvent eid
+
+                modify @AppState $ \st -> st
+                    { posts = Map.map (filter (\p -> postId p `notElem` eventIdsToDelete)) (posts st)
+                    , chats = Map.map (filter (\dm -> chatMessageId dm `notElem` eventIdsToDelete)) (chats st)
+                    }
+
+                pure $ emptyUpdates
+                    { postsChanged = True
+                    , privateMessagesChanged = True
+                    }
+
             Metadata -> do
                 case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
                     Right profile -> do
+                        putProfile (pubKey event') (profile, (createdAt event'))
+                        
                         st <- get @AppState
                         let isOwnProfile = maybe False (\kp -> pubKey event' == keyPairToPubKeyXO kp) (keyPair st)
-
-                        modify $ \s -> s { profiles = Map.insertWith (\new old -> if snd new > snd old then new else old)
-                                            (pubKey event')
-                                            (profile, createdAt event')
-                                            (profiles s)
-                                        }
-
                         when isOwnProfile $ do
                             let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
                             updateProfile aid profile
@@ -126,10 +224,9 @@ handleEvent' event' = do
 
             GiftWrap -> do
                 handleGiftWrapEvent event'
-                pure $ emptyUpdates { chatsChanged = True }
+                pure $ emptyUpdates { privateMessagesChanged = True }
 
             RelayListMetadata -> do
-                logDebug $ pack $ show event'
                 let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
                     ts = createdAt event'
                     pk = pubKey event'
@@ -241,7 +338,7 @@ handleRelaySubscription r = do
                             es <- atomically $ flushTQueue q
 
                             updates <- fmap mconcat $ forM (e : es) $ \case
-                                EventAppeared event' -> handleEvent' event'
+                                EventAppeared event' -> handleEvent' event' r
                                 SubscriptionEose -> return emptyUpdates
                                 SubscriptionClosed _ -> do
                                     atomically $ writeTVar shouldStop True
@@ -306,6 +403,7 @@ createInboxRelayFilters :: PubKeyXO -> [PubKeyXO] -> [Filter]
 createInboxRelayFilters xo followedPubKeys =
     [ NT.followListFilter (xo : followedPubKeys)
     , NT.metadataFilter (xo : followedPubKeys)
+    , NT.shortTextNoteFilter (xo : followedPubKeys)
     , NT.preferredDMRelaysFilter (xo : followedPubKeys)
     ]
 
