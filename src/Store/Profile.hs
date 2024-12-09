@@ -23,13 +23,13 @@ import Lmdb.Codec qualified as Codec
 import System.FilePath ((</>))
 
 import Nostr.Keys (PubKeyXO)
-import Nostr.Types (Profile)
+import Nostr.Types (Profile, emptyProfile)
 import Store.LMDB (defaultJsonSettings)
 import Types (AppState(..))
 
 data ProfileStore :: Effect where
     PutProfile :: PubKeyXO -> (Profile, Int) -> ProfileStore m ()
-    GetProfile :: PubKeyXO -> ProfileStore m (Maybe (Profile, Int))
+    GetProfile :: PubKeyXO -> ProfileStore m (Profile, Int)
     DeleteProfile :: PubKeyXO -> ProfileStore m ()
 
 type instance DispatchOf ProfileStore = Dynamic
@@ -60,7 +60,10 @@ runProfileStore = interpret $ \_ -> \case
         case (lmdbEnv st, profileDb st) of
             (Just env, Just db) -> liftIO $ withTransaction env $ \txn -> do
                 let readTxn = readonly txn
-                Map.lookup' readTxn db pk
+                mProfile <- Map.lookup' readTxn db pk
+                case mProfile of
+                    Just (profile, timestamp) -> return (profile, timestamp)
+                    Nothing -> return (emptyProfile, 0)
             _ -> throwIO $ userError "Profile database not initialized"
 
     DeleteProfile pk -> do

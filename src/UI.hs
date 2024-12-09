@@ -57,50 +57,38 @@ runUI = interpret $ \_ -> \case
         defPropertySigRO' "name" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          mProfile <- runE $ getProfile pk
-          case mProfile of
-            Just (profile, _) -> return $ name profile
-            Nothing -> pure Nothing,
+          (profile, _) <- runE $ getProfile pk
+          return $ name profile,
 
         defPropertySigRO' "displayName" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          mProfile <- runE $ getProfile pk
-          case mProfile of
-            Just (profile, _) -> return $ displayName profile
-            Nothing -> pure Nothing,
+          (profile, _) <- runE $ getProfile pk
+          return $ displayName profile,
 
         defPropertySigRO' "about" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          mProfile <- runE $ getProfile pk
-          case mProfile of
-            Just (profile, _) -> return $ about profile
-            Nothing -> pure Nothing,
+          (profile, _) <- runE $ getProfile pk
+          return $ about profile,
 
         defPropertySigRO' "picture" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          mProfile <- runE $ getProfile pk
-          case mProfile of
-            Just (profile, _) -> return $ picture profile
-            Nothing -> pure Nothing,
+          (profile, _) <- runE $ getProfile pk
+          return $ picture profile,
 
         defPropertySigRO' "nip05" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          mProfile <- runE $ getProfile pk
-          case mProfile of
-            Just (profile, _) -> return $ nip05 profile
-            Nothing -> pure Nothing,
+          (profile, _) <- runE $ getProfile pk
+          return $ nip05 profile,
 
         defPropertySigRO' "banner" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          mProfile <- runE $ getProfile pk
-          case mProfile of
-            Just (profile, _) -> return $ banner profile
-            Nothing -> pure Nothing,
+          (profile, _) <- runE $ getProfile pk
+          return $ banner profile,
 
         defPropertySigRO' "isFollow" changeKey' $ \_ -> do
           st <- runE $ get @AppState
@@ -129,20 +117,14 @@ runUI = interpret $ \_ -> \case
         followProp "relay" $ \_ -> return . maybe "" (\f -> maybe "" getUri (followRelay f)),
         followProp "petname" $ \_ -> return . maybe "" (fromMaybe "" . petName),
         followProp "displayName" $ \_ -> maybe (return "") (\follow -> do
-            mProfile <- runE $ getProfile (pubkey follow)
-            case mProfile of
-                Just (profile, _) -> return $ fromMaybe "" (displayName profile)
-                Nothing -> return ""),
+            (profile, _) <- runE $ getProfile (pubkey follow)
+            return $ fromMaybe "" (displayName profile)),
         followProp "name" $ \_ -> maybe (return "") (\follow -> do
-            mProfile <- runE $ getProfile (pubkey follow)
-            case mProfile of
-                Just (profile, _) -> return $ fromMaybe "" (name profile)
-                Nothing -> return ""),
+            (profile, _) <- runE $ getProfile (pubkey follow)
+            return $ fromMaybe "" (name profile)),
         followProp "picture" $ \_ -> maybe (return "") (\follow -> do
-            mProfile <- runE $ getProfile (pubkey follow)
-            case mProfile of
-                Just (profile, _) -> return $ fromMaybe "" (picture profile)
-                Nothing -> return "")
+            (profile, _) <- runE $ getProfile (pubkey follow)
+            return $ fromMaybe "" (picture profile))
       ]
 
     followPool <- newFactoryPool (newObject followClass)
@@ -323,10 +305,8 @@ runUI = interpret $ \_ -> \case
           st <- runE $ get @AppState
           case keyPair st of
             Just kp -> do
-              mProfile <- runE $ getProfile $ keyPairToPubKeyXO kp
-              case mProfile of
-                Just (profile', _) -> return $ fromMaybe "" $ picture profile'
-                Nothing -> return ""
+              (profile', _) <- runE $ getProfile $ keyPairToPubKeyXO kp
+              return $ fromMaybe "" $ picture profile'
             Nothing -> return "",
 
         defSignal "loginStatusChanged" (Proxy :: Proxy LoginStatusChanged),

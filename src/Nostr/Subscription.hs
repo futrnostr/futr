@@ -1,6 +1,6 @@
 module Nostr.Subscription where
 
-import Control.Monad (forM, forM_, replicateM, when)
+import Control.Monad (forM, forM_, replicateM, unless, when)
 import Data.Aeson (eitherDecode)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
@@ -23,7 +23,7 @@ import System.Random (randomIO)
 
 
 import QtQuick
-import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
+import KeyMgmt (AccountId(..), KeyMgmt, updateProfile, updateRelays)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Event (validateEvent)
@@ -94,20 +94,22 @@ runSubscription = interpret $ \_ -> \case
                         }
                 Nothing -> return ()
 
-    HandleEvent r _ _ event' -> handleEvent' event' r
+    HandleEvent r _ _ event' -> handleEvent' event' r False
 
 
-handleEvent' :: SubscriptionEff es => Event -> RelayURI -> Eff es UIUpdates
-handleEvent' event' r = do
-    -- logDebug $ "Starting handleEvent' for event: " <> pack (show $ eventId event')
+handleEvent' :: SubscriptionEff es => Event -> RelayURI -> Bool -> Eff es UIUpdates
+handleEvent' event' r isReplay = do
+    logDebug $ "Starting handleEvent' for event: " <> pack (show event')
 
-    -- Validate event
-    if not (validateEvent event')
+    -- Validate event only if not replaying
+    if not isReplay && not (validateEvent event')
     then do
         logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
         pure emptyUpdates
     else do
-        putEvent (eventId event') (EventWithRelays event' (Set.singleton r))
+        -- Skip putEvent during replay since events are already in store
+        unless isReplay $
+            putEvent (eventId event') (EventWithRelays event' (Set.singleton r))
 
         case kind event' of
             ShortTextNote -> do
@@ -131,7 +133,8 @@ handleEvent' event' r = do
                     alreadyExists = any (\p -> postId p == eventId event') existingPosts
 
                 if alreadyExists
-                    then pure emptyUpdates
+                    then do
+                        pure emptyUpdates
                     else do
                         modify @AppState $ \st' ->
                             st' { posts = Map.insertWith
@@ -150,7 +153,8 @@ handleEvent' event' r = do
                             Right originalEvent -> do
                                 if validateEvent originalEvent
                                     then do
-                                        putEvent (eventId originalEvent) (EventWithRelays originalEvent (Set.singleton r))
+                                        unless isReplay $
+                                            putEvent (eventId originalEvent) (EventWithRelays originalEvent (Set.singleton r))
                                         let note = Types.Post
                                                 { postId = eventId event'
                                                 , postType = Types.Repost eid
@@ -174,15 +178,14 @@ handleEvent' event' r = do
 
                                                 pure $ emptyUpdates { postsChanged = True }
                                     else do
-                                        logWarning $ "Invalid original event in repost: " <> 
+                                        logWarning $ "Invalid original event in repost: " <>
                                             (byteStringToHex $ getEventId (eventId event'))
                                         pure emptyUpdates
                             Left err -> do
                                 logWarning $ "Failed to decode original event in repost: " <> pack err
                                 pure emptyUpdates
                     _ -> do
-                        logWarning $ "Repost without e-tag ignored: " <> 
-                            (byteStringToHex $ getEventId (eventId event'))
+                        logWarning $ "Repost without e-tag ignored: " <> (byteStringToHex $ getEventId (eventId event'))
                         pure emptyUpdates
 
             EventDeletion -> do
@@ -205,7 +208,7 @@ handleEvent' event' r = do
                 case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
                     Right profile -> do
                         putProfile (pubKey event') (profile, (createdAt event'))
-                        
+
                         st <- get @AppState
                         let isOwnProfile = maybe False (\kp -> pubKey event' == keyPairToPubKeyXO kp) (keyPair st)
                         when isOwnProfile $ do
@@ -239,8 +242,7 @@ handleEvent' event' r = do
                         handleRelayListUpdate pk relays ts
                             importGeneralRelays
                             generalRelays
-                        logDebug $ "Updated relay list for " <> (pubKeyXOToBech32 pk)
-                            <> " with " <> pack (show $ length relays) <> " relays"
+                            isReplay
                         pure $ emptyUpdates { generalRelaysChanged = True }
 
             PreferredDMRelays -> do
@@ -254,6 +256,7 @@ handleEvent' event' r = do
                         handleRelayListUpdate (pubKey event') relays (createdAt event')
                             importDMRelays
                             dmRelays
+                            isReplay
                         pure $ emptyUpdates { dmRelaysChanged = True }
 
             _ -> do
@@ -286,6 +289,7 @@ createSubscription r subId' fs = do
         Just rd -> do
             let channel = requestChannel rd
             atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' fs)
+            logDebug $ "Subscribed to " <> r <> " with subId " <> subId' <> " and filters " <> pack (show fs)
             q <- newTQueueIO
             modify @RelayPoolState $ \st' ->
                 st { activeConnections = Map.adjust
@@ -338,7 +342,7 @@ handleRelaySubscription r = do
                             es <- atomically $ flushTQueue q
 
                             updates <- fmap mconcat $ forM (e : es) $ \case
-                                EventAppeared event' -> handleEvent' event' r
+                                EventAppeared event' -> handleEvent' event' r False
                                 SubscriptionEose -> return emptyUpdates
                                 SubscriptionClosed _ -> do
                                     atomically $ writeTVar shouldStop True
@@ -364,29 +368,35 @@ handleRelayListUpdate :: SubscriptionEff es
                       -> Int                                                  -- ^ Event timestamp
                       -> (PubKeyXO -> [Relay] -> Int -> Eff es ())            -- ^ Import function
                       -> (RelayPoolState -> Map.Map PubKeyXO ([Relay], Int))  -- ^ Relay map selector
+                      -> Bool                                                 -- ^ Is replay
                       -> Eff es ()
-handleRelayListUpdate pk relays ts importFn getRelayMap = do
+handleRelayListUpdate pk relays ts importFn getRelayMap isReplay = do
     st <- get @RelayPoolState
     case Map.lookup pk (getRelayMap st) of
         Just (existingRelays, oldTs) -> do
             when (oldTs < ts) $ do
-                -- Disconnect from relays that aren't in the new list
-                forM_ existingRelays $ \r ->
-                    when (getUri r `notElem` map getUri relays) $
-                        disconnectRelay $ getUri r
+                unless isReplay $ do
+                    -- Disconnect from relays that aren't in the new list
+                    forM_ existingRelays $ \r ->
+                        when (getUri r `notElem` map getUri relays) $
+                            disconnectRelay $ getUri r
 
                 importFn pk relays ts
+                updateRelays (AccountId $ pubKeyXOToBech32 pk) (relays, ts)
 
-                -- Connect to new relays that weren't in the old list
-                let newRelays = filter (\r -> getUri r `notElem` map getUri existingRelays) relays
-                forM_ newRelays $ \r -> async $ do
-                    connected <- connectRelay $ getUri r
-                    when connected $ handleRelaySubscription $ getUri r
+                unless isReplay $ do
+                    -- Connect to new relays that weren't in the old list
+                    let newRelays = filter (\r -> getUri r `notElem` map getUri existingRelays) relays
+                    forM_ newRelays $ \r -> async $ do
+                        connected <- connectRelay $ getUri r
+                        when connected $ handleRelaySubscription $ getUri r
         Nothing -> do
             importFn pk relays ts
-            forM_ relays $ \r -> async $ do
-                connected <- connectRelay $ getUri r
-                when connected $ handleRelaySubscription $ getUri r
+            updateRelays (AccountId $ pubKeyXOToBech32 pk) (relays, ts)
+            unless isReplay $ do
+                forM_ relays $ \r -> async $ do
+                    connected <- connectRelay $ getUri r
+                    when connected $ handleRelaySubscription $ getUri r
 
 
 -- | Create DM relay subscription filters

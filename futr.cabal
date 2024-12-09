@@ -107,6 +107,7 @@ executable futr
         memory >=0.18 && <0.19,
         network >= 3.2.4.0 && <3.3,
         network-uri >=2.6.4.2 && <2.7,
+        pipes >=4.3.16 && <4.4,
         random >=1.2.1.2 && <1.3,
         random-shuffle >=0.0.4 && <0.1,
         scientific >=0.3.8.0 && <0.4,

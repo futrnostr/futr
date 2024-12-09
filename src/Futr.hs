@@ -28,12 +28,15 @@ import Effectful.FileSystem
   )
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
-import Lmdb.Connection (closeEnvironment, withTransaction)
+import Lmdb.Connection (closeEnvironment, withCursor, withTransaction)
+import Lmdb.Map qualified as LMap
+import Lmdb.Types (KeyValue(..))
 import QtQuick
 import GHC.Generics (Generic)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
-import System.FilePath (takeDirectory, (</>))
+import Pipes.Prelude qualified as Pipes
+import System.FilePath ((</>))
 
 import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
@@ -45,6 +48,7 @@ import Nostr.Event ( createComment, createEventDeletion, createFollowList
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.GiftWrap
 import Nostr.Publisher
+import Nostr.RelayConnection (RelayConnection)
 import Nostr.RelayPool
 import Nostr.Subscription
 import Nostr.Types ( Event(..), EventId, Profile(..), Relay(..), RelayURI, Tag(..)
@@ -52,6 +56,7 @@ import Nostr.Types ( Event(..), EventId, Profile(..), Relay(..), RelayURI, Tag(.
 import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
+import RelayMgmt (RelayMgmt)
 import Store.LMDB (initializeEnv)
 import Store.Event (EventStore, getEvent, initEventDb)
 import Store.Profile (ProfileStore, getProfile, initProfileDb)
@@ -110,6 +115,8 @@ type FutrEff es = ( State AppState :> es
                   , KeyMgmtUI :> es
                   , RelayMgmtUI :> es
                   , Nostr :> es
+                  , RelayConnection :> es
+                  , RelayMgmt :> es
                   , RelayPool :> es
                   , Subscription :> es
                   , Publisher :> es
@@ -134,33 +141,34 @@ runFutr = interpret $ \_ -> \case
       case Map.lookup (AccountId input) (accountMap kst) of
         Just a -> do
           logInfo $ "Starting login for account: " <> pack (show $ accountPubKeyXO a)
-
           let pk = accountPubKeyXO a
-          
+
           dbResult <- try @SomeException $ do
               baseDir <- getXdgDirectory XdgData ("futrnostr" </> unpack (pubKeyXOToBech32 pk))
-              
-              -- Create a dedicated LMDB directory
               let lmdbDir = baseDir </> "db"
               createDirectoryIfMissing True lmdbDir
-              
-              logInfo $ "Opening LMDB at: " <> pack lmdbDir
-              
-              -- Initialize LMDB environment with directory path
               env <- liftIO $ initializeEnv lmdbDir
               (eventsDb, profilesDb) <- liftIO $ withTransaction env $ \txn -> do
                   events <- initEventDb txn
                   profiles <- initProfileDb txn
                   pure (events, profiles)
-              
-              modify @AppState $ \st -> st { 
+              modify @AppState $ \st -> st {
                   lmdbEnv = Just env,
                   eventDb = Just eventsDb,
                   profileDb = Just profilesDb
               }
-              
-              logInfo "LMDB initialization completed successfully"
-              pure ()
+
+              -- Load existing events from database asynchronously
+              withEffToIO (ConcUnlift Persistent Unlimited) $ \runE ->
+                liftIO $ withTransaction env $ \txn -> do
+                  withCursor txn eventsDb $ \cur -> do
+                    events <- Pipes.toListM (LMap.firstForward cur)
+                    runE $ do
+                        logInfo $ "Reading " <> pack (show (length events)) <> " events from local storage"
+                        void $ async $ do
+                          forM_ events $ \kv -> do
+                            let firstRelay = maybe "local" id $ Set.lookupMin $ relays $ keyValueValue kv
+                            handleEvent' (event $ keyValueValue kv) firstRelay True
 
           case dbResult of
             Left e -> do
@@ -168,7 +176,6 @@ runFutr = interpret $ \_ -> \case
               liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Database initialization failed"
               return ()
             Right _ -> do
-              logInfo "All databases initialized successfully"
               loginWithAccount obj a
 
   Search _ input -> do
@@ -273,9 +280,7 @@ runFutr = interpret $ \_ -> \case
       -- Close LMDB environment if it exists
       st <- get @AppState
       case lmdbEnv st of
-        Just env -> do
-          logInfo "Closing LMDB environment"
-          liftIO $ closeEnvironment env
+        Just env -> liftIO $ closeEnvironment env
         Nothing -> return ()
 
       -- Reset application state
@@ -318,16 +323,16 @@ runFutr = interpret $ \_ -> \case
                 mEventAndRelays <- getEvent eid
                 case mEventAndRelays of
                   Just EventWithRelays{event = origEvent, relays = relaySet} -> do
-                    let eventRelayUris = Set.fromList $ map getUri $ 
+                    let eventRelayUris = Set.fromList $ map getUri $
                           catMaybes [Just r | RelayTag r <- tags origEvent]
-                    
+
                     authorRelays <- gets @RelayPoolState $ \st' ->
-                      maybe [] (filter isInboxCapable . fst) $ 
+                      maybe [] (filter isInboxCapable . fst) $
                       Map.lookup (pubKey origEvent) (generalRelays st')
-                    
+
                     let authorInboxUris = Set.fromList $ map getUri authorRelays
                         targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
-                    
+
                     forM_ (Set.toList targetUris) $ \relay ->
                       publishToRelay s relay
                   Nothing -> return ()
@@ -369,16 +374,16 @@ runFutr = interpret $ \_ -> \case
                 mEventAndRelays <- getEvent eid
                 case mEventAndRelays of
                   Just EventWithRelays{event = origEvent, relays = relaySet} -> do
-                    let eventRelayUris = Set.fromList $ map getUri $ 
+                    let eventRelayUris = Set.fromList $ map getUri $
                           catMaybes [Just r | RelayTag r <- tags origEvent]
-                    
+
                     authorRelays <- gets @RelayPoolState $ \st' ->
-                      maybe [] (filter isInboxCapable . fst) $ 
+                      maybe [] (filter isInboxCapable . fst) $
                       Map.lookup (pubKey origEvent) (generalRelays st')
-                    
+
                     let authorInboxUris = Set.fromList $ map getUri authorRelays
                         targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
-                    
+
                     forM_ (Set.toList targetUris) $ \relay ->
                       publishToRelay s relay
                   Nothing -> return ()
@@ -530,13 +535,10 @@ getReferencedAuthorName eid = do
         Nothing -> return Nothing
         Just EventWithRelays{event} -> do
             let authorPubKey = pubKey event
-            mProfile <- getProfile authorPubKey
-            case mProfile of
-                Nothing -> return Nothing
-                Just (profile, _) -> 
-                    return $ Just $ fromMaybe 
-                        (fromMaybe (pubKeyXOToBech32 authorPubKey) (name profile))
-                        (displayName profile)
+            (profile, _) <- getProfile authorPubKey
+            return $ Just $ fromMaybe
+                (fromMaybe (pubKeyXOToBech32 authorPubKey) (name profile))
+                (displayName profile)
 
 
 -- | Get the author picture of a referenced post.
@@ -546,10 +548,8 @@ getReferencedAuthorPicture eid = do
     case mEvent of
         Nothing -> return Nothing
         Just EventWithRelays{event} -> do
-            mProfile <- getProfile (pubKey event)
-            case mProfile of
-                Nothing -> return Nothing
-                Just (profile, _) -> return $ picture profile
+            (profile, _) <- getProfile (pubKey event)
+            return $ picture profile
 
 
 -- | Get the creation timestamp of a referenced post.
