@@ -108,8 +108,8 @@ data ChatMessage = ChatMessage
   } deriving (Show)
 
 
--- | Type of note
-data NoteType
+-- | Type of post
+data PostType
   = ShortTextNote
   | Repost EventId             -- kind 6, references original note
   | QuoteRepost EventId      -- kind 1 with q tag, includes quoted event and additional content
@@ -125,7 +125,7 @@ data NoteType
 -- | Simplified note reference that proxies most data through events map
 data Post = Post
   { postId :: EventId          -- ID of this post
-  , postType :: NoteType       -- Type of post and its references
+  , postType :: PostType       -- Type of post and its references
   , postCreatedAt :: Int       -- Creation timestamp
   } deriving (Show)
 
