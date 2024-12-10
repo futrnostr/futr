@@ -171,10 +171,19 @@ connectWithRetry r maxRetries requestChan = do
 nostrClient :: RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan Request -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
 nostrClient connectionMVar r requestChan runE conn = runE $ do
     logDebug $ "Connected to " <> r
-    void $ atomically $ putTMVar connectionMVar True
+
     modify @RelayPoolState $ \st ->
-        st { activeConnections = Map.adjust (\d -> d { connectionState = Connected }) r (activeConnections st) }
+        st { activeConnections = Map.adjust
+            (\d -> d { connectionState = Connected
+                     , requestChannel = requestChan
+                     })
+            r
+            (activeConnections st)
+        }
     notifyRelayStatus
+
+    void $ atomically $ putTMVar connectionMVar True
+
     updateQueue <- newTQueueIO
     receiveThread <- async $ receiveLoop updateQueue
     sendThread <- async $ sendLoop
