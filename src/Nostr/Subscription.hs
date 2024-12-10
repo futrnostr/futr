@@ -30,7 +30,7 @@ import Nostr.Event (validateEvent)
 import Nostr.GiftWrap (GiftWrap, handleGiftWrapEvent)
 import Nostr.Keys (PubKeyXO, byteStringToHex, keyPairToPubKeyXO)
 import Nostr.RelayConnection
-import Nostr.Types ( Event(..), EventId(..), Filter, Kind(..), Relay(..)
+import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Relay(..)
                    , RelayURI, SubscriptionId, Tag(..), getUri )
 import Nostr.Types qualified as NT
 import Nostr.Util
@@ -411,12 +411,22 @@ createDMRelayFilters xo followedPubKeys =
 -- | Create inbox relay subscription filters
 createInboxRelayFilters :: PubKeyXO -> [PubKeyXO] -> [Filter]
 createInboxRelayFilters xo followedPubKeys =
+    {-
     [ NT.followListFilter (xo : followedPubKeys)
     , NT.metadataFilter (xo : followedPubKeys)
     , NT.shortTextNoteFilter (xo : followedPubKeys)
     , NT.preferredDMRelaysFilter (xo : followedPubKeys)
     ]
-
+    -}
+    [ Filter
+        { ids = Nothing
+        , authors = Just (xo : followedPubKeys)
+        , kinds = Just [FollowList, Metadata, ShortTextNote, EventDeletion, Repost, PreferredDMRelays]
+        , since = Nothing
+        , NT.until = Nothing
+        , limit = Just 1000
+        , fTags = Nothing
+        } ]
 
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId
