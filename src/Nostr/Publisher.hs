@@ -20,6 +20,7 @@ import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.RelayConnection
 import Nostr.Types (Event(..), EventId, Relay(..), RelayURI, Request(..), getUri)
 import Nostr.Util
+import Store.Lmdb (LmdbStore, getFollows)
 import Types ( AppState(..), ConnectionState(..), Follow(..)
              , PublishStatus(..), RelayData(..), RelayPoolState(..) )
 
@@ -48,6 +49,7 @@ makeEffect ''Publisher
 type PublisherEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
+  , LmdbStore :> es
   , RelayConnection :> es
   , QtQuick :> es
   , Concurrent :> es
@@ -70,9 +72,8 @@ runPublisher =  interpret $ \_ -> \case
         
         kp <- getKeyPair
         let pk = keyPairToPubKeyXO kp
-        st <- get @AppState
-        let follows' = Map.findWithDefault [] pk (follows st)
-        let followPks = map pubkey follows'
+        follows <- getFollows pk
+        let followPks = map pubkey follows
         otherGeneralRelays <- gets @RelayPoolState (concatMap (fst . snd) . 
             filter (\(k,_) -> k `elem` followPks && k /= pubKey event) . Map.toList . generalRelays)
         

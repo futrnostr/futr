@@ -10,24 +10,23 @@ import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get)
 import Effectful.TH
 
-import QtQuick
 import KeyMgmt (KeyMgmt)
 import Logging
 import Nostr
-import Nostr.GiftWrap
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Publisher
 import Nostr.RelayConnection
 import Nostr.Subscription
 import Nostr.Types (Event(..), Kind(..), Relay(..), RelayURI)
 import Nostr.Util
-import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..))
+import QtQuick
 import RelayMgmt (RelayMgmt)
 import RelayMgmt qualified as RM
-import Store.Event (EventStore)
-import Store.Profile (ProfileStore)
+import Store.Lmdb (LmdbStore)
+import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..))
 
 
+-- | Disconnect reason.
 data DisconnectReason = UserInitiated | ConnectionFailure
     deriving (Show, Eq)
 
@@ -61,15 +60,13 @@ makeEffect ''RelayPool
 type RelayPoolEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
-  , EventStore :> es
-  , ProfileStore :> es
+  , LmdbStore :> es
   , Nostr :> es
   , RelayConnection :> es
   , Publisher :> es
   , RelayMgmt :> es
   , Subscription :> es
   , KeyMgmt :> es
-  , GiftWrap :> es
   , QtQuick :> es
   , Concurrent :> es
   , Logging :> es

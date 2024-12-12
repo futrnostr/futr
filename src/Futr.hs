@@ -26,9 +26,10 @@ import Effectful.FileSystem
     createDirectoryIfMissing,
     getXdgDirectory
   )
-import Effectful.State.Static.Shared (State, get, gets, modify)
+import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Effectful.TH
-import Lmdb.Connection (closeEnvironment, withCursor, withTransaction)
+import Lmdb.Connection (closeEnvironment, withCursor)
+import Lmdb.Connection qualified as Connection
 import Lmdb.Map qualified as LMap
 import Lmdb.Types (KeyValue(..))
 import QtQuick
@@ -37,6 +38,7 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 import Pipes.Prelude qualified as Pipes
 import System.FilePath ((</>))
+import Control.Concurrent.MVar (MVar, newMVar)
 
 import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
@@ -46,7 +48,6 @@ import Nostr.Event ( createComment, createEventDeletion, createFollowList
                    , createQuoteRepost, createRepost, createRumor, createShortTextNote
                    )
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
-import Nostr.GiftWrap
 import Nostr.Publisher
 import Nostr.RelayConnection (RelayConnection)
 import Nostr.RelayPool
@@ -57,10 +58,9 @@ import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
-import Store.LMDB (initializeEnv)
-import Store.Event (EventStore, getEvent, initEventDb)
-import Store.Profile (ProfileStore, getProfile, initProfileDb)
-import Types hiding (Comment, QuoteRepost, Repost)
+import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
+                  , getEvent, getFollows, putEvent )
+import Types hiding (Comment, QuoteRepost)
 
 -- | Signal key class for LoginStatusChanged.
 data LoginStatusChanged deriving Typeable
@@ -109,8 +109,8 @@ makeEffect ''Futr
 
 -- | Effectful type for Futr.
 type FutrEff es = ( State AppState :> es
-                  , EventStore :> es
-                  , ProfileStore :> es
+                  , State LmdbState :> es
+                  , LmdbStore :> es
                   , KeyMgmt :> es
                   , KeyMgmtUI :> es
                   , RelayMgmtUI :> es
@@ -123,7 +123,6 @@ type FutrEff es = ( State AppState :> es
                   , State KeyMgmtState :> es
                   , State RelayPoolState :> es
                   , State QtQuickState :> es
-                  , GiftWrap :> es
                   , QtQuick :> es
                   , Logging :> es
                   , IOE :> es
@@ -147,28 +146,8 @@ runFutr = interpret $ \_ -> \case
               baseDir <- getXdgDirectory XdgData ("futrnostr" </> unpack (pubKeyXOToBech32 pk))
               let lmdbDir = baseDir </> "db"
               createDirectoryIfMissing True lmdbDir
-              env <- liftIO $ initializeEnv lmdbDir
-              (eventsDb, profilesDb) <- liftIO $ withTransaction env $ \txn -> do
-                  events <- initEventDb txn
-                  profiles <- initProfileDb txn
-                  pure (events, profiles)
-              modify @AppState $ \st -> st {
-                  lmdbEnv = Just env,
-                  eventDb = Just eventsDb,
-                  profileDb = Just profilesDb
-              }
-
-              -- Load existing events from database asynchronously
-              withEffToIO (ConcUnlift Persistent Unlimited) $ \runE ->
-                liftIO $ withTransaction env $ \txn -> do
-                  withCursor txn eventsDb $ \cur -> do
-                    events <- Pipes.toListM (LMap.firstForward cur)
-                    runE $ do
-                        logInfo $ "Reading " <> pack (show (length events)) <> " events from local storage"
-                        void $ async $ do
-                          forM_ events $ \kv -> do
-                            let firstRelay = maybe "local" id $ Set.lookupMin $ relays $ keyValueValue kv
-                            handleEvent' (event $ keyValueValue kv) firstRelay True
+              lmdbState <- liftIO $ initializeLmdbState lmdbDir
+              put @LmdbState lmdbState
 
           case dbResult of
             Left e -> do
@@ -189,8 +168,8 @@ runFutr = interpret $ \_ -> \case
         Just (pubkey', maybeRelay) 
           | Just pubkey' == myPubKey -> return NoResult
           | otherwise -> do
-              let userFollows = maybe [] (flip (Map.findWithDefault []) (follows st)) myPubKey
-              if any (\(Follow pk _ _) -> pk == pubkey') userFollows
+              currentFollows <- maybe [] id <$> traverse getFollows myPubKey
+              if any (\f -> pubkey f == pubkey') currentFollows
                 then return $ ProfileResult (pubKeyXOToBech32 pubkey') maybeRelay
                 else do
                   searchInRelays pubkey' maybeRelay
@@ -206,30 +185,27 @@ runFutr = interpret $ \_ -> \case
         return ()
 
   FollowProfile npub' -> do
-    let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
+    let targetPK = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
     st <- get @AppState
     case keyPairToPubKeyXO <$> keyPair st of
         Just userPK -> do
-            let currentFollows = Map.findWithDefault [] userPK (follows st)
-            unless (any (\follow -> pubkey follow == pubKeyXO) currentFollows) $ do
-                let newFollow = Follow pubKeyXO Nothing Nothing
-                let newFollows = newFollow : currentFollows
-                modify $ \st' -> st' { follows = Map.insert userPK newFollows (follows st') }
+            currentFollows <- getFollows userPK
+            unless (targetPK `elem` map pubkey currentFollows) $ do
+                let newFollow = Follow targetPK Nothing Nothing
+                    newFollows = newFollow : currentFollows
+                sendFollowListEvent newFollows
                 notify $ emptyUpdates { followsChanged = True }
-            sendFollowListEvent
         Nothing -> return ()
 
   UnfollowProfile npub' -> do
-    let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
+    let targetPK = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
     st <- get @AppState
-    let userPubKey = keyPairToPubKeyXO <$> keyPair st
-    case userPubKey of
+    case keyPairToPubKeyXO <$> keyPair st of
         Just userPK -> do
-            let currentFollows = Map.findWithDefault [] userPK (follows st)
-            let newFollows = filter (\follow -> pubkey follow /= pubKeyXO) currentFollows
-            modify $ \st' -> st' { follows = Map.insert userPK newFollows (follows st') }
+            currentFollows <- getFollows userPK
+            let newFollows = filter ((/= targetPK) . pubkey) currentFollows
+            sendFollowListEvent newFollows
             notify $ emptyUpdates { followsChanged = True }
-            sendFollowListEvent
         Nothing -> return ()
 
   OpenChat pubKeyXO -> do
@@ -277,33 +253,30 @@ runFutr = interpret $ \_ -> \case
       Nothing -> logError "Failed to sign short text note"
 
   Logout obj -> do
-      -- Close LMDB environment if it exists
-      st <- get @AppState
-      case lmdbEnv st of
-        Just env -> liftIO $ closeEnvironment env
-        Nothing -> return ()
+    -- Close current Lmdb environment if it exists
+    st <- get @LmdbState
+    liftIO $ closeEnvironment (lmdbEnv st)
 
-      -- Reset application state
-      modify @AppState $ \st -> st
+    -- Reset LMDB state to initial
+    put @LmdbState initialLmdbState
+
+    -- Reset application state
+    modify @AppState $ \st' -> st'
         { keyPair = Nothing
         , currentScreen = KeyMgmt
-        , lmdbEnv = Nothing
-        , eventDb = Nothing
-        , profileDb = Nothing
-        , follows = Map.empty
         }
 
-      -- Close relay connections
-      conns <- gets @RelayPoolState activeConnections
-      mapM_ disconnect (Map.keys conns)
+    -- Close relay connections
+    conns <- gets @RelayPoolState activeConnections
+    mapM_ disconnect (Map.keys conns)
 
-      -- Wait a moment for disconnects to process
-      threadDelay 100000  -- 100ms delay
+    -- Wait a moment for disconnects to process
+    threadDelay 100000  -- 100ms delay
 
-      modify @RelayPoolState $ const initialRelayPoolState
+    modify @RelayPoolState $ const initialRelayPoolState
 
-      fireSignal obj
-      logInfo "User logged out successfully"
+    fireSignal obj
+    logInfo "User logged out successfully"
 
   Repost eid -> do
     st <- get @AppState
@@ -365,8 +338,8 @@ runFutr = interpret $ \_ -> \case
         mEvent <- getEvent eid
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just EventWithRelays{event, relays} -> do
-            let c = createComment event comment' (Right eid) Nothing Nothing (keyPairToPubKeyXO kp) now
+          Just ev -> do
+            let c = createComment (event ev) comment' (Right eid) Nothing Nothing (keyPairToPubKeyXO kp) now
             signed <- signEvent c kp
             case signed of
               Just s -> do
@@ -389,7 +362,7 @@ runFutr = interpret $ \_ -> \case
                   Nothing -> return ()
               Nothing -> logError "Failed to sign comment"
 
-  DeleteEvent eid reason -> do
+  Futr.DeleteEvent eid reason -> do
     st <- get @AppState
     case keyPair st of
       Nothing -> logError "No keypair found"
@@ -442,23 +415,22 @@ loginWithAccount obj a = do
 
 
 -- | Send a follow list event.
-sendFollowListEvent :: FutrEff es => Eff es ()
-sendFollowListEvent = do
-  st <- get @AppState
-  case keyPair st of
-    Nothing -> logError "No keypair found"
-    Just kp -> do
-      currentTime <- getCurrentTime
-      let userPK = keyPairToPubKeyXO kp
-          followList' = Map.findWithDefault [] userPK (follows st)
-          followTuples = map (\(Follow pk _ petName') -> (pk, petName')) followList'
-          event = createFollowList followTuples userPK currentTime
-      signedEvent <- signEvent event kp
-      case signedEvent of
-        Just signedEvent' -> publishToOutbox signedEvent'
-        Nothing -> do
-          logError "Failed to sign follow list event"
-          return ()
+sendFollowListEvent :: FutrEff es => [Follow] -> Eff es ()
+sendFollowListEvent follows = do
+    st <- get @AppState
+    case keyPair st of
+        Nothing -> logError "No keypair found"
+        Just kp -> do
+            let userPK = keyPairToPubKeyXO kp
+            currentTime <- getCurrentTime
+            let followTuples = map (\f -> (pubkey f, Nothing)) follows
+            let event = createFollowList followTuples userPK currentTime
+            signedEvent <- signEvent event kp
+            case signedEvent of
+                Just signedEvent' -> do
+                    putEvent $ EventWithRelays signedEvent' Set.empty
+                    publishToOutbox signedEvent'
+                Nothing -> logError "Failed to sign follow list event"
 
 
 -- | Search for a profile in relays.
@@ -493,67 +465,8 @@ searchInRelays pubkey' _ = do
                   loop
 
 
+-- | Check if a relay is inbox capable.
 isInboxCapable :: Relay -> Bool
 isInboxCapable (InboxRelay _) = True
 isInboxCapable (InboxOutboxRelay _) = True
 isInboxCapable _ = False
-
-
--- | Get the content of a post.
-getPostContent :: FutrEff es => Post -> Eff es (Maybe Text)
-getPostContent post = do
-    mEvent <- getEvent (postId post)
-    return $ fmap (content . event) mEvent
-
-
--- | Get the creation timestamp of a post.
-getPostCreatedAt :: FutrEff es => Post -> Eff es (Maybe Int)
-getPostCreatedAt post = do
-    mEvent <- getEvent (postId post)
-    return $ fmap (createdAt . event) mEvent
-
-
--- | Get the content of a referenced post.
-getReferencedContent :: FutrEff es => EventId -> Eff es (Maybe Text)
-getReferencedContent eid = do
-    mEvent <- getEvent eid
-    return $ fmap (content . event) mEvent
-
-
--- | Get the author of a referenced post.
-getReferencedAuthor :: FutrEff es => EventId -> Eff es (Maybe PubKeyXO)
-getReferencedAuthor eid = do
-    mEvent <- getEvent eid
-    return $ fmap (pubKey . event) mEvent
-
-
--- | Get the author name of a referenced post.
-getReferencedAuthorName :: FutrEff es => EventId -> Eff es (Maybe Text)
-getReferencedAuthorName eid = do
-    mEvent <- getEvent eid
-    case mEvent of
-        Nothing -> return Nothing
-        Just EventWithRelays{event} -> do
-            let authorPubKey = pubKey event
-            (profile, _) <- getProfile authorPubKey
-            return $ Just $ fromMaybe
-                (fromMaybe (pubKeyXOToBech32 authorPubKey) (name profile))
-                (displayName profile)
-
-
--- | Get the author picture of a referenced post.
-getReferencedAuthorPicture :: FutrEff es => EventId -> Eff es (Maybe Text)
-getReferencedAuthorPicture eid = do
-    mEvent <- getEvent eid
-    case mEvent of
-        Nothing -> return Nothing
-        Just EventWithRelays{event} -> do
-            (profile, _) <- getProfile (pubKey event)
-            return $ picture profile
-
-
--- | Get the creation timestamp of a referenced post.
-getReferencedCreatedAt :: FutrEff es => EventId -> Eff es (Maybe Int)
-getReferencedCreatedAt eid = do
-    mEvent <- getEvent eid
-    return $ fmap (createdAt . event) mEvent

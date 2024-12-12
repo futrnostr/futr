@@ -686,7 +686,7 @@ instance FromJSON Profile where
 defaultGeneralRelays :: ([Relay], Int)
 defaultGeneralRelays =
   ( [ InboxRelay "wss://nos.lol"
-    , InboxOutboxRelay "wss://nostr.fmt.wiz.biz"
+    , InboxOutboxRelay "wss://relay.nostr.bg"
     , InboxOutboxRelay "wss://nostr.mom"
     , InboxOutboxRelay "wss://offchain.pub"
     ],

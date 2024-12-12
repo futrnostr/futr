@@ -12,7 +12,6 @@ import Futr qualified as Futr
 import KeyMgmt (KeyMgmtState(..), initialState, runKeyMgmt)
 import Logging (runLoggingStdout)
 import Nostr
-import Nostr.GiftWrap (runGiftWrap)
 import Nostr.Publisher (runPublisher)
 import Nostr.RelayConnection (runRelayConnection)
 import Nostr.RelayPool (runRelayPool)
@@ -22,8 +21,7 @@ import Presentation.KeyMgmtUI (runKeyMgmtUI)
 import Presentation.RelayMgmtUI (runRelayMgmtUI)
 import RelayMgmt (runRelayMgmt)
 import UI qualified as UI
-import Store.Event (runEventStore)
-import Store.Profile (runProfileStore)
+import Store.Lmdb (LmdbState, initialLmdbState, runLmdbStore)
 import Types (AppState(..), RelayPoolState(..))
 import Types qualified as Types
 
@@ -50,12 +48,10 @@ main = do
         . runQtQuick
         . runFileSystem
         . runUtil
+        . runLmdbStore
         -- nostr related
-        . runEventStore
-        . runProfileStore
         . runNostr
         . runKeyMgmt
-        . runGiftWrap
         . runRelayConnection
         . runPublisher
         . runRelayMgmt
@@ -86,9 +82,11 @@ withInitialState
     :: Eff ( State RelayPoolState
            : State KeyMgmtState
            : State AppState
+           : State LmdbState
            : es) a
     -> Eff es a
 withInitialState
-    = evalState Types.initialState
+    = evalState initialLmdbState
+    . evalState Types.initialState
     . evalState KeyMgmt.initialState
     . evalState Types.initialRelayPoolState
