@@ -4,6 +4,7 @@
 
 module UI where
 
+import Control.Monad (guard)
 import Data.Aeson (decode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (find)
@@ -21,16 +22,17 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Text.Read (readMaybe)
 
 import Logging
+import Nostr
 import Nostr.Bech32
-import Nostr.Event
+import Nostr.Event (createMetadata)
 import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types (EventId(..), Profile(..), getUri)
+import Nostr.Types (Event(..), EventId(..), Kind(..), Profile(..), Relationship(..), Rumor(..), Tag(..), getUri)
 import Nostr.Util
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Profile (getProfile)
+import Store.Lmdb (TimelineType(..), getEvent, getFollows, getProfile, getTimelineIds)
 import TimeFormatter
 import Types
 
@@ -96,20 +98,23 @@ runUI = interpret $ \_ -> \case
           let profilePubKey = currentProfile st
           case (currentPubKey, profilePubKey) of
             (Just userPK, Just profilePK) -> do
-              let userFollows = Map.findWithDefault [] userPK (follows st)
-              return $ any (\follow -> pubkey follow == profilePK) userFollows
+              follows <- runE $ getFollows userPK
+              return $ profilePK `elem` map pubkey follows
             _ -> return False
         ]
 
     let followProp name' accessor = defPropertySigRO' name' changeKey' $ \obj -> do
           let pubKeyXO = fromObjRef obj :: PubKeyXO
           st <- runE $ get @AppState
-          let followData = case keyPairToPubKeyXO <$> keyPair st of
-                Just upk | upk == pubKeyXO ->
-                  Just Follow { pubkey = pubKeyXO, followRelay = Nothing, petName = Nothing }
-                Just upk ->
-                  Map.lookup upk (follows st) >>= find (\f -> pubkey f == pubKeyXO)
-                Nothing -> Nothing
+          followData <- case keyPairToPubKeyXO <$> keyPair st of
+            Just upk | upk == pubKeyXO ->
+              return $ Just Follow { pubkey = pubKeyXO, followRelay = Nothing, petName = Nothing }
+            Just upk -> do
+              follows <- runE $ getFollows upk
+              if pubKeyXO `elem` map pubkey follows
+                then return $ Just Follow { pubkey = pubKeyXO, followRelay = Nothing, petName = Nothing }
+                else return Nothing
+            Nothing -> return Nothing
           accessor st followData
 
     followClass <- newClass [
@@ -129,148 +134,112 @@ runUI = interpret $ \_ -> \case
 
     followPool <- newFactoryPool (newObject followClass)
 
-    let getPostProperty obj extractor = do
-          st <- runE $ get @AppState
-          let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Nothing, _) -> return Nothing
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              case find (\msg -> postId msg == eid) notes of
-                Nothing -> return Nothing
-                Just msg -> extractor msg
+    let getReferencedEventId event =
+          case find (\case QTag _ _ _ -> True; _ -> False) (tags event) of
+            Just (QTag eid _ _) -> return $ Just eid
+            _ -> return Nothing
+
+        getRootReference event =
+          case find (\case ETag _ _ (Just Root) -> True; _ -> False) (tags event) of
+            Just (ETag eid _ _) -> return $ Just eid
+            _ -> return Nothing
+
+        getParentReference event =
+          case find (\case ETag _ _ (Just Reply) -> True; _ -> False) (tags event) of
+            Just (ETag eid _ _) -> return $ Just eid
+            _ -> return Nothing
 
     postClass <- newClass [
-            defPropertySigRO' "id" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              return $ pack $ show eid,
-
-            defPropertySigRO' "postType" changeKey' $ \obj -> do
-              getPostProperty obj $ \msg ->
-                return $ Just $ pack $ case postType msg of
-                  ShortTextNote -> "short_text_note"
-                  Repost _ -> "repost"
-                  QuoteRepost _ -> "quote_repost"
-                  Comment _ _ _ _ -> "comment",
-
-            defPropertySigRO' "referencedEventId" changeKey' $ \obj -> do
-              getPostProperty obj $ \msg ->
-                return $ Just $ pack $ case postType msg of
-                  Repost ref -> show ref
-                  QuoteRepost ref -> show ref
-                  Comment{rootScope=ref} -> show ref
-                  _ -> "",
-
-            defPropertySigRO' "content" changeKey' $ \obj -> do
-              getPostProperty obj $ \msg ->
-                runE $ getPostContent msg,
-
-            defPropertySigRO' "timestamp" changeKey' $ \obj -> do
-              getPostProperty obj $ \msg -> do
-                ts <- runE $ getPostCreatedAt msg
-                case ts of
-                  Just ts' -> do
-                    now <- runE getCurrentTime
-                    return $ Just $ formatDateTime English now ts'
-                  Nothing -> return Nothing,
-
-            defPropertySigRO' "referencedContent" changeKey' $ \obj -> do
-              getPostProperty obj $ \msg -> case postType msg of
-                Repost ref -> do
-                  content <- runE $ getReferencedContent ref
-                  return $ content
-                QuoteRepost ref -> do
-                  content <- runE $ getReferencedContent ref
-                  return $ content
-                _ -> return Nothing,
-
-            defPropertySigRO' "referencedAuthorPubkey" changeKey' $ \obj -> do
-              getPostProperty obj $ \msg -> case postType msg of
-                Repost ref -> do
-                  authorMaybe <- runE $ getReferencedAuthor ref
-                  return $ fmap pubKeyXOToBech32 authorMaybe
-                QuoteRepost ref -> do
-                  authorMaybe <- runE $ getReferencedAuthor ref
-                  return $ fmap pubKeyXOToBech32 authorMaybe
-                Comment{rootScope=ref} -> do
-                  authorMaybe <- runE $ getReferencedAuthor ref
-                  return $ fmap pubKeyXOToBech32 authorMaybe
-                _ -> return Nothing,
-
-            defPropertySigRO' "referencedAuthorName" changeKey' $ \obj -> do
-              getPostProperty obj $ \msg -> case postType msg of
-                Repost ref -> runE $ getReferencedAuthorName ref
-                QuoteRepost ref -> runE $ getReferencedAuthorName ref
-                Comment{rootScope=ref} -> runE $ getReferencedAuthorName ref
-                _ -> return Nothing,
-
-            defPropertySigRO' "referencedAuthorPicture" changeKey' $ \obj -> do
-              getPostProperty obj $ \msg -> case postType msg of
-                Repost ref -> runE $ getReferencedAuthorPicture ref
-                QuoteRepost ref -> runE $ getReferencedAuthorPicture ref
-                Comment{rootScope=ref} -> runE $ getReferencedAuthorPicture ref
-                _ -> return Nothing,
-
-            defPropertySigRO' "referencedCreatedAt" changeKey' $ \obj -> do
-              let getFormattedTime ref = do
-                    tsM <- runE $ getReferencedCreatedAt ref
-                    case tsM of
-                      Just ts -> do
-                        now <- runE getCurrentTime
-                        return $ Just $ formatDateTime English now ts
-                      Nothing -> return Nothing
-              getPostProperty obj $ \msg -> case postType msg of
-                Repost ref -> getFormattedTime ref
-                QuoteRepost ref -> getFormattedTime ref
-                Comment{rootScope=ref} -> getFormattedTime ref
-                _ -> return Nothing
-          ]
-
-    postsPool <- newFactoryPool (newObject postClass)
-
-    chatClass <- newClass [
         defPropertySigRO' "id" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
           return $ pack $ show eid,
 
-        defPropertySigRO' "content" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
+        defPropertySigRO' "postType" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
-          let currentRecipient = currentContact st
-          case currentRecipient of
-            (Just recipient, _) -> do
-              let chatMessages = Map.findWithDefault [] recipient (chats st)
-              case find (\msg -> chatMessageId msg == eid) chatMessages of
-                Just msg -> return $ chatMessage msg
-                Nothing -> return ""
-            _ -> return "",
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> return $ Just $ pack $ case kind (event eventWithRelays) of
+              ShortTextNote ->
+                if any (\case QTag _ _ _ -> True; _ -> False) (tags (event eventWithRelays))
+                  then "quote_repost"
+                  else "text_note"
+              Repost -> "repost"
+              Comment -> "comment"
+              GiftWrap -> "gift_wrap"
+              DirectMessage -> "direct_message"
+              _ -> "unknown"
+            Nothing -> return Nothing,
 
-        defPropertySigRO' "isOwnMessage" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
+        defPropertySigRO' "content" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
-          let pk = keyPairToPubKeyXO <$> keyPair st
-          let currentRecipient = currentContact st
-          case (pk, currentRecipient) of
-            (Just userPk, (Just recipient, _)) -> do
-              let chatMessages = Map.findWithDefault [] recipient (chats st)
-              case find (\msg -> chatMessageId msg == eid) chatMessages of
-                Just msg -> return $ author msg == userPk
-                Nothing -> return False
-            _ -> return False,
+          runE $ getEvent eid >>= \case
+            Just eventWithRelays ->
+              case kind (event eventWithRelays) of
+                GiftWrap -> do
+                  kp <- getKeyPair
+                  sealed <- unwrapGiftWrap (event eventWithRelays) kp
+                  rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
+                  return $ rumorContent <$> rumor
+                _ -> return $ Just $ content (event eventWithRelays)
+            Nothing -> return Nothing,
 
         defPropertySigRO' "timestamp" changeKey' $ \obj -> do
-          st <- runE $ get @AppState
           let eid = fromObjRef obj :: EventId
-          case currentContact st of
-            (Just recipient, _) -> do
-              let chatMessages = Map.findWithDefault [] recipient (chats st)
-              case find (\msg -> chatMessageId msg == eid) chatMessages of
-                Just msg -> return $ timestamp msg
-                Nothing -> return ""
-            _ -> return ""
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> do
+              now <- runE getCurrentTime
+              return $ Just $ formatDateTime English now (createdAt (event eventWithRelays))
+            Nothing -> return Nothing,
+
+        defPropertySigRO' "author" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> Just <$> newObject profileClass ()
+            Nothing -> return Nothing,
+
+        -- For reposts and quote reposts: points to the reposted/quoted event
+        defPropertySigRO' "referencedId" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> getReferencedEventId (event eventWithRelays) >>= \case
+              Just refId -> return $ Just $ pack $ show refId
+              Nothing -> return Nothing
+            Nothing -> return Nothing,
+
+        -- For comments: points to the original post that started the thread
+        -- Example: Post A <- Comment B <- Comment C
+        --          Comment C's rootPost is Post A
+        defPropertySigRO' "rootId" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> getRootReference (event eventWithRelays) >>= \case
+              Just refId -> return $ Just $ pack $ show refId
+              Nothing -> return Nothing
+            Nothing -> return Nothing,
+
+        -- For nested comments: points to the immediate parent comment when different from root
+        -- Example: Post A <- Comment B <- Comment C
+        --          Comment C's parentPost is Comment B
+        --          Comment B's parentPost is null (same as root)
+        defPropertySigRO' "parentId" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          runE $ getEvent eid >>= maybe (return Nothing) \eventWithRelays -> do
+            parentId <- getParentReference (event eventWithRelays)
+            rootId <- getRootReference (event eventWithRelays)
+            return $ do  -- This is Maybe monad
+              p <- parentId
+              r <- rootId
+              guard (p /= r)
+              Just $ pack $ show p
+
       ]
 
-    chatPool <- newFactoryPool (newObject chatClass)
+    postsPool <- newFactoryPool (newObject postClass)
+    chatPool <- newFactoryPool (newObject postClass)
 
     rootClass <- newClass [
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
@@ -326,7 +295,7 @@ runUI = interpret $ \_ -> \case
           n <- runE getCurrentTime
           kp <- runE getKeyPair
           let unsigned = createMetadata profile (keyPairToPubKeyXO kp) n
-          signedMaybe <- signEvent unsigned kp
+          signedMaybe <- runE $ signEvent unsigned kp
           case signedMaybe of
             Just signed -> do
               runE $ broadcast signed
@@ -336,34 +305,30 @@ runUI = interpret $ \_ -> \case
         defPropertySigRO' "followList" changeKey' $ \obj -> do
           runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
           st <- runE $ get @AppState
-          let maybeUserPubKey = keyPairToPubKeyXO <$> keyPair st
-          case maybeUserPubKey of
-            Just userPubKey -> do
-              let userFollows = Map.findWithDefault [] userPubKey (follows st)
-              let selfFollow = Follow { pubkey = userPubKey, followRelay = Nothing, petName = Nothing }
-              objs <- mapM (getPoolObject followPool) (map pubkey (selfFollow : userFollows))
-              return objs
-            Nothing -> return [],
+          case keyPair st of
+            Just kp -> do
+              let userPubKey = keyPairToPubKeyXO kp
+              followedPubKeys <- runE $ getFollows userPubKey
+              mapM (getPoolObject followPool) (userPubKey : map pubkey followedPubKeys)
+            _ -> return [],
 
         defPropertySigRO' "posts" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { postsObjRef = Just obj } }
           st <- runE $ get @AppState
-          case currentContact st of
-            (Just recipient, _) -> do
-              let notes = Map.findWithDefault [] recipient (posts st)
-              objs <- mapM (getPoolObject postsPool) (map postId notes)
-              return objs
-            _ -> do return [],
+          case fst (currentContact st) of
+            Just recipient -> do
+                postIds <- runE $ getTimelineIds PostTimeline recipient 1000
+                mapM (getPoolObject postsPool) postIds
+            Nothing -> return [],
 
         defPropertySigRO' "privateMessages" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { privateMessagesObjRef = Just obj } }
           st <- runE $ get @AppState
-          case currentContact st of
-            (Just recipient, _) -> do
-              let chatMessages = Map.findWithDefault [] recipient (chats st)
-              objs <- mapM (getPoolObject chatPool) (map chatMessageId chatMessages)
-              return objs
-            _ -> do return [],
+          case fst (currentContact st) of
+            Just recipient -> do
+                messageIds <- runE $ getTimelineIds ChatTimeline recipient 1000
+                mapM (getPoolObject chatPool) messageIds
+            Nothing -> return [],
 
         defMethod' "follow" $ \_ npubText -> runE $ followProfile npubText,
 
@@ -395,7 +360,13 @@ runUI = interpret $ \_ -> \case
         defMethod' "deleteEvent" $ \_ eid input -> runE $ do -- NIP-09 delete post
           let unquoted = read (unpack eid) :: String
           let eid' = read unquoted :: EventId
-          deleteEvent eid' input
+          deleteEvent eid' input,
+
+        defMethod' "getPost" $ \_ eid -> do
+          let unquoted = read (unpack eid) :: String
+          let eid' = read unquoted :: EventId
+          postObj <- newObject postClass eid'
+          return postObj
       ]
 
     rootObj <- newObject rootClass ()
