@@ -9,7 +9,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Text (Text)
 import Effectful.Concurrent.STM (TChan, TQueue)
-import Lmdb.Types (Database, Environment, Mode(..))
+import Lmdb.Types (Database, Environment, Mode(..), MultiDatabase)
 import GHC.Generics (Generic)
 import Nostr.Keys (KeyPair, PubKeyXO)
 import Nostr.Types (Event, EventId, Filter, Profile, Relay, RelayURI, Request, SubscriptionId)
@@ -108,28 +108,6 @@ data ChatMessage = ChatMessage
   } deriving (Show)
 
 
--- | Type of post
-data PostType
-  = ShortTextNote
-  | Repost EventId             -- kind 6, references original note
-  | QuoteRepost EventId      -- kind 1 with q tag, includes quoted event and additional content
-  | Comment {
-      rootScope :: EventId,    -- root event being commented on
-      rootKind :: Int,         -- kind of root event
-      parentId :: EventId,     -- immediate parent (same as root for top-level comments)
-      parentKind :: Int        -- kind of parent
-    }
-  deriving (Show, Eq)
-
-
--- | Simplified note reference that proxies most data through events map
-data Post = Post
-  { postId :: EventId          -- ID of this post
-  , postType :: PostType       -- Type of post and its references
-  , postCreatedAt :: Int       -- Creation timestamp
-  } deriving (Show)
-
-
 -- | Data type to store event with its relay sources
 data EventWithRelays = EventWithRelays
     { event :: Event
@@ -144,9 +122,9 @@ data AppState = AppState
   , lmdbEnv :: Maybe (Environment ReadWrite)
   , eventDb :: Maybe (Database EventId EventWithRelays)
   , profileDb :: Maybe (Database PubKeyXO (Profile, Int))
-  , posts :: Map PubKeyXO [Post]
-  , chats :: Map PubKeyXO [ChatMessage]
-  , follows :: Map PubKeyXO [Follow]
+  , postTimelineDb :: Maybe (MultiDatabase (PubKeyXO, Int) EventId)
+  , chatTimelineDb :: Maybe (MultiDatabase (PubKeyXO, Int) EventId)
+  , followsDb :: Maybe (Database PubKeyXO [Follow])
   , currentContact :: (Maybe PubKeyXO, Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
   }
@@ -157,7 +135,7 @@ data Follow = Follow
   { pubkey :: PubKeyXO
   , followRelay :: Maybe Relay
   , petName :: Maybe Text
-  } deriving (Show)
+  } deriving (Show, Generic, ToJSON, FromJSON)
 
 
 -- | Initial application state.
@@ -168,9 +146,9 @@ initialState = AppState
   , lmdbEnv = Nothing
   , eventDb = Nothing
   , profileDb = Nothing
-  , posts = Map.empty
-  , chats = Map.empty
-  , follows = Map.empty
+  , postTimelineDb = Nothing
+  , chatTimelineDb = Nothing
+  , followsDb = Nothing
   , currentContact = (Nothing, Nothing)
   , currentProfile = Nothing
   }

@@ -50,9 +50,7 @@ executable futr
         Presentation.KeyMgmtUI
         Presentation.RelayMgmtUI
         RelayMgmt
-        Store.Event
-        Store.LMDB
-        Store.Profile
+        Store.Lmdb
         Types
         TimeFormatter
         UI

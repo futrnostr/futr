@@ -22,8 +22,7 @@ import Presentation.KeyMgmtUI (runKeyMgmtUI)
 import Presentation.RelayMgmtUI (runRelayMgmtUI)
 import RelayMgmt (runRelayMgmt)
 import UI qualified as UI
-import Store.Event (runEventStore)
-import Store.Profile (runProfileStore)
+import Store.Lmdb (runLmdbStore)
 import Types (AppState(..), RelayPoolState(..))
 import Types qualified as Types
 
@@ -50,9 +49,8 @@ main = do
         . runQtQuick
         . runFileSystem
         . runUtil
+        . runLmdbStore
         -- nostr related
-        . runEventStore
-        . runProfileStore
         . runNostr
         . runKeyMgmt
         . runGiftWrap

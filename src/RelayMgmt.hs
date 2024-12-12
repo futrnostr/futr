@@ -4,6 +4,7 @@ module RelayMgmt where
 
 import Control.Monad (forM)
 import Data.Map.Strict qualified as Map
+import Data.Text (pack)
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
@@ -61,6 +62,7 @@ runRelayMgmt
   -> Eff es a
 runRelayMgmt = interpret $ \_ -> \case
     ImportGeneralRelays pk rs ts -> do
+        logDebug $ "Importing general relays for " <> pubKeyXOToBech32 pk <> " with " <> pack (show rs)
         let rs' = map normalizeRelay rs
         modify @RelayPoolState $ \st -> do
             case Map.lookup pk (generalRelays st) of

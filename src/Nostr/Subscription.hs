@@ -35,8 +35,7 @@ import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Relay(..)
 import Nostr.Types qualified as NT
 import Nostr.Util
 import RelayMgmt
-import Store.Event
-import Store.Profile
+import Store.Lmdb
 import Types hiding (Repost, ShortTextNote)
 import Types qualified as Types
 
@@ -57,8 +56,7 @@ makeEffect ''Subscription
 type SubscriptionEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
-  , EventStore :> es
-  , ProfileStore :> es
+  , LmdbStore :> es
   , GiftWrap :> es
   , RelayConnection :> es
   , KeyMgmt :> es
@@ -94,174 +92,114 @@ runSubscription = interpret $ \_ -> \case
                         }
                 Nothing -> return ()
 
-    HandleEvent r _ _ event' -> handleEvent' event' r False
+    HandleEvent r _ _ event' -> handleEvent' event' r
 
 
-handleEvent' :: SubscriptionEff es => Event -> RelayURI -> Bool -> Eff es UIUpdates
-handleEvent' event' r isReplay = do
+handleEvent' :: SubscriptionEff es => Event -> RelayURI -> Eff es UIUpdates
+handleEvent' event' r = do
     logDebug $ "Starting handleEvent' for event: " <> pack (show event')
+    let ev = EventWithRelays event' (Set.singleton r)
 
-    -- Validate event only if not replaying
-    if not isReplay && not (validateEvent event')
+    -- Validate event
+    if not (validateEvent event')
     then do
         logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
         pure emptyUpdates
-    else do
-        -- Skip putEvent during replay since events are already in store
-        unless isReplay $
-            putEvent (eventId event') (EventWithRelays event' (Set.singleton r))
+    else case kind event' of
+        ShortTextNote -> do
+            withTransaction $ \txn -> do
+                putEventTx txn ev
+                addPostTimelineEntryTx txn (pubKey event') (eventId event') (createdAt event')
+            pure $ emptyUpdates { postsChanged = True }
 
-        case kind event' of
-            ShortTextNote -> do
-                let qTags = [t | t@(QTag _ _ _) <- tags event']
-                let note = case qTags of
-                        (QTag quotedId _ _:_) ->
-                            Types.Post
-                                { postId = eventId event'
-                                , postType = Types.QuoteRepost quotedId
-                                , postCreatedAt = createdAt event'
-                                }
-                        _ ->
-                            Types.Post
-                                { postId = eventId event'
-                                , postType = Types.ShortTextNote
-                                , postCreatedAt = createdAt event'
-                                }
+        Repost -> do
+            case ([t | t@(ETag _ _ _) <- tags event'], eitherDecode (fromStrict $ encodeUtf8 $ content event')) of
+                (ETag eid _ _:_, Right originalEvent) | validateEvent originalEvent -> do
+                    withTransaction $ \txn -> do
+                        putEventTx txn ev
+                        addPostTimelineEntryTx txn (pubKey event') (eventId event') (createdAt event')
+                    pure $ emptyUpdates { postsChanged = True }
+                _ -> do
+                    logWarning $ "Invalid repost or missing e-tag: " <> (byteStringToHex $ getEventId (eventId event'))
+                    pure emptyUpdates
 
-                st <- get @AppState
-                let existingPosts = Map.findWithDefault [] (pubKey event') (posts st)
-                    alreadyExists = any (\p -> postId p == eventId event') existingPosts
+        EventDeletion -> do
+            let eventIdsToDelete = [eid | ETag eid _ _ <- tags event']
+            forM_ eventIdsToDelete $ \eid -> do
+                withTransaction $ \txn -> do
+                    deleteEventTx txn eid
+                    deletePostTimelineEntryTx txn eid
+                    deleteChatTimelineEntryTx txn eid
 
-                if alreadyExists
-                    then do
-                        pure emptyUpdates
-                    else do
-                        modify @AppState $ \st' ->
-                            st' { posts = Map.insertWith
-                                    (\new old -> sortBy (comparing postCreatedAt) (new ++ old))
-                                    (pubKey event')
-                                    [note]
-                                    (posts st')
-                                }
+            pure $ emptyUpdates
+                { postsChanged = True
+                , privateMessagesChanged = True
+                }
 
-                        pure $ emptyUpdates { postsChanged = True }
+        Metadata -> do
+            case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
+                Right profile -> do
+                    withTransaction $ \txn -> do
+                        putEventTx txn ev
+                        putProfileTx txn (pubKey event') (profile, (createdAt event'))
 
-            Repost -> do
-                case [t | t@(ETag _ _ _) <- tags event'] of
-                    (ETag eid _ _:_) -> do
-                        case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
-                            Right originalEvent -> do
-                                if validateEvent originalEvent
-                                    then do
-                                        unless isReplay $
-                                            putEvent (eventId originalEvent) (EventWithRelays originalEvent (Set.singleton r))
-                                        let note = Types.Post
-                                                { postId = eventId event'
-                                                , postType = Types.Repost eid
-                                                , postCreatedAt = createdAt event'
-                                                }
+                    st <- get @AppState
+                    let isOwnProfile = maybe False (\kp -> pubKey event' == keyPairToPubKeyXO kp) (keyPair st)
+                    when isOwnProfile $ do
+                        let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
+                        updateProfile aid profile
 
-                                        st <- get @AppState
-                                        let existingPosts = Map.findWithDefault [] (pubKey event') (posts st)
-                                            alreadyExists = any (\p -> postId p == eventId event') existingPosts
+                    pure $ emptyUpdates { profilesChanged = True }
+                Left err -> do
+                    logWarning $ "Failed to decode metadata: " <> pack err
+                    pure emptyUpdates
 
-                                        if alreadyExists
-                                            then pure emptyUpdates
-                                            else do
-                                                modify @AppState $ \st' ->
-                                                    st' { posts = Map.insertWith
-                                                            (\new old -> sortBy (comparing postCreatedAt) (new ++ old))
-                                                            (pubKey event')
-                                                            [note]
-                                                            (posts st')
-                                                        }
+        FollowList -> do
+            let followList' = [Follow pk (fmap InboxRelay relay') petName' | PTag pk relay' petName' <- tags event']
+            withTransaction $ \txn -> do
+                putEventTx txn ev
+                putFollowsTx txn (pubKey event') followList'
+            pure $ emptyUpdates { followsChanged = True }
 
-                                                pure $ emptyUpdates { postsChanged = True }
-                                    else do
-                                        logWarning $ "Invalid original event in repost: " <>
-                                            (byteStringToHex $ getEventId (eventId event'))
-                                        pure emptyUpdates
-                            Left err -> do
-                                logWarning $ "Failed to decode original event in repost: " <> pack err
-                                pure emptyUpdates
-                    _ -> do
-                        logWarning $ "Repost without e-tag ignored: " <> (byteStringToHex $ getEventId (eventId event'))
-                        pure emptyUpdates
+        GiftWrap -> do
+            handleGiftWrapEvent event'
+            pure $ emptyUpdates { privateMessagesChanged = True }
 
-            EventDeletion -> do
-                let eventIdsToDelete = [eid | ETag eid _ _ <- tags event']
+        RelayListMetadata -> do
+            withTransaction $ \txn -> do
+                putEventTx txn ev
+            let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
+                ts = createdAt event'
+                pk = pubKey event'
+            case validRelayTags of
+                [] -> do
+                    logWarning $ "No valid relay URIs found in RelayListMetadata event from "
+                        <> (pubKeyXOToBech32 pk)
+                    pure emptyUpdates
+                relays -> do
+                    handleRelayListUpdate pk relays ts
+                        importGeneralRelays
+                        generalRelays
+                    pure $ emptyUpdates { generalRelaysChanged = True }
 
-                forM_ eventIdsToDelete $ \eid -> do
-                    deleteEvent eid
+        PreferredDMRelays -> do
+            withTransaction $ \txn -> do
+                putEventTx txn ev
+            let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
+            case validRelayTags of
+                [] -> do
+                    logWarning $ "No valid relay URIs found in PreferredDMRelays event from "
+                        <> (pubKeyXOToBech32 $ pubKey event')
+                    pure emptyUpdates
+                relays -> do
+                    handleRelayListUpdate (pubKey event') relays (createdAt event')
+                        importDMRelays
+                        dmRelays
+                    pure $ emptyUpdates { dmRelaysChanged = True }
 
-                modify @AppState $ \st -> st
-                    { posts = Map.map (filter (\p -> postId p `notElem` eventIdsToDelete)) (posts st)
-                    , chats = Map.map (filter (\dm -> chatMessageId dm `notElem` eventIdsToDelete)) (chats st)
-                    }
-
-                pure $ emptyUpdates
-                    { postsChanged = True
-                    , privateMessagesChanged = True
-                    }
-
-            Metadata -> do
-                case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
-                    Right profile -> do
-                        putProfile (pubKey event') (profile, (createdAt event'))
-
-                        st <- get @AppState
-                        let isOwnProfile = maybe False (\kp -> pubKey event' == keyPairToPubKeyXO kp) (keyPair st)
-                        when isOwnProfile $ do
-                            let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
-                            updateProfile aid profile
-
-                        pure $ emptyUpdates { profilesChanged = True }
-                    Left err -> do
-                        logWarning $ "Failed to decode metadata: " <> pack err
-                        pure emptyUpdates
-
-            FollowList -> do
-                let followList' = [Follow pk (fmap InboxRelay relay') petName' | PTag pk relay' petName' <- tags event']
-                modify $ \st -> st { follows = Map.insert (pubKey event') followList' (follows st) }
-                pure $ emptyUpdates { followsChanged = True }
-
-            GiftWrap -> do
-                handleGiftWrapEvent event'
-                pure $ emptyUpdates { privateMessagesChanged = True }
-
-            RelayListMetadata -> do
-                let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
-                    ts = createdAt event'
-                    pk = pubKey event'
-                case validRelayTags of
-                    [] -> do
-                        logWarning $ "No valid relay URIs found in RelayListMetadata event from "
-                            <> (pubKeyXOToBech32 pk)
-                        pure emptyUpdates
-                    relays -> do
-                        handleRelayListUpdate pk relays ts
-                            importGeneralRelays
-                            generalRelays
-                            isReplay
-                        pure $ emptyUpdates { generalRelaysChanged = True }
-
-            PreferredDMRelays -> do
-                let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
-                case validRelayTags of
-                    [] -> do
-                        logWarning $ "No valid relay URIs found in PreferredDMRelays event from "
-                            <> (pubKeyXOToBech32 $ pubKey event')
-                        pure emptyUpdates
-                    relays -> do
-                        handleRelayListUpdate (pubKey event') relays (createdAt event')
-                            importDMRelays
-                            dmRelays
-                            isReplay
-                        pure $ emptyUpdates { dmRelaysChanged = True }
-
-            _ -> do
-                logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
-                pure emptyUpdates
+        _ -> do
+            logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
+            pure emptyUpdates
     where
         isValidRelayURI :: RelayURI -> Bool
         isValidRelayURI uriText =
@@ -283,9 +221,6 @@ createSubscription :: SubscriptionEff es
 createSubscription r subId' fs = do
     st <- get @RelayPoolState
     case Map.lookup r (activeConnections st) of
-        Nothing -> do
-            logWarning $ "Cannot start subscription: no connection found for relay: " <> r
-            return Nothing
         Just rd -> do
             let channel = requestChannel rd
             atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' fs)
@@ -298,6 +233,9 @@ createSubscription r subId' fs = do
                         (activeConnections st')
                     }
             return $ pure q
+        Nothing -> do
+            logWarning $ "Cannot start subscription: no connection found for relay: " <> r
+            return Nothing
 
 
 -- | Determine relay type and start appropriate subscriptions
@@ -305,8 +243,8 @@ handleRelaySubscription :: SubscriptionEff es => RelayURI -> Eff es ()
 handleRelaySubscription r = do
     kp <- getKeyPair
     let pk = keyPairToPubKeyXO kp
-    st <- get @AppState
-    let followPks = maybe [] (map (\(Follow pk' _ _) -> pk')) $ Map.lookup pk (follows st)
+    follows <- getFollows pk
+    let followPks = map pubkey follows
     st' <- get @RelayPoolState
 
     -- Check if it's a DM relay
@@ -342,7 +280,7 @@ handleRelaySubscription r = do
                             es <- atomically $ flushTQueue q
 
                             updates <- fmap mconcat $ forM (e : es) $ \case
-                                EventAppeared event' -> handleEvent' event' r False
+                                EventAppeared event' -> handleEvent' event' r
                                 SubscriptionEose -> return emptyUpdates
                                 SubscriptionClosed _ -> do
                                     atomically $ writeTVar shouldStop True
@@ -368,35 +306,31 @@ handleRelayListUpdate :: SubscriptionEff es
                       -> Int                                                  -- ^ Event timestamp
                       -> (PubKeyXO -> [Relay] -> Int -> Eff es ())            -- ^ Import function
                       -> (RelayPoolState -> Map.Map PubKeyXO ([Relay], Int))  -- ^ Relay map selector
-                      -> Bool                                                 -- ^ Is replay
                       -> Eff es ()
-handleRelayListUpdate pk relays ts importFn getRelayMap isReplay = do
+handleRelayListUpdate pk relays ts importFn getRelayMap = do
     st <- get @RelayPoolState
     case Map.lookup pk (getRelayMap st) of
-        Just (existingRelays, oldTs) -> do
-            when (oldTs < ts) $ do
-                unless isReplay $ do
-                    -- Disconnect from relays that aren't in the new list
-                    forM_ existingRelays $ \r ->
-                        when (getUri r `notElem` map getUri relays) $
-                            disconnectRelay $ getUri r
+        Just (existingRelays, oldTs) | oldTs < ts -> do
+            -- Disconnect from relays that aren't in the new list
+            forM_ existingRelays $ \r ->
+                when (getUri r `notElem` map getUri relays) $
+                    disconnectRelay $ getUri r
 
-                importFn pk relays ts
-                updateRelays (AccountId $ pubKeyXOToBech32 pk) (relays, ts)
+            importFn pk relays ts
+            updateRelays (AccountId $ pubKeyXOToBech32 pk) (relays, ts)
 
-                unless isReplay $ do
-                    -- Connect to new relays that weren't in the old list
-                    let newRelays = filter (\r -> getUri r `notElem` map getUri existingRelays) relays
-                    forM_ newRelays $ \r -> async $ do
-                        connected <- connectRelay $ getUri r
-                        when connected $ handleRelaySubscription $ getUri r
+            -- Connect to new relays that weren't in the old list
+            let newRelays = filter (\r -> getUri r `notElem` map getUri existingRelays) relays
+            forM_ newRelays $ \r -> async $ do
+                connected <- connectRelay $ getUri r
+                when connected $ handleRelaySubscription $ getUri r
         Nothing -> do
             importFn pk relays ts
             updateRelays (AccountId $ pubKeyXOToBech32 pk) (relays, ts)
-            unless isReplay $ do
-                forM_ relays $ \r -> async $ do
-                    connected <- connectRelay $ getUri r
-                    when connected $ handleRelaySubscription $ getUri r
+            forM_ relays $ \r -> async $ do
+                connected <- connectRelay $ getUri r
+                when connected $ handleRelaySubscription $ getUri r
+        _ -> pure ()
 
 
 -- | Create DM relay subscription filters
@@ -427,6 +361,7 @@ createInboxRelayFilters xo followedPubKeys =
         , limit = Just 1000
         , fTags = Nothing
         } ]
+
 
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId
