@@ -58,7 +58,8 @@ import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
-import Store.Lmdb
+import Store.Lmdb ( LmdbStore, getEvent, getFollows, initializeEnv, initChatTimelineDb
+                  , initEventDb, initFollowsDb, initPostTimelineDb, initProfileDb )
 import Types hiding (Comment, QuoteRepost, Repost)
 
 -- | Signal key class for LoginStatusChanged.
@@ -381,7 +382,7 @@ runFutr = interpret $ \_ -> \case
                   Nothing -> return ()
               Nothing -> logError "Failed to sign comment"
 
-  DeleteEvent eid reason -> do
+  Futr.DeleteEvent eid reason -> do
     st <- get @AppState
     case keyPair st of
       Nothing -> logError "No keypair found"

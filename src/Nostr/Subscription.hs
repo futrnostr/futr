@@ -36,8 +36,7 @@ import Nostr.Types qualified as NT
 import Nostr.Util
 import RelayMgmt
 import Store.Lmdb
-import Types hiding (Repost, ShortTextNote)
-import Types qualified as Types
+import Types
 
 
 -- | Subscription effects
@@ -107,17 +106,13 @@ handleEvent' event' r = do
         pure emptyUpdates
     else case kind event' of
         ShortTextNote -> do
-            withTransaction $ \txn -> do
-                putEventTx txn ev
-                addPostTimelineEntryTx txn (pubKey event') (eventId event') (createdAt event')
+            addPostTimelineEntry ev
             pure $ emptyUpdates { postsChanged = True }
 
         Repost -> do
             case ([t | t@(ETag _ _ _) <- tags event'], eitherDecode (fromStrict $ encodeUtf8 $ content event')) of
                 (ETag eid _ _:_, Right originalEvent) | validateEvent originalEvent -> do
-                    withTransaction $ \txn -> do
-                        putEventTx txn ev
-                        addPostTimelineEntryTx txn (pubKey event') (eventId event') (createdAt event')
+                    addPostTimelineEntry ev
                     pure $ emptyUpdates { postsChanged = True }
                 _ -> do
                     logWarning $ "Invalid repost or missing e-tag: " <> (byteStringToHex $ getEventId (eventId event'))
@@ -125,11 +120,7 @@ handleEvent' event' r = do
 
         EventDeletion -> do
             let eventIdsToDelete = [eid | ETag eid _ _ <- tags event']
-            forM_ eventIdsToDelete $ \eid -> do
-                withTransaction $ \txn -> do
-                    deleteEventTx txn eid
-                    deletePostTimelineEntryTx txn eid
-                    deleteChatTimelineEntryTx txn eid
+            forM_ eventIdsToDelete $ \eid -> deleteTimelineEntry eid
 
             pure $ emptyUpdates
                 { postsChanged = True
@@ -139,9 +130,7 @@ handleEvent' event' r = do
         Metadata -> do
             case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
                 Right profile -> do
-                    withTransaction $ \txn -> do
-                        putEventTx txn ev
-                        putProfileTx txn (pubKey event') (profile, (createdAt event'))
+                    putProfile ev (profile, (createdAt event'))
 
                     st <- get @AppState
                     let isOwnProfile = maybe False (\kp -> pubKey event' == keyPairToPubKeyXO kp) (keyPair st)
@@ -156,9 +145,7 @@ handleEvent' event' r = do
 
         FollowList -> do
             let followList' = [Follow pk (fmap InboxRelay relay') petName' | PTag pk relay' petName' <- tags event']
-            withTransaction $ \txn -> do
-                putEventTx txn ev
-                putFollowsTx txn (pubKey event') followList'
+            putFollows ev followList'
             pure $ emptyUpdates { followsChanged = True }
 
         GiftWrap -> do
@@ -166,8 +153,7 @@ handleEvent' event' r = do
             pure $ emptyUpdates { privateMessagesChanged = True }
 
         RelayListMetadata -> do
-            withTransaction $ \txn -> do
-                putEventTx txn ev
+            putEvent ev
             let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
                 ts = createdAt event'
                 pk = pubKey event'
@@ -183,8 +169,7 @@ handleEvent' event' r = do
                     pure $ emptyUpdates { generalRelaysChanged = True }
 
         PreferredDMRelays -> do
-            withTransaction $ \txn -> do
-                putEventTx txn ev
+            putEvent ev
             let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
             case validRelayTags of
                 [] -> do
@@ -361,7 +346,6 @@ createInboxRelayFilters xo followedPubKeys =
         , limit = Just 1000
         , fTags = Nothing
         } ]
-
 
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId

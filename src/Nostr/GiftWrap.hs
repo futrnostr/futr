@@ -5,7 +5,6 @@
 
 module Nostr.GiftWrap where
 
-import Control.Monad (forM_)
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get)
@@ -19,8 +18,9 @@ import Nostr
 import Nostr.Event (validateEvent)
 import Nostr.Keys (KeyPair, PubKeyXO, byteStringToHex, keyPairToPubKeyXO)
 import Nostr.Types (Event(..), EventId(..), Kind(..), Rumor(..), Tag(..))
-import Store.Lmdb (LmdbStore, addChatTimelineEntryTx, putEventTx, withTransaction)
+import Store.Lmdb (LmdbStore, addChatTimelineEntry)
 import Types (AppState(..), EventWithRelays(..))
+
 
 -- | GiftWrap Effects.
 data GiftWrap :: Effect where
@@ -78,13 +78,11 @@ processDecryptedRumor decryptedRumor sealedEvent originalEvent kp
   | not (pubKey sealedEvent == rumorPubKey decryptedRumor) =
       logWarning $ "Rumor pubkey does not match sealed event pubkey: " <> (byteStringToHex $ getEventId (eventId originalEvent))
   | otherwise = do
-      let chatKey = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
+      let participants = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
             then sort $ getAllPTags (rumorTags decryptedRumor)
             else filter (/= keyPairToPubKeyXO kp) $ rumorPubKey decryptedRumor : sort (getAllPTags (rumorTags decryptedRumor))
-      forM_ chatKey $ \participant -> do
-          withTransaction $ \txn -> do
-              putEventTx txn $ EventWithRelays originalEvent Set.empty -- @todo add relays where we have seen this event
-              addChatTimelineEntryTx txn participant (eventId originalEvent) (rumorCreatedAt decryptedRumor)
+          ev = EventWithRelays originalEvent Set.empty -- @todo add relays where we have seen this event
+      addChatTimelineEntry ev participants (rumorCreatedAt decryptedRumor)
 
 
 -- | Get all p tags from the rumor tags

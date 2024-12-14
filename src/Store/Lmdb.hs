@@ -8,21 +8,19 @@
 
 module Store.Lmdb where
 
-import Control.Monad (void)
+import Control.Monad (forM_,void)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Aeson (ToJSON, FromJSON, encode, decode)
 import Data.Set qualified as Set
 import Effectful
-import Effectful.Dispatch.Dynamic
 import Effectful.Exception (throwIO)
+import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Shared (State, get)
 import Effectful.State.Static.Shared qualified as State
 import Effectful.FileSystem
 import Effectful.TH (makeEffect)
 import Lmdb.Codec qualified as Codec
-import Lmdb.Connection ( initializeReadWriteEnvironment, makeMultiSettings, makeSettings
-                       , openMultiDatabase, openDatabase, readonly, withMultiCursor )
-import Lmdb.Connection qualified as Connection
+import Lmdb.Connection
 import Lmdb.Map qualified as Map
 import Lmdb.Multimap qualified as Multimap
 import Lmdb.Types
@@ -31,7 +29,7 @@ import System.FilePath ((</>))
 
 import Logging
 import Nostr.Keys (PubKeyXO)
-import Nostr.Types (Event(..), EventId(..), Profile, emptyProfile)
+import Nostr.Types (Event(..), EventId(..), Kind(..),Profile, emptyProfile)
 import Types (AppState(..), EventWithRelays(..), Follow)
 
 
@@ -43,194 +41,163 @@ data TimelineType = PostTimeline | ChatTimeline
 type TimelineKey = (PubKeyXO, Int)
 
 
--- | Lmdb Store effect
+-- | LmdbStore operations
 data LmdbStore :: Effect where
-    -- Transaction wrapper
-    WithTransaction :: forall m a. 
-                      (forall es. (LmdbStore :> es, IOE :> es, State AppState :> es) => 
-                       Transaction 'ReadWrite -> Eff es a) 
-                      -> LmdbStore m a
-    
     -- Event operations
-    PutEventTx :: Transaction 'ReadWrite -> EventWithRelays -> LmdbStore m ()
+    PutEvent :: EventWithRelays -> LmdbStore m ()
     GetEvent :: EventId -> LmdbStore m (Maybe EventWithRelays)
-    DeleteEventTx :: Transaction 'ReadWrite -> EventId -> LmdbStore m ()
+    DeleteEvent :: EventId -> LmdbStore m ()
     
     -- Follow operations
-    PutFollowsTx :: Transaction 'ReadWrite -> PubKeyXO -> [Follow] -> LmdbStore m ()
+    PutFollows :: EventWithRelays -> [Follow] -> LmdbStore m ()
     GetFollows :: PubKeyXO -> LmdbStore m [Follow]
-    DeleteFollowsTx :: Transaction 'ReadWrite -> PubKeyXO -> LmdbStore m ()
+    DeleteFollows :: EventId -> PubKeyXO -> LmdbStore m ()
     
     -- Profile operations
-    PutProfileTx :: Transaction 'ReadWrite -> PubKeyXO -> (Profile, Int) -> LmdbStore m ()
+    PutProfile :: EventWithRelays -> (Profile, Int) -> LmdbStore m ()
     GetProfile :: PubKeyXO -> LmdbStore m (Profile, Int)
     
     -- Timeline operations
-    AddTimelineEntryTx :: Transaction 'ReadWrite -> TimelineType -> PubKeyXO -> EventId -> Int -> LmdbStore m ()
-    DeleteTimelineEntryTx :: Transaction 'ReadWrite -> TimelineType -> EventId -> LmdbStore m ()
+    AddTimelineEntry :: TimelineType -> EventWithRelays -> [PubKeyXO] -> Int -> LmdbStore m ()
+    DeleteTimelineEntry :: EventId -> LmdbStore m ()
     GetTimelineIds :: TimelineType -> PubKeyXO -> Int -> LmdbStore m [EventId]
+
 
 type instance DispatchOf LmdbStore = Dynamic
 
 makeEffect ''LmdbStore
 
 
--- | Run LmdbStore operations
+-- | Run LmdbEffect
 runLmdbStore :: (IOE :> es, State AppState :> es)
-              => Eff (LmdbStore : es) a
-              -> Eff es a
-runLmdbStore = interpret $ \_ -> \case
-    -- Transaction wrapper
-    WithTransaction action -> do
-        st <- get
-        case lmdbEnv st of
-            Just env -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE ->
-                Connection.withTransaction env $ \txn -> 
-                    runE $ inject $ runLmdbStore (action txn)
-            _ -> throwIO $ userError "LMDB environment not initialized"
-
+             => Eff (LmdbStore : es) a
+             -> Eff es a
+runLmdbStore = interpret $ \env -> \case
     -- Event operations
-    PutEventTx txn ev -> do
+    PutEvent ev -> do
         st <- get
-        case eventDb st of
-            Just db -> do
-                let readTxn = readonly txn
-                    eid = eventId $ event ev
-                existing <- liftIO $ Map.lookup' readTxn db eid
-                let mergedEvent = case existing of
-                        Just existingEv -> 
-                            ev { relays = Set.union (relays ev) (relays existingEv) }
-                        Nothing -> ev
-                liftIO $ Map.insert' txn db eid mergedEvent
+        case (eventDb st, lmdbEnv st) of
+            (Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn ->
+                Map.insert' txn eventDb' (eventId $ event ev) ev
             _ -> throwIO $ userError "Event database not initialized"
 
     GetEvent eid -> do
         st <- get
-        case (lmdbEnv st, eventDb st) of
-            (Just env, Just db) -> liftIO $ Connection.withTransaction env $ \txn -> do
-                let readTxn = readonly txn
-                liftIO $ Map.lookup' readTxn db eid
+        case (eventDb st, lmdbEnv st) of
+            (Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn ->
+                Map.lookup' (readonly txn) eventDb' eid
             _ -> throwIO $ userError "Event database not initialized"
 
-    DeleteEventTx txn eid -> do
+    DeleteEvent eid -> do
         st <- get
-        case eventDb st of
-            Just db -> liftIO $ Map.delete' txn db eid
+        case (eventDb st, lmdbEnv st) of
+            (Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn ->
+                Map.delete' txn eventDb' eid
             _ -> throwIO $ userError "Event database not initialized"
 
     -- Follow operations
-    PutFollowsTx txn pk follows -> do
+    PutFollows ev follows -> do
         st <- get
-        case followsDb st of
-            Just db -> liftIO $ Map.insert' txn db pk follows
-            _ -> throwIO $ userError "Follows database not initialized"
+        case (eventDb st, followsDb st, lmdbEnv st) of
+            (Just eventDb', Just followsDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
+                Map.insert' txn followsDb' (pubKey $ event ev) follows
+                Map.insert' txn eventDb' (eventId $ event ev) ev
+            _ -> throwIO $ userError "Follows or Event database not initialized"
 
     GetFollows pk -> do
         st <- get
-        case (lmdbEnv st, followsDb st) of
-            (Just env, Just db) -> liftIO $ Connection.withTransaction env $ \txn -> do
-                let readTxn = readonly txn
-                mFollows <- liftIO $ Map.lookup' readTxn db pk
+        case (followsDb st, lmdbEnv st) of
+            (Just followsDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
+                mFollows <- Map.lookup' (readonly txn) followsDb' pk
                 pure $ maybe [] id mFollows
             _ -> throwIO $ userError "Follows database not initialized"
 
-    DeleteFollowsTx txn pk -> do
+    DeleteFollows eid pk -> do
         st <- get
-        case followsDb st of
-            Just db -> liftIO $ Map.delete' txn db pk
-            _ -> throwIO $ userError "Follows database not initialized"
+        case (eventDb st, followsDb st, lmdbEnv st) of
+            (Just eventDb', Just followsDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
+                Map.delete' txn followsDb' pk
+                Map.delete' txn eventDb' eid
+            _ -> throwIO $ userError "Follows or Event database not initialized"
 
     -- Profile operations
-    PutProfileTx txn pk newProf@(profile, newTimestamp) -> do
+    PutProfile ev newProf@(profile, newTimestamp) -> do
         st <- get
-        case profileDb st of
-            Just db -> do
-                let readTxn = readonly txn
-                existing <- liftIO $ Map.lookup' readTxn db pk
+        case (profileDb st, eventDb st, lmdbEnv st) of
+            (Just profileDb', Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
+                existing <- Map.lookup' (readonly txn) profileDb' (pubKey $ event ev)
                 let finalProf = case existing of
                         Just (existingProfile, existingTimestamp) -> 
                             if existingTimestamp >= newTimestamp 
                                 then (existingProfile, existingTimestamp)
                                 else newProf
                         Nothing -> newProf
-                liftIO $ Map.insert' txn db pk finalProf
-            _ -> throwIO $ userError "Profile database not initialized"
+                Map.insert' txn profileDb' (pubKey $ event ev) finalProf
+                Map.insert' txn eventDb' (eventId $ event ev) ev
+            _ -> throwIO $ userError "Profile or Event database not initialized"
 
     GetProfile pk -> do
         st <- get
         case (lmdbEnv st, profileDb st) of
-            (Just env, Just db) -> liftIO $ Connection.withTransaction env $ \txn -> do
-                let readTxn = readonly txn
-                mProfile <- liftIO $ Map.lookup' readTxn db pk
+            (Just env', Just profileDb') -> liftIO $ withTransaction env' $ \txn -> do
+                mProfile <- Map.lookup' (readonly txn) profileDb' pk
                 case mProfile of
                     Just profile -> return profile
                     Nothing -> return (emptyProfile, 0)
             _ -> throwIO $ userError "Profile database not initialized"
 
     -- Timeline operations
-    AddTimelineEntryTx txn timelineType author eid timestamp -> do
+    AddTimelineEntry timelineType ev pks timestamp -> do
         st <- get
-        let key = (author, timestamp)
         let dbSelector = case timelineType of
                 PostTimeline -> postTimelineDb
                 ChatTimeline -> chatTimelineDb
-        case dbSelector st of
-            Just db -> liftIO $ 
-                withMultiCursor txn db $ \cursor -> 
-                    Multimap.insert cursor key eid
-            _ -> throwIO $ userError "Timeline database not initialized"
+        case (dbSelector st, eventDb st, lmdbEnv st) of
+            (Just timelineDb', Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
+                withMultiCursor txn timelineDb' $ \cursor -> do
+                    forM_ pks $ \pk -> Multimap.insert cursor (pk, timestamp) (eventId $ event ev)
+                Map.insert' txn eventDb' (eventId $ event ev) ev
+            _ -> throwIO $ userError "Timeline or Event database not initialized"
 
-    DeleteTimelineEntryTx txn timelineType eid -> do
+    DeleteTimelineEntry eid -> do
         st <- get
-        case eventDb st of
-            Just evDb -> do
-                let readTxn = readonly txn
-                mEvent <- liftIO $ Map.lookup' readTxn evDb eid
+        case (eventDb st, postTimelineDb st, chatTimelineDb st, lmdbEnv st) of
+            (Just eventDb', Just postTimelineDb', Just chatTimelineDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
+                mEvent <- Map.lookup' (readonly txn) eventDb' eid
                 case mEvent of
                     Just ev -> do
                         let key = (pubKey $ event ev, createdAt $ event ev)
-                        let dbSelector = case timelineType of
-                                PostTimeline -> postTimelineDb
-                                ChatTimeline -> chatTimelineDb
-                        case dbSelector st of
-                            Just db -> liftIO $ 
-                                withMultiCursor txn db $ \cursor -> do
-                                    void $ Pipes.toListM $ Multimap.lookupValues cursor key
-                                    Multimap.deleteValues cursor
+                            db = case kind (event ev) of
+                                ShortTextNote -> postTimelineDb'
+                                Repost -> postTimelineDb'
+                                _ -> chatTimelineDb'
+                        withMultiCursor txn db $ \cursor -> do
+                            void $ Pipes.toListM $ Multimap.lookupValues cursor key
+                            Multimap.deleteValues cursor
+                        Map.delete' txn eventDb' eid
                     Nothing -> pure ()
-            _ -> throwIO $ userError "Event database not initialized"
+            _ -> throwIO $ userError "Event or Timeline database not initialized"
 
     GetTimelineIds timelineType author limit -> do
         st <- get
-        let key = (author, maxBound)  -- start from newest
-        let dbSelector = case timelineType of
+        let key = (author, maxBound)
+            dbSelector = case timelineType of
                 PostTimeline -> postTimelineDb
                 ChatTimeline -> chatTimelineDb
         case (lmdbEnv st, dbSelector st) of
-            (Just env, Just db) -> liftIO $ Connection.withTransaction env $ \txn -> do
-                let readTxn = readonly txn
-                withMultiCursor readTxn db $ \cursor -> do
+            (Just env', Just timelineDb') -> liftIO $ withTransaction env' $ \txn ->
+                withMultiCursor (readonly txn) timelineDb' $ \cursor -> do
                     values <- Pipes.toListM $ Multimap.lookupValues cursor key
                     return $ take limit values
             _ -> throwIO $ userError "Timeline database not initialized"
 
 
 -- | Helper functions for timeline operations (optional convenience wrappers)
-addPostTimelineEntryTx :: (LmdbStore :> es) 
-                       => Transaction 'ReadWrite -> PubKeyXO -> EventId -> Int -> Eff es ()
-addPostTimelineEntryTx txn pk eid ts = addTimelineEntryTx txn PostTimeline pk eid ts
+addPostTimelineEntry :: (LmdbStore :> es) => EventWithRelays -> Eff es ()
+addPostTimelineEntry ev = addTimelineEntry PostTimeline ev [pubKey $ event ev] (createdAt $ event ev)
 
-addChatTimelineEntryTx :: (LmdbStore :> es) 
-                       => Transaction 'ReadWrite -> PubKeyXO -> EventId -> Int -> Eff es ()
-addChatTimelineEntryTx txn pk eid ts = addTimelineEntryTx txn ChatTimeline pk eid ts
-
-deletePostTimelineEntryTx :: (LmdbStore :> es) => Transaction ReadWrite -> EventId -> Eff es ()
-deletePostTimelineEntryTx txn eid = 
-    deleteTimelineEntryTx txn PostTimeline eid
-
-deleteChatTimelineEntryTx :: (LmdbStore :> es) => Transaction ReadWrite -> EventId -> Eff es ()
-deleteChatTimelineEntryTx txn eid = 
-    deleteTimelineEntryTx txn ChatTimeline eid
+addChatTimelineEntry :: (LmdbStore :> es) => EventWithRelays -> [PubKeyXO] -> Int -> Eff es ()
+addChatTimelineEntry ev pks ts = addTimelineEntry ChatTimeline ev pks ts
 
 
 -- | Default Lmdb settings for JSON-serializable types
