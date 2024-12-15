@@ -82,6 +82,7 @@ processDecryptedRumor decryptedRumor sealedEvent originalEvent kp
             then sort $ getAllPTags (rumorTags decryptedRumor)
             else filter (/= keyPairToPubKeyXO kp) $ rumorPubKey decryptedRumor : sort (getAllPTags (rumorTags decryptedRumor))
           ev = EventWithRelays originalEvent Set.empty -- @todo add relays where we have seen this event
+      logInfo $ "Adding gift wrap to timeline: " <> (byteStringToHex $ getEventId (eventId originalEvent))
       addChatTimelineEntry ev participants (rumorCreatedAt decryptedRumor)
 
 

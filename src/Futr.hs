@@ -60,7 +60,7 @@ import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
 import Store.Lmdb ( LmdbStore, getEvent, getFollows, initializeEnv, initChatTimelineDb
                   , initEventDb, initFollowsDb, initPostTimelineDb, initProfileDb )
-import Types hiding (Comment, QuoteRepost, Repost)
+import Types hiding (Comment, QuoteRepost)
 
 -- | Signal key class for LoginStatusChanged.
 data LoginStatusChanged deriving Typeable
@@ -208,7 +208,7 @@ runFutr = interpret $ \_ -> \case
             unless (targetPK `elem` map pubkey currentFollows) $ do
                 --putFollows userPK (Follow targetPK Nothing Nothing : currentFollows) ???
                 notify $ emptyUpdates { followsChanged = True }
-                sendFollowListEvent
+                sendFollowListEvent -- @todo: this creates a new event, so I cannot store into lmdb beforehand. need to fix.
         Nothing -> return ()
 
   UnfollowProfile npub' -> do
@@ -275,7 +275,7 @@ runFutr = interpret $ \_ -> \case
         Nothing -> return ()
 
       -- Reset application state
-      modify @AppState $ \st -> st
+      modify @AppState $ \st' -> st'
         { keyPair = Nothing
         , currentScreen = KeyMgmt
         , lmdbEnv = Nothing
@@ -358,8 +358,8 @@ runFutr = interpret $ \_ -> \case
         mEvent <- getEvent eid
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just EventWithRelays{event, relays} -> do
-            let c = createComment event comment' (Right eid) Nothing Nothing (keyPairToPubKeyXO kp) now
+          Just ev -> do
+            let c = createComment (event ev) comment' (Right eid) Nothing Nothing (keyPairToPubKeyXO kp) now
             signed <- signEvent c kp
             case signed of
               Just s -> do

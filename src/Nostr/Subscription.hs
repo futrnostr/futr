@@ -321,9 +321,9 @@ handleRelayListUpdate pk relays ts importFn getRelayMap = do
 -- | Create DM relay subscription filters
 createDMRelayFilters :: PubKeyXO -> [PubKeyXO] -> [Filter]
 createDMRelayFilters xo followedPubKeys =
-    [ NT.metadataFilter (xo : followedPubKeys)
-    , NT.preferredDMRelaysFilter (xo : followedPubKeys)
-    , NT.giftWrapFilter xo
+    [ --NT.metadataFilter (xo : followedPubKeys)
+    --, NT.preferredDMRelaysFilter (xo : followedPubKeys)
+    NT.giftWrapFilter xo
     ]
 
 

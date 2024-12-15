@@ -12,6 +12,7 @@ import Control.Monad (forM_,void)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Aeson (ToJSON, FromJSON, encode, decode)
 import Data.Set qualified as Set
+import Data.Text (pack)
 import Effectful
 import Effectful.Exception (throwIO)
 import Effectful.Dispatch.Dynamic
@@ -22,14 +23,14 @@ import Effectful.TH (makeEffect)
 import Lmdb.Codec qualified as Codec
 import Lmdb.Connection
 import Lmdb.Map qualified as Map
-import Lmdb.Multimap qualified as Multimap
 import Lmdb.Types
 import Pipes.Prelude qualified as Pipes
 import System.FilePath ((</>))
+import Pipes ((>->))
 
 import Logging
 import Nostr.Keys (PubKeyXO)
-import Nostr.Types (Event(..), EventId(..), Kind(..),Profile, emptyProfile)
+import Nostr.Types (Event(..), EventId(..), Kind(..), Profile, emptyProfile)
 import Types (AppState(..), EventWithRelays(..), Follow)
 
 
@@ -109,7 +110,8 @@ runLmdbStore = interpret $ \env -> \case
         case (followsDb st, lmdbEnv st) of
             (Just followsDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
                 mFollows <- Map.lookup' (readonly txn) followsDb' pk
-                pure $ maybe [] id mFollows
+                let follows = maybe [] id mFollows
+                pure follows
             _ -> throwIO $ userError "Follows database not initialized"
 
     DeleteFollows eid pk -> do
@@ -153,10 +155,17 @@ runLmdbStore = interpret $ \env -> \case
                 PostTimeline -> postTimelineDb
                 ChatTimeline -> chatTimelineDb
         case (dbSelector st, eventDb st, lmdbEnv st) of
-            (Just timelineDb', Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
-                withMultiCursor txn timelineDb' $ \cursor -> do
-                    forM_ pks $ \pk -> Multimap.insert cursor (pk, timestamp) (eventId $ event ev)
-                Map.insert' txn eventDb' (eventId $ event ev) ev
+            (Just timelineDb', Just eventDb', Just env') -> liftIO $ do
+                -- First transaction: Insert the event
+                withTransaction env' $ \txn ->
+                    Map.insert' txn eventDb' (eventId $ event ev) ev
+
+                -- Second transaction: Insert timeline entries
+                withTransaction env' $ \txn -> do
+                    let invertedTimestamp = maxBound - timestamp
+                    withCursor txn timelineDb' $ \cursor ->
+                        forM_ pks $ \pk ->
+                            Map.insert cursor (pk, invertedTimestamp) (eventId $ event ev)
             _ -> throwIO $ userError "Timeline or Event database not initialized"
 
     DeleteTimelineEntry eid -> do
@@ -171,24 +180,24 @@ runLmdbStore = interpret $ \env -> \case
                                 ShortTextNote -> postTimelineDb'
                                 Repost -> postTimelineDb'
                                 _ -> chatTimelineDb'
-                        withMultiCursor txn db $ \cursor -> do
-                            void $ Pipes.toListM $ Multimap.lookupValues cursor key
-                            Multimap.deleteValues cursor
+                        Map.delete' txn db key
                         Map.delete' txn eventDb' eid
                     Nothing -> pure ()
             _ -> throwIO $ userError "Event or Timeline database not initialized"
 
     GetTimelineIds timelineType author limit -> do
         st <- get
-        let key = (author, maxBound)
-            dbSelector = case timelineType of
+        let dbSelector = case timelineType of
                 PostTimeline -> postTimelineDb
                 ChatTimeline -> chatTimelineDb
         case (lmdbEnv st, dbSelector st) of
             (Just env', Just timelineDb') -> liftIO $ withTransaction env' $ \txn ->
-                withMultiCursor (readonly txn) timelineDb' $ \cursor -> do
-                    values <- Pipes.toListM $ Multimap.lookupValues cursor key
-                    return $ take limit values
+                withCursor (readonly txn) timelineDb' $ \cursor ->
+                    Pipes.toListM $
+                        Map.lastBackward cursor
+                        >-> Pipes.filter (\kv -> fst (keyValueKey kv) == author)
+                        >-> Pipes.map keyValueValue
+                        >-> Pipes.take limit
             _ -> throwIO $ userError "Timeline database not initialized"
 
 
@@ -204,19 +213,6 @@ addChatTimelineEntry ev pks ts = addTimelineEntry ChatTimeline ev pks ts
 defaultJsonSettings :: (Ord k, ToJSON k, FromJSON k, ToJSON v, FromJSON v) 
                    => DatabaseSettings k v
 defaultJsonSettings = makeSettings
-    (SortCustom $ CustomSortSafe compare)
-    (Codec.throughByteString
-        (LBS.toStrict . encode)
-        (decode . LBS.fromStrict))
-    (Codec.throughByteString
-        (LBS.toStrict . encode)
-        (decode . LBS.fromStrict))
-
--- | Default Lmdb settings for JSON-serializable types in MultiDatabase
-defaultMultiJsonSettings :: (Ord k, Ord v, ToJSON k, FromJSON k, ToJSON v, FromJSON v) 
-                        => MultiDatabaseSettings k v
-defaultMultiJsonSettings = makeMultiSettings
-    (SortCustom $ CustomSortSafe compare)
     (SortCustom $ CustomSortSafe compare)
     (Codec.throughByteString
         (LBS.toStrict . encode)
@@ -247,11 +243,11 @@ initFollowsDb txn = openDatabase txn (Just "follows") defaultJsonSettings
 initProfileDb :: Transaction 'ReadWrite -> IO (Database PubKeyXO (Profile, Int))
 initProfileDb txn = openDatabase txn (Just "profiles") defaultJsonSettings
 
-initPostTimelineDb :: Transaction 'ReadWrite -> IO (MultiDatabase TimelineKey EventId)
-initPostTimelineDb txn = openMultiDatabase txn (Just "post_timeline") defaultMultiJsonSettings
+initPostTimelineDb :: Transaction 'ReadWrite -> IO (Database TimelineKey EventId)
+initPostTimelineDb txn = openDatabase txn (Just "post_timeline") defaultJsonSettings
 
-initChatTimelineDb :: Transaction 'ReadWrite -> IO (MultiDatabase TimelineKey EventId)
-initChatTimelineDb txn = openMultiDatabase txn (Just "chat_timeline") defaultMultiJsonSettings
+initChatTimelineDb :: Transaction 'ReadWrite -> IO (Database TimelineKey EventId)
+initChatTimelineDb txn = openDatabase txn (Just "chat_timeline") defaultJsonSettings
 
 -- | Settings for the event database
 eventDbSettings :: DatabaseSettings EventId EventWithRelays
