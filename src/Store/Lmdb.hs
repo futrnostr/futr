@@ -9,10 +9,13 @@
 module Store.Lmdb where
 
 import Control.Monad (forM_,void)
-import Data.ByteString.Lazy qualified as LBS
-import Data.Aeson (ToJSON, FromJSON, encode, decode)
+import Data.Aeson (ToJSON, FromJSON, encode, decode, eitherDecode)
+import Data.ByteString.Lazy (fromStrict, toStrict)
+import Data.List (sort)
+import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
 import Data.Text (pack)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Effectful
 import Effectful.Exception (throwIO)
 import Effectful.Dispatch.Dynamic
@@ -29,9 +32,11 @@ import System.FilePath ((</>))
 import Pipes ((>->))
 
 import Logging
-import Nostr.Keys (PubKeyXO)
-import Nostr.Types (Event(..), EventId(..), Kind(..), Profile, emptyProfile)
-import Types (AppState(..), EventWithRelays(..), Follow)
+import Nostr.Event (validateEvent, unwrapGiftWrap, unwrapSeal)
+import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
+import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile, Relay(..), Tag(..)
+                   , Rumor(..), rumorPubKey, rumorTags, rumorCreatedAt, emptyProfile )
+import Types (AppState(..), EventWithRelays(..), Follow(..))
 
 
 -- | Timeline types
@@ -44,23 +49,14 @@ type TimelineKey = (PubKeyXO, Int)
 
 -- | LmdbStore operations
 data LmdbStore :: Effect where
-    -- Event operations
+    -- Event operations (now handles all storage operations)
     PutEvent :: EventWithRelays -> LmdbStore m ()
+    PutGiftWrap :: EventWithRelays -> [PubKeyXO] -> Int -> LmdbStore m ()
+    
+    -- Query operations (read-only)
     GetEvent :: EventId -> LmdbStore m (Maybe EventWithRelays)
-    DeleteEvent :: EventId -> LmdbStore m ()
-    
-    -- Follow operations
-    PutFollows :: EventWithRelays -> [Follow] -> LmdbStore m ()
     GetFollows :: PubKeyXO -> LmdbStore m [Follow]
-    DeleteFollows :: EventId -> PubKeyXO -> LmdbStore m ()
-    
-    -- Profile operations
-    PutProfile :: EventWithRelays -> (Profile, Int) -> LmdbStore m ()
     GetProfile :: PubKeyXO -> LmdbStore m (Profile, Int)
-    
-    -- Timeline operations
-    AddTimelineEntry :: TimelineType -> EventWithRelays -> [PubKeyXO] -> Int -> LmdbStore m ()
-    DeleteTimelineEntry :: EventId -> LmdbStore m ()
     GetTimelineIds :: TimelineType -> PubKeyXO -> Int -> LmdbStore m [EventId]
 
 
@@ -70,122 +66,110 @@ makeEffect ''LmdbStore
 
 
 -- | Run LmdbEffect
-runLmdbStore :: (IOE :> es, State AppState :> es)
+runLmdbStore :: (IOE :> es, State AppState :> es, Logging :> es)
              => Eff (LmdbStore : es) a
              -> Eff es a
 runLmdbStore = interpret $ \env -> \case
-    -- Event operations
+    -- Event operations (main storage operation)
     PutEvent ev -> do
+        logDebug $ "Putting event: " <> pack (show ev)
         st <- get
-        case (eventDb st, lmdbEnv st) of
-            (Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn ->
-                Map.insert' txn eventDb' (eventId $ event ev) ev
-            _ -> throwIO $ userError "Event database not initialized"
+        case (eventDb st, followsDb st, profileDb st, postTimelineDb st, chatTimelineDb st, lmdbEnv st, keyPair st) of
+            (Just eventDb', Just followsDb', Just profileDb', Just postTimelineDb', Just chatTimelineDb', Just env', Just kp) -> 
+                liftIO $ withTransaction env' $ \txn -> do
+                    putStrLn "Starting LMDB transaction..."
+                    Map.repsert' txn eventDb' (eventId $ event ev) ev
+                    putStrLn "Inserted into event database"
+
+                    case kind (event ev) of
+                        GiftWrap -> do
+                            mSealedEvent <- liftIO $ unwrapGiftWrap (event ev) kp
+                            case mSealedEvent of
+                                Just sealedEvent | validateEvent sealedEvent -> 
+                                    case kind sealedEvent of
+                                        Seal -> do
+                                            mDecryptedRumor <- liftIO $ unwrapSeal sealedEvent kp
+                                            case mDecryptedRumor of
+                                                Just decryptedRumor | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
+                                                    let participants = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
+                                                          then sort $ getAllPTags (rumorTags decryptedRumor)
+                                                          else filter (/= keyPairToPubKeyXO kp) $ rumorPubKey decryptedRumor : sort (getAllPTags (rumorTags decryptedRumor))
+                                                    addTimelineEntryTx txn chatTimelineDb' ev participants (rumorCreatedAt decryptedRumor)
+                                                _ -> pure ()
+                                        _ -> pure ()
+                                _ -> pure ()
+
+                        ShortTextNote -> do
+                            addTimelineEntryTx txn postTimelineDb' ev [pubKey $ event ev] (createdAt $ event ev)
+
+                        Repost -> case ([t | t@(ETag _ _ _) <- tags (event ev)], eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev)) of
+                            (ETag _ _ _:_, Right originalEvent) | validateEvent originalEvent -> do
+                                addTimelineEntryTx txn postTimelineDb' ev [pubKey $ event ev] (createdAt $ event ev)
+                            _ -> pure ()
+
+                        EventDeletion -> do
+                            let eventIdsToDelete = [eid | ETag eid _ _ <- tags (event ev)]
+                            forM_ eventIdsToDelete $ \eid -> do
+                                mEvent <- Map.lookup' (readonly txn) eventDb' eid
+                                case mEvent of
+                                    Just deletedEv -> do
+                                        let key = (pubKey $ event deletedEv, createdAt $ event deletedEv)
+                                            db = case kind (event deletedEv) of
+                                                ShortTextNote -> postTimelineDb'
+                                                Repost -> postTimelineDb'
+                                                _ -> chatTimelineDb'
+                                        Map.delete' txn db key
+                                        Map.delete' txn eventDb' eid
+                                    Nothing -> pure ()
+
+                        Metadata -> 
+                            case eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev) of
+                                Right profile -> 
+                                    Map.repsert' txn profileDb' (pubKey $ event ev) (profile, createdAt $ event ev)
+                                Left _ -> pure ()
+
+                        FollowList -> do
+                            putStrLn "Processing FollowList..."
+                            let followList' = [Follow pk (fmap InboxRelay relay') petName' | PTag pk relay' petName' <- tags (event ev)]
+                            putStrLn $ "Created follow list: " ++ show followList'
+                            
+                            putStrLn "About to insert into follows database..."
+                            Map.repsert' txn followsDb' (pubKey $ event ev) followList'
+                            putStrLn "Inserted into follows database"
+
+                        _ -> pure ()
+
+            _ -> throwIO $ userError "Required databases not initialized"
 
     GetEvent eid -> do
+        logDebug $ "Getting event: " <> pack (show eid)
         st <- get
         case (eventDb st, lmdbEnv st) of
             (Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn ->
                 Map.lookup' (readonly txn) eventDb' eid
             _ -> throwIO $ userError "Event database not initialized"
 
-    DeleteEvent eid -> do
-        st <- get
-        case (eventDb st, lmdbEnv st) of
-            (Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn ->
-                Map.delete' txn eventDb' eid
-            _ -> throwIO $ userError "Event database not initialized"
-
-    -- Follow operations
-    PutFollows ev follows -> do
-        st <- get
-        case (eventDb st, followsDb st, lmdbEnv st) of
-            (Just eventDb', Just followsDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
-                Map.insert' txn followsDb' (pubKey $ event ev) follows
-                Map.insert' txn eventDb' (eventId $ event ev) ev
-            _ -> throwIO $ userError "Follows or Event database not initialized"
-
+    -- Query operations (read-only)
     GetFollows pk -> do
+        logDebug $ "Getting follows: " <> pack (show pk)
         st <- get
         case (followsDb st, lmdbEnv st) of
             (Just followsDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
                 mFollows <- Map.lookup' (readonly txn) followsDb' pk
-                let follows = maybe [] id mFollows
-                pure follows
+                pure $ maybe [] id mFollows
             _ -> throwIO $ userError "Follows database not initialized"
 
-    DeleteFollows eid pk -> do
-        st <- get
-        case (eventDb st, followsDb st, lmdbEnv st) of
-            (Just eventDb', Just followsDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
-                Map.delete' txn followsDb' pk
-                Map.delete' txn eventDb' eid
-            _ -> throwIO $ userError "Follows or Event database not initialized"
-
-    -- Profile operations
-    PutProfile ev newProf@(profile, newTimestamp) -> do
-        st <- get
-        case (profileDb st, eventDb st, lmdbEnv st) of
-            (Just profileDb', Just eventDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
-                existing <- Map.lookup' (readonly txn) profileDb' (pubKey $ event ev)
-                let finalProf = case existing of
-                        Just (existingProfile, existingTimestamp) -> 
-                            if existingTimestamp >= newTimestamp 
-                                then (existingProfile, existingTimestamp)
-                                else newProf
-                        Nothing -> newProf
-                Map.insert' txn profileDb' (pubKey $ event ev) finalProf
-                Map.insert' txn eventDb' (eventId $ event ev) ev
-            _ -> throwIO $ userError "Profile or Event database not initialized"
-
     GetProfile pk -> do
+        logDebug $ "Getting profile: " <> pack (show pk)
         st <- get
         case (lmdbEnv st, profileDb st) of
             (Just env', Just profileDb') -> liftIO $ withTransaction env' $ \txn -> do
                 mProfile <- Map.lookup' (readonly txn) profileDb' pk
-                case mProfile of
-                    Just profile -> return profile
-                    Nothing -> return (emptyProfile, 0)
+                pure $ maybe (emptyProfile, 0) id mProfile
             _ -> throwIO $ userError "Profile database not initialized"
 
-    -- Timeline operations
-    AddTimelineEntry timelineType ev pks timestamp -> do
-        st <- get
-        let dbSelector = case timelineType of
-                PostTimeline -> postTimelineDb
-                ChatTimeline -> chatTimelineDb
-        case (dbSelector st, eventDb st, lmdbEnv st) of
-            (Just timelineDb', Just eventDb', Just env') -> liftIO $ do
-                -- First transaction: Insert the event
-                withTransaction env' $ \txn ->
-                    Map.insert' txn eventDb' (eventId $ event ev) ev
-
-                -- Second transaction: Insert timeline entries
-                withTransaction env' $ \txn -> do
-                    let invertedTimestamp = maxBound - timestamp
-                    withCursor txn timelineDb' $ \cursor ->
-                        forM_ pks $ \pk ->
-                            Map.insert cursor (pk, invertedTimestamp) (eventId $ event ev)
-            _ -> throwIO $ userError "Timeline or Event database not initialized"
-
-    DeleteTimelineEntry eid -> do
-        st <- get
-        case (eventDb st, postTimelineDb st, chatTimelineDb st, lmdbEnv st) of
-            (Just eventDb', Just postTimelineDb', Just chatTimelineDb', Just env') -> liftIO $ withTransaction env' $ \txn -> do
-                mEvent <- Map.lookup' (readonly txn) eventDb' eid
-                case mEvent of
-                    Just ev -> do
-                        let key = (pubKey $ event ev, createdAt $ event ev)
-                            db = case kind (event ev) of
-                                ShortTextNote -> postTimelineDb'
-                                Repost -> postTimelineDb'
-                                _ -> chatTimelineDb'
-                        Map.delete' txn db key
-                        Map.delete' txn eventDb' eid
-                    Nothing -> pure ()
-            _ -> throwIO $ userError "Event or Timeline database not initialized"
-
     GetTimelineIds timelineType author limit -> do
+        logDebug $ "Getting timeline ids: " <> pack (show timelineType) <> " " <> pack (show author) <> " " <> pack (show limit)
         st <- get
         let dbSelector = case timelineType of
                 PostTimeline -> postTimelineDb
@@ -200,13 +184,18 @@ runLmdbStore = interpret $ \env -> \case
                         >-> Pipes.take limit
             _ -> throwIO $ userError "Timeline database not initialized"
 
-
--- | Helper functions for timeline operations (optional convenience wrappers)
-addPostTimelineEntry :: (LmdbStore :> es) => EventWithRelays -> Eff es ()
-addPostTimelineEntry ev = addTimelineEntry PostTimeline ev [pubKey $ event ev] (createdAt $ event ev)
-
-addChatTimelineEntry :: (LmdbStore :> es) => EventWithRelays -> [PubKeyXO] -> Int -> Eff es ()
-addChatTimelineEntry ev pks ts = addTimelineEntry ChatTimeline ev pks ts
+-- Helper function for timeline entries within a transaction
+addTimelineEntryTx :: Transaction 'ReadWrite 
+                   -> Database TimelineKey EventId
+                   -> EventWithRelays 
+                   -> [PubKeyXO] 
+                   -> Int 
+                   -> IO ()
+addTimelineEntryTx txn timelineDb' ev pks timestamp = do
+    let invertedTimestamp = maxBound - timestamp
+    withCursor txn timelineDb' $ \cursor ->
+        forM_ pks $ \pk ->
+            Map.repsert cursor (pk, invertedTimestamp) (eventId $ event ev)
 
 
 -- | Default Lmdb settings for JSON-serializable types
@@ -215,11 +204,11 @@ defaultJsonSettings :: (Ord k, ToJSON k, FromJSON k, ToJSON v, FromJSON v)
 defaultJsonSettings = makeSettings
     (SortCustom $ CustomSortSafe compare)
     (Codec.throughByteString
-        (LBS.toStrict . encode)
-        (decode . LBS.fromStrict))
+        (toStrict . encode)
+        (decode . fromStrict))
     (Codec.throughByteString
-        (LBS.toStrict . encode)
-        (decode . LBS.fromStrict))
+        (toStrict . encode)
+        (decode . fromStrict))
 
 
 -- Lmdb configuration
@@ -230,22 +219,30 @@ maxReaders :: Int
 maxReaders = 120
 
 maxDbs :: Int
-maxDbs = 120
+maxDbs = 8 -- currently 5 are required, leave some room for future growth
 
 -- | Initialize the Lmdb environment
 initializeEnv :: FilePath -> IO (Environment ReadWrite)
 initializeEnv dbPath = 
     initializeReadWriteEnvironment maxMapSize maxReaders maxDbs dbPath
 
+-- | Initialize the event database
+initEventDb :: Transaction 'ReadWrite -> IO (Database EventId EventWithRelays)
+initEventDb txn = openDatabase txn (Just "events") eventDbSettings
+
+-- | Initialize the follows database
 initFollowsDb :: Transaction 'ReadWrite -> IO (Database PubKeyXO [Follow])
 initFollowsDb txn = openDatabase txn (Just "follows") defaultJsonSettings
 
+-- | Initialize the profile database
 initProfileDb :: Transaction 'ReadWrite -> IO (Database PubKeyXO (Profile, Int))
 initProfileDb txn = openDatabase txn (Just "profiles") defaultJsonSettings
 
+-- | Initialize the post timeline database
 initPostTimelineDb :: Transaction 'ReadWrite -> IO (Database TimelineKey EventId)
 initPostTimelineDb txn = openDatabase txn (Just "post_timeline") defaultJsonSettings
 
+-- | Initialize the chat timeline database
 initChatTimelineDb :: Transaction 'ReadWrite -> IO (Database TimelineKey EventId)
 initChatTimelineDb txn = openDatabase txn (Just "chat_timeline") defaultJsonSettings
 
@@ -257,12 +254,14 @@ eventDbSettings = makeSettings
         (\(EventId bs) -> bs)
         (Just . EventId))
     (Codec.throughByteString
-        (\(EventWithRelays ev rs) -> LBS.toStrict $ encode (ev, Set.toList rs))
-        (\bs -> case decode (LBS.fromStrict bs) of
+        (\(EventWithRelays ev rs) -> toStrict $ encode (ev, Set.toList rs))
+        (\bs -> case decode (fromStrict bs) of
             Just (ev, rsList) -> Just $ EventWithRelays ev (Set.fromList rsList)
             Nothing -> error "Failed to decode EventWithRelays"))
 
-
--- | Initialize the event database
-initEventDb :: Transaction 'ReadWrite -> IO (Database EventId EventWithRelays)
-initEventDb txn = openDatabase txn (Just "events") eventDbSettings
+-- | Get all p tags from the rumor tags
+getAllPTags :: [Tag] -> [PubKeyXO]
+getAllPTags = mapMaybe extractPubKey
+  where
+    extractPubKey (PTag pk _ _) = Just pk
+    extractPubKey _ = Nothing

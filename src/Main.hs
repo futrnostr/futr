@@ -12,7 +12,6 @@ import Futr qualified as Futr
 import KeyMgmt (KeyMgmtState(..), initialState, runKeyMgmt)
 import Logging (runLoggingStdout)
 import Nostr
-import Nostr.GiftWrap (runGiftWrap)
 import Nostr.Publisher (runPublisher)
 import Nostr.RelayConnection (runRelayConnection)
 import Nostr.RelayPool (runRelayPool)
@@ -53,7 +52,6 @@ main = do
         -- nostr related
         . runNostr
         . runKeyMgmt
-        . runGiftWrap
         . runRelayConnection
         . runPublisher
         . runRelayMgmt

@@ -47,7 +47,6 @@ import Nostr.Event ( createComment, createEventDeletion, createFollowList
                    , createQuoteRepost, createRepost, createRumor, createShortTextNote
                    )
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
-import Nostr.GiftWrap
 import Nostr.Publisher
 import Nostr.RelayConnection (RelayConnection)
 import Nostr.RelayPool
@@ -122,7 +121,6 @@ type FutrEff es = ( State AppState :> es
                   , State KeyMgmtState :> es
                   , State RelayPoolState :> es
                   , State QtQuickState :> es
-                  , GiftWrap :> es
                   , QtQuick :> es
                   , Logging :> es
                   , IOE :> es

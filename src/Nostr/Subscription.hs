@@ -27,7 +27,6 @@ import KeyMgmt (AccountId(..), KeyMgmt, updateProfile, updateRelays)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Event (validateEvent)
-import Nostr.GiftWrap (GiftWrap, handleGiftWrapEvent)
 import Nostr.Keys (PubKeyXO, byteStringToHex, keyPairToPubKeyXO)
 import Nostr.RelayConnection
 import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Relay(..)
@@ -56,7 +55,6 @@ type SubscriptionEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
   , LmdbStore :> es
-  , GiftWrap :> es
   , RelayConnection :> es
   , KeyMgmt :> es
   , RelayMgmt :> es
@@ -99,92 +97,79 @@ handleEvent' event' r = do
     logDebug $ "Starting handleEvent' for event: " <> pack (show event')
     let ev = EventWithRelays event' (Set.singleton r)
 
-    -- Validate event
     if not (validateEvent event')
-    then do
-        logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
-        pure emptyUpdates
-    else case kind event' of
-        ShortTextNote -> do
-            addPostTimelineEntry ev
-            pure $ emptyUpdates { postsChanged = True }
-
-        Repost -> do
-            case ([t | t@(ETag _ _ _) <- tags event'], eitherDecode (fromStrict $ encodeUtf8 $ content event')) of
-                (ETag eid _ _:_, Right originalEvent) | validateEvent originalEvent -> do
-                    addPostTimelineEntry ev
-                    pure $ emptyUpdates { postsChanged = True }
-                _ -> do
-                    logWarning $ "Invalid repost or missing e-tag: " <> (byteStringToHex $ getEventId (eventId event'))
-                    pure emptyUpdates
-
-        EventDeletion -> do
-            let eventIdsToDelete = [eid | ETag eid _ _ <- tags event']
-            forM_ eventIdsToDelete $ \eid -> deleteTimelineEntry eid
-
-            pure $ emptyUpdates
-                { postsChanged = True
-                , privateMessagesChanged = True
-                }
-
-        Metadata -> do
-            case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
-                Right profile -> do
-                    putProfile ev (profile, (createdAt event'))
-
-                    st <- get @AppState
-                    let isOwnProfile = maybe False (\kp -> pubKey event' == keyPairToPubKeyXO kp) (keyPair st)
-                    when isOwnProfile $ do
-                        let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
-                        updateProfile aid profile
-
-                    pure $ emptyUpdates { profilesChanged = True }
-                Left err -> do
-                    logWarning $ "Failed to decode metadata: " <> pack err
-                    pure emptyUpdates
-
-        FollowList -> do
-            let followList' = [Follow pk (fmap InboxRelay relay') petName' | PTag pk relay' petName' <- tags event']
-            putFollows ev followList'
-            pure $ emptyUpdates { followsChanged = True }
-
-        GiftWrap -> do
-            handleGiftWrapEvent event'
-            pure $ emptyUpdates { privateMessagesChanged = True }
-
-        RelayListMetadata -> do
-            putEvent ev
-            let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
-                ts = createdAt event'
-                pk = pubKey event'
-            case validRelayTags of
-                [] -> do
-                    logWarning $ "No valid relay URIs found in RelayListMetadata event from "
-                        <> (pubKeyXOToBech32 pk)
-                    pure emptyUpdates
-                relays -> do
-                    handleRelayListUpdate pk relays ts
-                        importGeneralRelays
-                        generalRelays
-                    pure $ emptyUpdates { generalRelaysChanged = True }
-
-        PreferredDMRelays -> do
-            putEvent ev
-            let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
-            case validRelayTags of
-                [] -> do
-                    logWarning $ "No valid relay URIs found in PreferredDMRelays event from "
-                        <> (pubKeyXOToBech32 $ pubKey event')
-                    pure emptyUpdates
-                relays -> do
-                    handleRelayListUpdate (pubKey event') relays (createdAt event')
-                        importDMRelays
-                        dmRelays
-                    pure $ emptyUpdates { dmRelaysChanged = True }
-
-        _ -> do
-            logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
+        then do
+            logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
             pure emptyUpdates
+        else do
+            logDebug $ "About to putEvent into LMDB..."
+            putEvent ev
+            logDebug $ "Successfully stored event in LMDB"
+            updates <- case kind event' of
+                ShortTextNote -> 
+                    pure $ emptyUpdates { postsChanged = True }
+
+                Repost -> 
+                    case ([t | t@(ETag _ _ _) <- tags event'], eitherDecode (fromStrict $ encodeUtf8 $ content event')) of
+                        (ETag eid _ _:_, Right originalEvent) | validateEvent originalEvent -> 
+                            pure $ emptyUpdates { postsChanged = True }
+                        _ -> do
+                            logWarning $ "Invalid repost or missing e-tag: " <> (byteStringToHex $ getEventId (eventId event'))
+                            pure emptyUpdates
+
+                EventDeletion -> 
+                    pure $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
+
+                Metadata -> do
+                    case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
+                        Right profile -> do
+                            st <- get @AppState
+                            let isOwnProfile = maybe False (\kp -> pubKey event' == keyPairToPubKeyXO kp) (keyPair st)
+                            when isOwnProfile $ do
+                                let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
+                                updateProfile aid profile
+                            pure $ emptyUpdates { profilesChanged = True }
+                        Left err -> do
+                            logWarning $ "Failed to decode metadata: " <> pack err
+                            pure emptyUpdates
+
+                FollowList -> 
+                    pure $ emptyUpdates { followsChanged = True }
+
+                GiftWrap -> do
+                    pure $ emptyUpdates { privateMessagesChanged = True }
+
+                RelayListMetadata -> do
+                    let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
+                    case validRelayTags of
+                        [] -> do
+                            logWarning $ "No valid relay URIs found in RelayListMetadata event from "
+                                <> (pubKeyXOToBech32 $ pubKey event')
+                            pure emptyUpdates
+                        relays -> do
+                            handleRelayListUpdate (pubKey event') relays (createdAt event')
+                                importGeneralRelays
+                                generalRelays
+                            pure $ emptyUpdates { generalRelaysChanged = True }
+
+                PreferredDMRelays -> do
+                    let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
+                    case validRelayTags of
+                        [] -> do
+                            logWarning $ "No valid relay URIs found in PreferredDMRelays event from "
+                                <> (pubKeyXOToBech32 $ pubKey event')
+                            pure emptyUpdates
+                        relays -> do
+                            handleRelayListUpdate (pubKey event') relays (createdAt event')
+                                importDMRelays
+                                dmRelays
+                            pure $ emptyUpdates { dmRelaysChanged = True }
+
+                _ -> do
+                    logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
+                    pure emptyUpdates
+            logDebug $ "Finished handleEvent' for event: " <> pack (show event')
+            pure updates
     where
         isValidRelayURI :: RelayURI -> Bool
         isValidRelayURI uriText =

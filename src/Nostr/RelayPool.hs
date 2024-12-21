@@ -13,7 +13,6 @@ import Effectful.TH
 import KeyMgmt (KeyMgmt)
 import Logging
 import Nostr
-import Nostr.GiftWrap
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Publisher
 import Nostr.RelayConnection
@@ -68,7 +67,6 @@ type RelayPoolEff es =
   , RelayMgmt :> es
   , Subscription :> es
   , KeyMgmt :> es
-  , GiftWrap :> es
   , QtQuick :> es
   , Concurrent :> es
   , Logging :> es
