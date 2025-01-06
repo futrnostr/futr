@@ -305,8 +305,8 @@ runUI = interpret $ \_ -> \case
         defPropertySigRO' "followList" changeKey' $ \obj -> do
           runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
           st <- runE $ get @AppState
-          case (followsDb st, keyPair st) of
-            (Just db, Just kp) -> do
+          case keyPair st of
+            Just kp -> do
               let userPubKey = keyPairToPubKeyXO kp
               followedPubKeys <- runE $ getFollows userPubKey
               mapM (getPoolObject followPool) (userPubKey : map pubkey followedPubKeys)

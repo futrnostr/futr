@@ -26,7 +26,7 @@ import Effectful.FileSystem
     createDirectoryIfMissing,
     getXdgDirectory
   )
-import Effectful.State.Static.Shared (State, get, gets, modify)
+import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Effectful.TH
 import Lmdb.Connection (closeEnvironment, withCursor)
 import Lmdb.Connection qualified as Connection
@@ -38,6 +38,7 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 import Pipes.Prelude qualified as Pipes
 import System.FilePath ((</>))
+import Control.Concurrent.MVar (MVar, newMVar)
 
 import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
@@ -57,8 +58,7 @@ import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
-import Store.Lmdb ( LmdbStore, getEvent, getFollows, initializeEnv, initChatTimelineDb
-                  , initEventDb, initFollowsDb, initPostTimelineDb, initProfileDb )
+import Store.Lmdb (LmdbState(..), LmdbStore, initializeLmdbState, getEvent, getFollows)
 import Types hiding (Comment, QuoteRepost)
 
 -- | Signal key class for LoginStatusChanged.
@@ -108,6 +108,7 @@ makeEffect ''Futr
 
 -- | Effectful type for Futr.
 type FutrEff es = ( State AppState :> es
+                  , State LmdbState :> es
                   , LmdbStore :> es
                   , KeyMgmt :> es
                   , KeyMgmtUI :> es
@@ -144,23 +145,8 @@ runFutr = interpret $ \_ -> \case
               baseDir <- getXdgDirectory XdgData ("futrnostr" </> unpack (pubKeyXOToBech32 pk))
               let lmdbDir = baseDir </> "db"
               createDirectoryIfMissing True lmdbDir
-              env <- liftIO $ initializeEnv lmdbDir
-              (eventsDb, profilesDb, postTimelineDb, chatTimelineDb, followsDb) <-
-                  liftIO $ Connection.withTransaction env $ \txn -> do
-                      events <- initEventDb txn
-                      profiles <- initProfileDb txn
-                      postTimeline <- initPostTimelineDb txn
-                      chatTimeline <- initChatTimelineDb txn
-                      follows <- initFollowsDb txn
-                      pure (events, profiles, postTimeline, chatTimeline, follows)
-              modify @AppState $ \st -> st {
-                  lmdbEnv = Just env,
-                  eventDb = Just eventsDb,
-                  profileDb = Just profilesDb,
-                  postTimelineDb = Just postTimelineDb,
-                  chatTimelineDb = Just chatTimelineDb,
-                  followsDb = Just followsDb
-              }
+              lmdbState <- liftIO $ initializeLmdbState lmdbDir
+              put @LmdbState lmdbState
 
           case dbResult of
             Left e -> do
@@ -266,35 +252,27 @@ runFutr = interpret $ \_ -> \case
       Nothing -> logError "Failed to sign short text note"
 
   Logout obj -> do
-      -- Close Lmdb environment if it exists
-      st <- get @AppState
-      case lmdbEnv st of
-        Just env -> liftIO $ closeEnvironment env
-        Nothing -> return ()
+    -- Close current Lmdb environment if it exists
+    st <- get @LmdbState
+    liftIO $ closeEnvironment (lmdbEnv st)
 
-      -- Reset application state
-      modify @AppState $ \st' -> st'
+    -- Reset application state
+    modify @AppState $ \st' -> st'
         { keyPair = Nothing
         , currentScreen = KeyMgmt
-        , lmdbEnv = Nothing
-        , eventDb = Nothing
-        , profileDb = Nothing
-        , postTimelineDb = Nothing
-        , chatTimelineDb = Nothing
-        , followsDb = Nothing
         }
 
-      -- Close relay connections
-      conns <- gets @RelayPoolState activeConnections
-      mapM_ disconnect (Map.keys conns)
+    -- Close relay connections
+    conns <- gets @RelayPoolState activeConnections
+    mapM_ disconnect (Map.keys conns)
 
-      -- Wait a moment for disconnects to process
-      threadDelay 100000  -- 100ms delay
+    -- Wait a moment for disconnects to process
+    threadDelay 100000  -- 100ms delay
 
-      modify @RelayPoolState $ const initialRelayPoolState
+    modify @RelayPoolState $ const initialRelayPoolState
 
-      fireSignal obj
-      logInfo "User logged out successfully"
+    fireSignal obj
+    logInfo "User logged out successfully"
 
   Repost eid -> do
     st <- get @AppState

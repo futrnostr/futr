@@ -1,6 +1,6 @@
 module Nostr.Subscription where
 
-import Control.Monad (forM, forM_, replicateM, unless, when)
+import Control.Monad (forM, forM_, replicateM, unless, void, when)
 import Data.Aeson (eitherDecode)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
@@ -94,7 +94,7 @@ runSubscription = interpret $ \_ -> \case
 
 handleEvent' :: SubscriptionEff es => Event -> RelayURI -> Eff es UIUpdates
 handleEvent' event' r = do
-    logDebug $ "Starting handleEvent' for event: " <> pack (show event')
+    --logDebug $ "Starting handleEvent' for event: " <> pack (show event')
     let ev = EventWithRelays event' (Set.singleton r)
 
     if not (validateEvent event')
@@ -102,9 +102,9 @@ handleEvent' event' r = do
             logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
             pure emptyUpdates
         else do
-            logDebug $ "About to putEvent into LMDB..."
+            --logDebug $ "About to putEvent into LMDB..."
             putEvent ev
-            logDebug $ "Successfully stored event in LMDB"
+            --logDebug $ "Successfully stored event in LMDB"
             updates <- case kind event' of
                 ShortTextNote -> 
                     pure $ emptyUpdates { postsChanged = True }
@@ -168,7 +168,7 @@ handleEvent' event' r = do
                 _ -> do
                     logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
                     pure emptyUpdates
-            logDebug $ "Finished handleEvent' for event: " <> pack (show event')
+            --logDebug $ "Finished handleEvent' for event: " <> pack (show event')
             pure updates
     where
         isValidRelayURI :: RelayURI -> Bool
@@ -271,36 +271,38 @@ handleRelaySubscription r = do
 
 -- | Handle relay list updates with connection management
 handleRelayListUpdate :: SubscriptionEff es
-                      => PubKeyXO                                             -- ^ Public key of the event author
-                      -> [Relay]                                              -- ^ New relay list
-                      -> Int                                                  -- ^ Event timestamp
-                      -> (PubKeyXO -> [Relay] -> Int -> Eff es ())            -- ^ Import function
-                      -> (RelayPoolState -> Map.Map PubKeyXO ([Relay], Int))  -- ^ Relay map selector
-                      -> Eff es ()
+                     => PubKeyXO                                             -- ^ Public key of the event author
+                     -> [Relay]                                             -- ^ New relay list
+                     -> Int                                                 -- ^ Event timestamp
+                     -> (PubKeyXO -> [Relay] -> Int -> Eff es ())          -- ^ Import function
+                     -> (RelayPoolState -> Map.Map PubKeyXO ([Relay], Int)) -- ^ Relay map selector
+                     -> Eff es ()
 handleRelayListUpdate pk relays ts importFn getRelayMap = do
     st <- get @RelayPoolState
-    case Map.lookup pk (getRelayMap st) of
-        Just (existingRelays, oldTs) | oldTs < ts -> do
-            -- Disconnect from relays that aren't in the new list
-            forM_ existingRelays $ \r ->
-                when (getUri r `notElem` map getUri relays) $
-                    disconnectRelay $ getUri r
+    let currentMap = getRelayMap st
+    let (currentRelays, currentTs) = Map.findWithDefault ([], 0) pk currentMap
 
-            importFn pk relays ts
-            updateRelays (AccountId $ pubKeyXOToBech32 pk) (relays, ts)
+    when (ts > currentTs) $ do
+        -- Log what we're doing
+        logDebug $ "Updating relays for " <> pubKeyXOToBech32 pk 
+                <> " from " <> pack (show currentRelays) 
+                <> " to " <> pack (show relays)
+                <> " (map: " <> pack (show $ Map.keys currentMap) <> ")"
 
-            -- Connect to new relays that weren't in the old list
-            let newRelays = filter (\r -> getUri r `notElem` map getUri existingRelays) relays
-            forM_ newRelays $ \r -> async $ do
-                connected <- connectRelay $ getUri r
-                when connected $ handleRelaySubscription $ getUri r
-        Nothing -> do
-            importFn pk relays ts
-            updateRelays (AccountId $ pubKeyXOToBech32 pk) (relays, ts)
-            forM_ relays $ \r -> async $ do
-                connected <- connectRelay $ getUri r
-                when connected $ handleRelaySubscription $ getUri r
-        _ -> pure ()
+        -- Disconnect from removed relays
+        let removedRelays = filter (\r -> not $ any (\r' -> getUri r == getUri r') relays) currentRelays
+        forM_ removedRelays $ \relay -> do
+            logDebug $ "Disconnecting from removed relay: " <> pack (show (getUri relay))
+            disconnectRelay (getUri relay)
+
+        -- Import new configuration
+        importFn pk relays ts
+
+        -- Connect to new relays
+        let newRelays = filter (\r -> not $ any (\r' -> getUri r == getUri r') currentRelays) relays
+        forM_ newRelays $ \relay -> do
+            logDebug $ "Connecting to new relay: " <> pack (show (getUri relay))
+            void $ async $ connectRelay (getUri relay)
 
 
 -- | Create DM relay subscription filters
