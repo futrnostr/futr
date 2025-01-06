@@ -59,7 +59,7 @@ import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
 import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
-                  , getEvent, getFollows )
+                  , getEvent, getFollows, putEvent )
 import Types hiding (Comment, QuoteRepost)
 
 -- | Signal key class for LoginStatusChanged.
@@ -191,9 +191,10 @@ runFutr = interpret $ \_ -> \case
         Just userPK -> do
             currentFollows <- getFollows userPK
             unless (targetPK `elem` map pubkey currentFollows) $ do
-                --putFollows userPK (Follow targetPK Nothing Nothing : currentFollows) ???
+                let newFollow = Follow targetPK Nothing Nothing
+                    newFollows = newFollow : currentFollows
+                sendFollowListEvent newFollows
                 notify $ emptyUpdates { followsChanged = True }
-                sendFollowListEvent -- @todo: this creates a new event, so I cannot store into lmdb beforehand. need to fix.
         Nothing -> return ()
 
   UnfollowProfile npub' -> do
@@ -203,9 +204,8 @@ runFutr = interpret $ \_ -> \case
         Just userPK -> do
             currentFollows <- getFollows userPK
             let newFollows = filter ((/= targetPK) . pubkey) currentFollows
-            --putFollows userPK newFollows ???
+            sendFollowListEvent newFollows
             notify $ emptyUpdates { followsChanged = True }
-            sendFollowListEvent
         Nothing -> return ()
 
   OpenChat pubKeyXO -> do
@@ -415,20 +415,21 @@ loginWithAccount obj a = do
 
 
 -- | Send a follow list event.
-sendFollowListEvent :: FutrEff es => Eff es ()
-sendFollowListEvent = do
+sendFollowListEvent :: FutrEff es => [Follow] -> Eff es ()
+sendFollowListEvent follows = do
     st <- get @AppState
     case keyPair st of
         Nothing -> logError "No keypair found"
         Just kp -> do
             let userPK = keyPairToPubKeyXO kp
-            currentFollows <- getFollows userPK
             currentTime <- getCurrentTime
-            let followTuples = map (\f -> (pubkey f, Nothing)) currentFollows
+            let followTuples = map (\f -> (pubkey f, Nothing)) follows
             let event = createFollowList followTuples userPK currentTime
             signedEvent <- signEvent event kp
             case signedEvent of
-                Just signedEvent' -> publishToOutbox signedEvent'
+                Just signedEvent' -> do
+                    putEvent $ EventWithRelays signedEvent' Set.empty
+                    publishToOutbox signedEvent'
                 Nothing -> logError "Failed to sign follow list event"
 
 
