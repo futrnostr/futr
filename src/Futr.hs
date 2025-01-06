@@ -58,7 +58,8 @@ import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
-import Store.Lmdb (LmdbState(..), LmdbStore, initializeLmdbState, getEvent, getFollows)
+import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
+                  , getEvent, getFollows )
 import Types hiding (Comment, QuoteRepost)
 
 -- | Signal key class for LoginStatusChanged.
@@ -255,6 +256,9 @@ runFutr = interpret $ \_ -> \case
     -- Close current Lmdb environment if it exists
     st <- get @LmdbState
     liftIO $ closeEnvironment (lmdbEnv st)
+
+    -- Reset LMDB state to initial
+    put @LmdbState initialLmdbState
 
     -- Reset application state
     modify @AppState $ \st' -> st'
