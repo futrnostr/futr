@@ -4,17 +4,15 @@
 
 module Types where
 
-import Control.Concurrent.MVar (MVar)
-import Data.Aeson (FromJSON, ToJSON, Value(..), toJSON, parseJSON, (.:), (.=), withObject, object)
+import Data.Aeson (FromJSON, ToJSON, toJSON, parseJSON, (.:), (.=), withObject, object)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Text (Text)
 import Effectful.Concurrent.STM (TChan, TQueue)
-import Lmdb.Types (Database, Environment, Mode(..))
 import GHC.Generics (Generic)
 import Nostr.Keys (KeyPair, PubKeyXO)
-import Nostr.Types (Event, EventId, Filter, Profile, Relay(..), RelayURI, Request, SubscriptionId)
+import Nostr.Types (Event, EventId, Filter, Relay(..), RelayURI, Request, SubscriptionId)
 
 
 -- | Status of a publish operation
@@ -129,7 +127,6 @@ data AppState = AppState
 -- | Follow.
 data Follow = Follow
   { pubkey :: PubKeyXO
-  , followRelay :: Maybe Relay
   , petName :: Maybe Text
   } deriving (Eq, Show, Generic)
 
@@ -137,9 +134,6 @@ data Follow = Follow
 instance ToJSON Follow where
     toJSON Follow{..} = object
         [ "pubkey" .= pubkey
-        , "followRelay" .= (case followRelay of
-            Just (InboxRelay uri) -> object ["contents" .= uri, "tag" .= ("InboxRelay" :: Text)]
-            Nothing -> Null)
         , "petName" .= petName
         ]
 
@@ -148,16 +142,7 @@ instance ToJSON Follow where
 instance FromJSON Follow where
     parseJSON = withObject "Follow" $ \v -> Follow
         <$> v .: "pubkey"
-        <*> (v .: "followRelay" >>= parseRelay)
         <*> v .: "petName"
-      where
-        parseRelay Null = pure Nothing
-        parseRelay (Object o) = do
-            tag <- o .: "tag"
-            if tag == ("InboxRelay" :: Text)
-                then Just . InboxRelay <$> o .: "contents"
-                else fail $ "Unknown relay tag: " ++ show tag
-        parseRelay _ = fail "Invalid relay format"
 
 
 -- | Initial application state.

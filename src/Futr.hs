@@ -9,7 +9,7 @@ import Control.Monad (forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
 import Data.Text (Text, isPrefixOf, pack, unpack)
@@ -28,9 +28,7 @@ import Effectful.FileSystem
   )
 import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Effectful.TH
-import Lmdb.Connection (closeEnvironment, withCursor)
-import Lmdb.Connection qualified as Connection
-import Lmdb.Map qualified as LMap
+import Lmdb.Connection (closeEnvironment)
 import Lmdb.Types (KeyValue(..))
 import QtQuick
 import GHC.Generics (Generic)
@@ -38,7 +36,6 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 import Pipes.Prelude qualified as Pipes
 import System.FilePath ((</>))
-import Control.Concurrent.MVar (MVar, newMVar)
 
 import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
@@ -52,7 +49,7 @@ import Nostr.Publisher
 import Nostr.RelayConnection (RelayConnection)
 import Nostr.RelayPool
 import Nostr.Subscription
-import Nostr.Types ( Event(..), EventId, Profile(..), Relay(..), RelayURI, Tag(..)
+import Nostr.Types ( Event(..), EventId, Relay(..), RelayURI, Tag(..)
                    , getUri, metadataFilter )
 import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
@@ -60,7 +57,7 @@ import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
 import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
                   , getEvent, getFollows, putEvent )
-import Types hiding (Comment, QuoteRepost)
+import Types
 
 -- | Signal key class for LoginStatusChanged.
 data LoginStatusChanged deriving Typeable
@@ -191,7 +188,7 @@ runFutr = interpret $ \_ -> \case
         Just userPK -> do
             currentFollows <- getFollows userPK
             unless (targetPK `elem` map pubkey currentFollows) $ do
-                let newFollow = Follow targetPK Nothing Nothing
+                let newFollow = Follow targetPK Nothing
                     newFollows = newFollow : currentFollows
                 sendFollowListEvent newFollows
                 notify $ emptyUpdates { followsChanged = True }

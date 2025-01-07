@@ -28,7 +28,7 @@ import Nostr.Bech32
 import Nostr.Event (createMetadata)
 import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types (Event(..), EventId(..), Kind(..), Profile(..), Relationship(..), Rumor(..), Tag(..), getUri)
+import Nostr.Types (Event(..), EventId(..), Kind(..), Profile(..), Relationship(..), Rumor(..), Tag(..))
 import Nostr.Util
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
@@ -109,18 +109,17 @@ runUI = interpret $ \_ -> \case
           st <- runE $ get @AppState
           followData <- case keyPairToPubKeyXO <$> keyPair st of
             Just upk | upk == pubKeyXO ->
-              return $ Just Follow { pubkey = pubKeyXO, followRelay = Nothing, petName = Nothing }
+              return $ Just Follow { pubkey = pubKeyXO, petName = Nothing }
             Just upk -> do
               follows <- runE $ getFollows upk
               if pubKeyXO `elem` map pubkey follows
-                then return $ Just Follow { pubkey = pubKeyXO, followRelay = Nothing, petName = Nothing }
+                then return $ Just Follow { pubkey = pubKeyXO, petName = Nothing }
                 else return Nothing
             Nothing -> return Nothing
           accessor st followData
 
     followClass <- newClass [
         followProp "pubkey" $ \_ -> return . maybe "" (pubKeyXOToBech32 . pubkey),
-        followProp "relay" $ \_ -> return . maybe "" (\f -> maybe "" getUri (followRelay f)),
         followProp "petname" $ \_ -> return . maybe "" (fromMaybe "" . petName),
         followProp "displayName" $ \_ -> maybe (return "") (\follow -> do
             (profile, _) <- runE $ getProfile (pubkey follow)

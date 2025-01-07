@@ -23,31 +23,23 @@ module Store.Lmdb
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Monad (forM_,void)
+import Control.Monad (forM_)
 import Data.Aeson (ToJSON, FromJSON, encode, decode, eitherDecode)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.List (sort)
 import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
-import Data.Text (pack)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.Text.Encoding (encodeUtf8)
 import Effectful
-import Effectful.Exception (throwIO)
 import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Shared (State, get, modify, put)
-import Effectful.State.Static.Shared qualified as State
-import Effectful.FileSystem
 import Effectful.TH (makeEffect)
 import Lmdb.Codec qualified as Codec
 import Lmdb.Connection
 import Lmdb.Map qualified as Map
 import Lmdb.Types
 import Pipes.Prelude qualified as Pipes
-import System.FilePath ((</>))
 import Pipes ((>->))
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Base16 as B16
-import qualified Data.Text.Encoding as TE
 import GHC.Generics (Generic)
 import qualified Data.Cache.LRU as LRU
 
@@ -57,7 +49,7 @@ import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile, Relay(..), Tag(..)
                    , Rumor(..), rumorPubKey, rumorTags, rumorCreatedAt, emptyProfile )
 import Nostr.Util
-import Types (AppState(..), EventWithRelays(..), Follow(..))
+import Types (EventWithRelays(..), Follow(..))
 
 
 -- | Timeline types
@@ -104,7 +96,7 @@ makeEffect ''LmdbStore
 runLmdbStore :: (Util :> es, IOE :> es, State LmdbState :> es, Logging :> es)
              => Eff (LmdbStore : es) a
              -> Eff es a
-runLmdbStore = interpret $ \env -> \case
+runLmdbStore = interpret $ \_ -> \case
     -- Event operations (main storage operation)
     PutEvent ev -> do
         LmdbState{..} <- get
@@ -164,7 +156,7 @@ runLmdbStore = interpret $ \env -> \case
                         Left _ -> pure ()
 
                 FollowList -> do
-                    let followList' = [Follow pk (fmap InboxRelay relay') petName' | PTag pk relay' petName' <- tags (event ev)]
+                    let followList' = [Follow pk petName' | PTag pk _ petName' <- tags (event ev)]
                         authorPk = pubKey $ event ev
                     Map.repsert' txn followsDb authorPk followList'
 
@@ -179,7 +171,7 @@ runLmdbStore = interpret $ \env -> \case
                     Left _ -> profileCache
                 _ -> profileCache
             newFollowsCache = case kind (event ev) of
-                FollowList -> let followList' = [Follow pk (fmap InboxRelay relay') petName' | PTag pk relay' petName' <- tags (event ev)]
+                FollowList -> let followList' = [Follow pk petName' | PTag pk _ petName' <- tags (event ev)]
                              in LRU.insert (pubKey $ event ev) followList' followsCache
                 _ -> followsCache
         put @LmdbState $ LmdbState
