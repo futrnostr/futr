@@ -215,49 +215,33 @@ runUI = interpret $ \_ -> \case
             Nothing -> return Nothing
           return value,
 
-        -- For reposts and quote reposts: points to the reposted/quoted event
-        defPropertySigRO' "referencedId" changeKey' $ \obj -> do
-          let eid = fromObjRef obj :: EventId
-          eventMaybe <- runE $ getEvent eid
-          value <- case eventMaybe of
-            Just eventWithRelays -> getReferencedEventId (event eventWithRelays) >>= \case
-              Just refId -> return $ Just $ pack $ show refId
-              Nothing -> return Nothing
-            Nothing -> return Nothing
-          return value,
-
         -- For comments: points to the original post that started the thread
         -- Example: Post A <- Comment B <- Comment C
         --          Comment C's rootPost is Post A
-        defPropertySigRO' "rootId" changeKey' $ \obj -> do
+        defPropertySigRO' "root" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
           eventMaybe <- runE $ getEvent eid
-          value <- case eventMaybe of
+          case eventMaybe of
             Just eventWithRelays -> getRootReference (event eventWithRelays) >>= \case
-              Just refId -> return $ Just $ pack $ show refId
+              Just refId -> Just <$> newObject postClass' refId
               Nothing -> return Nothing
-            Nothing -> return Nothing
-          return value,
+            Nothing -> return Nothing,
 
         -- For nested comments: points to the immediate parent comment when different from root
         -- Example: Post A <- Comment B <- Comment C
         --          Comment C's parentPost is Comment B
         --          Comment B's parentPost is null (same as root)
-        defPropertySigRO' "parentId" changeKey' $ \obj -> do
+        defPropertySigRO' "parent" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
           eventMaybe <- runE $ getEvent eid
           case eventMaybe of
             Just eventWithRelays -> do
               parentId <- runE $ getParentReference (event eventWithRelays)
               rootId <- runE $ getRootReference (event eventWithRelays)
-              let value = do  -- This is Maybe monad
-                    p <- parentId
-                    r <- rootId
-                    guard (p /= r)
-                    Just $ pack $ show p
-              return value
-            Nothing -> do
-              return Nothing,
+              case (parentId, rootId) of
+                (Just p, Just r) | p /= r -> Just <$> newObject postClass' p
+                _ -> return Nothing
+            Nothing -> return Nothing,
 
         -- Referenced posts property
         defPropertySigRO' "referencedPosts" changeKey' $ \obj -> do
