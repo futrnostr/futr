@@ -4,13 +4,11 @@
 
 module UI where
 
-import Control.Monad (guard)
 import Control.Monad.Fix (mfix)
 import Data.Aeson (decode, eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (find, nub)
-import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isJust, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, drop, pack, unpack)
 import Data.Text.Encoding qualified as TE
@@ -137,18 +135,13 @@ runUI = interpret $ \_ -> \case
 
     followPool <- newFactoryPool (newObject followClass)
 
-    let getReferencedEventId event =
-          case find (\case QTag _ _ _ -> True; _ -> False) (tags event) of
-            Just (QTag eid _ _) -> return $ Just eid
-            _ -> return Nothing
-
-        getRootReference event =
-          case find (\case ETag _ _ (Just Root) -> True; _ -> False) (tags event) of
+    let getRootReference evt =
+          case find (\case ETag _ _ (Just Root) -> True; _ -> False) (tags evt) of
             Just (ETag eid _ _) -> return $ Just eid
             _ -> return Nothing
 
-        getParentReference event =
-          case find (\case ETag _ _ (Just Reply) -> True; _ -> False) (tags event) of
+        getParentReference evt =
+          case find (\case ETag _ _ (Just Reply) -> True; _ -> False) (tags evt) of
             Just (ETag eid _ _) -> return $ Just eid
             _ -> return Nothing
 
@@ -207,13 +200,8 @@ runUI = interpret $ \_ -> \case
             Nothing -> return Nothing
           return value,
 
-        defPropertySigRO' "author" changeKey' $ \obj -> do
-          let eid = fromObjRef obj :: EventId
-          eventMaybe <- runE $ getEvent eid
-          value <- case eventMaybe of
-            Just eventWithRelays -> Just <$> newObject profileClass ()
-            Nothing -> return Nothing
-          return value,
+        defPropertySigRO' "author" changeKey' $ \_ -> do
+          Just <$> newObject profileClass (),
 
         -- For comments: points to the original post that started the thread
         -- Example: Post A <- Comment B <- Comment C
@@ -245,17 +233,16 @@ runUI = interpret $ \_ -> \case
 
         -- Referenced posts property
         defPropertySigRO' "referencedPosts" changeKey' $ \obj -> do
-          let eid = fromObjRef obj :: EventId
-          eventMaybe <- runE $ getEvent eid
+          let postId = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent postId
           case eventMaybe of
             Just eventWithRelays -> do
               let ev = event eventWithRelays
-                  eTagRefs = [eid | ETag eid _ _ <- tags ev]
-                  qTagRefs = [eid | QTag eid _ _ <- tags ev]
+                  eTagRefs = [tagId | ETag tagId _ _ <- tags ev]
+                  qTagRefs = [tagId | QTag tagId _ _ <- tags ev]
                   contentRefs = extractNostrReferences (content ev)
                   allRefs = nub $ eTagRefs ++ qTagRefs ++ contentRefs
               mapM (newObject postClass') allRefs
-
             Nothing -> return []
       ]
 
@@ -396,7 +383,7 @@ runUI = interpret $ \_ -> \case
 
 -- Helper function to extract nostr: references from content
 extractNostrReferences :: Text -> [EventId]
-extractNostrReferences content =
-    let matches = content =~ ("nostr:(note|nevent)1[a-zA-Z0-9]+" :: Text) :: [[Text]]
+extractNostrReferences txt =
+    let matches = txt =~ ("nostr:(note|nevent)1[a-zA-Z0-9]+" :: Text) :: [[Text]]
         refs = mapMaybe (bech32ToEventId . drop 6 . head) matches  -- drop "nostr:" prefix
     in refs
