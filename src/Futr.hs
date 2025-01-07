@@ -29,12 +29,10 @@ import Effectful.FileSystem
 import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Effectful.TH
 import Lmdb.Connection (closeEnvironment)
-import Lmdb.Types (KeyValue(..))
 import QtQuick
 import GHC.Generics (Generic)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
-import Pipes.Prelude qualified as Pipes
 import System.FilePath ((</>))
 
 import Logging
@@ -135,6 +133,9 @@ runFutr = interpret $ \_ -> \case
   Login obj input -> do
       kst <- get @KeyMgmtState
       case Map.lookup (AccountId input) (accountMap kst) of
+        Nothing -> do
+          logError $ "Account not found: " <> input
+          return ()
         Just a -> do
           logInfo $ "Starting login for account: " <> pack (show $ accountPubKeyXO a)
           let pk = accountPubKeyXO a
