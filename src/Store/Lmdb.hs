@@ -23,41 +23,33 @@ module Store.Lmdb
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Monad (forM_,void)
+import Control.Monad (forM_)
 import Data.Aeson (ToJSON, FromJSON, encode, decode, eitherDecode)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.List (sort)
 import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
-import Data.Text (pack)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.Text.Encoding (encodeUtf8)
 import Effectful
-import Effectful.Exception (throwIO)
 import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Shared (State, get, modify, put)
-import Effectful.State.Static.Shared qualified as State
-import Effectful.FileSystem
 import Effectful.TH (makeEffect)
 import Lmdb.Codec qualified as Codec
 import Lmdb.Connection
 import Lmdb.Map qualified as Map
 import Lmdb.Types
 import Pipes.Prelude qualified as Pipes
-import System.FilePath ((</>))
 import Pipes ((>->))
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Base16 as B16
-import qualified Data.Text.Encoding as TE
 import GHC.Generics (Generic)
 import qualified Data.Cache.LRU as LRU
 
 import Logging
 import Nostr.Event (validateEvent, unwrapGiftWrap, unwrapSeal)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile, Relay(..), Tag(..)
+import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile, Tag(..)
                    , Rumor(..), rumorPubKey, rumorTags, rumorCreatedAt, emptyProfile )
 import Nostr.Util
-import Types (AppState(..), EventWithRelays(..), Follow(..))
+import Types (EventWithRelays(..), Follow(..))
 
 
 -- | Timeline types
@@ -104,96 +96,94 @@ makeEffect ''LmdbStore
 runLmdbStore :: (Util :> es, IOE :> es, State LmdbState :> es, Logging :> es)
              => Eff (LmdbStore : es) a
              -> Eff es a
-runLmdbStore = interpret $ \env -> \case
+runLmdbStore = interpret $ \_ -> \case
     -- Event operations (main storage operation)
     PutEvent ev -> do
-        LmdbState{..} <- get
+        -- Bind the current state to avoid shadowing
+        currentState <- get @LmdbState
         kp <- getKeyPair
-        liftIO $ withMVar lmdbLock $ \_ -> withTransaction lmdbEnv $ \txn -> do
-            Map.repsert' txn eventDb (eventId $ event ev) ev
+        liftIO $ withMVar (lmdbLock currentState) $ \_ -> withTransaction (lmdbEnv currentState) $ \txn -> do
+            Map.repsert' txn (eventDb currentState) (eventId $ event ev) ev
 
             case kind (event ev) of
                 GiftWrap -> do
-                    mSealedEvent <- liftIO $ unwrapGiftWrap (event ev) kp
+                    mSealedEvent <- unwrapGiftWrap (event ev) kp
                     case mSealedEvent of
                         Just sealedEvent | validateEvent sealedEvent -> 
                             case kind sealedEvent of
                                 Seal -> do
-                                    mDecryptedRumor <- liftIO $ unwrapSeal sealedEvent kp
+                                    mDecryptedRumor <- unwrapSeal sealedEvent kp
                                     case mDecryptedRumor of
-                                        Just decryptedRumor | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
-                                            let participants = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
-                                                  then sort $ getAllPTags (rumorTags decryptedRumor)
-                                                  else filter (/= keyPairToPubKeyXO kp) $ rumorPubKey decryptedRumor : sort (getAllPTags (rumorTags decryptedRumor))
-                                            addTimelineEntryTx txn chatTimelineDb ev participants (rumorCreatedAt decryptedRumor)
+                                        Just decryptedRumor
+                                            | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
+                                                let participants = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
+                                                      then sort $ getAllPTags (rumorTags decryptedRumor)
+                                                      else filter (/= keyPairToPubKeyXO kp)
+                                                           (rumorPubKey decryptedRumor : sort (getAllPTags (rumorTags decryptedRumor)))
+                                                addTimelineEntryTx txn (chatTimelineDb currentState) ev participants (rumorCreatedAt decryptedRumor)
                                         _ -> pure ()
                                 _ -> pure ()
                         _ -> pure ()
 
                 ShortTextNote -> 
-                    addTimelineEntryTx txn postTimelineDb ev [pubKey $ event ev] (createdAt $ event ev)
+                    addTimelineEntryTx txn (postTimelineDb currentState) ev [pubKey $ event ev] (createdAt $ event ev)
 
                 Repost -> do
                     let etags = [t | t@(ETag _ _ _) <- tags (event ev)]
                     let mOriginalEvent = eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev)
                     case (etags, mOriginalEvent) of
-                        (ETag _ _ _:_, Right originalEvent) | validateEvent originalEvent -> do
-                            Map.repsert' txn eventDb (eventId originalEvent) (EventWithRelays originalEvent Set.empty)
-                            addTimelineEntryTx txn postTimelineDb ev [pubKey $ event ev] (createdAt $ event ev)
+                        (ETag _ _ _ : _, Right originalEvent)
+                            | validateEvent originalEvent -> do
+                                Map.repsert' txn (eventDb currentState) (eventId originalEvent)
+                                    (EventWithRelays originalEvent Set.empty)
+                                addTimelineEntryTx txn (postTimelineDb currentState) ev [pubKey $ event ev]
+                                    (createdAt $ event ev)
                         _ -> pure ()
 
                 EventDeletion -> do
                     let eventIdsToDelete = [eid | ETag eid _ _ <- tags (event ev)]
                     forM_ eventIdsToDelete $ \eid -> do
-                        mEvent <- Map.lookup' (readonly txn) eventDb eid
+                        mEvent <- Map.lookup' (readonly txn) (eventDb currentState) eid
                         case mEvent of
                             Just deletedEv -> do
                                 let key = (pubKey $ event deletedEv, createdAt $ event deletedEv)
                                     db = case kind (event deletedEv) of
-                                        ShortTextNote -> postTimelineDb
-                                        Repost -> postTimelineDb
-                                        _ -> chatTimelineDb
+                                        ShortTextNote -> (postTimelineDb currentState)
+                                        Repost -> (postTimelineDb currentState)
+                                        _ -> (chatTimelineDb currentState)
                                 Map.delete' txn db key
-                                Map.delete' txn eventDb eid
+                                Map.delete' txn (eventDb currentState) eid
                             Nothing -> pure ()
 
                 Metadata -> 
                     case eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev) of
                         Right profile -> 
-                            Map.repsert' txn profileDb (pubKey $ event ev) (profile, createdAt $ event ev)
+                            Map.repsert' txn (profileDb currentState) (pubKey $ event ev) (profile, createdAt $ event ev)
                         Left _ -> pure ()
 
                 FollowList -> do
-                    let followList' = [Follow pk (fmap InboxRelay relay') petName' | PTag pk relay' petName' <- tags (event ev)]
+                    let followList' = [Follow pk petName' | PTag pk _ petName' <- tags (event ev)]
                         authorPk = pubKey $ event ev
-                    Map.repsert' txn followsDb authorPk followList'
+                    Map.repsert' txn (followsDb currentState) authorPk followList'
 
                 _ -> pure ()
 
         -- Update caches after transaction
-        LmdbState{..} <- get @LmdbState
-        let newEventCache = LRU.insert (eventId $ event ev) ev eventCache
+        let newEventCache = LRU.insert (eventId $ event ev) ev (eventCache currentState)
             newProfileCache = case kind (event ev) of
-                Metadata -> case eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev) of
-                    Right profile -> LRU.insert (pubKey $ event ev) (profile, createdAt $ event ev) profileCache
-                    Left _ -> profileCache
-                _ -> profileCache
+                Metadata -> case eitherDecode (fromStrict $ encodeUtf8 $ content (event ev)) of
+                    Right profile -> LRU.insert (pubKey $ event ev) (profile, createdAt $ event ev) (profileCache currentState)
+                    Left _ -> profileCache currentState
+                _ -> profileCache currentState
             newFollowsCache = case kind (event ev) of
-                FollowList -> let followList' = [Follow pk (fmap InboxRelay relay') petName' | PTag pk relay' petName' <- tags (event ev)]
-                             in LRU.insert (pubKey $ event ev) followList' followsCache
-                _ -> followsCache
-        put @LmdbState $ LmdbState
-            { lmdbLock = lmdbLock
-            , lmdbEnv = lmdbEnv
-            , eventDb = eventDb
-            , profileDb = profileDb
-            , postTimelineDb = postTimelineDb
-            , chatTimelineDb = chatTimelineDb
-            , followsDb = followsDb
-            , eventCache = newEventCache
+                FollowList -> let followList' = [Follow pk petName' | PTag pk _ petName' <- tags (event ev)]
+                             in LRU.insert (pubKey $ event ev) followList' (followsCache currentState)
+                _ -> followsCache currentState
+
+        put @LmdbState currentState
+            { eventCache = newEventCache
             , profileCache = newProfileCache
             , followsCache = newFollowsCache
-            , timelineCache = timelineCache
             }
 
     GetEvent eid -> do

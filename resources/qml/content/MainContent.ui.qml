@@ -26,7 +26,9 @@ Rectangle {
 
         onMessageSubmitted: function(text) {
             if (targetPost.postType == "repost") {
-                quoteRepost(targetPost.referencedEventId, text)
+                if (targetPost.referencedPosts.length > 0) {
+                    quoteRepost(targetPost.referencedPosts[0].id, text)
+                }
             } else {
                 quoteRepost(targetPost.id, text)
             }
