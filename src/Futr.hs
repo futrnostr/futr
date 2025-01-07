@@ -9,7 +9,7 @@ import Control.Monad (forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
 import Data.Text (Text, isPrefixOf, pack, unpack)
@@ -28,17 +28,12 @@ import Effectful.FileSystem
   )
 import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Effectful.TH
-import Lmdb.Connection (closeEnvironment, withCursor)
-import Lmdb.Connection qualified as Connection
-import Lmdb.Map qualified as LMap
-import Lmdb.Types (KeyValue(..))
+import Lmdb.Connection (closeEnvironment)
 import QtQuick
 import GHC.Generics (Generic)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
-import Pipes.Prelude qualified as Pipes
 import System.FilePath ((</>))
-import Control.Concurrent.MVar (MVar, newMVar)
 
 import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
@@ -52,7 +47,7 @@ import Nostr.Publisher
 import Nostr.RelayConnection (RelayConnection)
 import Nostr.RelayPool
 import Nostr.Subscription
-import Nostr.Types ( Event(..), EventId, Profile(..), Relay(..), RelayURI, Tag(..)
+import Nostr.Types ( Event(..), EventId, Relay(..), RelayURI, Tag(..)
                    , getUri, metadataFilter )
 import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
@@ -60,7 +55,7 @@ import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
 import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
                   , getEvent, getFollows, putEvent )
-import Types hiding (Comment, QuoteRepost)
+import Types
 
 -- | Signal key class for LoginStatusChanged.
 data LoginStatusChanged deriving Typeable
@@ -138,6 +133,9 @@ runFutr = interpret $ \_ -> \case
   Login obj input -> do
       kst <- get @KeyMgmtState
       case Map.lookup (AccountId input) (accountMap kst) of
+        Nothing -> do
+          logError $ "Account not found: " <> input
+          return ()
         Just a -> do
           logInfo $ "Starting login for account: " <> pack (show $ accountPubKeyXO a)
           let pk = accountPubKeyXO a
@@ -191,7 +189,7 @@ runFutr = interpret $ \_ -> \case
         Just userPK -> do
             currentFollows <- getFollows userPK
             unless (targetPK `elem` map pubkey currentFollows) $ do
-                let newFollow = Follow targetPK Nothing Nothing
+                let newFollow = Follow targetPK Nothing
                     newFollows = newFollow : currentFollows
                 sendFollowListEvent newFollows
                 notify $ emptyUpdates { followsChanged = True }
@@ -238,7 +236,10 @@ runFutr = interpret $ \_ -> \case
             Nothing -> logError "Failed to create seal" >> return Nothing
 
         let validGiftWraps = catMaybes giftWraps
-        forM_ validGiftWraps $ \gw -> publishGiftWrap gw senderPubKeyXO
+        forM_ validGiftWraps $ \gw -> do
+          putEvent $ EventWithRelays gw Set.empty
+          publishGiftWrap gw senderPubKeyXO
+        notify $ emptyUpdates { privateMessagesChanged = True }
 
       (Nothing, _) -> logError "No key pair found"
       (_, (Nothing, _)) -> logError "No current chat recipient"
@@ -249,7 +250,10 @@ runFutr = interpret $ \_ -> \case
     let u = createShortTextNote input (keyPairToPubKeyXO kp) now
     signed <- signEvent u kp
     case signed of
-      Just s -> publishToOutbox s
+      Just s -> do
+        putEvent $ EventWithRelays s Set.empty
+        publishToOutbox s
+        notify $ emptyUpdates { postsChanged = True }
       Nothing -> logError "Failed to sign short text note"
 
   Logout obj -> do
@@ -306,8 +310,10 @@ runFutr = interpret $ \_ -> \case
                     let authorInboxUris = Set.fromList $ map getUri authorRelays
                         targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
+                    putEvent $ EventWithRelays s targetUris
                     forM_ (Set.toList targetUris) $ \relay ->
                       publishToRelay s relay
+                    notify $ emptyUpdates { postsChanged = True }
                   Nothing -> return ()
               Nothing -> logError "Failed to sign repost"
 
@@ -320,13 +326,14 @@ runFutr = interpret $ \_ -> \case
         mEvent <- getEvent eid
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just EventWithRelays{relays} | Set.null relays -> do
-            logError "Failed to fetch event: no relays"
           Just EventWithRelays{event, relays} -> do
             let q = createQuoteRepost event (Set.findMin relays) quote (keyPairToPubKeyXO kp) now
             signed <- signEvent q kp
             case signed of
-              Just s -> publishToOutbox s
+              Just s -> do
+                putEvent $ EventWithRelays s Set.empty
+                publishToOutbox s
+                notify $ emptyUpdates { postsChanged = True }
               Nothing -> logError "Failed to sign quote repost"
 
   Comment eid comment' -> do
@@ -357,8 +364,10 @@ runFutr = interpret $ \_ -> \case
                     let authorInboxUris = Set.fromList $ map getUri authorRelays
                         targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
+                    putEvent $ EventWithRelays s targetUris
                     forM_ (Set.toList targetUris) $ \relay ->
                       publishToRelay s relay
+                    notify $ emptyUpdates { postsChanged = True }
                   Nothing -> return ()
               Nothing -> logError "Failed to sign comment"
 
@@ -371,7 +380,10 @@ runFutr = interpret $ \_ -> \case
         let deletion = createEventDeletion [eid] reason (keyPairToPubKeyXO kp) now
         signed <- signEvent deletion kp
         case signed of
-          Just s -> publishToOutbox s
+          Just s -> do
+            putEvent $ EventWithRelays s Set.empty
+            publishToOutbox s
+            notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
           Nothing -> logError "Failed to sign event deletion"
 
 
