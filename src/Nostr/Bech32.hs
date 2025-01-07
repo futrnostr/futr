@@ -11,6 +11,7 @@ module Nostr.Bech32
     , nprofileToPubKeyXO
     , nrelayToRelay
     , relayToNrelay
+    , bech32ToEventId
     ) where
 
 import Codec.Binary.Bech32 qualified as Bech32
@@ -170,3 +171,15 @@ decodeTLV bs = runGet go (LBS.fromStrict bs)
           v <- getByteString (fromIntegral l)
           rest <- go
           return $ (t, BSS.toShort v) : rest
+
+
+-- | Bech32 decoding to EventId
+bech32ToEventId :: T.Text -> Maybe EventId
+bech32ToEventId txt = do
+    case T.take 4 txt of
+        "note" -> fromBech32 "note" txt >>= (Just . EventId)
+        "nevent" -> do
+            bs <- fromBech32 "nevent" txt
+            let tlvs = decodeTLV bs
+            lookup 0 tlvs >>= (Just . EventId . BSS.fromShort)
+        _ -> Nothing

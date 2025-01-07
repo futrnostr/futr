@@ -34,57 +34,60 @@ Pane {
             color: Material.foreground
         }
 
-        // Referenced content box
-        Rectangle {
-            visible: post.postType === "repost" || post.postType === "quote_repost"
-            Layout.fillWidth: true
-            color: Qt.rgba(0, 0, 0, 0.1)
-            radius: 8
-            border.width: 1
-            border.color: Material.dividerColor
+        // Referenced content boxes
+        Repeater {
+            model: post.referencedPosts || []
+            delegate: Rectangle {
+                visible: true
+                Layout.fillWidth: true
+                color: Qt.rgba(0, 0, 0, 0.1)
+                radius: 8
+                border.width: 1
+                border.color: Material.dividerColor
 
-            implicitHeight: contentColumn.implicitHeight + 2 * Constants.spacing_m
-            
-            ColumnLayout {
-                id: contentColumn
-                anchors {
-                    fill: parent
-                    margins: Constants.spacing_m
-                }
-                spacing: Constants.spacing_s
+                implicitHeight: contentColumn.implicitHeight + 2 * Constants.spacing_m
 
-                // Author info row
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Constants.spacing_m
+                ColumnLayout {
+                    id: contentColumn
+                    anchors {
+                        fill: parent
+                        margins: Constants.spacing_m
+                    }
+                    spacing: Constants.spacing_s
 
-                    ProfilePicture {
-                        Layout.preferredWidth: 36
-                        Layout.preferredHeight: 36
-                        imageSource: Util.getProfilePicture(post.referencedAuthorPicture, post.referencedAuthorPubkey)
+                    // Author info row
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Constants.spacing_m
+
+                        ProfilePicture {
+                            Layout.preferredWidth: 36
+                            Layout.preferredHeight: 36
+                            imageSource: modelData.author ? Util.getProfilePicture(modelData.author.picture, modelData.author.npub) : ""
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.author ? (modelData.author.displayName || modelData.author.name) : ""
+                            font: Constants.fontMedium
+                            color: Material.foreground
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            text: modelData.timestamp || ""
+                            font: Constants.smallFontMedium
+                            color: Material.secondaryTextColor
+                        }
                     }
 
+                    // Referenced content
                     Text {
                         Layout.fillWidth: true
-                        text: post.referencedAuthorName || post.referencedAuthorPubkey || ""
-                        font: Constants.fontMedium
+                        text: (modelData.content || "").replace(/nostr:(note|nevent|naddr)1[a-zA-Z0-9]+/g, '').trim()
+                        wrapMode: Text.Wrap
                         color: Material.foreground
-                        elide: Text.ElideRight
                     }
-
-                    Text {
-                        text: post.referencedCreatedAt || ""
-                        font: Constants.smallFontMedium
-                        color: Material.secondaryTextColor
-                    }
-                }
-
-                // Referenced content
-                Text {
-                    Layout.fillWidth: true
-                    text: (post.referencedContent || "").replace(/nostr:(note|nevent|naddr)1[a-zA-Z0-9]+/g, '').trim()
-                    wrapMode: Text.Wrap
-                    color: Material.foreground
                 }
             }
         }
