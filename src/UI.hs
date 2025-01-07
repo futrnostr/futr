@@ -5,13 +5,14 @@
 module UI where
 
 import Control.Monad (guard)
-import Data.Aeson (decode, encode)
+import Control.Monad.Fix (mfix)
+import Data.Aeson (decode, eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (find)
+import Data.List (find, nub)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust, mapMaybe)
 import Data.Proxy (Proxy(..))
-import Data.Text (pack, unpack)
+import Data.Text (Text, drop, pack, unpack)
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
@@ -19,7 +20,9 @@ import Effectful.State.Static.Shared (get, modify)
 import Effectful.TH
 import QtQuick
 import Graphics.QML hiding (fireSignal, runEngineLoop)
+import Prelude hiding (drop)
 import Text.Read (readMaybe)
+import Text.Regex.TDFA
 
 import Logging
 import Nostr
@@ -149,65 +152,79 @@ runUI = interpret $ \_ -> \case
             Just (ETag eid _ _) -> return $ Just eid
             _ -> return Nothing
 
-    postClass <- newClass [
+    postClass <- mfix $ \postClass' -> newClass [
         defPropertySigRO' "id" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
-          return $ pack $ show eid,
+          let value = pack $ show eid
+          return value,
 
         defPropertySigRO' "postType" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
           eventMaybe <- runE $ getEvent eid
-          case eventMaybe of
-            Just eventWithRelays -> return $ Just $ pack $ case kind (event eventWithRelays) of
-              ShortTextNote ->
-                if any (\case QTag _ _ _ -> True; _ -> False) (tags (event eventWithRelays))
-                  then "quote_repost"
-                  else "text_note"
-              Repost -> "repost"
-              Comment -> "comment"
-              GiftWrap -> "gift_wrap"
-              DirectMessage -> "direct_message"
-              _ -> "unknown"
-            Nothing -> return Nothing,
+          let value = case eventMaybe of
+                Just eventWithRelays ->
+                    pack $ case kind (event eventWithRelays) of
+                        ShortTextNote ->
+                            if any (\t -> case t of
+                                          QTag _ _ _ -> True
+                                          _ -> False) (tags (event eventWithRelays))
+                            then "quote_repost"
+                            else "short_text_note"
+                        Repost -> "repost"
+                        Comment -> "comment"
+                        GiftWrap -> "gift_wrap"
+                        DirectMessage -> "direct_message"
+                        _ -> "unknown"
+                Nothing -> "unknown"
+          return value,
 
         defPropertySigRO' "content" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
-          runE $ getEvent eid >>= \case
-            Just eventWithRelays ->
-              case kind (event eventWithRelays) of
+          value <- runE $ getEvent eid >>= \case
+            Just eventWithRelays -> do
+              let ev = event eventWithRelays
+              case kind ev of
+                Repost -> do
+                  case eitherDecode (BSL.fromStrict $ TE.encodeUtf8 $ content ev) of
+                    Right repostedEvent -> return $ Just $ content repostedEvent
+                    Left _ -> return $ Just $ content ev
                 GiftWrap -> do
                   kp <- getKeyPair
-                  sealed <- unwrapGiftWrap (event eventWithRelays) kp
+                  sealed <- unwrapGiftWrap ev kp
                   rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
                   return $ rumorContent <$> rumor
-                _ -> return $ Just $ content (event eventWithRelays)
-            Nothing -> return Nothing,
+                _ -> return $ Just $ content ev
+            Nothing -> return Nothing
+          return value,
 
         defPropertySigRO' "timestamp" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
           eventMaybe <- runE $ getEvent eid
-          case eventMaybe of
+          value <- case eventMaybe of
             Just eventWithRelays -> do
               now <- runE getCurrentTime
               return $ Just $ formatDateTime English now (createdAt (event eventWithRelays))
-            Nothing -> return Nothing,
+            Nothing -> return Nothing
+          return value,
 
         defPropertySigRO' "author" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
           eventMaybe <- runE $ getEvent eid
-          case eventMaybe of
+          value <- case eventMaybe of
             Just eventWithRelays -> Just <$> newObject profileClass ()
-            Nothing -> return Nothing,
+            Nothing -> return Nothing
+          return value,
 
         -- For reposts and quote reposts: points to the reposted/quoted event
         defPropertySigRO' "referencedId" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
           eventMaybe <- runE $ getEvent eid
-          case eventMaybe of
+          value <- case eventMaybe of
             Just eventWithRelays -> getReferencedEventId (event eventWithRelays) >>= \case
               Just refId -> return $ Just $ pack $ show refId
               Nothing -> return Nothing
-            Nothing -> return Nothing,
+            Nothing -> return Nothing
+          return value,
 
         -- For comments: points to the original post that started the thread
         -- Example: Post A <- Comment B <- Comment C
@@ -215,11 +232,12 @@ runUI = interpret $ \_ -> \case
         defPropertySigRO' "rootId" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
           eventMaybe <- runE $ getEvent eid
-          case eventMaybe of
+          value <- case eventMaybe of
             Just eventWithRelays -> getRootReference (event eventWithRelays) >>= \case
               Just refId -> return $ Just $ pack $ show refId
               Nothing -> return Nothing
-            Nothing -> return Nothing,
+            Nothing -> return Nothing
+          return value,
 
         -- For nested comments: points to the immediate parent comment when different from root
         -- Example: Post A <- Comment B <- Comment C
@@ -227,15 +245,34 @@ runUI = interpret $ \_ -> \case
         --          Comment B's parentPost is null (same as root)
         defPropertySigRO' "parentId" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
-          runE $ getEvent eid >>= maybe (return Nothing) \eventWithRelays -> do
-            parentId <- getParentReference (event eventWithRelays)
-            rootId <- getRootReference (event eventWithRelays)
-            return $ do  -- This is Maybe monad
-              p <- parentId
-              r <- rootId
-              guard (p /= r)
-              Just $ pack $ show p
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> do
+              parentId <- runE $ getParentReference (event eventWithRelays)
+              rootId <- runE $ getRootReference (event eventWithRelays)
+              let value = do  -- This is Maybe monad
+                    p <- parentId
+                    r <- rootId
+                    guard (p /= r)
+                    Just $ pack $ show p
+              return value
+            Nothing -> do
+              return Nothing,
 
+        -- Referenced posts property
+        defPropertySigRO' "referencedPosts" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> do
+              let ev = event eventWithRelays
+                  eTagRefs = [eid | ETag eid _ _ <- tags ev]
+                  qTagRefs = [eid | QTag eid _ _ <- tags ev]
+                  contentRefs = extractNostrReferences (content ev)
+                  allRefs = nub $ eTagRefs ++ qTagRefs ++ contentRefs
+              mapM (newObject postClass') allRefs
+
+            Nothing -> return []
       ]
 
     postsPool <- newFactoryPool (newObject postClass)
@@ -372,3 +409,10 @@ runUI = interpret $ \_ -> \case
     rootObj <- newObject rootClass ()
 
     return rootObj
+
+-- Helper function to extract nostr: references from content
+extractNostrReferences :: Text -> [EventId]
+extractNostrReferences content =
+    let matches = content =~ ("nostr:(note|nevent)1[a-zA-Z0-9]+" :: Text) :: [[Text]]
+        refs = mapMaybe (bech32ToEventId . drop 6 . head) matches  -- drop "nostr:" prefix
+    in refs

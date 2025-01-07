@@ -137,7 +137,8 @@ runLmdbStore = interpret $ \env -> \case
                     let etags = [t | t@(ETag _ _ _) <- tags (event ev)]
                     let mOriginalEvent = eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev)
                     case (etags, mOriginalEvent) of
-                        (ETag _ _ _:_, Right originalEvent) | validateEvent originalEvent -> 
+                        (ETag _ _ _:_, Right originalEvent) | validateEvent originalEvent -> do
+                            Map.repsert' txn eventDb (eventId originalEvent) (EventWithRelays originalEvent Set.empty)
                             addTimelineEntryTx txn postTimelineDb ev [pubKey $ event ev] (createdAt $ event ev)
                         _ -> pure ()
 
