@@ -236,7 +236,10 @@ runFutr = interpret $ \_ -> \case
             Nothing -> logError "Failed to create seal" >> return Nothing
 
         let validGiftWraps = catMaybes giftWraps
-        forM_ validGiftWraps $ \gw -> publishGiftWrap gw senderPubKeyXO
+        forM_ validGiftWraps $ \gw -> do
+          putEvent $ EventWithRelays gw Set.empty
+          publishGiftWrap gw senderPubKeyXO
+        notify $ emptyUpdates { privateMessagesChanged = True }
 
       (Nothing, _) -> logError "No key pair found"
       (_, (Nothing, _)) -> logError "No current chat recipient"
@@ -247,7 +250,10 @@ runFutr = interpret $ \_ -> \case
     let u = createShortTextNote input (keyPairToPubKeyXO kp) now
     signed <- signEvent u kp
     case signed of
-      Just s -> publishToOutbox s
+      Just s -> do
+        putEvent $ EventWithRelays s Set.empty
+        publishToOutbox s
+        notify $ emptyUpdates { postsChanged = True }
       Nothing -> logError "Failed to sign short text note"
 
   Logout obj -> do
@@ -304,8 +310,10 @@ runFutr = interpret $ \_ -> \case
                     let authorInboxUris = Set.fromList $ map getUri authorRelays
                         targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
+                    putEvent $ EventWithRelays s targetUris
                     forM_ (Set.toList targetUris) $ \relay ->
                       publishToRelay s relay
+                    notify $ emptyUpdates { postsChanged = True }
                   Nothing -> return ()
               Nothing -> logError "Failed to sign repost"
 
@@ -318,13 +326,14 @@ runFutr = interpret $ \_ -> \case
         mEvent <- getEvent eid
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just EventWithRelays{relays} | Set.null relays -> do
-            logError "Failed to fetch event: no relays"
           Just EventWithRelays{event, relays} -> do
             let q = createQuoteRepost event (Set.findMin relays) quote (keyPairToPubKeyXO kp) now
             signed <- signEvent q kp
             case signed of
-              Just s -> publishToOutbox s
+              Just s -> do
+                putEvent $ EventWithRelays s Set.empty
+                publishToOutbox s
+                notify $ emptyUpdates { postsChanged = True }
               Nothing -> logError "Failed to sign quote repost"
 
   Comment eid comment' -> do
@@ -355,8 +364,10 @@ runFutr = interpret $ \_ -> \case
                     let authorInboxUris = Set.fromList $ map getUri authorRelays
                         targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
+                    putEvent $ EventWithRelays s targetUris
                     forM_ (Set.toList targetUris) $ \relay ->
                       publishToRelay s relay
+                    notify $ emptyUpdates { postsChanged = True }
                   Nothing -> return ()
               Nothing -> logError "Failed to sign comment"
 
@@ -369,7 +380,10 @@ runFutr = interpret $ \_ -> \case
         let deletion = createEventDeletion [eid] reason (keyPairToPubKeyXO kp) now
         signed <- signEvent deletion kp
         case signed of
-          Just s -> publishToOutbox s
+          Just s -> do
+            putEvent $ EventWithRelays s Set.empty
+            publishToOutbox s
+            notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
           Nothing -> logError "Failed to sign event deletion"
 
 

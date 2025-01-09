@@ -6,6 +6,7 @@ module UI where
 
 import Control.Monad.Fix (mfix)
 import Data.Aeson (decode, eitherDecode, encode)
+import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (find, nub)
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -21,6 +22,7 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Prelude hiding (drop)
 import Text.Read (readMaybe)
 import Text.Regex.TDFA
+
 
 import Logging
 import Nostr
@@ -147,7 +149,7 @@ runUI = interpret $ \_ -> \case
     postClass <- mfix $ \postClass' -> newClass [
         defPropertySigRO' "id" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
-          let value = pack $ show eid
+          let value = TE.decodeUtf8 $ B16.encode $ getEventId eid
           return value,
 
         defPropertySigRO' "postType" changeKey' $ \obj -> do
@@ -350,30 +352,20 @@ runUI = interpret $ \_ -> \case
         defMethod' "sendShortTextNote" $ \_ input -> runE $ sendShortTextNote input, -- NIP-01 short text note
 
         defMethod' "repost" $ \_ eid -> runE $ do -- NIP-18 repost
-          let unquoted = read (unpack eid) :: String
-          let eid' = read unquoted :: EventId
+          let eid' = read (unpack eid) :: EventId
           repost eid',
 
         defMethod' "quoteRepost" $ \_ eid quote -> runE $ do -- NIP-18 quote repost
-          let unquoted = read (unpack eid) :: String
-          let eid' = read unquoted :: EventId
+          let eid' = read (unpack eid) :: EventId
           quoteRepost eid' quote,
 
         defMethod' "comment" $ \_ eid input -> runE $ do -- NIP-22 comment
-          let unquoted = read (unpack eid) :: String
-          let eid' = read unquoted :: EventId
+          let eid' = read (unpack eid) :: EventId
           comment eid' input,
 
         defMethod' "deleteEvent" $ \_ eid input -> runE $ do -- NIP-09 delete post
-          let unquoted = read (unpack eid) :: String
-          let eid' = read unquoted :: EventId
-          deleteEvent eid' input,
-
-        defMethod' "getPost" $ \_ eid -> do
-          let unquoted = read (unpack eid) :: String
-          let eid' = read unquoted :: EventId
-          postObj <- newObject postClass eid'
-          return postObj
+          let eid' = read (unpack eid) :: EventId
+          deleteEvent eid' input
       ]
 
     rootObj <- newObject rootClass ()
