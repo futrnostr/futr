@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 
@@ -11,9 +12,11 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.List (find, nub)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Proxy (Proxy(..))
+import qualified Data.Set as Set
 import Data.Text (Text, drop, pack, unpack)
 import Data.Text.Encoding qualified as TE
 import Effectful
+import Effectful.Concurrent.STM (TQueue)
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (get, modify)
 import Effectful.TH
@@ -30,7 +33,12 @@ import Nostr.Bech32
 import Nostr.Event (createMetadata)
 import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types (Event(..), EventId(..), Kind(..), Profile(..), Relationship(..), Rumor(..), Tag(..))
+import Nostr.Subscription ( subscribeToReactions
+                          , subscribeToReposts
+                          , subscribeToComments
+                          , countEvents )
+import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile(..), RelayURI
+                   , Relationship(..), Rumor(..), Tag(..) )
 import Nostr.Util
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
@@ -38,6 +46,7 @@ import Futr hiding (Comment, QuoteRepost, Repost)
 import Store.Lmdb (TimelineType(..), getEvent, getFollows, getProfile, getTimelineIds)
 import TimeFormatter
 import Types
+
 
 -- | Key Management Effect for creating QML UI.
 data UI :: Effect where
@@ -146,6 +155,19 @@ runUI = interpret $ \_ -> \case
             Just (ETag eid _ _) -> return $ Just eid
             _ -> return Nothing
 
+        getEventCount subscriber postId = do
+            eventMaybe <- getEvent postId
+            case eventMaybe of
+                Just EventWithRelays{relays} -> do
+                    case Set.toList relays of
+                        [] -> return 0
+                        (relay:_) -> do
+                            mQueue <- subscriber postId relay
+                            case mQueue of
+                                Just queue -> countEvents queue
+                                Nothing -> return 0
+                Nothing -> return 0
+
     postClass <- mfix $ \postClass' -> newClass [
         defPropertySigRO' "id" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
@@ -244,11 +266,24 @@ runUI = interpret $ \_ -> \case
                   contentRefs = extractNostrReferences (content ev)
                   allRefs = nub $ eTagRefs ++ qTagRefs ++ contentRefs
               mapM (newObject postClass') allRefs
-            Nothing -> return []
+            Nothing -> return [],
+
+        -- Event count properties using the helper
+        defPropertySigRO' "reactionCount" changeKey' $ \obj ->
+            runE $ getEventCount subscribeToReactions (fromObjRef obj),
+
+        defPropertySigRO' "repostCount" changeKey' $ \obj ->
+            runE $ getEventCount subscribeToReposts (fromObjRef obj),
+
+        defPropertySigRO' "commentCount" changeKey' $ \obj ->
+            runE $ getEventCount subscribeToComments (fromObjRef obj)
       ]
 
+    -- Create the pools
     postsPool <- newFactoryPool (newObject postClass)
     chatPool <- newFactoryPool (newObject postClass)
+
+    return (postClass, postsPool, chatPool)
 
     rootClass <- newClass [
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),

@@ -14,7 +14,8 @@ import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
-import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTQueueIO, newTVarIO, readTQueue, readTVar, writeTChan, writeTVar)
+import Effectful.Concurrent.STM ( TQueue, atomically, flushTQueue, newTQueueIO, newTVarIO
+                                , readTQueue, readTVar, tryReadTQueue, writeTChan, writeTVar )
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
@@ -310,10 +311,6 @@ handleRelayListUpdate pk relays ts importFn getRelayMap = do
 -- | Create DM relay subscription filter
 createDMRelayFilter :: PubKeyXO -> [PubKeyXO] -> Filter
 createDMRelayFilter xo followedPubKeys = NT.giftWrapFilter xo
-        --  --NT.metadataFilter (xo : followedPubKeys)
-    --, NT.preferredDMRelaysFilter (xo : followedPubKeys)
-    -- NT.giftWrapFilter xo
-    -- ] 
 
 
 -- | Create inbox relay subscription filter
@@ -342,3 +339,33 @@ generateRandomSubscriptionId = do
     bytes <- liftIO $ replicateM 8 randomIO
     let byteString = BS.pack bytes
     return $ decodeUtf8 $ B16.encode byteString
+
+-- | Subscribe to reactions for a specific event
+subscribeToReactions :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToReactions eid relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (NT.reactionsFilter eid)
+
+
+-- | Subscribe to reposts for a specific event
+subscribeToReposts :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToReposts eid relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (NT.repostsFilter eid)
+
+
+-- | Subscribe to comments for a specific event
+subscribeToComments :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToComments eid relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (NT.commentsFilter eid)
+
+
+-- Helper function to count events from a subscription
+countEvents :: SubscriptionEff es => TQueue SubscriptionEvent -> Eff es Int
+countEvents queue = do
+    event <- atomically $ tryReadTQueue queue
+    case event of
+        Just (EventAppeared _) -> (1 +) <$> countEvents queue
+        Just SubscriptionEose -> return 0
+        Nothing -> return 0
