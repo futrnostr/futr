@@ -14,7 +14,8 @@ import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
-import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTQueueIO, newTVarIO, readTQueue, readTVar, writeTChan, writeTVar)
+import Effectful.Concurrent.STM ( TQueue, atomically, flushTQueue, newTQueueIO, newTVarIO
+                                , readTQueue, readTVar, tryReadTQueue, writeTChan, writeTVar )
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
@@ -27,10 +28,10 @@ import KeyMgmt (AccountId(..), KeyMgmt, updateProfile, updateRelays)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Event (validateEvent)
-import Nostr.Keys (PubKeyXO, byteStringToHex, keyPairToPubKeyXO)
+import Nostr.Keys (PubKeyXO, byteStringToHex, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.RelayConnection
 import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Relay(..)
-                   , RelayURI, SubscriptionId, Tag(..), getUri )
+                   , RelayURI, SubscriptionId, Tag(..), emptyFilter, getUri )
 import Nostr.Types qualified as NT
 import Nostr.Util
 import RelayMgmt
@@ -41,9 +42,9 @@ import Types
 -- | Subscription effects
 data Subscription :: Effect where
     NewSubscriptionId :: Subscription m SubscriptionId
-    Subscribe :: RelayURI -> SubscriptionId -> [Filter] -> Subscription m (Maybe (TQueue SubscriptionEvent))
+    Subscribe :: RelayURI -> SubscriptionId -> Filter -> Subscription m (Maybe (TQueue SubscriptionEvent))
     StopSubscription :: SubscriptionId -> Subscription m ()
-    HandleEvent :: RelayURI -> SubscriptionId -> [Filter] -> Event -> Subscription m UIUpdates
+    HandleEvent :: RelayURI -> SubscriptionId -> Filter -> Event -> Subscription m UIUpdates
 
 type instance DispatchOf Subscription = Dynamic
 
@@ -73,7 +74,7 @@ runSubscription
 runSubscription = interpret $ \_ -> \case
     NewSubscriptionId -> generateRandomSubscriptionId
 
-    Subscribe r subId' fs -> createSubscription r subId' fs
+    Subscribe r subId' f -> createSubscription r subId' f
 
     StopSubscription subId' -> do
         st <- get @RelayPoolState
@@ -102,9 +103,7 @@ handleEvent' event' r = do
             logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
             pure emptyUpdates
         else do
-            --logDebug $ "About to putEvent into LMDB..."
             putEvent ev
-            --logDebug $ "Successfully stored event in LMDB"
             updates <- case kind event' of
                 ShortTextNote -> 
                     pure $ emptyUpdates { postsChanged = True }
@@ -186,19 +185,19 @@ handleEvent' event' r = do
 createSubscription :: SubscriptionEff es
                    => RelayURI
                    -> SubscriptionId
-                   -> [Filter]
+                   -> Filter
                    -> Eff es (Maybe (TQueue SubscriptionEvent))
-createSubscription r subId' fs = do
+createSubscription r subId' f = do
     st <- get @RelayPoolState
     case Map.lookup r (activeConnections st) of
         Just rd -> do
             let channel = requestChannel rd
-            atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' fs)
-            logDebug $ "Subscribed to " <> r <> " with subId " <> subId' <> " and filters " <> pack (show fs)
+            atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' f)
+            logDebug $ "Subscribed to " <> r <> " with subId " <> subId' <> " and filter " <> pack (show f)
             q <- newTQueueIO
             modify @RelayPoolState $ \st' ->
                 st { activeConnections = Map.adjust
-                        (\rd' -> rd' { activeSubscriptions = Map.insert subId' (SubscriptionDetails subId' fs q 0 0) (activeSubscriptions rd') })
+                        (\rd' -> rd' { activeSubscriptions = Map.insert subId' (SubscriptionDetails subId' f q 0 0) (activeSubscriptions rd') })
                         r
                         (activeConnections st')
                     }
@@ -231,16 +230,18 @@ handleRelaySubscription r = do
             (Map.toList $ generalRelays st')
 
     -- Start appropriate subscriptions based on relay type
-    let fs = if isDM then Just $ createDMRelayFilters pk followPks
-            else if isInbox then Just $ createInboxRelayFilters pk followPks
-            else Nothing
+    let f = if isDM
+                then Just $ giftWrapFilter pk
+                else if isInbox
+                    then Just $ createInboxRelayFilter pk followPks
+                    else Nothing
 
-    --logInfo $ "Starting subscription for " <> r <> " with filters " <> pack (show fs)
+    --logInfo $ "Starting subscription for " <> r <> " with filter " <> pack (show fs)
 
-    case fs of
-        Just fs' -> do
+    case f of
+        Just f' -> do
             subId' <- generateRandomSubscriptionId
-            mq <- createSubscription r subId' fs'
+            mq <- createSubscription r subId' f'
             case mq of
                 Just q -> do
                     shouldStop <- newTVarIO False
@@ -305,18 +306,14 @@ handleRelayListUpdate pk relays ts importFn getRelayMap = do
             void $ async $ connectRelay (getUri relay)
 
 
--- | Create DM relay subscription filters
-createDMRelayFilters :: PubKeyXO -> [PubKeyXO] -> [Filter]
-createDMRelayFilters xo followedPubKeys =
-    [ --NT.metadataFilter (xo : followedPubKeys)
-    --, NT.preferredDMRelaysFilter (xo : followedPubKeys)
-    NT.giftWrapFilter xo
-    ]
+-- | Create DM relay subscription filter
+createDMRelayFilter :: PubKeyXO -> [PubKeyXO] -> Filter
+createDMRelayFilter xo followedPubKeys = giftWrapFilter xo
 
 
--- | Create inbox relay subscription filters
-createInboxRelayFilters :: PubKeyXO -> [PubKeyXO] -> [Filter]
-createInboxRelayFilters xo followedPubKeys =
+-- | Create inbox relay subscription filter
+createInboxRelayFilter :: PubKeyXO -> [PubKeyXO] -> Filter
+createInboxRelayFilter xo followedPubKeys =
     {-
     [ NT.followListFilter (xo : followedPubKeys)
     , NT.metadataFilter (xo : followedPubKeys)
@@ -324,7 +321,7 @@ createInboxRelayFilters xo followedPubKeys =
     , NT.preferredDMRelaysFilter (xo : followedPubKeys)
     ]
     -}
-    [ Filter
+    Filter
         { ids = Nothing
         , authors = Just (xo : followedPubKeys)
         , kinds = Just [FollowList, Metadata, ShortTextNote, EventDeletion, Repost, PreferredDMRelays]
@@ -332,7 +329,7 @@ createInboxRelayFilters xo followedPubKeys =
         , NT.until = Nothing
         , limit = Just 1000
         , fTags = Nothing
-        } ]
+        }
 
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId
@@ -340,3 +337,92 @@ generateRandomSubscriptionId = do
     bytes <- liftIO $ replicateM 8 randomIO
     let byteString = BS.pack bytes
     return $ decodeUtf8 $ B16.encode byteString
+
+-- | Subscribe to reactions for a specific event
+subscribeToReactions :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToReactions eid relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (reactionsFilter eid)
+
+
+-- | Subscribe to reposts for a specific event
+subscribeToReposts :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToReposts eid relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (repostsFilter eid)
+
+
+-- | Subscribe to comments for a specific event
+subscribeToComments :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToComments eid relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (commentsFilter eid)
+
+
+subscribeToFollowers :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToFollowers xo relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (followersFilter xo)
+
+
+subscribeToFollowing :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToFollowing xo relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (followingFilter xo)
+
+
+-- Helper function to count events from a subscription
+countEvents :: SubscriptionEff es => TQueue SubscriptionEvent -> Eff es Int
+countEvents queue = do
+    event <- atomically $ tryReadTQueue queue
+    case event of
+        Just (EventAppeared _) -> (1 +) <$> countEvents queue
+        Just SubscriptionEose -> return 0
+        Nothing -> return 0
+
+
+-- Helper functions to create specific filters
+
+-- | Creates a filter for metadata.
+metadataFilter :: [PubKeyXO] -> Filter
+metadataFilter authors = emptyFilter { authors = Just authors, kinds = Just [Metadata], limit = Just 500 }
+
+-- | Creates a filter for short text notes.
+shortTextNoteFilter :: [PubKeyXO] -> Filter
+shortTextNoteFilter authors = emptyFilter { authors = Just authors, kinds = Just [ShortTextNote, EventDeletion, Repost], limit = Just 500 }
+
+-- | Creates filter for gift wrapped messages.
+giftWrapFilter :: PubKeyXO -> Filter
+giftWrapFilter xo = emptyFilter { kinds = Just [GiftWrap], fTags = Just $ Map.fromList [('p', [byteStringToHex $ exportPubKeyXO xo])], limit = Just 500 }
+
+-- | Creates a filter for preferred DM relays.
+preferredDMRelaysFilter :: [PubKeyXO] -> Filter
+preferredDMRelaysFilter authors = emptyFilter { authors = Just authors, kinds = Just [PreferredDMRelays], limit = Just 500 }
+
+-- | Creates a filter for a specific event by its ID.
+eventFilter :: EventId -> Filter
+eventFilter eid = emptyFilter { ids = Just [eid] }
+
+-- | Filter for reactions (likes) to a specific event.
+reactionsFilter :: EventId -> Filter
+reactionsFilter eid = emptyFilter { kinds = Just [Reaction], fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid] }
+
+-- | Filter for reposts of a specific event.
+repostsFilter :: EventId -> Filter
+repostsFilter eid = emptyFilter { kinds = Just [Repost], fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid] }
+
+-- | Filter for comments on a specific event.
+commentsFilter :: EventId -> Filter
+commentsFilter eid = emptyFilter { kinds = Just [ShortTextNote], fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid] }
+
+-- | Filter for followers of a specific public key.
+followersFilter :: PubKeyXO -> Filter
+followersFilter pubkey = emptyFilter { kinds = Just [FollowList], fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pubkey] }
+
+-- | Filter for following a specific public key.
+followingFilter :: PubKeyXO -> Filter
+followingFilter pubkey = emptyFilter { authors = Just [pubkey], kinds = Just [FollowList] }
+
+-- | Filter for posts made by a specific public key.
+postsFilter :: PubKeyXO -> Filter
+postsFilter pubkey = emptyFilter { authors = Just [pubkey], kinds = Just [ShortTextNote, Repost, Comment] }

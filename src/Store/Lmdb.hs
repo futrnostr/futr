@@ -20,6 +20,7 @@ module Store.Lmdb
     , getFollows
     , getProfile
     , getTimelineIds
+    , isEmpty
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
@@ -77,7 +78,7 @@ data LmdbState = LmdbState
 
 -- | LmdbStore operations
 data LmdbStore :: Effect where
-    -- Event operations (now handles all storage operations)
+    -- Event operations
     PutEvent :: EventWithRelays -> LmdbStore m ()
     
     -- Query operations (read-only)
@@ -85,6 +86,7 @@ data LmdbStore :: Effect where
     GetFollows :: PubKeyXO -> LmdbStore m [Follow]
     GetProfile :: PubKeyXO -> LmdbStore m (Profile, Int)
     GetTimelineIds :: TimelineType -> PubKeyXO -> Int -> LmdbStore m [EventId]
+    IsEmpty :: LmdbStore m Bool
 
 
 type instance DispatchOf LmdbStore = Dynamic
@@ -97,9 +99,7 @@ runLmdbStore :: (Util :> es, IOE :> es, State LmdbState :> es, Logging :> es)
              => Eff (LmdbStore : es) a
              -> Eff es a
 runLmdbStore = interpret $ \_ -> \case
-    -- Event operations (main storage operation)
     PutEvent ev -> do
-        -- Bind the current state to avoid shadowing
         currentState <- get @LmdbState
         kp <- getKeyPair
         liftIO $ withMVar (lmdbLock currentState) $ \_ -> withTransaction (lmdbEnv currentState) $ \txn -> do
@@ -168,7 +168,6 @@ runLmdbStore = interpret $ \_ -> \case
 
                 _ -> pure ()
 
-        -- Update caches after transaction
         let newEventCache = LRU.insert (eventId $ event ev) ev (eventCache currentState)
             newProfileCache = case kind (event ev) of
                 Metadata -> case eitherDecode (fromStrict $ encodeUtf8 $ content (event ev)) of
@@ -186,6 +185,8 @@ runLmdbStore = interpret $ \_ -> \case
             , followsCache = newFollowsCache
             }
 
+    -- Query operations (read-only)
+
     GetEvent eid -> do
         st <- get @LmdbState
         case LRU.lookup eid (eventCache st) of
@@ -201,7 +202,6 @@ runLmdbStore = interpret $ \_ -> \case
                         pure (Just ev)
                     Nothing -> pure Nothing
 
-    -- Query operations (read-only)
     GetFollows pk -> do
         st <- get @LmdbState
         case LRU.lookup pk (followsCache st) of
@@ -245,6 +245,16 @@ runLmdbStore = interpret $ \_ -> \case
                             >-> Pipes.take limit
                 modify @LmdbState $ \s -> s { timelineCache = LRU.insert cacheKey ids $ timelineCache s }
                 pure ids
+
+    IsEmpty -> do
+        st <- get @LmdbState
+        -- Check if the eventDb is empty
+        empty <- liftIO $ withTransaction (lmdbEnv st) $ \txn -> do
+            withCursor txn (eventDb st) $ \cursor -> do
+                entries <- Pipes.toListM (Map.firstForward cursor) -- Get all entries
+                return (null entries) -- If the list is empty, the db is empty
+        pure empty
+
 
 -- Helper function for timeline entries within a transaction
 addTimelineEntryTx :: Transaction 'ReadWrite 

@@ -18,7 +18,6 @@ import Data.Aeson.Types (Parser, parseEither)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
-import Data.Foldable (toList)
 import Data.Function (on)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
@@ -86,7 +85,7 @@ type SubscriptionId = Text
 -- | Represents a subscription.
 data Subscription = Subscription
   { subId   :: SubscriptionId
-  , filters :: [Filter]
+  , filter :: Filter
   }
   deriving (Eq, Generic, Show)
 
@@ -102,6 +101,19 @@ data Filter = Filter
   , fTags   :: Maybe (Map.Map Char [Text])
   }
   deriving (Eq, Generic, Show)
+
+
+-- | Empty filter.
+emptyFilter :: Filter
+emptyFilter = Filter
+  { ids = Nothing
+  , authors = Nothing
+  , kinds = Nothing
+  , since = Nothing
+  , until = Nothing
+  , limit = Nothing
+  , fTags = Nothing
+  }
 
 
 -- | Represents a request to the relay.
@@ -588,7 +600,7 @@ instance FromJSON Response where
 
 -- | Converts a 'Subscription' to its JSON representation.
 instance ToJSON Subscription where
-  toEncoding (Subscription efs s) = pairs $ "subId" .= s <> "filters" .= efs
+  toEncoding (Subscription efs s) = pairs $ "subId" .= s <> "filter" .= efs
 
 
 -- | Converts a 'Request' to its JSON representation.
@@ -596,7 +608,7 @@ instance ToJSON Request where
   toEncoding req = case req of
     Authenticate event -> list id [text "AUTH", toEncoding event]
     SendEvent event -> list id [text "EVENT", toEncoding event]
-    Subscribe (Subscription subId filters) -> list id $ text "REQ" : text subId : map toEncoding (toList filters)
+    Subscribe (Subscription subId f) -> list id $ text "REQ" : text subId : [ toEncoding f ]
     Close subId -> list text ["CLOSE", subId]
     Disconnect -> list text ["DISCONNECT"]
 
@@ -743,85 +755,6 @@ extractPath u =
 sameRelay :: Relay -> Relay -> Bool
 sameRelay = (==) `on` getUri
 
-
--- Helper functions to create specific filters
-
--- | Creates a filter for metadata.
-metadataFilter :: [PubKeyXO] -> Filter
-metadataFilter authors = Filter
-  { ids = Nothing
-  , authors = Just authors
-  , kinds = Just [Metadata]
-  , since = Nothing
-  , until = Nothing
-  , limit = Just 500
-  , fTags = Nothing
-  }
-
-
--- | Creates a filter for follow list.
-followListFilter :: [PubKeyXO] -> Filter
-followListFilter authors = Filter
-  { ids = Nothing
-  , authors = Just authors
-  , kinds = Just [FollowList]
-  , since = Nothing
-  , until = Nothing
-  , limit = Just 500
-  , fTags = Nothing
-  }
-
-
--- | Creates a filter for short text notes.
-shortTextNoteFilter :: [PubKeyXO] -> Filter
-shortTextNoteFilter authors = Filter
-  { ids = Nothing
-  , authors = Just authors
-  , kinds = Just [ShortTextNote, EventDeletion, Repost]
-  , since = Nothing
-  , until = Nothing
-  , limit = Just 500
-  , fTags = Nothing
-  }
-
-
--- | Creates filter for gift wrapped messages.
-giftWrapFilter :: PubKeyXO -> Filter
-giftWrapFilter xo =
-  Filter
-    { ids = Nothing
-    , authors = Nothing
-    , kinds = Just [GiftWrap]
-    , since = Nothing
-    , until = Nothing
-    , limit = Just 500
-    , fTags = Just $ Map.fromList [('p', [byteStringToHex $ exportPubKeyXO xo])]
-    }
-
-
--- | Creates a filter for preferred DM relays.
-preferredDMRelaysFilter :: [PubKeyXO] -> Filter
-preferredDMRelaysFilter authors = Filter
-  { ids = Nothing
-  , authors = Just authors
-  , kinds = Just [PreferredDMRelays]
-  , since = Nothing
-  , until = Nothing
-  , limit = Just 500
-  , fTags = Nothing
-  }
-
-
-eventFilter :: EventId -> Filter
-eventFilter eid = Filter
-  { ids = Just [eid]
-  , authors = Nothing
-  , kinds = Nothing
-  , since = Nothing
-  , until = Nothing
-  , limit = Nothing
-  , fTags = Nothing
-  }
 
 -- Add parser for QTag
 parseQTag :: [Value] -> Value -> Parser Tag
