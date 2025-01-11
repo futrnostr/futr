@@ -459,7 +459,7 @@ searchInRelays pubkey' _ = do
         let relayUri' = getUri relay
         when (Map.member relayUri' conns) $ do
           subId' <- newSubscriptionId
-          mq <- subscribe relayUri' subId' [metadataFilter [pubkey']]
+          mq <- subscribe relayUri' subId' $ metadataFilter [pubkey']
           case mq of
               Nothing -> return ()
               Just q -> void $ async $ do
@@ -467,7 +467,7 @@ searchInRelays pubkey' _ = do
                         e <- atomically $ readTQueue q
                         case e of
                           EventAppeared event' -> do
-                            updates <- handleEvent relayUri' subId' [metadataFilter [pubkey']] event'
+                            updates <- handleEvent relayUri' subId' (metadataFilter [pubkey']) event'
                             notify updates
                             loop
                           SubscriptionEose -> do

@@ -41,9 +41,9 @@ import Types
 -- | Subscription effects
 data Subscription :: Effect where
     NewSubscriptionId :: Subscription m SubscriptionId
-    Subscribe :: RelayURI -> SubscriptionId -> [Filter] -> Subscription m (Maybe (TQueue SubscriptionEvent))
+    Subscribe :: RelayURI -> SubscriptionId -> Filter -> Subscription m (Maybe (TQueue SubscriptionEvent))
     StopSubscription :: SubscriptionId -> Subscription m ()
-    HandleEvent :: RelayURI -> SubscriptionId -> [Filter] -> Event -> Subscription m UIUpdates
+    HandleEvent :: RelayURI -> SubscriptionId -> Filter -> Event -> Subscription m UIUpdates
 
 type instance DispatchOf Subscription = Dynamic
 
@@ -73,7 +73,7 @@ runSubscription
 runSubscription = interpret $ \_ -> \case
     NewSubscriptionId -> generateRandomSubscriptionId
 
-    Subscribe r subId' fs -> createSubscription r subId' fs
+    Subscribe r subId' f -> createSubscription r subId' f
 
     StopSubscription subId' -> do
         st <- get @RelayPoolState
@@ -186,19 +186,19 @@ handleEvent' event' r = do
 createSubscription :: SubscriptionEff es
                    => RelayURI
                    -> SubscriptionId
-                   -> [Filter]
+                   -> Filter
                    -> Eff es (Maybe (TQueue SubscriptionEvent))
-createSubscription r subId' fs = do
+createSubscription r subId' f = do
     st <- get @RelayPoolState
     case Map.lookup r (activeConnections st) of
         Just rd -> do
             let channel = requestChannel rd
-            atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' fs)
-            logDebug $ "Subscribed to " <> r <> " with subId " <> subId' <> " and filters " <> pack (show fs)
+            atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' f)
+            logDebug $ "Subscribed to " <> r <> " with subId " <> subId' <> " and filter " <> pack (show f)
             q <- newTQueueIO
             modify @RelayPoolState $ \st' ->
                 st { activeConnections = Map.adjust
-                        (\rd' -> rd' { activeSubscriptions = Map.insert subId' (SubscriptionDetails subId' fs q 0 0) (activeSubscriptions rd') })
+                        (\rd' -> rd' { activeSubscriptions = Map.insert subId' (SubscriptionDetails subId' f q 0 0) (activeSubscriptions rd') })
                         r
                         (activeConnections st')
                     }
@@ -231,16 +231,18 @@ handleRelaySubscription r = do
             (Map.toList $ generalRelays st')
 
     -- Start appropriate subscriptions based on relay type
-    let fs = if isDM then Just $ createDMRelayFilters pk followPks
-            else if isInbox then Just $ createInboxRelayFilters pk followPks
-            else Nothing
+    let f = if isDM
+                then Just $ NT.giftWrapFilter pk
+                else if isInbox
+                    then Just $ createInboxRelayFilter pk followPks
+                    else Nothing
 
-    --logInfo $ "Starting subscription for " <> r <> " with filters " <> pack (show fs)
+    --logInfo $ "Starting subscription for " <> r <> " with filter " <> pack (show fs)
 
-    case fs of
-        Just fs' -> do
+    case f of
+        Just f' -> do
             subId' <- generateRandomSubscriptionId
-            mq <- createSubscription r subId' fs'
+            mq <- createSubscription r subId' f'
             case mq of
                 Just q -> do
                     shouldStop <- newTVarIO False
@@ -305,18 +307,18 @@ handleRelayListUpdate pk relays ts importFn getRelayMap = do
             void $ async $ connectRelay (getUri relay)
 
 
--- | Create DM relay subscription filters
-createDMRelayFilters :: PubKeyXO -> [PubKeyXO] -> [Filter]
-createDMRelayFilters xo followedPubKeys =
-    [ --NT.metadataFilter (xo : followedPubKeys)
+-- | Create DM relay subscription filter
+createDMRelayFilter :: PubKeyXO -> [PubKeyXO] -> Filter
+createDMRelayFilter xo followedPubKeys = NT.giftWrapFilter xo
+        --  --NT.metadataFilter (xo : followedPubKeys)
     --, NT.preferredDMRelaysFilter (xo : followedPubKeys)
-    NT.giftWrapFilter xo
-    ]
+    -- NT.giftWrapFilter xo
+    -- ] 
 
 
--- | Create inbox relay subscription filters
-createInboxRelayFilters :: PubKeyXO -> [PubKeyXO] -> [Filter]
-createInboxRelayFilters xo followedPubKeys =
+-- | Create inbox relay subscription filter
+createInboxRelayFilter :: PubKeyXO -> [PubKeyXO] -> Filter
+createInboxRelayFilter xo followedPubKeys =
     {-
     [ NT.followListFilter (xo : followedPubKeys)
     , NT.metadataFilter (xo : followedPubKeys)
@@ -324,7 +326,7 @@ createInboxRelayFilters xo followedPubKeys =
     , NT.preferredDMRelaysFilter (xo : followedPubKeys)
     ]
     -}
-    [ Filter
+    Filter
         { ids = Nothing
         , authors = Just (xo : followedPubKeys)
         , kinds = Just [FollowList, Metadata, ShortTextNote, EventDeletion, Repost, PreferredDMRelays]
@@ -332,7 +334,7 @@ createInboxRelayFilters xo followedPubKeys =
         , NT.until = Nothing
         , limit = Just 1000
         , fTags = Nothing
-        } ]
+        }
 
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId

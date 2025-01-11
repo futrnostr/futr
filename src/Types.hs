@@ -43,7 +43,7 @@ data RelayPoolState = RelayPoolState
 -- | Subscription details.
 data SubscriptionDetails = SubscriptionDetails
     { subscriptionId :: SubscriptionId
-    , subscriptionFilters :: [Filter]
+    , subscriptionFilter :: Filter
     , responseQueue :: TQueue SubscriptionEvent
     , eventsProcessed :: Int
     , newestCreatedAt :: Int

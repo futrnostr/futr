@@ -16,7 +16,7 @@ import System.Random (randomRIO)
 
 import Nostr.Bech32 (eventToNevent)
 import Nostr.Keys
-import Nostr.Types
+import Nostr.Types hiding (filter)
 import Nostr.Encryption (decrypt, getConversationKey, encrypt)
 
 

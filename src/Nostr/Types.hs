@@ -86,7 +86,7 @@ type SubscriptionId = Text
 -- | Represents a subscription.
 data Subscription = Subscription
   { subId   :: SubscriptionId
-  , filters :: [Filter]
+  , filter :: Filter
   }
   deriving (Eq, Generic, Show)
 
@@ -588,7 +588,7 @@ instance FromJSON Response where
 
 -- | Converts a 'Subscription' to its JSON representation.
 instance ToJSON Subscription where
-  toEncoding (Subscription efs s) = pairs $ "subId" .= s <> "filters" .= efs
+  toEncoding (Subscription efs s) = pairs $ "subId" .= s <> "filter" .= efs
 
 
 -- | Converts a 'Request' to its JSON representation.
@@ -596,7 +596,7 @@ instance ToJSON Request where
   toEncoding req = case req of
     Authenticate event -> list id [text "AUTH", toEncoding event]
     SendEvent event -> list id [text "EVENT", toEncoding event]
-    Subscribe (Subscription subId filters) -> list id $ text "REQ" : text subId : map toEncoding (toList filters)
+    Subscribe (Subscription subId f) -> list id $ text "REQ" : text subId : [ toEncoding f ]
     Close subId -> list text ["CLOSE", subId]
     Disconnect -> list text ["DISCONNECT"]
 
@@ -822,6 +822,46 @@ eventFilter eid = Filter
   , limit = Nothing
   , fTags = Nothing
   }
+
+
+-- | Filter for reactions (likes) to a specific event
+reactionsFilter :: EventId -> Filter
+reactionsFilter eid = Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [Reaction]  -- Kind 7 for reactions
+    , since = Nothing
+    , until = Nothing
+    , limit = Nothing
+    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
+    }
+
+
+-- | Filter for reposts of a specific event
+repostsFilter :: EventId -> Filter
+repostsFilter eid = Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [Repost]  -- Kind 6 for reposts
+    , since = Nothing
+    , until = Nothing
+    , limit = Nothing
+    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
+    }
+
+
+-- | Filter for comments on a specific event
+commentsFilter :: EventId -> Filter
+commentsFilter eid = Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [ShortTextNote]  -- Kind 1 for text notes/comments
+    , since = Nothing
+    , until = Nothing
+    , limit = Nothing
+    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
+    }
+
 
 -- Add parser for QTag
 parseQTag :: [Value] -> Value -> Parser Tag
