@@ -21,7 +21,7 @@ import QtQuick (QtQuickState(..), UIReferences(..))
 import Logging
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.RelayPool
-import Nostr.Types hiding (displayName, picture)
+import Nostr.Types hiding (displayName, filter, picture)
 import Nostr.Util
 import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..))
 

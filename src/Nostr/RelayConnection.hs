@@ -275,7 +275,7 @@ handleResponse relayURI' r = case r of
                             Just subDetails -> do
                                 let subscription = NT.Subscription
                                         { NT.subId = subId'
-                                        , NT.filters = subscriptionFilters subDetails
+                                        , NT.filter = subscriptionFilter subDetails
                                         }
                                 handleAuthRequired relayURI' (NT.Subscribe subscription)
                             Nothing -> logError $ "No subscription found for " <> T.pack (show subId')
