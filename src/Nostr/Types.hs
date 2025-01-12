@@ -18,7 +18,6 @@ import Data.Aeson.Types (Parser, parseEither)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
-import Data.Foldable (toList)
 import Data.Function (on)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
@@ -860,6 +859,42 @@ commentsFilter eid = Filter
     , until = Nothing
     , limit = Nothing
     , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
+    }
+
+
+followersFilter :: PubKeyXO -> Filter
+followersFilter pubkey = Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [FollowList]
+    , since = Nothing
+    , until = Nothing
+    , limit = Nothing
+    , fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pubkey]
+    }
+
+
+followingFilter :: PubKeyXO -> Filter
+followingFilter pubkey = Filter
+    { ids = Nothing
+    , authors = Just [pubkey]
+    , kinds = Just [FollowList]
+    , since = Nothing
+    , until = Nothing
+    , limit = Nothing
+    , fTags = Nothing
+    }
+
+
+postsFilter :: PubKeyXO -> Filter
+postsFilter pubkey = Filter
+    { ids = Nothing
+    , authors = Just [pubkey]
+    , kinds = Just [ShortTextNote, Repost, Comment]
+    , since = Nothing
+    , until = Nothing
+    , limit = Nothing
+    , fTags = Nothing
     }
 
 

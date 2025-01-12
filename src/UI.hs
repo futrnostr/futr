@@ -36,7 +36,10 @@ import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Subscription ( subscribeToReactions
                           , subscribeToReposts
                           , subscribeToComments
-                          , countEvents )
+                          , countEvents
+                          , subscribeToFollowers
+                          , subscribeToFollowing
+                          , subscribeToProfilePosts )
 import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile(..), RelayURI
                    , Relationship(..), Rumor(..), Tag(..) )
 import Nostr.Util
@@ -66,6 +69,12 @@ runUI = interpret $ \_ -> \case
   CreateUI changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
     keyMgmtObj <- runE $ KeyMgmtUI.createUI changeKey'
     relayMgmtObj <- runE $ RelayMgmtUI.createUI changeKey'
+
+    let getProfileEventCount :: (PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))) 
+                            -> PubKeyXO 
+                            -> Eff es Int
+        getProfileEventCount subscriber pubkey = do
+            return 0 -- @todo implement
 
     profileClass <- newClass [
         defPropertySigRO' "name" changeKey' $ \_ -> do
@@ -112,8 +121,18 @@ runUI = interpret $ \_ -> \case
             (Just userPK, Just profilePK) -> do
               follows <- runE $ getFollows userPK
               return $ profilePK `elem` map pubkey follows
-            _ -> return False
-        ]
+            _ -> return False,
+
+        defPropertySigRO' "followerCount" changeKey' $ \obj -> do
+            st <- runE $ get @AppState
+            let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+            runE $ getProfileEventCount subscribeToFollowers pk,
+
+        defPropertySigRO' "followingCount" changeKey' $ \obj -> do
+            st <- runE $ get @AppState
+            let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+            runE $ getProfileEventCount subscribeToFollowing pk
+      ]
 
     let followProp name' accessor = defPropertySigRO' name' changeKey' $ \obj -> do
           let pubKeyXO = fromObjRef obj :: PubKeyXO

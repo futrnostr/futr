@@ -369,3 +369,19 @@ countEvents queue = do
         Just (EventAppeared _) -> (1 +) <$> countEvents queue
         Just SubscriptionEose -> return 0
         Nothing -> return 0
+
+-- Profile statistics subscriptions
+subscribeToFollowers :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToFollowers pubkey relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (NT.followersFilter pubkey)
+
+subscribeToFollowing :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToFollowing pubkey relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (NT.followingFilter pubkey)
+
+subscribeToProfilePosts :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToProfilePosts pubkey relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (NT.postsFilter pubkey)
