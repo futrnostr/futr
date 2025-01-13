@@ -38,8 +38,7 @@ import Nostr.Subscription ( subscribeToReactions
                           , subscribeToComments
                           , countEvents
                           , subscribeToFollowers
-                          , subscribeToFollowing
-                          , subscribeToProfilePosts )
+                          , subscribeToFollowing )
 import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile(..), RelayURI
                    , Relationship(..), Rumor(..), Tag(..) )
 import Nostr.Util

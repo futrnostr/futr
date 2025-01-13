@@ -47,8 +47,7 @@ import Nostr.Publisher
 import Nostr.RelayConnection (RelayConnection)
 import Nostr.RelayPool
 import Nostr.Subscription
-import Nostr.Types ( Event(..), EventId, Relay(..), RelayURI, Tag(..)
-                   , getUri, metadataFilter )
+import Nostr.Types (Event(..), EventId, Relay(..), RelayURI, Tag(..), getUri)
 import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)

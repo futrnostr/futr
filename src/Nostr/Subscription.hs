@@ -28,7 +28,7 @@ import KeyMgmt (AccountId(..), KeyMgmt, updateProfile, updateRelays)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Event (validateEvent)
-import Nostr.Keys (PubKeyXO, byteStringToHex, keyPairToPubKeyXO)
+import Nostr.Keys (PubKeyXO, byteStringToHex, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.RelayConnection
 import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Relay(..)
                    , RelayURI, SubscriptionId, Tag(..), getUri )
@@ -233,7 +233,7 @@ handleRelaySubscription r = do
 
     -- Start appropriate subscriptions based on relay type
     let f = if isDM
-                then Just $ NT.giftWrapFilter pk
+                then Just $ giftWrapFilter pk
                 else if isInbox
                     then Just $ createInboxRelayFilter pk followPks
                     else Nothing
@@ -310,7 +310,7 @@ handleRelayListUpdate pk relays ts importFn getRelayMap = do
 
 -- | Create DM relay subscription filter
 createDMRelayFilter :: PubKeyXO -> [PubKeyXO] -> Filter
-createDMRelayFilter xo followedPubKeys = NT.giftWrapFilter xo
+createDMRelayFilter xo followedPubKeys = giftWrapFilter xo
 
 
 -- | Create inbox relay subscription filter
@@ -344,21 +344,33 @@ generateRandomSubscriptionId = do
 subscribeToReactions :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
 subscribeToReactions eid relayUri = do
     subId <- generateRandomSubscriptionId
-    createSubscription relayUri subId (NT.reactionsFilter eid)
+    createSubscription relayUri subId (reactionsFilter eid)
 
 
 -- | Subscribe to reposts for a specific event
 subscribeToReposts :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
 subscribeToReposts eid relayUri = do
     subId <- generateRandomSubscriptionId
-    createSubscription relayUri subId (NT.repostsFilter eid)
+    createSubscription relayUri subId (repostsFilter eid)
 
 
 -- | Subscribe to comments for a specific event
 subscribeToComments :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
 subscribeToComments eid relayUri = do
     subId <- generateRandomSubscriptionId
-    createSubscription relayUri subId (NT.commentsFilter eid)
+    createSubscription relayUri subId (commentsFilter eid)
+
+
+subscribeToFollowers :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToFollowers xo relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (followersFilter xo)
+
+
+subscribeToFollowing :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
+subscribeToFollowing xo relayUri = do
+    subId <- generateRandomSubscriptionId
+    createSubscription relayUri subId (followingFilter xo)
 
 
 -- Helper function to count events from a subscription
@@ -370,18 +382,144 @@ countEvents queue = do
         Just SubscriptionEose -> return 0
         Nothing -> return 0
 
--- Profile statistics subscriptions
-subscribeToFollowers :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
-subscribeToFollowers pubkey relayUri = do
-    subId <- generateRandomSubscriptionId
-    createSubscription relayUri subId (NT.followersFilter pubkey)
 
-subscribeToFollowing :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
-subscribeToFollowing pubkey relayUri = do
-    subId <- generateRandomSubscriptionId
-    createSubscription relayUri subId (NT.followingFilter pubkey)
+-- Helper functions to create specific filters
 
-subscribeToProfilePosts :: SubscriptionEff es => PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
-subscribeToProfilePosts pubkey relayUri = do
-    subId <- generateRandomSubscriptionId
-    createSubscription relayUri subId (NT.postsFilter pubkey)
+-- | Creates a filter for metadata.
+metadataFilter :: [PubKeyXO] -> Filter
+metadataFilter authors = Filter
+  { ids = Nothing
+  , authors = Just authors
+  , kinds = Just [Metadata]
+  , since = Nothing
+  , NT.until = Nothing
+  , limit = Just 500
+  , fTags = Nothing
+  }
+
+
+-- | Creates a filter for short text notes.
+shortTextNoteFilter :: [PubKeyXO] -> Filter
+shortTextNoteFilter authors = Filter
+  { ids = Nothing
+  , authors = Just authors
+  , kinds = Just [ShortTextNote, EventDeletion, Repost]
+  , since = Nothing
+  , NT.until = Nothing
+  , limit = Just 500
+  , fTags = Nothing
+  }
+
+
+-- | Creates filter for gift wrapped messages.
+giftWrapFilter :: PubKeyXO -> Filter
+giftWrapFilter xo =
+  Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [GiftWrap]
+    , since = Nothing
+    , NT.until = Nothing
+    , limit = Just 500
+    , fTags = Just $ Map.fromList [('p', [byteStringToHex $ exportPubKeyXO xo])]
+    }
+
+
+-- | Creates a filter for preferred DM relays.
+preferredDMRelaysFilter :: [PubKeyXO] -> Filter
+preferredDMRelaysFilter authors = Filter
+  { ids = Nothing
+  , authors = Just authors
+  , kinds = Just [PreferredDMRelays]
+  , since = Nothing
+  , NT.until = Nothing
+  , limit = Just 500
+  , fTags = Nothing
+  }
+
+
+eventFilter :: EventId -> Filter
+eventFilter eid = Filter
+  { ids = Just [eid]
+  , authors = Nothing
+  , kinds = Nothing
+  , since = Nothing
+  , NT.until = Nothing
+  , limit = Nothing
+  , fTags = Nothing
+  }
+
+
+-- | Filter for reactions (likes) to a specific event
+reactionsFilter :: EventId -> Filter
+reactionsFilter eid = Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [Reaction]  -- Kind 7 for reactions
+    , since = Nothing
+    , NT.until = Nothing
+    , limit = Nothing
+    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
+    }
+
+
+-- | Filter for reposts of a specific event
+repostsFilter :: EventId -> Filter
+repostsFilter eid = Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [Repost]  -- Kind 6 for reposts
+    , since = Nothing
+    , NT.until = Nothing
+    , limit = Nothing
+    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
+    }
+
+
+-- | Filter for comments on a specific event
+commentsFilter :: EventId -> Filter
+commentsFilter eid = Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [ShortTextNote]  -- Kind 1 for text notes/comments
+    , since = Nothing
+    , NT.until = Nothing
+    , limit = Nothing
+    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
+    }
+
+
+followersFilter :: PubKeyXO -> Filter
+followersFilter pubkey = Filter
+    { ids = Nothing
+    , authors = Nothing
+    , kinds = Just [FollowList]
+    , since = Nothing
+    , NT.until = Nothing
+    , limit = Nothing
+    , fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pubkey]
+    }
+
+
+followingFilter :: PubKeyXO -> Filter
+followingFilter pubkey = Filter
+    { ids = Nothing
+    , authors = Just [pubkey]
+    , kinds = Just [FollowList]
+    , since = Nothing
+    , NT.until = Nothing
+    , limit = Nothing
+    , fTags = Nothing
+    }
+
+
+postsFilter :: PubKeyXO -> Filter
+postsFilter pubkey = Filter
+    { ids = Nothing
+    , authors = Just [pubkey]
+    , kinds = Just [ShortTextNote, Repost, Comment]
+    , since = Nothing
+    , NT.until = Nothing
+    , limit = Nothing
+    , fTags = Nothing
+    }
