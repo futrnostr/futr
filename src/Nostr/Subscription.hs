@@ -31,7 +31,7 @@ import Nostr.Event (validateEvent)
 import Nostr.Keys (PubKeyXO, byteStringToHex, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.RelayConnection
 import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Relay(..)
-                   , RelayURI, SubscriptionId, Tag(..), getUri )
+                   , RelayURI, SubscriptionId, Tag(..), emptyFilter, getUri )
 import Nostr.Types qualified as NT
 import Nostr.Util
 import RelayMgmt
@@ -103,9 +103,7 @@ handleEvent' event' r = do
             logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
             pure emptyUpdates
         else do
-            --logDebug $ "About to putEvent into LMDB..."
             putEvent ev
-            --logDebug $ "Successfully stored event in LMDB"
             updates <- case kind event' of
                 ShortTextNote -> 
                     pure $ emptyUpdates { postsChanged = True }
@@ -387,139 +385,44 @@ countEvents queue = do
 
 -- | Creates a filter for metadata.
 metadataFilter :: [PubKeyXO] -> Filter
-metadataFilter authors = Filter
-  { ids = Nothing
-  , authors = Just authors
-  , kinds = Just [Metadata]
-  , since = Nothing
-  , NT.until = Nothing
-  , limit = Just 500
-  , fTags = Nothing
-  }
-
+metadataFilter authors = emptyFilter { authors = Just authors, kinds = Just [Metadata], limit = Just 500 }
 
 -- | Creates a filter for short text notes.
 shortTextNoteFilter :: [PubKeyXO] -> Filter
-shortTextNoteFilter authors = Filter
-  { ids = Nothing
-  , authors = Just authors
-  , kinds = Just [ShortTextNote, EventDeletion, Repost]
-  , since = Nothing
-  , NT.until = Nothing
-  , limit = Just 500
-  , fTags = Nothing
-  }
-
+shortTextNoteFilter authors = emptyFilter { authors = Just authors, kinds = Just [ShortTextNote, EventDeletion, Repost], limit = Just 500 }
 
 -- | Creates filter for gift wrapped messages.
 giftWrapFilter :: PubKeyXO -> Filter
-giftWrapFilter xo =
-  Filter
-    { ids = Nothing
-    , authors = Nothing
-    , kinds = Just [GiftWrap]
-    , since = Nothing
-    , NT.until = Nothing
-    , limit = Just 500
-    , fTags = Just $ Map.fromList [('p', [byteStringToHex $ exportPubKeyXO xo])]
-    }
-
+giftWrapFilter xo = emptyFilter { kinds = Just [GiftWrap], fTags = Just $ Map.fromList [('p', [byteStringToHex $ exportPubKeyXO xo])], limit = Just 500 }
 
 -- | Creates a filter for preferred DM relays.
 preferredDMRelaysFilter :: [PubKeyXO] -> Filter
-preferredDMRelaysFilter authors = Filter
-  { ids = Nothing
-  , authors = Just authors
-  , kinds = Just [PreferredDMRelays]
-  , since = Nothing
-  , NT.until = Nothing
-  , limit = Just 500
-  , fTags = Nothing
-  }
+preferredDMRelaysFilter authors = emptyFilter { authors = Just authors, kinds = Just [PreferredDMRelays], limit = Just 500 }
 
-
+-- | Creates a filter for a specific event by its ID.
 eventFilter :: EventId -> Filter
-eventFilter eid = Filter
-  { ids = Just [eid]
-  , authors = Nothing
-  , kinds = Nothing
-  , since = Nothing
-  , NT.until = Nothing
-  , limit = Nothing
-  , fTags = Nothing
-  }
+eventFilter eid = emptyFilter { ids = Just [eid] }
 
-
--- | Filter for reactions (likes) to a specific event
+-- | Filter for reactions (likes) to a specific event.
 reactionsFilter :: EventId -> Filter
-reactionsFilter eid = Filter
-    { ids = Nothing
-    , authors = Nothing
-    , kinds = Just [Reaction]  -- Kind 7 for reactions
-    , since = Nothing
-    , NT.until = Nothing
-    , limit = Nothing
-    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
-    }
+reactionsFilter eid = emptyFilter { kinds = Just [Reaction], fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid] }
 
-
--- | Filter for reposts of a specific event
+-- | Filter for reposts of a specific event.
 repostsFilter :: EventId -> Filter
-repostsFilter eid = Filter
-    { ids = Nothing
-    , authors = Nothing
-    , kinds = Just [Repost]  -- Kind 6 for reposts
-    , since = Nothing
-    , NT.until = Nothing
-    , limit = Nothing
-    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
-    }
+repostsFilter eid = emptyFilter { kinds = Just [Repost], fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid] }
 
-
--- | Filter for comments on a specific event
+-- | Filter for comments on a specific event.
 commentsFilter :: EventId -> Filter
-commentsFilter eid = Filter
-    { ids = Nothing
-    , authors = Nothing
-    , kinds = Just [ShortTextNote]  -- Kind 1 for text notes/comments
-    , since = Nothing
-    , NT.until = Nothing
-    , limit = Nothing
-    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
-    }
+commentsFilter eid = emptyFilter { kinds = Just [ShortTextNote], fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid] }
 
-
+-- | Filter for followers of a specific public key.
 followersFilter :: PubKeyXO -> Filter
-followersFilter pubkey = Filter
-    { ids = Nothing
-    , authors = Nothing
-    , kinds = Just [FollowList]
-    , since = Nothing
-    , NT.until = Nothing
-    , limit = Nothing
-    , fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pubkey]
-    }
+followersFilter pubkey = emptyFilter { kinds = Just [FollowList], fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pubkey] }
 
-
+-- | Filter for following a specific public key.
 followingFilter :: PubKeyXO -> Filter
-followingFilter pubkey = Filter
-    { ids = Nothing
-    , authors = Just [pubkey]
-    , kinds = Just [FollowList]
-    , since = Nothing
-    , NT.until = Nothing
-    , limit = Nothing
-    , fTags = Nothing
-    }
+followingFilter pubkey = emptyFilter { authors = Just [pubkey], kinds = Just [FollowList] }
 
-
+-- | Filter for posts made by a specific public key.
 postsFilter :: PubKeyXO -> Filter
-postsFilter pubkey = Filter
-    { ids = Nothing
-    , authors = Just [pubkey]
-    , kinds = Just [ShortTextNote, Repost, Comment]
-    , since = Nothing
-    , NT.until = Nothing
-    , limit = Nothing
-    , fTags = Nothing
-    }
+postsFilter pubkey = emptyFilter { authors = Just [pubkey], kinds = Just [ShortTextNote, Repost, Comment] }

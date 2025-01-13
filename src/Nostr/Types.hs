@@ -103,6 +103,19 @@ data Filter = Filter
   deriving (Eq, Generic, Show)
 
 
+-- | Empty filter.
+emptyFilter :: Filter
+emptyFilter = Filter
+  { ids = Nothing
+  , authors = Nothing
+  , kinds = Nothing
+  , since = Nothing
+  , until = Nothing
+  , limit = Nothing
+  , fTags = Nothing
+  }
+
+
 -- | Represents a request to the relay.
 data Request
   = SendEvent Event
