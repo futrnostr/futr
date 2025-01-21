@@ -24,14 +24,14 @@ import System.Random (randomIO)
 
 
 import QtQuick
-import KeyMgmt (AccountId(..), KeyMgmt, updateProfile, updateRelays)
+import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Event (validateEvent)
 import Nostr.Keys (PubKeyXO, byteStringToHex, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.RelayConnection
 import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Relay(..)
-                   , RelayURI, SubscriptionId, Tag(..), emptyFilter, getUri )
+                   , RelayURI, SubscriptionId, Tag(..), emptyFilter, getUri, isValidRelayURI )
 import Nostr.Types qualified as NT
 import Nostr.Util
 import RelayMgmt
@@ -44,7 +44,8 @@ data Subscription :: Effect where
     NewSubscriptionId :: Subscription m SubscriptionId
     Subscribe :: RelayURI -> SubscriptionId -> Filter -> Subscription m (Maybe (TQueue SubscriptionEvent))
     StopSubscription :: SubscriptionId -> Subscription m ()
-    HandleEvent :: RelayURI -> SubscriptionId -> Filter -> Event -> Subscription m UIUpdates
+    HandleEvent :: RelayURI -> Event -> Subscription m UIUpdates
+    StopAllSubscriptions :: RelayURI -> Subscription m ()
 
 type instance DispatchOf Subscription = Dynamic
 
@@ -54,7 +55,7 @@ makeEffect ''Subscription
 -- | SubscriptionEff
 type SubscriptionEff es =
   ( State AppState :> es
-  , State RelayPoolState :> es
+  , State RelayPool :> es
   , LmdbStore :> es
   , RelayConnection :> es
   , KeyMgmt :> es
@@ -77,12 +78,12 @@ runSubscription = interpret $ \_ -> \case
     Subscribe r subId' f -> createSubscription r subId' f
 
     StopSubscription subId' -> do
-        st <- get @RelayPoolState
+        st <- get @RelayPool
         forM_ (Map.toList $ activeConnections st) $ \(r, rd) -> do
             case Map.lookup subId' (activeSubscriptions rd) of
                 Just _ -> do
                     atomically $ writeTChan (requestChannel rd) (NT.Close subId')
-                    modify @RelayPoolState $ \s -> s 
+                    modify @RelayPool $ \s -> s 
                         { activeConnections = Map.adjust
                             (\rd' -> rd' { activeSubscriptions = Map.delete subId' (activeSubscriptions rd') })
                             r
@@ -90,11 +91,25 @@ runSubscription = interpret $ \_ -> \case
                         }
                 Nothing -> return ()
 
-    HandleEvent r _ _ event' -> handleEvent' event' r
+    HandleEvent r event' -> handleEvent' r event'
+
+    StopAllSubscriptions relayUri -> do
+        st <- get @RelayPool
+        case Map.lookup relayUri (activeConnections st) of
+            Just rd -> do
+                forM_ (Map.keys $ activeSubscriptions rd) $ \subId -> do
+                    atomically $ writeTChan (requestChannel rd) (NT.Close subId)
+                modify @RelayPool $ \s -> s 
+                    { activeConnections = Map.adjust
+                        (\rd' -> rd' { activeSubscriptions = Map.empty })
+                        relayUri
+                        (activeConnections s)
+                    }
+            Nothing -> return ()
 
 
-handleEvent' :: SubscriptionEff es => Event -> RelayURI -> Eff es UIUpdates
-handleEvent' event' r = do
+handleEvent' :: SubscriptionEff es => RelayURI -> Event -> Eff es UIUpdates
+handleEvent' r event' = do
     --logDebug $ "Starting handleEvent' for event: " <> pack (show event')
     let ev = EventWithRelays event' (Set.singleton r)
 
@@ -146,9 +161,11 @@ handleEvent' event' r = do
                                 <> (pubKeyXOToBech32 $ pubKey event')
                             pure emptyUpdates
                         relays -> do
+                            {- @todo: handle relay list update
                             handleRelayListUpdate (pubKey event') relays (createdAt event')
                                 importGeneralRelays
                                 generalRelays
+                            -}
                             pure $ emptyUpdates { generalRelaysChanged = True }
 
                 PreferredDMRelays -> do
@@ -159,9 +176,11 @@ handleEvent' event' r = do
                                 <> (pubKeyXOToBech32 $ pubKey event')
                             pure emptyUpdates
                         relays -> do
+                            {- @todo: handle relay list update
                             handleRelayListUpdate (pubKey event') relays (createdAt event')
                                 importDMRelays
                                 dmRelays
+                            -}
                             pure $ emptyUpdates { dmRelaysChanged = True }
 
                 _ -> do
@@ -169,16 +188,6 @@ handleEvent' event' r = do
                     pure emptyUpdates
             --logDebug $ "Finished handleEvent' for event: " <> pack (show event')
             pure updates
-    where
-        isValidRelayURI :: RelayURI -> Bool
-        isValidRelayURI uriText =
-            case parseURI (unpack uriText) of
-                Just uri ->
-                    let scheme = uriScheme uri
-                        authority = uriAuthority uri
-                    in (scheme == "ws:" || scheme == "wss:") &&
-                        maybe False (not . null . uriRegName) authority
-                Nothing -> False
 
 
 -- | Create a subscription
@@ -188,14 +197,14 @@ createSubscription :: SubscriptionEff es
                    -> Filter
                    -> Eff es (Maybe (TQueue SubscriptionEvent))
 createSubscription r subId' f = do
-    st <- get @RelayPoolState
+    st <- get @RelayPool
     case Map.lookup r (activeConnections st) of
         Just rd -> do
             let channel = requestChannel rd
             atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' f)
             logDebug $ "Subscribed to " <> r <> " with subId " <> subId' <> " and filter " <> pack (show f)
             q <- newTQueueIO
-            modify @RelayPoolState $ \st' ->
+            modify @RelayPool $ \st' ->
                 st { activeConnections = Map.adjust
                         (\rd' -> rd' { activeSubscriptions = Map.insert subId' (SubscriptionDetails subId' f q 0 0) (activeSubscriptions rd') })
                         r
@@ -206,7 +215,7 @@ createSubscription r subId' f = do
             logWarning $ "Cannot start subscription: no connection found for relay: " <> r
             return Nothing
 
-
+{-
 -- | Determine relay type and start appropriate subscriptions
 handleRelaySubscription :: SubscriptionEff es => RelayURI -> Eff es ()
 handleRelaySubscription r = do
@@ -214,7 +223,7 @@ handleRelaySubscription r = do
     let pk = keyPairToPubKeyXO kp
     follows <- getFollows pk
     let followPks = map pubkey follows
-    st' <- get @RelayPoolState
+    st' <- get @RelayPool
 
     -- Check if it's a DM relay
     let isDM = any (\(_, (relays, _)) ->
@@ -276,10 +285,10 @@ handleRelayListUpdate :: SubscriptionEff es
                      -> [Relay]                                             -- ^ New relay list
                      -> Int                                                 -- ^ Event timestamp
                      -> (PubKeyXO -> [Relay] -> Int -> Eff es ())          -- ^ Import function
-                     -> (RelayPoolState -> Map.Map PubKeyXO ([Relay], Int)) -- ^ Relay map selector
+                     -> (RelayPool -> Map.Map PubKeyXO ([Relay], Int)) -- ^ Relay map selector
                      -> Eff es ()
 handleRelayListUpdate pk relays ts importFn getRelayMap = do
-    st <- get @RelayPoolState
+    st <- get @RelayPool
     let currentMap = getRelayMap st
     let (currentRelays, currentTs) = Map.findWithDefault ([], 0) pk currentMap
 
@@ -330,19 +339,13 @@ createInboxRelayFilter xo followedPubKeys =
         , limit = Just 1000
         , fTags = Nothing
         }
-
+-}
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId
 generateRandomSubscriptionId = do
     bytes <- liftIO $ replicateM 8 randomIO
     let byteString = BS.pack bytes
     return $ decodeUtf8 $ B16.encode byteString
-
--- | Subscribe to reactions for a specific event
-subscribeToReactions :: SubscriptionEff es => EventId -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))
-subscribeToReactions eid relayUri = do
-    subId <- generateRandomSubscriptionId
-    createSubscription relayUri subId (reactionsFilter eid)
 
 
 -- | Subscribe to reposts for a specific event
@@ -383,29 +386,54 @@ countEvents queue = do
 
 -- Helper functions to create specific filters
 
+
+-- | Creates a filter for fetching profile-related metadata events.
+--
+-- This filter targets three key event kinds:
+-- * RelayListMetadata (Kind 10002) - User's preferred general-purpose relays
+-- * PreferredDMRelays (Kind 10003) - User's preferred DM relays
+-- * FollowList        (Kind 3)     - User's list of followed pubkeys
+profilesFilter :: [PubKeyXO] -> Maybe Int -> Filter
+profilesFilter authors lastTimestamp = emptyFilter 
+    { authors = Just authors
+    , kinds = Just [RelayListMetadata, PreferredDMRelays, FollowList]
+    , since = lastTimestamp
+    }
+
+
+-- | Creates a filter for fetching a user's public posts and interactions.
+--
+-- This filter targets three event kinds:
+-- * ShortTextNote - User's regular posts
+-- * Repost        - Content the user has reposted
+-- * Comment       - User's replies to other posts
+userPostsFilter :: [PubKeyXO] -> Maybe Int -> Filter
+userPostsFilter authors lastTimestamp = emptyFilter 
+    { authors = Just authors
+    , kinds = Just [ShortTextNote, Repost, EventDeletion]
+    , since = lastTimestamp
+    }
+
+
 -- | Creates a filter for metadata.
 metadataFilter :: [PubKeyXO] -> Filter
-metadataFilter authors = emptyFilter { authors = Just authors, kinds = Just [Metadata], limit = Just 500 }
+metadataFilter authors = emptyFilter { authors = Just authors, kinds = Just [Metadata] }
 
 -- | Creates a filter for short text notes.
 shortTextNoteFilter :: [PubKeyXO] -> Filter
-shortTextNoteFilter authors = emptyFilter { authors = Just authors, kinds = Just [ShortTextNote, EventDeletion, Repost], limit = Just 500 }
+shortTextNoteFilter authors = emptyFilter { authors = Just authors, kinds = Just [ShortTextNote, EventDeletion, Repost] }
 
 -- | Creates filter for gift wrapped messages.
-giftWrapFilter :: PubKeyXO -> Filter
-giftWrapFilter xo = emptyFilter { kinds = Just [GiftWrap], fTags = Just $ Map.fromList [('p', [byteStringToHex $ exportPubKeyXO xo])], limit = Just 500 }
+giftWrapFilter :: PubKeyXO -> Maybe Int -> Filter
+giftWrapFilter xo lastTimestamp = emptyFilter { kinds = Just [GiftWrap], fTags = Just $ Map.fromList [('p', [byteStringToHex $ exportPubKeyXO xo])], since = lastTimestamp }
 
 -- | Creates a filter for preferred DM relays.
 preferredDMRelaysFilter :: [PubKeyXO] -> Filter
-preferredDMRelaysFilter authors = emptyFilter { authors = Just authors, kinds = Just [PreferredDMRelays], limit = Just 500 }
+preferredDMRelaysFilter authors = emptyFilter { authors = Just authors, kinds = Just [PreferredDMRelays] }
 
 -- | Creates a filter for a specific event by its ID.
 eventFilter :: EventId -> Filter
 eventFilter eid = emptyFilter { ids = Just [eid] }
-
--- | Filter for reactions (likes) to a specific event.
-reactionsFilter :: EventId -> Filter
-reactionsFilter eid = emptyFilter { kinds = Just [Reaction], fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid] }
 
 -- | Filter for reposts of a specific event.
 repostsFilter :: EventId -> Filter
@@ -423,6 +451,6 @@ followersFilter pubkey = emptyFilter { kinds = Just [FollowList], fTags = Just $
 followingFilter :: PubKeyXO -> Filter
 followingFilter pubkey = emptyFilter { authors = Just [pubkey], kinds = Just [FollowList] }
 
--- | Filter for posts made by a specific public key.
-postsFilter :: PubKeyXO -> Filter
-postsFilter pubkey = emptyFilter { authors = Just [pubkey], kinds = Just [ShortTextNote, Repost, Comment] }
+-- | Filter for mentions of a specific public key.
+mentionsFilter :: PubKeyXO -> Filter
+mentionsFilter pubkey = emptyFilter { kinds = Just [ShortTextNote, Repost, Comment, EventDeletion], fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pubkey] }

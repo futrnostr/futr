@@ -28,6 +28,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8)
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
+import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
 import Prelude hiding (until)
 import Text.Read (readMaybe)
 
@@ -50,13 +51,6 @@ instance Ord Relay where
   compare r r' = compare (getUri r) (getUri r')
 
 
--- | Get the URI from a Relay
-getUri :: Relay -> RelayURI
-getUri (InboxRelay uri)        = uri
-getUri (OutboxRelay uri)       = uri
-getUri (InboxOutboxRelay uri)  = uri
-
-
 -- | Instance for converting a 'Relay' to JSON.
 instance ToJSON Relay where
   toEncoding relay = case relay of
@@ -76,6 +70,40 @@ instance FromJSON Relay where
       ["r", String uri] -> 
         return $ InboxOutboxRelay uri
       _ -> fail "Invalid relay format"
+
+
+
+-- | Get the URI from a Relay
+getUri :: Relay -> RelayURI
+getUri (InboxRelay uri)        = uri
+getUri (OutboxRelay uri)       = uri
+getUri (InboxOutboxRelay uri)  = uri
+
+
+-- | Check if a relay is inbox capable
+isInboxCapable :: Relay -> Bool
+isInboxCapable (InboxRelay _) = True
+isInboxCapable (InboxOutboxRelay _) = True
+isInboxCapable (OutboxRelay _) = False
+
+
+-- | Check if a relay is outbox capable
+isOutboxCapable :: Relay -> Bool
+isOutboxCapable (OutboxRelay _) = True
+isOutboxCapable (InboxOutboxRelay _) = True
+isOutboxCapable (InboxRelay _) = False
+
+
+-- | Check if a relay URI is valid
+isValidRelayURI :: RelayURI -> Bool
+isValidRelayURI uriText =
+    case parseURI (T.unpack uriText) of
+        Just uri ->
+            let scheme = uriScheme uri
+                authority = uriAuthority uri
+            in (scheme == "ws:" || scheme == "wss:") &&
+                maybe False (not . null . uriRegName) authority
+        Nothing -> False
 
 
 -- | Represents a subscription id as text.
@@ -160,6 +188,28 @@ data Kind
   | Comment                 -- NIP-22 (kind 1111)
   | UnknownKind Int
   deriving (Eq, Generic, Read, Show)
+
+
+instance Ord Kind where
+    compare k1 k2 = compare (kindToInt k1) (kindToInt k2)
+      where
+        kindToInt :: Kind -> Int
+        kindToInt = \case
+          Metadata -> 0
+          ShortTextNote -> 1
+          FollowList -> 3
+          EventDeletion -> 5
+          Repost -> 6
+          Reaction -> 7
+          GenericRepost -> 16
+          Seal -> 13
+          GiftWrap -> 1059
+          DirectMessage -> 14
+          PreferredDMRelays -> 10050
+          CanonicalAuthentication -> 22242
+          RelayListMetadata -> 10002
+          Comment -> 1111
+          UnknownKind n -> n
 
 
 -- | Represents an event id as a byte string.

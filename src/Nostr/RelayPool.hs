@@ -23,7 +23,7 @@ import QtQuick
 import RelayMgmt (RelayMgmt)
 import RelayMgmt qualified as RM
 import Store.Lmdb (LmdbStore)
-import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..))
+import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPool(..))
 
 
 -- | Disconnect reason.
@@ -49,7 +49,7 @@ data RelayPool :: Effect where
     DisconnectAll :: RelayPool m ()
     AwaitAtLeastOneConnected :: RelayPool m Bool
     -- Event Operations
-    SendEvent :: Event -> RelayPool m ()
+    --SendEvent :: Event -> RelayPool m ()
 
 type instance DispatchOf RelayPool = Dynamic
 
@@ -59,7 +59,7 @@ makeEffect ''RelayPool
 -- | RelayPoolEff
 type RelayPoolEff es =
   ( State AppState :> es
-  , State RelayPoolState :> es
+  , State RelayPool :> es
   , LmdbStore :> es
   , Nostr :> es
   , RelayConnection :> es
@@ -104,12 +104,12 @@ runRelayPool = interpret $ \_ -> \case
     Nostr.RelayPool.Disconnect r -> disconnectRelay r
 
     DisconnectAll -> do
-        st <- get @RelayPoolState
+        st <- get @RelayPool
         forM_ (Map.toList $ activeConnections st) $ \(r, _) -> disconnectRelay r
 
     AwaitAtLeastOneConnected -> do
         let loop = do
-                st <- get @RelayPoolState
+                st <- get @RelayPool
                 let states = map (connectionState . snd) $ Map.toList $ activeConnections st
                 if any (== Connected) states
                     then return True
@@ -121,7 +121,7 @@ runRelayPool = interpret $ \_ -> \case
                                 threadDelay 50000  -- 50ms delay
                                 loop
         loop
-
+{-
     Nostr.RelayPool.SendEvent event -> do
         kp <- getKeyPair
         let pk = keyPairToPubKeyXO kp
@@ -135,3 +135,4 @@ runRelayPool = interpret $ \_ -> \case
             GiftWrap -> publishGiftWrap event pk
             -- Default case: publish to outbox-capable relays (FollowList, ShortTextNote, etc.)
             _ -> publishToOutbox event
+-}

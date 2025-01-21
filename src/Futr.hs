@@ -42,18 +42,18 @@ import Nostr.Bech32
 import Nostr.Event ( createComment, createEventDeletion, createFollowList
                    , createQuoteRepost, createRepost, createRumor, createShortTextNote
                    )
+import Nostr.InboxModel (InboxModel, awaitAtLeastOneConnected, startInboxModel, stopInboxModel)
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.Publisher
 import Nostr.RelayConnection (RelayConnection)
-import Nostr.RelayPool
 import Nostr.Subscription
-import Nostr.Types (Event(..), EventId, Relay(..), RelayURI, Tag(..), getUri)
+import Nostr.Types (Event(..), EventId, RelayURI, Tag(..), getUri, isInboxCapable)
 import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
 import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
-                  , getEvent, getFollows, putEvent )
+                  , getEvent, getFollows, putEvent, getGeneralRelays )
 import Types
 
 -- | Signal key class for LoginStatusChanged.
@@ -109,13 +109,13 @@ type FutrEff es = ( State AppState :> es
                   , KeyMgmtUI :> es
                   , RelayMgmtUI :> es
                   , Nostr :> es
+                  , InboxModel :> es
                   , RelayConnection :> es
                   , RelayMgmt :> es
-                  , RelayPool :> es
                   , Subscription :> es
                   , Publisher :> es
                   , State KeyMgmtState :> es
-                  , State RelayPoolState :> es
+                  , State RelayPool :> es
                   , State QtQuickState :> es
                   , QtQuick :> es
                   , Logging :> es
@@ -269,14 +269,11 @@ runFutr = interpret $ \_ -> \case
         , currentScreen = KeyMgmt
         }
 
-    -- Close relay connections
-    conns <- gets @RelayPoolState activeConnections
-    mapM_ disconnect (Map.keys conns)
-
+    stopInboxModel
     -- Wait a moment for disconnects to process
     threadDelay 100000  -- 100ms delay
 
-    modify @RelayPoolState $ const initialRelayPoolState
+    modify @RelayPool $ const initialRelayPool
 
     fireSignal obj
     logInfo "User logged out successfully"
@@ -302,12 +299,11 @@ runFutr = interpret $ \_ -> \case
                     let eventRelayUris = Set.fromList $ map getUri $
                           catMaybes [Just r | RelayTag r <- tags origEvent]
 
-                    authorRelays <- gets @RelayPoolState $ \st' ->
-                      maybe [] (filter isInboxCapable . fst) $
-                      Map.lookup (pubKey origEvent) (generalRelays st')
+                    authorRelays <- getGeneralRelays (pubKey origEvent)
+                    let authorInboxUris = Set.fromList $ map getUri $ 
+                          filter isInboxCapable authorRelays
 
-                    let authorInboxUris = Set.fromList $ map getUri authorRelays
-                        targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
+                    let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
                     putEvent $ EventWithRelays s targetUris
                     forM_ (Set.toList targetUris) $ \relay ->
@@ -356,12 +352,11 @@ runFutr = interpret $ \_ -> \case
                     let eventRelayUris = Set.fromList $ map getUri $
                           catMaybes [Just r | RelayTag r <- tags origEvent]
 
-                    authorRelays <- gets @RelayPoolState $ \st' ->
-                      maybe [] (filter isInboxCapable . fst) $
-                      Map.lookup (pubKey origEvent) (generalRelays st')
+                    authorRelays <- getGeneralRelays (pubKey origEvent)
+                    let authorInboxUris = Set.fromList $ map getUri $ 
+                          filter isInboxCapable authorRelays
 
-                    let authorInboxUris = Set.fromList $ map getUri authorRelays
-                        targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
+                    let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
                     putEvent $ EventWithRelays s targetUris
                     forM_ (Set.toList targetUris) $ \relay ->
@@ -399,8 +394,6 @@ parseNprofileOrNpub input =
 -- | Login with an account.
 loginWithAccount :: FutrEff es => ObjRef () -> Account -> Eff es ()
 loginWithAccount obj a = do
-    let (rs, t) = accountRelays a
-
     modify @AppState $ \s -> s { keyPair = Just (secKeyToKeyPair $ accountSecKey a) }
 
     modify @KeyMgmtState $ \st -> st
@@ -408,11 +401,8 @@ loginWithAccount obj a = do
         , npubView = pubKeyXOToBech32 $ derivePublicKeyXO $ accountSecKey a
         }
 
-    importGeneralRelays (accountPubKeyXO a) rs t
-
-    forM_ rs $ \relay' -> void $ async $ connect $ getUri relay'
-
     void $ async $ do
+        startInboxModel
         atLeastOneConnected <- awaitAtLeastOneConnected
         -- Update UI state after connections are established
         when atLeastOneConnected $ do
@@ -448,11 +438,8 @@ sendFollowListEvent follows = do
 searchInRelays :: FutrEff es => PubKeyXO -> Maybe RelayURI -> Eff es ()
 searchInRelays pubkey' _ = do
     -- @todo use relay hint
-    st <- get @RelayPoolState
-    let relays = case Map.lookup pubkey' (generalRelays st) of
-                   Just (rs, _) -> rs
-                   Nothing -> []
-    conns <- gets @RelayPoolState activeConnections
+    relays <- getGeneralRelays pubkey'
+    conns <- gets @RelayPool activeConnections
     forM_ relays $ \relay -> do
       when (isInboxCapable relay) $ do
         let relayUri' = getUri relay
@@ -466,7 +453,7 @@ searchInRelays pubkey' _ = do
                         e <- atomically $ readTQueue q
                         case e of
                           EventAppeared event' -> do
-                            updates <- handleEvent relayUri' subId' (metadataFilter [pubkey']) event'
+                            updates <- handleEvent relayUri' event'
                             notify updates
                             loop
                           SubscriptionEose -> do
@@ -474,10 +461,3 @@ searchInRelays pubkey' _ = do
                             loop
                           SubscriptionClosed _ -> return () -- stop the loop
                   loop
-
-
--- | Check if a relay is inbox capable.
-isInboxCapable :: Relay -> Bool
-isInboxCapable (InboxRelay _) = True
-isInboxCapable (InboxOutboxRelay _) = True
-isInboxCapable _ = False

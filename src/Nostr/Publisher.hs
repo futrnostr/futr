@@ -1,8 +1,9 @@
 module Nostr.Publisher where
 
-import Control.Monad (forM_, when)
+import Control.Monad (forM, forM_, when)
 import Data.List (nub, partition)
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text (Text, pack)
 import Effectful
 import Effectful.Concurrent (Concurrent)
@@ -18,11 +19,11 @@ import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.RelayConnection
-import Nostr.Types (Event(..), EventId, Relay(..), RelayURI, Request(..), getUri)
+import Nostr.Types (Event(..), EventId, Relay(..), RelayURI, Request(..), getUri, isInboxCapable, isOutboxCapable)
 import Nostr.Util
-import Store.Lmdb (LmdbStore, getFollows)
-import Types ( AppState(..), ConnectionState(..), Follow(..)
-             , PublishStatus(..), RelayData(..), RelayPoolState(..) )
+import Store.Lmdb (LmdbStore, getFollows, getDMRelays, getGeneralRelays, putEvent)
+import Types ( AppState(..), ConnectionState(..), EventWithRelays(..), Follow(..)
+             , PublishStatus(..), RelayData(..), RelayPool(..) )
 
 
 -- | Result of a publish operation
@@ -48,7 +49,7 @@ makeEffect ''Publisher
 -- | Publisher effect handlers
 type PublisherEff es =
   ( State AppState :> es
-  , State RelayPoolState :> es
+  , State RelayPool :> es
   , LmdbStore :> es
   , RelayConnection :> es
   , QtQuick :> es
@@ -64,27 +65,31 @@ runPublisher
   => Eff (Publisher : es) a
   -> Eff es a
 runPublisher =  interpret $ \_ -> \case
-    Broadcast event -> do  
-        allDMRelays <- gets @RelayPoolState (concatMap (fst . snd) . Map.toList . dmRelays)
-        
-        myGeneralRelays <- gets @RelayPoolState (Map.findWithDefault ([], 0) (pubKey event) . generalRelays)
-        let (myOutboxCapable, _) = partition isOutboxCapable (fst myGeneralRelays)
-        
+    Broadcast event' -> do
+        putEvent $ EventWithRelays event' Set.empty
+
         kp <- getKeyPair
-        let pk = keyPairToPubKeyXO kp
-        follows <- getFollows pk
+        let xo = keyPairToPubKeyXO kp
+
+        dmRelays <- getDMRelays xo
+        myGeneralRelays <- getGeneralRelays xo
+        let outboxCapable = filter isOutboxCapable myGeneralRelays
+
+        follows <- getFollows xo
         let followPks = map pubkey follows
-        otherGeneralRelays <- gets @RelayPoolState (concatMap (fst . snd) . 
-            filter (\(k,_) -> k `elem` followPks && k /= pubKey event) . Map.toList . generalRelays)
-        
+
+        followerRelays <- forM followPks $ \pk -> do
+            relays <- getGeneralRelays pk
+            return $ filter isInboxCapable relays
+
         let allTargetRelays = nub $ 
-                map getUri allDMRelays ++
-                map getUri myOutboxCapable ++
-                map getUri otherGeneralRelays
+                map getUri dmRelays ++
+                map getUri outboxCapable ++
+                concatMap (map getUri) followerRelays
 
         modify $ \st' -> st' 
             { publishStatus = Map.insert 
-                (eventId event) 
+                (eventId event')
                 (Map.fromList [(relay, Publishing) | relay <- allTargetRelays]) 
                 (publishStatus st') 
             }
@@ -92,31 +97,34 @@ runPublisher =  interpret $ \_ -> \case
         existingConnections <- getConnectedRelays
         let (existingRelays, newRelays) = partition (`elem` existingConnections) allTargetRelays
         
-        forM_ existingRelays $ \r -> writeToChannel event r
+        forM_ existingRelays $ \r -> writeToChannel event' r
 
         forM_ newRelays $ \r -> async $ do
             connected <- connectRelay r
             when connected $ do
-                writeToChannel event r
+                writeToChannel event' r
                 disconnectRelay r
 
-    PublishToOutbox event -> do
+    PublishToOutbox event' -> do
+        putEvent $ EventWithRelays event' Set.empty
+
         kp <- getKeyPair
         let pk = keyPairToPubKeyXO kp
-        generalRelayList <- gets (Map.findWithDefault ([], 0) pk . generalRelays)
-        let (outboxRelays, _) = generalRelayList
-            outboxCapableURIs = map getUri $ filter isOutboxCapable outboxRelays
+
+        generalRelayList <- getGeneralRelays pk
+        let outboxCapableURIs = map getUri $ filter isOutboxCapable generalRelayList
 
         modify $ \st -> st 
             { publishStatus = Map.insert 
-                (eventId event) 
+                (eventId event') 
                 (Map.fromList [(relay, Publishing) | relay <- outboxCapableURIs]) 
                 (publishStatus st) 
             }
 
-        forM_ outboxCapableURIs $ \r -> writeToChannel event r
+        forM_ outboxCapableURIs $ \r -> writeToChannel event' r
 
     PublishToRelay event' relayUri' -> do
+        putEvent $ EventWithRelays event' $ Set.fromList [relayUri']
         modify $ \st -> st 
             { publishStatus = Map.adjust 
                 (\existingMap -> Map.insert relayUri' Publishing existingMap)
@@ -126,32 +134,23 @@ runPublisher =  interpret $ \_ -> \case
         writeToChannel event' relayUri'
 
     PublishGiftWrap event' senderPk -> do
-        logDebug $ "Publishing gift wrap"
-        -- Log subscription details
-        logDebug $ "Publishing gift wrap event: " <> pack (show $ eventId event')
-        logDebug $ "Sender pubkey: " <> pubKeyXOToBech32 senderPk
-        logDebug $ "Recipient pubkey: " <> pubKeyXOToBech32 (pubKey event')
-        -- Get sender and recipient relay lists
-        dmRelayList <- gets @RelayPoolState (Map.findWithDefault ([], 0) senderPk . dmRelays)
-        recipientDMRelays <- gets @RelayPoolState (Map.findWithDefault ([], 0) (pubKey event') . dmRelays)
+        putEvent $ EventWithRelays event' Set.empty
+        dmRelayList <- getDMRelays senderPk
+        recipientDMRelays <- getDMRelays (pubKey event')
 
         if null dmRelayList || null recipientDMRelays
             then pure ()
             else do
                 let allRelayURIs = nub $ 
-                        map getUri (fst dmRelayList) ++ 
-                        map getUri (fst recipientDMRelays)
+                        map getUri dmRelayList ++ 
+                        map getUri recipientDMRelays
 
-                -- Split relays into existing connections and new ones
                 existingConnections <- getConnectedRelays
                 let (existingRelays, newRelays) = partition 
                         (`elem` existingConnections) 
                         allRelayURIs
 
-                -- Handle existing connections
                 forM_ existingRelays $ \r -> writeToChannel event' r
-                
-                -- Handle new connections
                 forM_ newRelays $ \r -> async $ do
                     connected <- connectRelay r
                     when connected $ do
@@ -159,7 +158,7 @@ runPublisher =  interpret $ \_ -> \case
                         disconnectRelay r
 
     GetPublishResult eventId' -> do
-        st <- get @RelayPoolState
+        st <- get @RelayPool
         let states = Map.findWithDefault Map.empty eventId' (publishStatus st)
         if null states
             then return $ PublishFailure "No relays found to publish to"
@@ -171,7 +170,7 @@ runPublisher =  interpret $ \_ -> \case
 -- | Write an event to a channel
 writeToChannel :: PublisherEff es => Event -> RelayURI -> Eff es ()
 writeToChannel e r = do
-    st <- get @RelayPoolState
+    st <- get @RelayPool
     case Map.lookup r (activeConnections st) of
         Just rd -> do
             atomically $ writeTChan (requestChannel rd) (SendEvent e)
@@ -183,12 +182,5 @@ writeToChannel e r = do
 -- | Get the connected relays
 getConnectedRelays :: PublisherEff es => Eff es [RelayURI]
 getConnectedRelays = do
-    st <- get @RelayPoolState
+    st <- get @RelayPool
     return $ Map.keys $ Map.filter ((== Connected) . connectionState) (activeConnections st)
-
-
--- | Check if a relay is outbox capable
-isOutboxCapable :: Relay -> Bool
-isOutboxCapable (OutboxRelay _) = True
-isOutboxCapable (InboxOutboxRelay _) = True
-isOutboxCapable _ = False

@@ -12,7 +12,7 @@ import Data.Text (Text)
 import Effectful.Concurrent.STM (TChan, TQueue)
 import GHC.Generics (Generic)
 import Nostr.Keys (KeyPair, PubKeyXO)
-import Nostr.Types (Event, EventId, Filter, Relay(..), RelayURI, Request, SubscriptionId)
+import Nostr.Types (Event, EventId, Filter, RelayURI, Request, SubscriptionId)
 
 
 -- | Status of a publish operation
@@ -32,11 +32,9 @@ data SubscriptionEvent
 
 
 -- | State for RelayPool handling.
-data RelayPoolState = RelayPoolState
+data RelayPool = RelayPool
     { activeConnections :: Map RelayURI RelayData
     , publishStatus :: Map EventId (Map RelayURI PublishStatus)
-    , generalRelays :: Map PubKeyXO ([Relay], Int)
-    , dmRelays :: Map PubKeyXO ([Relay], Int)
     }
 
 
@@ -82,12 +80,10 @@ data RelayData = RelayData
 
 
 -- | Initial state for RelayPool.
-initialRelayPoolState :: RelayPoolState
-initialRelayPoolState = RelayPoolState
+initialRelayPool :: RelayPool
+initialRelayPool = RelayPool
   { activeConnections = Map.empty
   , publishStatus = Map.empty
-  , generalRelays = Map.empty
-  , dmRelays = Map.empty
   }
 
 
