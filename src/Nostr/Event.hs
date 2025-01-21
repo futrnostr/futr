@@ -222,7 +222,7 @@ createRelayListMetadataEvent relays xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = RelayListMetadata
-    , tags' = map (\r -> RelayTag r) relays
+    , tags' = map (\r -> RTag r) relays
     , content' = ""
     }
 
@@ -233,7 +233,7 @@ createPreferredDMRelaysEvent urls xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = PreferredDMRelays
-    , tags' = map (\url -> RelayTag $ InboxOutboxRelay url) urls
+    , tags' = map (\url -> RelayTag url) urls
     , content' = ""
     }
 
@@ -244,8 +244,7 @@ createCanonicalAuthentication r challenge xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = CanonicalAuthentication
-    -- force the relay to be a InboxOutboxRelay for the purpose of authentication
-    , tags' = [RelayTag $ InboxOutboxRelay r, ChallengeTag challenge]
+    , tags' = [RelayTag $ r, ChallengeTag challenge]
     , content' = ""
     }
 

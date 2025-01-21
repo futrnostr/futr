@@ -86,18 +86,6 @@ Dialog {
                         }
 
                         Button {
-                            text: modelData.connectionState === "Disconnected" ? qsTr("Connect") : qsTr("Disconnect")
-                            Layout.preferredWidth: 100
-                            onClicked: {
-                                if (modelData.connectionState === "Disconnected") {
-                                    ctxRelayMgmt.connectRelay(modelData.url)
-                                } else {
-                                    ctxRelayMgmt.disconnectRelay(modelData.url)
-                                }
-                            }
-                        }
-
-                        Button {
                             onClicked: {
                                 removeRelayDialog.relayToRemove = modelData.url
                                 removeRelayDialog.relayType = "dm"
@@ -196,9 +184,7 @@ Dialog {
                         enabled: newDMRelaysInput.isValid
                         onClicked: {
                             if (newDMRelaysInput.text.trim() !== "") {
-                                if (ctxRelayMgmt.addDMRelay(newDMRelaysInput.text.trim())) {
-                                    ctxRelayMgmt.connectRelay(newDMRelaysInput.text.trim())
-                                }
+                                ctxRelayMgmt.addDMRelay(newDMRelaysInput.text.trim())
                                 newDMRelaysInput.text = ""
                                 newDMRelaysInput.visible = false
                                 savePreferredButton.visible = false
@@ -272,18 +258,6 @@ Dialog {
                             checked: modelData.isOutbox
                             text: qsTr("Outbox")
                             enabled: false
-                        }
-
-                        Button {
-                            text: modelData.connectionState === "Disconnected" ? qsTr("Connect") : qsTr("Disconnect")
-                            Layout.preferredWidth: 100
-                            onClicked: {
-                                if (modelData.connectionState === "Disconnected") {
-                                    ctxRelayMgmt.connectRelay(modelData.url)
-                                } else {
-                                    ctxRelayMgmt.disconnectRelay(modelData.url)
-                                }
-                            }
                         }
 
                         Button {
@@ -392,13 +366,11 @@ Dialog {
                         enabled: newRelayInput.isValid
                         onClicked: {
                             if (newRelayInput.text.trim() !== "") {
-                                if (ctxRelayMgmt.addGeneralRelay(
+                                ctxRelayMgmt.addGeneralRelay(
                                     newRelayInput.text.trim(),
                                     newInboxRelayCheckboxCheckbox.checked,
                                     newOutboxRelayCheckbox.checked
-                                )) {
-                                    ctxRelayMgmt.connectRelay(newRelayInput.text.trim())
-                                }
+                                );
                                 newRelayInput.text = ""
                                 newRelayInput.visible = false
                             }
@@ -455,12 +427,6 @@ Dialog {
                             font: Constants.font
                             color: Material.primaryTextColor
                             Layout.fillWidth: true
-                        }
-
-                        Button {
-                            text: qsTr("Disconnect")
-                            Layout.preferredWidth: 100
-                            onClicked: ctxRelayMgmt.disconnectRelay(modelData.url)
                         }
                     }
                 }

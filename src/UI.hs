@@ -33,12 +33,6 @@ import Nostr.Bech32
 import Nostr.Event (createMetadata)
 import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Subscription ( subscribeToReactions
-                          , subscribeToReposts
-                          , subscribeToComments
-                          , countEvents
-                          , subscribeToFollowers
-                          , subscribeToFollowing )
 import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile(..), RelayURI
                    , Relationship(..), Rumor(..), Tag(..) )
 import Nostr.Util
@@ -79,37 +73,37 @@ runUI = interpret $ \_ -> \case
         defPropertySigRO' "name" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          (profile, _) <- runE $ getProfile pk
+          profile <- runE $ getProfile pk
           return $ name profile,
 
         defPropertySigRO' "displayName" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          (profile, _) <- runE $ getProfile pk
+          profile <- runE $ getProfile pk
           return $ displayName profile,
 
         defPropertySigRO' "about" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          (profile, _) <- runE $ getProfile pk
+          profile <- runE $ getProfile pk
           return $ about profile,
 
         defPropertySigRO' "picture" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          (profile, _) <- runE $ getProfile pk
+          profile <- runE $ getProfile pk
           return $ picture profile,
 
         defPropertySigRO' "nip05" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          (profile, _) <- runE $ getProfile pk
+          profile <- runE $ getProfile pk
           return $ nip05 profile,
 
         defPropertySigRO' "banner" changeKey' $ \_ -> do
           st <- runE $ get @AppState
           let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
-          (profile, _) <- runE $ getProfile pk
+          profile <- runE $ getProfile pk
           return $ banner profile,
 
         defPropertySigRO' "isFollow" changeKey' $ \_ -> do
@@ -123,14 +117,20 @@ runUI = interpret $ \_ -> \case
             _ -> return False,
 
         defPropertySigRO' "followerCount" changeKey' $ \obj -> do
+            return (0 :: Int),
+            {-
             st <- runE $ get @AppState
             let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
             runE $ getProfileEventCount subscribeToFollowers pk,
+            -}
 
         defPropertySigRO' "followingCount" changeKey' $ \obj -> do
+            return (0 :: Int)
+            {-
             st <- runE $ get @AppState
             let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
             runE $ getProfileEventCount subscribeToFollowing pk
+            -}
       ]
 
     let followProp name' accessor = defPropertySigRO' name' changeKey' $ \obj -> do
@@ -151,13 +151,13 @@ runUI = interpret $ \_ -> \case
         followProp "pubkey" $ \_ -> return . maybe "" (pubKeyXOToBech32 . pubkey),
         followProp "petname" $ \_ -> return . maybe "" (fromMaybe "" . petName),
         followProp "displayName" $ \_ -> maybe (return "") (\follow -> do
-            (profile, _) <- runE $ getProfile (pubkey follow)
+            profile <- runE $ getProfile (pubkey follow)
             return $ fromMaybe "" (displayName profile)),
         followProp "name" $ \_ -> maybe (return "") (\follow -> do
-            (profile, _) <- runE $ getProfile (pubkey follow)
+            profile <- runE $ getProfile (pubkey follow)
             return $ fromMaybe "" (name profile)),
         followProp "picture" $ \_ -> maybe (return "") (\follow -> do
-            (profile, _) <- runE $ getProfile (pubkey follow)
+            profile <- runE $ getProfile (pubkey follow)
             return $ fromMaybe "" (picture profile))
       ]
 
@@ -172,7 +172,7 @@ runUI = interpret $ \_ -> \case
           case find (\case ETag _ _ (Just Reply) -> True; _ -> False) (tags evt) of
             Just (ETag eid _ _) -> return $ Just eid
             _ -> return Nothing
-
+{-
         getEventCount subscriber postId = do
             eventMaybe <- getEvent postId
             case eventMaybe of
@@ -185,7 +185,7 @@ runUI = interpret $ \_ -> \case
                                 Just queue -> countEvents queue
                                 Nothing -> return 0
                 Nothing -> return 0
-
+-}
     postClass <- mfix $ \postClass' -> newClass [
         defPropertySigRO' "id" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
@@ -287,21 +287,17 @@ runUI = interpret $ \_ -> \case
             Nothing -> return [],
 
         -- Event count properties using the helper
-        defPropertySigRO' "reactionCount" changeKey' $ \obj ->
-            runE $ getEventCount subscribeToReactions (fromObjRef obj),
+        defPropertySigRO' "repostCount" changeKey' $ \obj -> do
+            return (0 :: Int),
+            --runE $ getEventCount subscribeToReposts (fromObjRef obj),
 
-        defPropertySigRO' "repostCount" changeKey' $ \obj ->
-            runE $ getEventCount subscribeToReposts (fromObjRef obj),
-
-        defPropertySigRO' "commentCount" changeKey' $ \obj ->
-            runE $ getEventCount subscribeToComments (fromObjRef obj)
+        defPropertySigRO' "commentCount" changeKey' $ \obj -> do
+            return (0 :: Int)
+            --runE $ getEventCount subscribeToComments (fromObjRef obj)
       ]
 
-    -- Create the pools
     postsPool <- newFactoryPool (newObject postClass)
     chatPool <- newFactoryPool (newObject postClass)
-
-    return (postClass, postsPool, chatPool)
 
     rootClass <- newClass [
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
@@ -336,8 +332,8 @@ runUI = interpret $ \_ -> \case
           st <- runE $ get @AppState
           case keyPair st of
             Just kp -> do
-              (profile', _) <- runE $ getProfile $ keyPairToPubKeyXO kp
-              return $ fromMaybe "" $ picture profile'
+              profile <- runE $ getProfile $ keyPairToPubKeyXO kp
+              return $ fromMaybe "" $ picture profile
             Nothing -> return "",
 
         defSignal "loginStatusChanged" (Proxy :: Proxy LoginStatusChanged),

@@ -12,9 +12,9 @@ import Futr qualified as Futr
 import KeyMgmt (KeyMgmtState(..), initialState, runKeyMgmt)
 import Logging (runLoggingStdout)
 import Nostr
+import Nostr.InboxModel (runInboxModel)
 import Nostr.Publisher (runPublisher)
 import Nostr.RelayConnection (runRelayConnection)
-import Nostr.RelayPool (runRelayPool)
 import Nostr.Subscription (runSubscription)
 import Nostr.Util (runUtil)
 import Presentation.KeyMgmtUI (runKeyMgmtUI)
@@ -22,7 +22,7 @@ import Presentation.RelayMgmtUI (runRelayMgmtUI)
 import RelayMgmt (runRelayMgmt)
 import UI qualified as UI
 import Store.Lmdb (LmdbState, initialLmdbState, runLmdbStore)
-import Types (AppState(..), RelayPoolState(..))
+import Types (AppState(..), RelayPool(..))
 import Types qualified as Types
 
 -- | Main function for the app.
@@ -56,7 +56,7 @@ main = do
         . runPublisher
         . runRelayMgmt
         . runSubscription
-        . runRelayPool
+        . runInboxModel
         -- presentation related
         . runKeyMgmtUI
         . runRelayMgmtUI
@@ -79,7 +79,7 @@ main = do
 
 -- | Initialize the state for the app.
 withInitialState
-    :: Eff ( State RelayPoolState
+    :: Eff ( State RelayPool
            : State KeyMgmtState
            : State AppState
            : State LmdbState
@@ -89,4 +89,4 @@ withInitialState
     = evalState initialLmdbState
     . evalState Types.initialState
     . evalState KeyMgmt.initialState
-    . evalState Types.initialRelayPoolState
+    . evalState Types.initialRelayPool

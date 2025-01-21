@@ -52,8 +52,7 @@ data Account = Account
   { accountSecKey :: SecKey,
     accountPubKeyXO :: PubKeyXO,
     accountDisplayName :: Maybe Text,
-    accountPicture :: Maybe Text,
-    accountRelays :: ([Relay], Int)
+    accountPicture :: Maybe Text
   }
   deriving (Eq, Show)
 
@@ -101,7 +100,6 @@ data KeyMgmt :: Effect where
   ImportSeedphrase :: ObjRef () -> Text -> Text -> KeyMgmt m Bool
   GenerateSeedphrase :: ObjRef () -> KeyMgmt m (Maybe KeyPair)
   RemoveAccount :: ObjRef () -> Text -> KeyMgmt m ()
-  UpdateRelays :: AccountId -> ([Relay], Int) -> KeyMgmt m ()
   UpdateProfile :: AccountId -> Profile -> KeyMgmt m ()
 
 type instance DispatchOf KeyMgmt = Dynamic
@@ -190,19 +188,6 @@ runKeyMgmt = interpret $ \_ -> \case
       then removeDirectoryRecursive dir
       else return ()
 
-  UpdateRelays aid newRelays -> do
-    modify $ \st -> st 
-      { accountMap = Map.adjust (\acc -> acc { accountRelays = newRelays }) aid (accountMap st) }
-    accounts <- gets accountMap
-    case Map.lookup aid accounts of 
-      Just account -> do
-        let npubStr = unpack $ pubKeyXOToBech32 $ accountPubKeyXO account
-        dir <- getXdgDirectory XdgData $ "futrnostr/" ++ npubStr
-        BL.writeFile (dir </> "relays.json") (encode newRelays)
-      Nothing -> do
-        logError $ "Account not found: " <>accountId aid
-        return ()
-
   UpdateProfile aid profile -> do
     modify $ \st -> st 
       { accountMap = Map.adjust (\acc -> acc 
@@ -269,24 +254,7 @@ loadAccount :: (FileSystem :> es, IOE :> es) => FilePath -> FilePath -> Eff es (
 loadAccount storageDir npubDir = do
   let dirPath = storageDir </> npubDir
   nsecContent <- readFileMaybe (dirPath </> "nsec")
-  relayData <- readJSONFile (dirPath </> "relays.json")
   profile <- readJSONFile (dirPath </> "profile.json")
-
-  -- Get and persist 3 random relays if no relay data exists
-  finalRelays <- case relayData of
-    Just r -> return r
-    Nothing -> do
-      randomRelays <- liftIO $ do
-        let (allRelays, _) = defaultGeneralRelays
-        indices <- randomRIO (0, length allRelays - 1) >>= \i1 -> do
-                    i2 <- randomRIO (0, length allRelays - 1)
-                    i3 <- randomRIO (0, length allRelays - 1)
-                    return [i1, i2, i3]
-        let selectedRelays = nub $ map (allRelays !!) indices
-        return (selectedRelays, 0) -- 0 timestamp
-      -- Write the random selection to relays.json
-      BL.writeFile (dirPath </> "relays.json") (encode randomRelays)
-      return randomRelays
 
   return $ do
     nsecKey <- bech32ToSecKey . strip =<< nsecContent
@@ -296,7 +264,6 @@ loadAccount storageDir npubDir = do
       Account
         { accountSecKey = nsecKey,
           accountPubKeyXO = pubKeyXO,
-          accountRelays = finalRelays,
           accountDisplayName = profile >>= \(Profile _ d _ _ _ _) -> d,
           accountPicture = profile >>= \(Profile _ _ _ p _ _) -> p
         }
@@ -328,14 +295,13 @@ selectRandomRelays count relays = do
 -- | Create an AccountId and Account from a KeyPair.
 accountFromKeyPair :: (IOE :> es) => KeyPair -> Eff es (AccountId, Account)
 accountFromKeyPair kp = do
-  let (allRelays, _) = defaultGeneralRelays
-  selectedRelays <- liftIO $ selectRandomRelays 3 allRelays
+  --let (allRelays, _) = defaultGeneralRelays
+  --selectedRelays <- liftIO $ selectRandomRelays 3 allRelays
   let newNpub = pubKeyXOToBech32 $ keyPairToPubKeyXO kp
   let account =
         Account
           { accountSecKey = keyPairToSecKey kp,
             accountPubKeyXO = keyPairToPubKeyXO kp,
-            accountRelays = (selectedRelays, 0),  -- 0 for initial timestamp
             accountDisplayName = Nothing,
             accountPicture = Nothing
           }
