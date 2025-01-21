@@ -207,14 +207,14 @@ createSubscription r subId' f queue = do
     case Map.lookup r (activeConnections st) of
         Just rd -> do
             let channel = requestChannel rd
-            atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' f)
-            logDebug $ "Subscribed to " <> r <> " with subId " <> subId' <> " and filter " <> pack (show f)
             modify @RelayPool $ \st' ->
                 st { activeConnections = Map.adjust
                         (\rd' -> rd' { activeSubscriptions = Map.insert subId' (SubscriptionDetails subId' f queue 0 0) (activeSubscriptions rd') })
                         r
                         (activeConnections st')
                     }
+            atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' f)
+            logDebug $ "Subscribed to " <> r <> " with subId " <> subId' <> " and filter " <> pack (show f)
             return $ Right ()
         Nothing -> return $ Left $ "Cannot start subscription: no connection found for relay: " <> unpack r
 

@@ -406,7 +406,7 @@ eventLoop xo = do
             EventAppeared event' -> do
               updates <- handleEvent relayUri event'
               -- If it's a FollowList, PreferredDMRelays, or RelayListMetadata event from ourselves, update subscriptions
-              when ((kind event' == FollowList || kind event' == PreferredDMRelays || kind event' == RelayListMetadata) && pubKey event' == xo) $ do
+              when (kind event' == FollowList || kind event' == PreferredDMRelays || kind event' == RelayListMetadata) $ do
                 logInfo "Detected updated FollowList, PreferredDMRelays, or RelayListMetadata; updating subscriptions."
                 updateSubscriptions xo
 
@@ -443,7 +443,7 @@ updateGeneralSubscriptions xo = do
   inboxRelays <- getGeneralRelays xo
   let ownInboxRelayURIs = [ getUri relay | relay <- inboxRelays, isInboxCapable relay ]
 
-  forM_ inboxRelays $ \relay -> do
+  void $ forConcurrently inboxRelays $ \relay -> do
     when (isInboxCapable relay) $ do
       let relayUri = getUri relay
       connected <- connectRelay relayUri
@@ -459,16 +459,16 @@ updateGeneralSubscriptions xo = do
   let relaysToRemove = Set.difference currentRelays newRelays
   let relaysToUpdate = Set.intersection currentRelays newRelays
 
-  forM_ (Set.toList relaysToRemove) $ \relayUri -> do
+  void $ forConcurrently (Set.toList relaysToRemove) $ \relayUri -> do
     disconnectRelay relayUri
 
-  forM_ (Set.toList relaysToAdd) $ \relayUri -> do
+  void $ forConcurrently (Set.toList relaysToAdd) $ \relayUri -> do
     let pubkeys = Map.findWithDefault [] relayUri newRelayPubkeyMap
     connected <- connectRelay relayUri
     when connected $ do
       subscribeToRelay relayUri pubkeys
 
-  forM_ (Set.toList relaysToUpdate) $ \relayUri -> do
+  void $ forConcurrently (Set.toList relaysToUpdate) $ \relayUri -> do
     let newPubkeys = Set.fromList $ Map.findWithDefault [] relayUri newRelayPubkeyMap
     rd <- getRelayData relayUri
     let currentPubkeys = Set.fromList $ getSubscribedPubkeys rd
@@ -496,7 +496,7 @@ updateDMSubscriptions xo = do
                     (Map.elems $ activeSubscriptions rd)
               ]
 
-        forM_ relaysWithGiftwrap $ \(relayUri, rd) -> 
+        void $ forConcurrently relaysWithGiftwrap $ \(relayUri, rd) ->
             unless (relayUri `Set.member` dmRelaySet) $ do
                 let giftwrapSubs = 
                       [ subId 
@@ -513,7 +513,7 @@ updateDMSubscriptions xo = do
         let currentRelaySet = Map.keysSet currentConnections
         let relaysToAdd = Set.difference dmRelaySet currentRelaySet
 
-        forM_ (Set.toList relaysToAdd) $ \relayUri -> do
+        void $ forConcurrently (Set.toList relaysToAdd) $ \relayUri -> do
             connected <- connectRelay relayUri
             when connected $ do
                 subscribeToGiftwraps relayUri xo
