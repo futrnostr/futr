@@ -44,6 +44,7 @@ data UIReferences = UIReferences
 data UIUpdates = UIUpdates
   { profilesChanged :: Bool
   , followsChanged :: Bool
+  , myFollowsChanged :: Bool
   , postsChanged :: Bool
   , privateMessagesChanged :: Bool
   , dmRelaysChanged :: Bool
@@ -58,6 +59,7 @@ instance Semigroup UIUpdates where
   a <> b = UIUpdates
     { profilesChanged = profilesChanged a || profilesChanged b
     , followsChanged = followsChanged a || followsChanged b
+    , myFollowsChanged = myFollowsChanged a || myFollowsChanged b
     , postsChanged = postsChanged a || postsChanged b
     , privateMessagesChanged = privateMessagesChanged a || privateMessagesChanged b
     , dmRelaysChanged = dmRelaysChanged a || dmRelaysChanged b
@@ -74,7 +76,7 @@ instance Monoid UIUpdates where
 
 -- | Empty UI updates.
 emptyUpdates :: UIUpdates
-emptyUpdates = UIUpdates False False False False False False False False False
+emptyUpdates = UIUpdates False False False False False False False False False False
 
 
 -- | Initial effectful QML state.
@@ -119,7 +121,8 @@ runQtQuick = interpret $ \_ -> \case
           refs <- gets uiRefs
           -- Define update checks and their corresponding refs
           let updates = [ (profilesChanged, profileObjRef)
-                        , (followsChanged, followsObjRef)
+                        -- followsChanged is not used
+                        , (myFollowsChanged, followsObjRef)
                         , (postsChanged, postsObjRef)
                         , (privateMessagesChanged, privateMessagesObjRef)
                         , (dmRelaysChanged, dmRelaysObjRef)

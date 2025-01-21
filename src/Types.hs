@@ -9,10 +9,11 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Text (Text)
+import Control.Concurrent.Async (Async)
 import Effectful.Concurrent.STM (TChan, TQueue)
 import GHC.Generics (Generic)
 import Nostr.Keys (KeyPair, PubKeyXO)
-import Nostr.Types (Event, EventId, Filter, Relay(..), RelayURI, Request, SubscriptionId)
+import Nostr.Types (Event, EventId, Filter, RelayURI, Request, SubscriptionId)
 
 
 -- | Status of a publish operation
@@ -32,11 +33,14 @@ data SubscriptionEvent
 
 
 -- | State for RelayPool handling.
-data RelayPoolState = RelayPoolState
+data RelayPool = RelayPool
     { activeConnections :: Map RelayURI RelayData
+    , subscriptions :: Map SubscriptionId SubscriptionDetails
+    , pendingSubscriptions :: Map SubscriptionId SubscriptionDetails
     , publishStatus :: Map EventId (Map RelayURI PublishStatus)
-    , generalRelays :: Map PubKeyXO ([Relay], Int)
-    , dmRelays :: Map PubKeyXO ([Relay], Int)
+    , inboxQueue :: TQueue (RelayURI, SubscriptionEvent)
+    , updateQueue :: TQueue ()
+    , updateThread :: Maybe (Async ())
     }
 
 
@@ -44,9 +48,10 @@ data RelayPoolState = RelayPoolState
 data SubscriptionDetails = SubscriptionDetails
     { subscriptionId :: SubscriptionId
     , subscriptionFilter :: Filter
-    , responseQueue :: TQueue SubscriptionEvent
+    , responseQueue :: TQueue (RelayURI, SubscriptionEvent)
     , eventsProcessed :: Int
     , newestCreatedAt :: Int
+    , relay :: RelayURI
     }
 
 
@@ -71,7 +76,6 @@ data ConnectionState = Connected | Disconnected | Connecting
 data RelayData = RelayData
   { connectionState :: ConnectionState
   , requestChannel :: TChan Request
-  , activeSubscriptions :: Map SubscriptionId SubscriptionDetails
   , notices        :: [Text]
   , lastError      :: Maybe ConnectionError
   , connectionAttempts :: Int
@@ -82,12 +86,15 @@ data RelayData = RelayData
 
 
 -- | Initial state for RelayPool.
-initialRelayPoolState :: RelayPoolState
-initialRelayPoolState = RelayPoolState
+initialRelayPool :: RelayPool
+initialRelayPool = RelayPool
   { activeConnections = Map.empty
+  , subscriptions = Map.empty
+  , pendingSubscriptions = Map.empty
   , publishStatus = Map.empty
-  , generalRelays = Map.empty
-  , dmRelays = Map.empty
+  , inboxQueue = undefined
+  , updateQueue = undefined
+  , updateThread = Nothing
   }
 
 

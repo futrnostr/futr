@@ -28,6 +28,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8)
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
+import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
 import Prelude hiding (until)
 import Text.Read (readMaybe)
 
@@ -50,13 +51,6 @@ instance Ord Relay where
   compare r r' = compare (getUri r) (getUri r')
 
 
--- | Get the URI from a Relay
-getUri :: Relay -> RelayURI
-getUri (InboxRelay uri)        = uri
-getUri (OutboxRelay uri)       = uri
-getUri (InboxOutboxRelay uri)  = uri
-
-
 -- | Instance for converting a 'Relay' to JSON.
 instance ToJSON Relay where
   toEncoding relay = case relay of
@@ -76,6 +70,40 @@ instance FromJSON Relay where
       ["r", String uri] -> 
         return $ InboxOutboxRelay uri
       _ -> fail "Invalid relay format"
+
+
+
+-- | Get the URI from a Relay
+getUri :: Relay -> RelayURI
+getUri (InboxRelay uri)        = uri
+getUri (OutboxRelay uri)       = uri
+getUri (InboxOutboxRelay uri)  = uri
+
+
+-- | Check if a relay is inbox capable
+isInboxCapable :: Relay -> Bool
+isInboxCapable (InboxRelay _) = True
+isInboxCapable (InboxOutboxRelay _) = True
+isInboxCapable (OutboxRelay _) = False
+
+
+-- | Check if a relay is outbox capable
+isOutboxCapable :: Relay -> Bool
+isOutboxCapable (OutboxRelay _) = True
+isOutboxCapable (InboxOutboxRelay _) = True
+isOutboxCapable (InboxRelay _) = False
+
+
+-- | Check if a relay URI is valid
+isValidRelayURI :: RelayURI -> Bool
+isValidRelayURI uriText =
+    case parseURI (T.unpack uriText) of
+        Just uri ->
+            let scheme = uriScheme uri
+                authority = uriAuthority uri
+            in (scheme == "ws:" || scheme == "wss:") &&
+                maybe False (not . null . uriRegName) authority
+        Nothing -> False
 
 
 -- | Represents a subscription id as text.
@@ -162,6 +190,28 @@ data Kind
   deriving (Eq, Generic, Read, Show)
 
 
+instance Ord Kind where
+    compare k1 k2 = compare (kindToInt k1) (kindToInt k2)
+      where
+        kindToInt :: Kind -> Int
+        kindToInt = \case
+          Metadata -> 0
+          ShortTextNote -> 1
+          FollowList -> 3
+          EventDeletion -> 5
+          Repost -> 6
+          Reaction -> 7
+          GenericRepost -> 16
+          Seal -> 13
+          GiftWrap -> 1059
+          DirectMessage -> 14
+          PreferredDMRelays -> 10050
+          CanonicalAuthentication -> 22242
+          RelayListMetadata -> 10002
+          Comment -> 1111
+          UnknownKind n -> n
+
+
 -- | Represents an event id as a byte string.
 newtype EventId = EventId { getEventId :: ByteString } deriving (Eq, Ord)
 
@@ -191,7 +241,8 @@ data Tag
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
   | QTag EventId (Maybe RelayURI) (Maybe PubKeyXO)
   | KTag Text
-  | RelayTag Relay
+  | RTag Relay
+  | RelayTag RelayURI
   | ChallengeTag Text
   | ITag ExternalId (Maybe Text)
   | GenericTag [Value]
@@ -400,6 +451,7 @@ instance FromJSON Tag where
       ("q":rest) -> parseQTag rest v
       ("i":rest) -> parseITag rest v
       ("k":rest) -> parseKTag rest v
+      ("r":rest) -> parseRTag rest v
       ("relay":rest) -> parseRelayTag rest v
       ("challenge":rest) -> parseChallengeTag rest v
       _          -> parseGenericTag v
@@ -471,19 +523,27 @@ parseMaybeDisplayName v = fail $ "Expected string for display name, got: " ++ sh
 
 
 -- | Parses a relay tag from a JSON array.
-parseRelayTag :: [Value] -> Value -> Parser Tag
-parseRelayTag rest _ = case rest of
+parseRTag :: [Value] -> Value -> Parser Tag
+parseRTag rest _ = case rest of
   [relayVal, markerVal] -> do
     relayURI' <- parseRelayURI relayVal
     marker <- parseJSON markerVal :: Parser Text
     case T.toLower marker of
-      "write" -> return $ RelayTag (OutboxRelay relayURI')
-      "read"  -> return $ RelayTag (InboxRelay relayURI')
-      _ -> fail "Invalid RelayTag marker"
+      "write" -> return $ RTag (OutboxRelay relayURI')
+      "read"  -> return $ RTag (InboxRelay relayURI')
+      _ -> fail "Invalid RTag marker"
   [relayVal] -> do
     relayURI' <- parseRelayURI relayVal
-    return $ RelayTag (InboxOutboxRelay relayURI')
-  _ -> fail "Invalid RelayTag format"
+    return $ RTag (InboxOutboxRelay relayURI')
+  _ -> fail "Invalid RTag format"
+
+-- | Parses a relay tag from a JSON array.
+parseRelayTag :: [Value] -> Value -> Parser Tag
+parseRelayTag rest _ = case rest of
+  [relayVal] -> do
+    relayURI' <- parseRelayURI relayVal
+    return $ RelayTag relayURI'
+  _ -> fail "Invalid relay tag format. Expected single relay URI."
 
 
 -- | Parses a RelayURI from a JSON value.
@@ -543,11 +603,12 @@ instance ToJSON Tag where
         maybe [] (\url -> [text url]) urlHint
     KTag kind ->
       list id [ text "k", text kind ]
-    RelayTag relay -> 
+    RTag relay -> 
       list id $ case relay of
-        InboxRelay uri -> [text "relay", text uri, text "read"]
-        OutboxRelay uri -> [text "relay", text uri, text "write"]
-        InboxOutboxRelay uri -> [text "relay", text uri]
+        InboxRelay uri -> [text "r", text uri, text "read"]
+        OutboxRelay uri -> [text "r", text uri, text "write"]
+        InboxOutboxRelay uri -> [text "r", text uri]
+    RelayTag relayUri -> list id $ [text "relay", text relayUri]
     ChallengeTag challenge -> list id [text "challenge", text challenge]
     GenericTag values -> list toEncoding values
 
@@ -697,19 +758,20 @@ instance FromJSON Profile where
 -- | Provides a default list of general relays.
 defaultGeneralRelays :: ([Relay], Int)
 defaultGeneralRelays =
-  ( [ InboxRelay "wss://nos.lol"
+  ( [ InboxOutboxRelay "wss://nos.lol"
     , InboxOutboxRelay "wss://relay.nostr.bg"
     , InboxOutboxRelay "wss://nostr.mom"
     , InboxOutboxRelay "wss://offchain.pub"
+    , InboxRelay "wss://relay.damus.io"
     ],
     0
   )
 
 
 -- | Provides a default list of DM relays.
-defaultDMRelays :: ([Relay], Int)
+defaultDMRelays :: ([RelayURI], Int)
 defaultDMRelays =
-  ( [ InboxOutboxRelay "wss://auth.nostr1.com" ], 0 )
+  ( [ "wss://auth.nostr1.com" ], 0 )
 
 
 -- | Extracts the scheme of a relay's URI.

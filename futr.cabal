@@ -38,11 +38,11 @@ executable futr
         Nostr.Encryption
         Nostr.Encryption.Internal
         Nostr.Event
+        Nostr.InboxModel
         Nostr.Keys
         Nostr.Profile
         Nostr.Publisher
         Nostr.RelayConnection
-        Nostr.RelayPool
         Nostr.Subscription
         Nostr.Types
         Nostr.Util
