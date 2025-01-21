@@ -13,36 +13,53 @@ import Data.List (partition)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe, maybeToList)
 import Data.Set qualified as Set
-import Data.Text (pack,unpack)
+import Data.Text (pack, unpack)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (async)
+import Effectful.Concurrent.Async (async, forConcurrently)
 import Effectful.Concurrent.STM
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, put, modify)
 import Effectful.TH
 
 import Logging
-import Nostr.Event
+import Nostr
+import Nostr.Event (createRelayListMetadataEvent, createPreferredDMRelaysEvent)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.RelayConnection (RelayConnection, connectRelay, disconnectRelay)
-import Nostr.Subscription (Subscription, handleEvent, newSubscriptionId, stopSubscription, stopAllSubscriptions, subscribe, userPostsFilter, giftWrapFilter, mentionsFilter, profilesFilter)
+import Nostr.Subscription 
+    ( Subscription
+    , giftWrapFilter
+    , handleEvent
+    , mentionsFilter
+    , newSubscriptionId
+    , preferredDMRelaysFilter
+    , profilesFilter
+    , relayListMetadataFilter
+    , stopAllSubscriptions
+    , stopSubscription
+    , subscribe
+    , userPostsFilter
+    )
 import Nostr.Types
   ( RelayURI
   , Relay(..)
   , Event(..)
   , Filter(..)
   , Kind(..)
+  , SubscriptionId
   , emptyFilter
   , getUri
   , isInboxCapable
   , isOutboxCapable
+  , defaultGeneralRelays
+  , defaultDMRelays
   )
 import Nostr.Util
-import QtQuick (QtQuick,UIUpdates, emptyUpdates, notify)
+import QtQuick (QtQuick, UIUpdates, emptyUpdates, notify)
+import RelayMgmt
 import Store.Lmdb (LmdbStore, getFollows, getGeneralRelays, getDMRelays, getLatestTimestamp)
 import Types (AppState(..), ConnectionState(..), Follow(..), SubscriptionDetails(..), RelayPool(..), RelayData(..), SubscriptionEvent(..), initialRelayPool)
-
 
 -- | InboxModel effects
 data InboxModel :: Effect where
@@ -60,9 +77,11 @@ type InboxModelEff es =
   , LmdbStore :> es
   , Subscription :> es
   , RelayConnection :> es
+  , RelayMgmt :> es
   , Logging :> es
   , Concurrent :> es
   , Util :> es
+  , Nostr :> es
   , QtQuick :> es
   )
 
@@ -72,10 +91,12 @@ runInboxModel = interpret $ \_ -> \case
   StartInboxModel -> do
     kp <- getKeyPair
     let xo = keyPairToPubKeyXO kp
+    queue <- newTQueueIO
+    modify @RelayPool (\s -> s { inboxQueue = queue })
     void $ async $ do
       initializeSubscriptions xo
       eventLoop xo
-    
+
   StopInboxModel -> do
     st <- get @RelayPool
     forM_ (Map.keys $ activeConnections st) $ \relayUri -> do
@@ -88,13 +109,9 @@ runInboxModel = interpret $ \_ -> \case
           let states = map (connectionState . snd) $ Map.toList $ activeConnections st
           if any (== Connected) states
               then return True
-              else if null states
-                  then return False
-                  else if all (== Disconnected) states
-                      then return False
-                      else do
-                          threadDelay 50000  -- 50ms delay
-                          loop
+              else do
+                threadDelay 50000  -- 50ms delay
+                loop
     loop
 
 -- | Initialize subscriptions
@@ -106,55 +123,251 @@ initializeSubscriptions xo = do
   inboxRelays <- getGeneralRelays xo
   let ownInboxRelayURIs = [ getUri relay | relay <- inboxRelays, isInboxCapable relay ]
 
-  logDebug $ "Initializing subscriptions for Inbox Relays: " <> pack (show ownInboxRelayURIs)
+  if null inboxRelays
+    then do
+      -- Connect to default general relays concurrently
+      let (defaultRelays, _) = defaultGeneralRelays
+      connectionResults <- forConcurrently defaultRelays $ \relay -> do
+        connected <- connectRelay (getUri relay)
+        if connected
+          then do
+            logInfo $ "Connected to Default General Relay: " <> getUri relay
+            return (relay, True)
+          else do
+            logError $ "Failed to connect to Default General Relay: " <> getUri relay
+            return (relay, False)
 
-  dmRelays <- getDMRelays xo
-  logDebug $ "Initializing subscriptions for DM Relays: " <> pack (show (map getUri dmRelays))
+      -- Filter out failed connections and get successful relays
+      let connectedRelays = [relay | (relay, success) <- connectionResults, success]
 
-  forM_ dmRelays $ \relay -> do
-    let relayUri = getUri relay
-    connected <- connectRelay relayUri
-    if connected
+      -- Create a separate queue for initialization
+      initQueue <- newTQueueIO
+
+      -- Subscribe using profilesFilter on initQueue
+      subId <- newSubscriptionId
+      let filter = profilesFilter [xo] Nothing
+      result <- subscribeToFilter connectedRelays subId filter initQueue
+      case result of
+        Right () -> logDebug "Subscribed to profiles filter on default relays."
+        Left err -> logError $ "Failed to subscribe to profiles filter: " <> pack err
+
+      -- Wait for EOSE on initQueue
+      atomically $ waitForEoseSTM initQueue
+
+      -- Check for RelayListMetadata and PreferredDMRelays events
+      receivedEvents <- collectRelevantEvents initQueue
+      logDebug $ "Received events: " <> pack (show $ length receivedEvents)
+      let hasRelayMeta = hasRelayListMetadata $ map snd receivedEvents
+          hasPreferredDM = hasPreferredDMRelays $ map snd receivedEvents
+
+      if not hasRelayMeta
         then do
-            logInfo $ "Connected to DM Relay: " <> relayUri
-            subscribeToGiftwraps relayUri xo
-            logInfo $ "Subscribed to Giftwraps on relay: " <> relayUri
+          logInfo "RelayListMetadata event not found. Setting default general relays."
+          setDefaultGeneralRelays xo
+
+          unless hasPreferredDM $ do
+            logInfo "PreferredDMRelays event not found. Setting default DM relays."
+            setDefaultDMRelays xo
+
+          logInfo "Initialization complete."
         else do
-            logError $ "Failed to connect to DM Relay: " <> relayUri
+          unless hasPreferredDM $ do
+            logInfo "PreferredDMRelays event not found. Setting default DM relays."
+            setDefaultDMRelays xo
 
-  forM_ inboxRelays $ \relay -> do
-    let relayUri = getUri relay
-    connected <- connectRelay relayUri
-    if connected
-        then do
+          logInfo "RelayListMetadata event received. Initialization complete."
+
+    else do
+      logDebug $ "Initializing subscriptions for Inbox Relays: " <> pack (show ownInboxRelayURIs)
+
+      dmRelays <- getDMRelays xo
+      logDebug $ "Initializing subscriptions for DM Relays: " <> pack (show (map getUri dmRelays))
+
+      -- Connect to all relays concurrently
+      void $ forConcurrently (inboxRelays ++ dmRelays) $ \relay -> do
+        let relayUri = getUri relay
+        connected <- connectRelay relayUri
+        if connected
+          then do
             logInfo $ "Connected to Inbox Relay: " <> relayUri
             when (isInboxCapable relay) $ do
               subscribeToMentions relayUri xo
               logInfo $ "Subscribed to Mentions on relay: " <> relayUri
-        else do
+          else do
             logError $ "Failed to connect to Inbox Relay: " <> relayUri
+
+      void $ forConcurrently dmRelays $ \relay -> do
+        let relayUri = getUri relay
+        connected <- connectRelay relayUri
+        if connected
+          then do
+            logInfo $ "Connected to DM Relay: " <> relayUri
+            subscribeToGiftwraps relayUri xo
+            logInfo $ "Subscribed to Giftwraps on relay: " <> relayUri
+          else do
+            logError $ "Failed to connect to DM Relay: " <> relayUri
+
+      followRelayMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
+      logDebug $ "Building Relay-PubKey Map: " <> pack (show followRelayMap)
+
+      -- Connect and subscribe to follow relays concurrently
+      void $ forConcurrently (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
+        connected <- connectRelay relayUri
+        when connected $ do
+          logInfo $ "Connected to Follow Relay: " <> relayUri
+          subscribeToRelay relayUri pubkeys
+          logInfo $ "Subscribed to Relay: " <> relayUri <> " for PubKeys: " <> pack (show pubkeys)
+
+-- | Subscribe to a filter on multiple relays
+subscribeToFilter
+  :: InboxModelEff es
+  => [Relay]
+  -> SubscriptionId
+  -> Filter
+  -> TQueue (RelayURI, SubscriptionEvent)
+  -> Eff es (Either String ())
+subscribeToFilter relays subId filter queue = do
+  results <- forM relays $ \relay -> do
+    let relayUri = getUri relay
+    subscribe relayUri subId filter queue
+  return $ foldr (\res acc -> res >>= \_ -> acc) (Right ()) results
+
+-- | Collect relevant events from the queue
+collectRelevantEvents
+  :: InboxModelEff es
+  => TQueue (RelayURI, SubscriptionEvent)
+  -> Eff es [(RelayURI, SubscriptionEvent)]
+collectRelevantEvents queue = do
+  events <- atomically $ flushTQueue queue
+  return events
+
+-- | Check if RelayListMetadata event is present
+hasRelayListMetadata :: [SubscriptionEvent] -> Bool
+hasRelayListMetadata events = any isRelayListMetadata events
+  where
+    isRelayListMetadata (EventAppeared event') = kind event' == RelayListMetadata
+    isRelayListMetadata _ = False
+
+-- | Check if PreferredDMRelays event is present
+hasPreferredDMRelays :: [SubscriptionEvent] -> Bool
+hasPreferredDMRelays events = any isPreferredDMRelays events
+  where
+    isPreferredDMRelays (EventAppeared event') = kind event' == PreferredDMRelays
+    isPreferredDMRelays _ = False
+
+-- | Wait for End Of Stored Events (EOSE)
+waitForEoseSTM :: TQueue (RelayURI, SubscriptionEvent) -> STM ()
+waitForEoseSTM queue = do
+  event <- readTQueue queue
+  case event of
+    (_, SubscriptionEose) -> return ()
+    _ -> waitForEoseSTM queue
+
+-- | Continue with discovered relays
+continueWithRelays :: InboxModelEff es => [PubKeyXO] -> [Relay] -> [Relay] -> Eff es ()
+continueWithRelays followList inboxRelays dmRelays = do
+  kp <- getKeyPair
+  let xo = keyPairToPubKeyXO kp
+  let ownInboxRelayURIs = [ getUri relay | relay <- inboxRelays, isInboxCapable relay ]
+  logDebug $ "Initializing subscriptions for Discovered Inbox Relays: " <> pack (show ownInboxRelayURIs)
+  logDebug $ "Initializing subscriptions for Discovered DM Relays: " <> pack (show (map getUri dmRelays))
+
+  -- Connect to DM relays concurrently
+  void $ forConcurrently dmRelays $ \relay -> do
+    let relayUri = getUri relay
+    connected <- connectRelay relayUri
+    if connected
+      then do
+        logInfo $ "Connected to DM Relay: " <> relayUri
+        subscribeToGiftwraps relayUri xo
+        logInfo $ "Subscribed to Giftwraps on relay: " <> relayUri
+      else
+        logError $ "Failed to connect to DM Relay: " <> relayUri
+
+  -- Connect to inbox relays concurrently
+  void $ forConcurrently inboxRelays $ \relay -> do
+    let relayUri = getUri relay
+    connected <- connectRelay relayUri
+    if connected
+      then do
+        logInfo $ "Connected to Inbox Relay: " <> relayUri
+        when (isInboxCapable relay) $ do
+          subscribeToMentions relayUri xo
+          logInfo $ "Subscribed to Mentions on relay: " <> relayUri
+      else
+        logError $ "Failed to connect to Inbox Relay: " <> relayUri
 
   followRelayMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
   logDebug $ "Building Relay-PubKey Map: " <> pack (show followRelayMap)
 
-  forM_ (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
+  -- Connect to follow relays concurrently
+  void $ forConcurrently (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
     connected <- connectRelay relayUri
     if connected
-        then do
-            logInfo $ "Connected to Follow Relay: " <> relayUri
-            subscribeToRelay relayUri pubkeys
-            logInfo $ "Subscribed to Relay: " <> relayUri <> " for PubKeys: " <> pack (show pubkeys)
-        else do
-            logError $ "Failed to connect to Follow Relay: " <> relayUri
+      then do
+        logInfo $ "Connected to Follow Relay: " <> relayUri
+        subscribeToRelay relayUri pubkeys
+        logInfo $ "Subscribed to Relay: " <> relayUri <> " for PubKeys: " <> pack (show pubkeys)
+      else
+        logError $ "Failed to connect to Follow Relay: " <> relayUri
 
--- | Maximum number of outbox relays to consider per contact
-maxRelaysPerContact :: Int
-maxRelaysPerContact = 3
+-- | Subscribe to Giftwrap events on a relay
+subscribeToGiftwraps :: InboxModelEff es => RelayURI -> PubKeyXO -> Eff es ()
+subscribeToGiftwraps relayUri xo = do
+  subId <- newSubscriptionId
+  lastTimestamp <- getSubscriptionTimestamp [xo] [GiftWrap]
+  queue <- gets @RelayPool inboxQueue
+  result <- subscribe relayUri subId (giftWrapFilter xo lastTimestamp) queue
+  case result of
+    Right () -> logDebug $ "Subscribed to giftwraps on " <> relayUri
+    Left err -> logWarning $ "Failed to subscribe to giftwraps on " <> relayUri <> ": " <> pack err
+
+-- | Subscribe to mentions on a relay
+subscribeToMentions :: InboxModelEff es => RelayURI -> PubKeyXO -> Eff es ()
+subscribeToMentions relayUri xo = do
+  subId <- newSubscriptionId
+  lastTimestamp <- getSubscriptionTimestamp [xo] [ShortTextNote, Repost, Comment, EventDeletion]
+  queue <- gets @RelayPool inboxQueue
+  result <- subscribe relayUri subId (mentionsFilter xo lastTimestamp) queue
+  case result of
+    Right () -> logDebug $ "Subscribed to mentions on " <> relayUri
+    Left err -> logWarning $ "Failed to subscribe to mentions on " <> relayUri <> ": " <> pack err
+
+
+-- | Subscribe to profiles and posts for a relay
+subscribeToRelay :: InboxModelEff es => RelayURI -> [PubKeyXO] -> Eff es ()
+subscribeToRelay relayUri pks = do
+  -- Subscribe to profiles
+  profileSubId         <- newSubscriptionId
+  profileLastTimestamp <- getSubscriptionTimestamp pks [RelayListMetadata, PreferredDMRelays, FollowList]
+  queue                <- gets @RelayPool inboxQueue
+  profileResult        <- subscribe relayUri profileSubId (profilesFilter pks profileLastTimestamp) queue
+  case profileResult of
+    Right () -> logDebug $ "Subscribed to profiles on " <> relayUri
+    Left err -> logWarning $ "Failed to subscribe to profiles on " <> relayUri <> ": " <> pack err
+
+  -- Subscribe to posts
+  postsSubId         <- newSubscriptionId
+  postsLastTimestamp <- getSubscriptionTimestamp pks [ShortTextNote, Repost, EventDeletion]
+  postsResult        <- subscribe relayUri postsSubId (userPostsFilter pks postsLastTimestamp) queue
+  case postsResult of
+    Right () -> logDebug $ "Subscribed to posts on " <> relayUri
+    Left err -> logWarning $ "Failed to subscribe to posts on " <> relayUri <> ": " <> pack err
+
+
+getSubscriptionTimestamp :: InboxModelEff es => [PubKeyXO] -> [Kind] -> Eff es (Maybe Int)
+getSubscriptionTimestamp pks ks = do
+  timestamps <- forM pks $ \pk -> getLatestTimestamp pk ks
+  if null timestamps 
+    then return Nothing
+    else case catMaybes timestamps of
+      [] -> return Nothing
+      ts -> return $ Just $ minimum ts
 
 -- | Build a map from relay URI to pubkeys, prioritizing existing inbox relays
 buildRelayPubkeyMap :: InboxModelEff es => [PubKeyXO] -> [RelayURI] -> Eff es (Map.Map RelayURI [PubKeyXO])
-buildRelayPubkeyMap pubkeys ownInboxRelays = do
-  relayPubkeyPairs <- forM pubkeys $ \pk -> do
+buildRelayPubkeyMap pks ownInboxRelays = do
+  relayPubkeyPairs <- forM pks $ \pk -> do
     relays <- getGeneralRelays pk
     let outboxRelayURIs = [ getUri relay | relay <- relays, isOutboxCapable relay ]
     -- Prioritize relays that are in our inbox relays list
@@ -164,112 +377,61 @@ buildRelayPubkeyMap pubkeys ownInboxRelays = do
   
   -- Build the map and filter out empty lists
   return $ Map.filter (not . null) $ foldr (\(pk, relays) acc ->
-    foldr (\relay -> Map.insertWith (<>) relay [pk]) acc relays
+    foldr (\relay acc' -> Map.insertWith (++) relay [pk] acc') acc relays
     ) Map.empty relayPubkeyPairs
 
+-- | Maximum number of outbox relays to consider per contact
+maxRelaysPerContact :: Int
+maxRelaysPerContact = 3
 
--- | Subscribe to mentions on a relay
-subscribeToMentions :: InboxModelEff es => RelayURI -> PubKeyXO -> Eff es ()
-subscribeToMentions relayUri xo = do
-  subId <- newSubscriptionId
-  mQueue <- subscribe relayUri subId $ mentionsFilter xo
-  case mQueue of
-    Just _ -> logDebug $ "Subscribed to mentions on " <> relayUri
-    Nothing -> logWarning $ "Failed to subscribe to mentions on " <> relayUri
-
-
--- | Subscribe to profiles and posts for a relay
-subscribeToRelay :: InboxModelEff es => RelayURI -> [PubKeyXO] -> Eff es ()
-subscribeToRelay relayUri pubkeys = do
-  -- Subscribe to profiles
-  profileSubId <- newSubscriptionId
-  profileLastTimestamp <- getSubscriptionTimestamp pubkeys [RelayListMetadata, PreferredDMRelays, FollowList]
-  mProfileQueue <- subscribe relayUri profileSubId $ profilesFilter pubkeys profileLastTimestamp
-  case mProfileQueue of
-    Just _ -> logDebug $ "Subscribed to profiles on " <> relayUri
-    Nothing -> logWarning $ "Failed to subscribe to profiles on " <> relayUri
-
-  -- Subscribe to posts
-  postsSubId <- newSubscriptionId
-  postsLastTimestamp <- getSubscriptionTimestamp pubkeys [ShortTextNote, Repost, EventDeletion]
-  mPostsQueue <- subscribe relayUri postsSubId $ userPostsFilter pubkeys postsLastTimestamp
-  case mPostsQueue of
-    Just _ -> logDebug $ "Subscribed to posts on " <> relayUri
-    Nothing -> logWarning $ "Failed to subscribe to posts on " <> relayUri
-
-
--- | Subscribe to giftwrap events on a relay
-subscribeToGiftwraps :: InboxModelEff es => RelayURI -> PubKeyXO -> Eff es ()
-subscribeToGiftwraps relayUri xo = do
-  subId <- newSubscriptionId
-  lastTimestamp <- getSubscriptionTimestamp [xo] [GiftWrap]
-  mGiftwrapQueue <- subscribe relayUri subId $ giftWrapFilter xo lastTimestamp
-  case mGiftwrapQueue of
-    Just _ -> logDebug $ "Subscribed to giftwraps on " <> relayUri
-    Nothing -> logWarning $ "Failed to subscribe to giftwraps on " <> relayUri
-
-
--- | Function to compute the minimum latest timestamp across multiple PubKeys and Kinds
-getSubscriptionTimestamp :: InboxModelEff es => [PubKeyXO] -> [Kind] -> Eff es (Maybe Int)
-getSubscriptionTimestamp pubKeys kinds = do
-    timestampsPerPubKey <- forM pubKeys $ \pk -> do
-        mTs <- getLatestTimestamp pk kinds
-        return mTs
-    let validTimestamps = catMaybes timestampsPerPubKey
-    return $ if null validTimestamps
-             then Nothing
-             else Just (minimum validTimestamps)
-
+-- | Wait until EOSE is reached for a subscription
+waitForEose :: InboxModelEff es => TQueue SubscriptionEvent -> Eff es ()
+waitForEose queue = do
+  let loop = do
+        event <- atomically $ readTQueue queue
+        case event of
+          SubscriptionEose -> return ()
+          _ -> loop
+  loop
 
 -- | Event loop to handle incoming events and updates
 eventLoop :: InboxModelEff es => PubKeyXO -> Eff es ()
 eventLoop xo = do
   shouldStopVar <- newTVarIO False
   let loop = do
-        -- Collect events from all subscriptions
         events <- collectEvents
-        -- Process each event
+
         forM_ events $ \(relayUri, event) -> do
           case event of
             EventAppeared event' -> do
-              -- Handle the event
               updates <- handleEvent relayUri event'
-              -- If it's a FollowList or PreferredDMRelays event from ourselves, update subscriptions
-              when ((kind event' == FollowList || kind event' == PreferredDMRelays) && pubKey event' == xo) $ do
-                logInfo "Detected updated FollowList or PreferredDMRelays; updating subscriptions."
+              -- If it's a FollowList, PreferredDMRelays, or RelayListMetadata event from ourselves, update subscriptions
+              when ((kind event' == FollowList || kind event' == PreferredDMRelays || kind event' == RelayListMetadata) && pubKey event' == xo) $ do
+                logInfo "Detected updated FollowList, PreferredDMRelays, or RelayListMetadata; updating subscriptions."
                 updateSubscriptions xo
-              -- Notify the UI
+
               notify updates
             SubscriptionEose -> return ()
             SubscriptionClosed _ -> do
               atomically $ writeTVar shouldStopVar True
-        -- Check if we should stop
+
         shouldStop <- atomically $ readTVar shouldStopVar
-        when (not shouldStop) loop
+        unless shouldStop loop
   loop
 
 -- | Collect events from all active subscriptions
 collectEvents :: InboxModelEff es => Eff es [(RelayURI, SubscriptionEvent)]
 collectEvents = do
-  st <- get @RelayPool
-  let relaySubs = [ (relayUri, sd)
-                  | (relayUri, rd) <- Map.toList (activeConnections st)
-                  , sd <- Map.elems (activeSubscriptions rd)
-                  ]
-  events <- forM relaySubs $ \(relayUri, sd) -> do
-    e <- atomically $ tryReadTQueue (responseQueue sd)
-    es <- atomically $ flushTQueue (responseQueue sd)
-    let allEvents = maybeToList e ++ es
-    return [ (relayUri, ev) | ev <- allEvents ]
-  return $ concat events
+  queue <- gets @RelayPool inboxQueue
+  atomically $ do
+    event <- readTQueue queue
+    remainingEvents <- flushTQueue queue
+    return (event : remainingEvents)
 
 -- | Update subscriptions when follows or preferred DM relays change
 updateSubscriptions :: InboxModelEff es => PubKeyXO -> Eff es ()
 updateSubscriptions xo = do
-  -- Update general subscriptions
   updateGeneralSubscriptions xo
-
-  -- Update DM subscriptions
   updateDMSubscriptions xo
 
 -- | Update general subscriptions based on current follow list
@@ -287,7 +449,6 @@ updateGeneralSubscriptions xo = do
       connected <- connectRelay relayUri
       when connected $ subscribeToMentions relayUri xo
 
-  -- Build optimized relay map for follows, prioritizing our inbox relays
   newRelayPubkeyMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
 
   st <- get @RelayPool
@@ -302,9 +463,9 @@ updateGeneralSubscriptions xo = do
     disconnectRelay relayUri
 
   forM_ (Set.toList relaysToAdd) $ \relayUri -> do
+    let pubkeys = Map.findWithDefault [] relayUri newRelayPubkeyMap
     connected <- connectRelay relayUri
     when connected $ do
-      let pubkeys = Map.findWithDefault [] relayUri newRelayPubkeyMap
       subscribeToRelay relayUri pubkeys
 
   forM_ (Set.toList relaysToUpdate) $ \relayUri -> do
@@ -312,9 +473,7 @@ updateGeneralSubscriptions xo = do
     rd <- getRelayData relayUri
     let currentPubkeys = Set.fromList $ getSubscribedPubkeys rd
     when (newPubkeys /= currentPubkeys) $ do
-      -- Unsubscribe existing subscriptions
       stopAllSubscriptions relayUri
-      -- Subscribe with new pubkeys
       subscribeToRelay relayUri (Set.toList newPubkeys)
 
 -- | Update DM subscriptions
@@ -359,13 +518,11 @@ updateDMSubscriptions xo = do
             when connected $ do
                 subscribeToGiftwraps relayUri xo
 
-
 -- | Get RelayData for a relay
 getRelayData :: InboxModelEff es => RelayURI -> Eff es RelayData
 getRelayData relayUri = do
   st <- get @RelayPool
   return $ fromMaybe (error $ "No RelayData for " <> unpack relayUri) $ Map.lookup relayUri (activeConnections st)
-
 
 -- | Get pubkeys from subscriptions in RelayData
 getSubscribedPubkeys :: RelayData -> [PubKeyXO]

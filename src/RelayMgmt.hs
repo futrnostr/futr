@@ -13,7 +13,7 @@ import Nostr.Event (createPreferredDMRelaysEvent, createRelayListMetadataEvent)
 import Nostr.Keys (PubKeyXO)
 import Nostr.Publisher
 import Nostr.RelayConnection
-import Nostr.Types (Relay(..), RelayURI, getUri)
+import Nostr.Types (Relay(..), RelayURI, defaultDMRelays, defaultGeneralRelays, getUri)
 import Nostr.Util
 import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
 
@@ -23,9 +23,11 @@ data RelayMgmt :: Effect where
     -- General Relay Management
     AddGeneralRelay :: PubKeyXO -> RelayURI -> Bool -> Bool -> RelayMgmt m Bool
     RemoveGeneralRelay :: PubKeyXO -> RelayURI -> RelayMgmt m ()
+    SetDefaultGeneralRelays :: PubKeyXO -> RelayMgmt m ()
     -- DM Relay Management
     AddDMRelay :: PubKeyXO -> RelayURI -> RelayMgmt m Bool
     RemoveDMRelay :: PubKeyXO -> RelayURI -> RelayMgmt m ()
+    SetDefaultDMRelays :: PubKeyXO -> RelayMgmt m ()
 
 type instance DispatchOf RelayMgmt = Dynamic
 
@@ -119,6 +121,35 @@ runRelayMgmt = interpret $ \_ -> \case
             Just signed' -> broadcast signed'
             Nothing -> logError $ "Failed to sign preferred DM relays event"
         notifyRelayStatus
+
+    SetDefaultGeneralRelays xo -> do
+        logInfo "Setting default general relays..."
+        kp <- getKeyPair
+        now <- getCurrentTime
+        let (relays, _) = defaultGeneralRelays
+            unsigned = createRelayListMetadataEvent relays xo now
+        signed <- signEvent unsigned kp
+        case signed of
+            Just event -> do
+                broadcast event
+                logInfo "Successfully set default general relays"
+            Nothing -> 
+                logError "Failed to sign relay list metadata event"
+
+    SetDefaultDMRelays xo -> do
+        logInfo "Setting default DM relays..."
+        kp <- getKeyPair
+        now <- getCurrentTime
+        let (dmRelays, _) = defaultDMRelays
+            dmRelayURIs = map getUri dmRelays
+            unsigned = createPreferredDMRelaysEvent dmRelayURIs xo now
+        signed <- signEvent unsigned kp
+        case signed of
+            Just event -> do
+                broadcast event
+                logInfo "Successfully set default DM relays"
+            Nothing -> 
+                logError "Failed to sign preferred DM relays event"
 
 
 -- | Normalize a Relay by normalizing its URI

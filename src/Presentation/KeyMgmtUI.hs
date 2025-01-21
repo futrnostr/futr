@@ -6,7 +6,6 @@
 
 module Presentation.KeyMgmtUI where
 
-import Control.Monad (when)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Effectful
@@ -16,18 +15,14 @@ import Effectful.FileSystem (FileSystem)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
 import Graphics.QML hiding (fireSignal, runEngineLoop)
-import System.Random.Shuffle (shuffleM)
 
 import QtQuick
 import KeyMgmt
 import Logging
 import Nostr
 import Nostr.Bech32
-import Nostr.Event (createPreferredDMRelaysEvent, createRelayListMetadataEvent)
-import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.InboxModel
 import Nostr.Publisher
-import Nostr.Types hiding (displayName, isInboxCapable, isOutboxCapable, picture)
 import Nostr.Util
 import Types (AppState(..), RelayPool(..), initialRelayPool)
 
@@ -125,7 +120,6 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                 mkp <- generateSeedphrase obj
                 case mkp of
                   Just kp -> do
-                    let pk = keyPairToPubKeyXO kp
                     modify @AppState $ \s -> s { keyPair = Just kp }
                     modify @RelayPool $ const initialRelayPool
                     startInboxModel

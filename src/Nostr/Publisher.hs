@@ -124,7 +124,7 @@ runPublisher =  interpret $ \_ -> \case
         forM_ outboxCapableURIs $ \r -> writeToChannel event' r
 
     PublishToRelay event' relayUri' -> do
-        putEvent $ EventWithRelays event' $ Set.fromList [relayUri']
+        putEvent $ EventWithRelays event' $ Set.empty
         modify $ \st -> st 
             { publishStatus = Map.adjust 
                 (\existingMap -> Map.insert relayUri' Publishing existingMap)

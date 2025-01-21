@@ -17,7 +17,7 @@ import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
-import Effectful.Concurrent.STM (atomically, readTQueue)
+import Effectful.Concurrent.STM (atomically, newTQueueIO, readTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.Exception (SomeException, try)
 import Effectful.FileSystem
@@ -45,7 +45,7 @@ import Nostr.Event ( createComment, createEventDeletion, createFollowList
 import Nostr.InboxModel (InboxModel, awaitAtLeastOneConnected, startInboxModel, stopInboxModel)
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.Publisher
-import Nostr.RelayConnection (RelayConnection)
+import Nostr.RelayConnection (RelayConnection, connectRelay, disconnectRelay)
 import Nostr.Subscription
 import Nostr.Types (Event(..), EventId, RelayURI, Tag(..), getUri, isInboxCapable)
 import Nostr.Util
@@ -102,28 +102,29 @@ makeEffect ''Futr
 
 
 -- | Effectful type for Futr.
-type FutrEff es = ( State AppState :> es
-                  , State LmdbState :> es
-                  , LmdbStore :> es
-                  , KeyMgmt :> es
-                  , KeyMgmtUI :> es
-                  , RelayMgmtUI :> es
-                  , Nostr :> es
-                  , InboxModel :> es
-                  , RelayConnection :> es
-                  , RelayMgmt :> es
-                  , Subscription :> es
-                  , Publisher :> es
-                  , State KeyMgmtState :> es
-                  , State RelayPool :> es
-                  , State QtQuickState :> es
-                  , QtQuick :> es
-                  , Logging :> es
-                  , IOE :> es
-                  , FileSystem :> es
-                  , Concurrent :> es
-                  , Util :> es
-                  )
+type FutrEff es =
+  ( State AppState :> es
+  , State LmdbState :> es
+  , LmdbStore :> es
+  , KeyMgmt :> es
+  , KeyMgmtUI :> es
+  , RelayMgmtUI :> es
+  , Nostr :> es
+  , InboxModel :> es
+  , RelayConnection :> es
+  , RelayMgmt :> es
+  , Subscription :> es
+  , Publisher :> es
+  , State KeyMgmtState :> es
+  , State RelayPool :> es
+  , State QtQuickState :> es
+  , QtQuick :> es
+  , Logging :> es
+  , IOE :> es
+  , FileSystem :> es
+  , Concurrent :> es
+  , Util :> es
+  )
 
 
 -- | Run the Futr effect.
@@ -436,28 +437,45 @@ sendFollowListEvent follows = do
 
 -- | Search for a profile in relays.
 searchInRelays :: FutrEff es => PubKeyXO -> Maybe RelayURI -> Eff es ()
-searchInRelays pubkey' _ = do
-    -- @todo use relay hint
-    relays <- getGeneralRelays pubkey'
+searchInRelays xo mr = do
+    manuallyConnected <- case mr of
+        Just relayUri -> do
+            conns <- gets @RelayPool activeConnections
+            if Map.member relayUri conns
+                then return False
+                else do
+                    void $ connectRelay relayUri
+                    return True
+        Nothing -> return False
+
+    relays <- getGeneralRelays xo
     conns <- gets @RelayPool activeConnections
-    forM_ relays $ \relay -> do
-      when (isInboxCapable relay) $ do
-        let relayUri' = getUri relay
+
+    let searchRelays = case mr of
+            Just uri -> uri : map getUri relays
+            Nothing -> map getUri relays
+
+    forM_ searchRelays $ \relayUri' -> do
         when (Map.member relayUri' conns) $ do
-          subId' <- newSubscriptionId
-          mq <- subscribe relayUri' subId' $ metadataFilter [pubkey']
-          case mq of
-              Nothing -> return ()
-              Just q -> void $ async $ do
-                  let loop = do
-                        e <- atomically $ readTQueue q
-                        case e of
-                          EventAppeared event' -> do
-                            updates <- handleEvent relayUri' event'
-                            notify updates
-                            loop
-                          SubscriptionEose -> do
-                            stopSubscription subId'
-                            loop
-                          SubscriptionClosed _ -> return () -- stop the loop
-                  loop
+            subId' <- newSubscriptionId
+            q <- newTQueueIO
+            res <- subscribe relayUri' subId' (metadataFilter [xo]) q
+            case res of
+                Left err -> logError $ "Failed to subscribe to " <> relayUri' <> ": " <> pack err
+                Right () -> do
+                    void $ async $ do
+                        let loop = do
+                                e <- atomically $ readTQueue q
+                                case e of
+                                    (r, EventAppeared event') -> do
+                                        updates <- handleEvent r event'
+                                        notify updates
+                                        loop
+                                    (_, SubscriptionEose) -> do
+                                        stopSubscription subId'
+                                        when (manuallyConnected && Just relayUri' == mr) $ do
+                                            disconnectRelay relayUri'
+                                    (_, SubscriptionClosed _) ->
+                                        when (manuallyConnected && Just relayUri' == mr) $ do
+                                            disconnectRelay relayUri'
+                        loop

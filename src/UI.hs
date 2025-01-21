@@ -33,11 +33,6 @@ import Nostr.Bech32
 import Nostr.Event (createMetadata)
 import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Subscription ( subscribeToReposts
-                          , subscribeToComments
-                          , countEvents
-                          , subscribeToFollowers
-                          , subscribeToFollowing )
 import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile(..), RelayURI
                    , Relationship(..), Rumor(..), Tag(..) )
 import Nostr.Util
@@ -122,14 +117,20 @@ runUI = interpret $ \_ -> \case
             _ -> return False,
 
         defPropertySigRO' "followerCount" changeKey' $ \obj -> do
+            return (0 :: Int),
+            {-
             st <- runE $ get @AppState
             let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
             runE $ getProfileEventCount subscribeToFollowers pk,
+            -}
 
         defPropertySigRO' "followingCount" changeKey' $ \obj -> do
+            return (0 :: Int)
+            {-
             st <- runE $ get @AppState
             let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
             runE $ getProfileEventCount subscribeToFollowing pk
+            -}
       ]
 
     let followProp name' accessor = defPropertySigRO' name' changeKey' $ \obj -> do
@@ -171,7 +172,7 @@ runUI = interpret $ \_ -> \case
           case find (\case ETag _ _ (Just Reply) -> True; _ -> False) (tags evt) of
             Just (ETag eid _ _) -> return $ Just eid
             _ -> return Nothing
-
+{-
         getEventCount subscriber postId = do
             eventMaybe <- getEvent postId
             case eventMaybe of
@@ -184,7 +185,7 @@ runUI = interpret $ \_ -> \case
                                 Just queue -> countEvents queue
                                 Nothing -> return 0
                 Nothing -> return 0
-
+-}
     postClass <- mfix $ \postClass' -> newClass [
         defPropertySigRO' "id" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
@@ -286,11 +287,13 @@ runUI = interpret $ \_ -> \case
             Nothing -> return [],
 
         -- Event count properties using the helper
-        defPropertySigRO' "repostCount" changeKey' $ \obj ->
-            runE $ getEventCount subscribeToReposts (fromObjRef obj),
+        defPropertySigRO' "repostCount" changeKey' $ \obj -> do
+            return (0 :: Int),
+            --runE $ getEventCount subscribeToReposts (fromObjRef obj),
 
-        defPropertySigRO' "commentCount" changeKey' $ \obj ->
-            runE $ getEventCount subscribeToComments (fromObjRef obj)
+        defPropertySigRO' "commentCount" changeKey' $ \obj -> do
+            return (0 :: Int)
+            --runE $ getEventCount subscribeToComments (fromObjRef obj)
       ]
 
     postsPool <- newFactoryPool (newObject postClass)

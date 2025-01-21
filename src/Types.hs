@@ -35,6 +35,7 @@ data SubscriptionEvent
 data RelayPool = RelayPool
     { activeConnections :: Map RelayURI RelayData
     , publishStatus :: Map EventId (Map RelayURI PublishStatus)
+    , inboxQueue :: TQueue (RelayURI, SubscriptionEvent)
     }
 
 
@@ -42,7 +43,7 @@ data RelayPool = RelayPool
 data SubscriptionDetails = SubscriptionDetails
     { subscriptionId :: SubscriptionId
     , subscriptionFilter :: Filter
-    , responseQueue :: TQueue SubscriptionEvent
+    , responseQueue :: TQueue (RelayURI, SubscriptionEvent)
     , eventsProcessed :: Int
     , newestCreatedAt :: Int
     }
@@ -84,6 +85,7 @@ initialRelayPool :: RelayPool
 initialRelayPool = RelayPool
   { activeConnections = Map.empty
   , publishStatus = Map.empty
+  , inboxQueue = undefined
   }
 
 
