@@ -747,10 +747,11 @@ instance FromJSON Profile where
 -- | Provides a default list of general relays.
 defaultGeneralRelays :: ([Relay], Int)
 defaultGeneralRelays =
-  ( [ InboxRelay "wss://nos.lol"
+  ( [ InboxOutboxRelay "wss://nos.lol"
     , InboxOutboxRelay "wss://relay.nostr.bg"
     , InboxOutboxRelay "wss://nostr.mom"
     , InboxOutboxRelay "wss://offchain.pub"
+    , InboxRelay "wss://relay.damus.io"
     ],
     0
   )

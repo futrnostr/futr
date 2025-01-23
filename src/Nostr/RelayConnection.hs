@@ -375,7 +375,7 @@ handleResponse relayURI' r = case r of
             case Map.lookup relayURI' (activeConnections st) of
                 Just rd -> case Map.lookup subId' (activeSubscriptions rd) of
                     Just sd -> atomically $ writeTQueue (responseQueue sd) (relayURI', event')
-                    Nothing -> error $ "No subscription found for " <> show subId'
+                    Nothing -> error $ "No subscription found for " <> show subId' <> " on " <> show relayURI'
                 Nothing -> error $ "No connection found for " <> show relayURI'
 
 
