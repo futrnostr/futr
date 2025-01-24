@@ -90,7 +90,7 @@ data LmdbState = LmdbState
 -- | LmdbStore operations
 data LmdbStore :: Effect where
     -- Event operations
-    PutEvent :: EventWithRelays -> LmdbStore m ()
+    PutEvent :: EventWithRelays -> LmdbStore m Bool
     
     -- Query operations (read-only)
     GetEvent :: EventId -> LmdbStore m (Maybe EventWithRelays)
@@ -119,7 +119,7 @@ runLmdbStore = interpret $ \_ -> \case
 
         currentState <- get @LmdbState
         kp <- getKeyPair
-        liftIO $ withMVar (lmdbLock currentState) $ \_ -> withTransaction (lmdbEnv currentState) $ \txn -> do
+        wasUpdated <- liftIO $ withMVar (lmdbLock currentState) $ \_ -> withTransaction (lmdbEnv currentState) $ \txn -> do
             Map.repsert' txn (eventDb currentState) (eventId $ event ev) ev
 
             existingTimestamp <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
@@ -146,12 +146,14 @@ runLmdbStore = interpret $ \_ -> \case
                                                       else filter (/= keyPairToPubKeyXO kp)
                                                            (rumorPubKey decryptedRumor : sort (getAllPTags (rumorTags decryptedRumor)))
                                                 addTimelineEntryTx txn (chatTimelineDb currentState) ev participants (rumorCreatedAt decryptedRumor)
-                                        _ -> pure ()
-                                _ -> pure ()
-                        _ -> pure ()
+                                                pure True
+                                        _ -> pure False
+                                _ -> pure False
+                        _ -> pure False
 
-                ShortTextNote -> 
+                ShortTextNote -> do
                     addTimelineEntryTx txn (postTimelineDb currentState) ev [author] eventTimestamp
+                    pure True
 
                 Repost -> do
                     let etags = [t | t@(ETag _ _ _) <- tags (event ev)]
@@ -162,11 +164,12 @@ runLmdbStore = interpret $ \_ -> \case
                                 Map.repsert' txn (eventDb currentState) (eventId originalEvent)
                                     (EventWithRelays originalEvent Set.empty)
                                 addTimelineEntryTx txn (postTimelineDb currentState) ev [author] eventTimestamp
-                        _ -> pure ()
+                                pure True
+                        _ -> pure False
 
                 EventDeletion -> do
                     let eventIdsToDelete = [eid | ETag eid _ _ <- tags (event ev)]
-                    forM_ eventIdsToDelete $ \eid -> do
+                    res <- forM eventIdsToDelete $ \eid -> do
                         mEvent <- Map.lookup' (readonly txn) (eventDb currentState) eid
                         case mEvent of
                             Just deletedEv -> do
@@ -177,51 +180,72 @@ runLmdbStore = interpret $ \_ -> \case
                                         GiftWrap -> Just $ chatTimelineDb currentState
                                         _ -> Nothing
                                 
-                                case timelineDb of
+                                result <- case timelineDb of
                                     Just db -> do
                                         Map.delete' txn db key
                                         Map.delete' txn (eventDb currentState) eid
-                                    Nothing -> pure ()
+                                        pure True
+                                    Nothing -> pure False
 
-                            Nothing -> pure ()
+                                pure result
 
-                Metadata -> 
+                            Nothing -> pure False
+
+                    pure $ any id res
+
+                Metadata -> do
                     case eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev) of
-                        Right profile -> 
+                        Right profile -> do
                             Map.repsert' txn (profileDb currentState) author (profile, eventTimestamp)
-                        Left _ -> pure ()
+                            pure True
+                        Left _ -> pure False
 
                 FollowList -> do
                     let followList' = [Follow pk petName' | PTag pk _ petName' <- tags (event ev)]
-                    Map.repsert' txn (followsDb currentState) author followList'
+                    existingTimestamp <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
+                    case existingTimestamp of
+                        Just existingTs ->
+                            if eventTimestamp > existingTs then do
+                                Map.repsert' txn (followsDb currentState) author followList'
+                                pure True
+                            else pure False
+                        Nothing -> do
+                            Map.repsert' txn (followsDb currentState) author followList'
+                            pure True
 
                 PreferredDMRelays -> do
                     let validRelayTags = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI r' ]
                     case validRelayTags of
-                        [] -> pure()
+                        [] -> pure False
                         relays -> do
                             existingRelays <- Map.lookup' (readonly txn) (dmRelaysDb currentState) author
                             case existingRelays of
                                 Just (_, existingTs) ->
-                                    when (eventTimestamp > existingTs) $
+                                    if eventTimestamp > existingTs then do
                                         Map.repsert' txn (dmRelaysDb currentState) author (relays, eventTimestamp)
-                                Nothing ->
+                                        pure True
+                                    else pure False
+                                Nothing -> do
                                     Map.repsert' txn (dmRelaysDb currentState) author (relays, eventTimestamp)
+                                    pure True
 
                 RelayListMetadata -> do
                     let validRelayTags = [ r' | RTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
                     case validRelayTags of
-                        [] -> pure ()
+                        [] -> pure False
                         relays -> do
                             existingRelays <- Map.lookup' (readonly txn) (generalRelaysDb currentState) author
                             case existingRelays of
                                 Just (_, existingTs) ->
-                                    when (eventTimestamp > existingTs) $
+                                    if eventTimestamp > existingTs then do
                                         Map.repsert' txn (generalRelaysDb currentState) author (relays, eventTimestamp)
-                                Nothing ->
+                                        pure True
+                                    else pure False
+                                Nothing -> do
                                     Map.repsert' txn (generalRelaysDb currentState) author (relays, eventTimestamp)
+                                    pure True
 
-                _ -> pure ()
+                _ -> pure False
 
         -- Update caches
         modify @LmdbState $ \s -> s { eventCache = LRU.insert (eventId $ event ev) ev (eventCache s) }
@@ -237,7 +261,7 @@ runLmdbStore = interpret $ \_ -> \case
 
             EventDeletion -> 
                 let eventIdsToDelete = [eid | ETag eid _ _ <- tags (event ev)]
-                in modify @LmdbState $ \s -> s 
+                in modify @LmdbState $ \s -> s
                     { eventCache = foldr (\eid cache -> fst $ LRU.delete eid cache) (eventCache s) eventIdsToDelete
                     , timelineCache = foldr (\eid cache -> 
                         case LRU.lookup eid (eventCache s) of
@@ -252,21 +276,26 @@ runLmdbStore = interpret $ \_ -> \case
                     }
 
             FollowList ->
-                let followList' = [Follow pk petName' | PTag pk _ petName' <- tags (event ev)]
-                in modify @LmdbState $ \s -> s 
-                    { followsCache = LRU.insert author followList' (followsCache s) }
+                when wasUpdated $
+                    let followList' = [Follow pk petName' | PTag pk _ petName' <- tags (event ev)]
+                    in modify @LmdbState $ \s -> s
+                        { followsCache = LRU.insert author followList' (followsCache s) }
 
             PreferredDMRelays ->
-                let validRelays = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI r' ]
-                in modify @LmdbState $ \s -> s 
-                    { dmRelaysCache = LRU.insert author (validRelays, eventTimestamp) (dmRelaysCache s) }
+                when wasUpdated $
+                    let validRelays = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI r' ]
+                    in modify @LmdbState $ \s -> s
+                        { dmRelaysCache = LRU.insert author (validRelays, eventTimestamp) (dmRelaysCache s) }
 
             RelayListMetadata ->
-                let validRelays = [ r' | RTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
-                in modify @LmdbState $ \s -> s 
-                    { generalRelaysCache = LRU.insert author (validRelays, eventTimestamp) (generalRelaysCache s) }
+                when wasUpdated $
+                    let validRelays = [ r' | RTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
+                    in modify @LmdbState $ \s -> s
+                        { generalRelaysCache = LRU.insert author (validRelays, eventTimestamp) (generalRelaysCache s) }
 
             _ -> pure ()
+
+        pure wasUpdated
 
     -- Query operations (read-only)
 
@@ -294,9 +323,11 @@ runLmdbStore = interpret $ \_ -> \case
             (_, Nothing) -> do
                 mfs <- liftIO $ withTransaction (lmdbEnv st) $ \txn -> do
                     Map.lookup' (readonly txn) (followsDb st) pk
-                let fs = maybe [] id mfs
-                modify @LmdbState $ \s -> s { followsCache = LRU.insert pk fs $ followsCache s }
-                pure fs
+                case mfs of
+                    Just follows -> do
+                        modify @LmdbState $ \s -> s { followsCache = LRU.insert pk follows $ followsCache s }
+                        pure follows
+                    Nothing -> pure []
 
     GetProfile pk -> do
         st <- get @LmdbState

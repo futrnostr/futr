@@ -52,7 +52,7 @@ import Nostr.Types
   , defaultGeneralRelays
   )
 import Nostr.Util
-import QtQuick (QtQuick, notify)
+import QtQuick (QtQuick, UIUpdates(..), notify)
 import RelayMgmt
 import Store.Lmdb (LmdbStore, getFollows, getGeneralRelays, getDMRelays, getLatestTimestamp)
 import Types (AppState(..), ConnectionState(..), Follow(..), SubscriptionDetails(..), RelayPool(..), RelayData(..), SubscriptionEvent(..), initialRelayPool)
@@ -406,11 +406,8 @@ eventLoop xo = do
           case event of
             EventAppeared event' -> do
               updates <- handleEvent relayUri event'
-
-              when (kind event' `elem` [FollowList, PreferredDMRelays, RelayListMetadata]) $ do
-                st <- get @RelayPool
-                atomically $ writeTQueue (updateQueue st) ()
-
+              when (followsChanged updates || dmRelaysChanged updates || generalRelaysChanged updates) $ do
+                updateSubscriptions xo
               notify updates
             SubscriptionEose -> return ()
             SubscriptionClosed _ -> atomically $ writeTVar shouldStopVar True

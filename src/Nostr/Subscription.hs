@@ -123,21 +123,21 @@ handleEvent' r event' = do
             logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
             pure emptyUpdates
         else do
-            putEvent ev
+            wasUpdated <- putEvent ev
             updates <- case kind event' of
                 ShortTextNote -> 
-                    pure $ emptyUpdates { postsChanged = True }
+                    pure $ emptyUpdates { postsChanged = wasUpdated }
 
                 Repost -> 
                     case ([t | t@(ETag _ _ _) <- tags event'], eitherDecode (fromStrict $ encodeUtf8 $ content event')) of
                         (ETag eid _ _:_, Right originalEvent) | validateEvent originalEvent -> 
-                            pure $ emptyUpdates { postsChanged = True }
+                            pure $ emptyUpdates { postsChanged = wasUpdated }
                         _ -> do
                             logWarning $ "Invalid repost or missing e-tag: " <> (byteStringToHex $ getEventId (eventId event'))
                             pure emptyUpdates
 
                 EventDeletion -> 
-                    pure $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
+                    pure $ emptyUpdates { postsChanged = wasUpdated, privateMessagesChanged = wasUpdated }
 
                 Metadata -> do
                     case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
@@ -147,16 +147,16 @@ handleEvent' r event' = do
                             when isOwnProfile $ do
                                 let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
                                 updateProfile aid profile
-                            pure $ emptyUpdates { profilesChanged = True }
+                            pure $ emptyUpdates { profilesChanged = wasUpdated }
                         Left err -> do
                             logWarning $ "Failed to decode metadata: " <> pack err
                             pure emptyUpdates
 
                 FollowList -> 
-                    pure $ emptyUpdates { followsChanged = True }
+                    pure $ emptyUpdates { followsChanged = wasUpdated }
 
                 GiftWrap -> do
-                    pure $ emptyUpdates { privateMessagesChanged = True }
+                    pure $ emptyUpdates { privateMessagesChanged = wasUpdated }
 
                 RelayListMetadata -> do
                     let validRelayTags = [ r' | RTag r' <- tags event', isValidRelayURI (getUri r') ]
@@ -172,7 +172,7 @@ handleEvent' r event' = do
                                 importGeneralRelays
                                 generalRelays
                             -}
-                            pure $ emptyUpdates { generalRelaysChanged = True }
+                            pure $ emptyUpdates { generalRelaysChanged = wasUpdated }
 
                 PreferredDMRelays -> do
                     let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI r' ]
@@ -188,7 +188,7 @@ handleEvent' r event' = do
                                 importDMRelays
                                 dmRelays
                             -}
-                            pure $ emptyUpdates { dmRelaysChanged = True }
+                            pure $ emptyUpdates { dmRelaysChanged = wasUpdated }
 
                 _ -> do
                     logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
