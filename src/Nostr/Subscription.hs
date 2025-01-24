@@ -159,11 +159,12 @@ handleEvent' r event' = do
                     pure $ emptyUpdates { privateMessagesChanged = True }
 
                 RelayListMetadata -> do
-                    let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
+                    let validRelayTags = [ r' | RTag r' <- tags event', isValidRelayURI (getUri r') ]
                     case validRelayTags of
                         [] -> do
                             logWarning $ "No valid relay URIs found in RelayListMetadata event from "
                                 <> (pubKeyXOToBech32 $ pubKey event')
+                            logWarning $ "Event: " <> pack (show event')
                             pure emptyUpdates
                         relays -> do
                             {- @todo: handle relay list update
@@ -174,11 +175,12 @@ handleEvent' r event' = do
                             pure $ emptyUpdates { generalRelaysChanged = True }
 
                 PreferredDMRelays -> do
-                    let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI (getUri r') ]
+                    let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI r' ]
                     case validRelayTags of
                         [] -> do
                             logWarning $ "No valid relay URIs found in PreferredDMRelays event from "
                                 <> (pubKeyXOToBech32 $ pubKey event')
+                            logWarning $ "Event: " <> pack (show event')
                             pure emptyUpdates
                         relays -> do
                             {- @todo: handle relay list update

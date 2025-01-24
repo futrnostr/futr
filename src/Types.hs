@@ -9,6 +9,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Text (Text)
+import Control.Concurrent.Async (Async)
 import Effectful.Concurrent.STM (TChan, TQueue)
 import GHC.Generics (Generic)
 import Nostr.Keys (KeyPair, PubKeyXO)
@@ -36,6 +37,8 @@ data RelayPool = RelayPool
     { activeConnections :: Map RelayURI RelayData
     , publishStatus :: Map EventId (Map RelayURI PublishStatus)
     , inboxQueue :: TQueue (RelayURI, SubscriptionEvent)
+    , updateQueue :: TQueue ()
+    , updateThread :: Maybe (Async ())
     }
 
 
@@ -86,6 +89,8 @@ initialRelayPool = RelayPool
   { activeConnections = Map.empty
   , publishStatus = Map.empty
   , inboxQueue = undefined
+  , updateQueue = undefined
+  , updateThread = Nothing
   }
 
 

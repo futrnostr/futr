@@ -95,7 +95,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
               kp <- getKeyPair
 
               dmRelays <- getDMRelays (keyPairToPubKeyXO kp)
-              let isInDMRelays = uri' `elem` map getUri dmRelays
+              let isInDMRelays = uri' `elem` dmRelays
 
               generalRelays <- getGeneralRelays (keyPairToPubKeyXO kp)
               let isInGeneralRelays = any (\r -> isInboxCapable r && getUri r == uri') generalRelays
@@ -107,7 +107,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
               kp <- getKeyPair
 
               dmRelays <- getDMRelays (keyPairToPubKeyXO kp)
-              let isInDMRelays = uri' `elem` map getUri dmRelays
+              let isInDMRelays = uri' `elem` dmRelays
 
               generalRelays <- getGeneralRelays (keyPairToPubKeyXO kp)
               let isInGeneralRelays = any (\r -> isOutboxCapable r && getUri r == uri') generalRelays
@@ -144,7 +144,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
               Just kp -> do
                 let pk = keyPairToPubKeyXO kp
                 relays <- runE $ getDMRelays pk
-                mapM (\relay -> getPoolObject dmRelayPool (getUri relay)) relays,
+                mapM (\relay -> getPoolObject dmRelayPool relay) relays,
 
           defPropertySigRO' "generalRelays" changeKey $ \obj -> do
             runE $ modify @QtQuickState $ \s -> s { 
@@ -172,11 +172,10 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
               Just kp -> do
                 let pk = keyPairToPubKeyXO kp
                 dmRelays <- runE $ getDMRelays pk
-                let dmURIs = map getUri dmRelays
                 generalRelays <- runE $ getGeneralRelays pk
                 let generalURIs = map getUri generalRelays
 
-                let tempURIs = filter (\uri -> uri `notElem` dmURIs && uri `notElem` generalURIs) activeURIs
+                let tempURIs = filter (\uri -> uri `notElem` dmRelays && uri `notElem` generalURIs) activeURIs
                 mapM (getPoolObject tempRelayPool) tempURIs,
 
           defMethod' "addDMRelay" $ \_ input -> runE $ do

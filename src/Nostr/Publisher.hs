@@ -83,7 +83,7 @@ runPublisher =  interpret $ \_ -> \case
             return $ filter isInboxCapable relays
 
         let allTargetRelays = nub $ 
-                map getUri dmRelays ++
+                dmRelays ++
                 map getUri outboxCapable ++
                 concatMap (map getUri) followerRelays
 
@@ -141,9 +141,7 @@ runPublisher =  interpret $ \_ -> \case
         if null dmRelayList || null recipientDMRelays
             then pure ()
             else do
-                let allRelayURIs = nub $ 
-                        map getUri dmRelayList ++ 
-                        map getUri recipientDMRelays
+                let allRelayURIs = nub $ dmRelayList ++ recipientDMRelays
 
                 existingConnections <- getConnectedRelays
                 let (existingRelays, newRelays) = partition 

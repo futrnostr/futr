@@ -141,9 +141,18 @@ connectWithRetry r maxRetries requestChan = do
         else do
             connectionMVar <- newEmptyTMVarIO
 
-            let connectAction = if "wss://" `T.isPrefixOf` r
-                    then Wuss.runSecureClient (T.unpack $ T.drop 6 r) 443 "/"
-                    else WS.runClient (T.unpack $ T.drop 5 r) 80 "/"
+            let connectAction = case parseURI (T.unpack r) of
+                    Just uri -> case uriAuthority uri of
+                        Just auth -> 
+                            let host = uriRegName auth
+                                port = case uriPort auth of
+                                    "" -> if "wss://" `T.isPrefixOf` r then 443 else 80
+                                    p -> read (drop 1 p) -- drop the leading ':'
+                            in if "wss://" `T.isPrefixOf` r
+                                then Wuss.runSecureClient host port "/"
+                                else WS.runClient host (fromIntegral port) "/"
+                        Nothing -> error $ "Invalid relay URI (no authority): " ++ T.unpack r
+                    Nothing -> error $ "Invalid relay URI: " ++ T.unpack r
 
             void $ forkIO $ withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
                 let runClient = nostrClient connectionMVar r requestChan runE
@@ -278,7 +287,7 @@ handleResponse relayURI' r = case r of
                                         , NT.filter = subscriptionFilter subDetails
                                         }
                                 handleAuthRequired relayURI' (NT.Subscribe subscription)
-                            Nothing -> logError $ "No subscription found for " <> T.pack (show subId')
+                            Nothing -> logError $ "1 No subscription found for " <> T.pack (show subId')
                     Nothing -> logError $ "Received auth-required but no connection found: " <> relayURI'
             else do
                 enqueueEvent subId' (SubscriptionClosed msg)
@@ -375,8 +384,8 @@ handleResponse relayURI' r = case r of
             case Map.lookup relayURI' (activeConnections st) of
                 Just rd -> case Map.lookup subId' (activeSubscriptions rd) of
                     Just sd -> atomically $ writeTQueue (responseQueue sd) (relayURI', event')
-                    Nothing -> error $ "No subscription found for " <> show subId' <> " on " <> show relayURI'
-                Nothing -> error $ "No connection found for " <> show relayURI'
+                    Nothing -> error $ "2 No subscription found for " <> show subId' <> " on " <> show relayURI' <> " with response: " <> show r
+                Nothing -> error $ "3 No connection found for " <> show relayURI'
 
 
 -- | Handle authentication required.

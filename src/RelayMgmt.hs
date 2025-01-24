@@ -94,14 +94,14 @@ runRelayMgmt = interpret $ \_ -> \case
         notifyRelayStatus
 
     AddDMRelay pk r -> do
-        let newRelay = InboxOutboxRelay $ normalizeRelayURI r
+        let newRelay = normalizeRelayURI r
         existingRelays <- getDMRelays pk
         if newRelay `elem` existingRelays
             then return False
             else do
                 now <- getCurrentTime
                 kp <- getKeyPair
-                let unsigned = createPreferredDMRelaysEvent (map getUri $ newRelay : existingRelays) pk now
+                let unsigned = createPreferredDMRelaysEvent (newRelay : existingRelays) pk now
                 signed <- signEvent unsigned kp
                 case signed of
                     Just signed' -> broadcast signed'
@@ -112,10 +112,10 @@ runRelayMgmt = interpret $ \_ -> \case
     RemoveDMRelay pk r -> do
         let r' = normalizeRelayURI r
         existingRelays <- getDMRelays pk
-        let rs = filter (\relay -> getUri relay /= r') existingRelays
+        let rs = filter (\relay -> relay /= r') existingRelays
         kp <- getKeyPair
         now <- getCurrentTime
-        let unsigned = createPreferredDMRelaysEvent (map getUri rs) pk now
+        let unsigned = createPreferredDMRelaysEvent rs pk now
         signed <- signEvent unsigned kp
         case signed of
             Just signed' -> broadcast signed'
@@ -141,8 +141,7 @@ runRelayMgmt = interpret $ \_ -> \case
         kp <- getKeyPair
         now <- getCurrentTime
         let (dmRelays, _) = defaultDMRelays
-            dmRelayURIs = map getUri dmRelays
-            unsigned = createPreferredDMRelaysEvent dmRelayURIs xo now
+            unsigned = createPreferredDMRelaysEvent dmRelays xo now
         signed <- signEvent unsigned kp
         case signed of
             Just event -> do

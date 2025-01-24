@@ -75,14 +75,14 @@ data LmdbState = LmdbState
     , chatTimelineDb :: Database (PubKeyXO, Int) EventId
     , followsDb :: Database PubKeyXO [Follow]
     , generalRelaysDb :: Database PubKeyXO ([Relay], Int)
-    , dmRelaysDb :: Database PubKeyXO ([Relay], Int)
+    , dmRelaysDb :: Database PubKeyXO ([RelayURI], Int)
     , latestTimestampDb :: Database (PubKeyXO, Kind) Int
     , eventCache :: LRU.LRU EventId EventWithRelays
     , profileCache :: LRU.LRU PubKeyXO (Profile, Int)
     , followsCache :: LRU.LRU PubKeyXO [Follow]
     , timelineCache :: LRU.LRU (TimelineType, PubKeyXO, Int) [EventId]
     , generalRelaysCache :: LRU.LRU PubKeyXO ([Relay], Int)
-    , dmRelaysCache :: LRU.LRU PubKeyXO ([Relay], Int)
+    , dmRelaysCache :: LRU.LRU PubKeyXO ([RelayURI], Int)
     , latestTimestampCache :: LRU.LRU (PubKeyXO, Kind) Int
     } deriving (Generic)
 
@@ -98,7 +98,7 @@ data LmdbStore :: Effect where
     GetProfile :: PubKeyXO -> LmdbStore m Profile
     GetTimelineIds :: TimelineType -> PubKeyXO -> Int -> LmdbStore m [EventId]
     GetGeneralRelays :: PubKeyXO -> LmdbStore m [Relay]
-    GetDMRelays :: PubKeyXO -> LmdbStore m [Relay]
+    GetDMRelays :: PubKeyXO -> LmdbStore m [RelayURI]
     GetLatestTimestamp :: PubKeyXO -> [Kind] -> LmdbStore m (Maybe Int)
 
 
@@ -196,7 +196,7 @@ runLmdbStore = interpret $ \_ -> \case
                     Map.repsert' txn (followsDb currentState) author followList'
 
                 PreferredDMRelays -> do
-                    let validRelayTags = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
+                    let validRelayTags = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI r' ]
                     case validRelayTags of
                         [] -> pure()
                         relays -> do
@@ -209,7 +209,7 @@ runLmdbStore = interpret $ \_ -> \case
                                     Map.repsert' txn (dmRelaysDb currentState) author (relays, eventTimestamp)
 
                 RelayListMetadata -> do
-                    let validRelayTags = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
+                    let validRelayTags = [ r' | RTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
                     case validRelayTags of
                         [] -> pure ()
                         relays -> do
@@ -257,12 +257,12 @@ runLmdbStore = interpret $ \_ -> \case
                     { followsCache = LRU.insert author followList' (followsCache s) }
 
             PreferredDMRelays ->
-                let validRelays = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
+                let validRelays = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI r' ]
                 in modify @LmdbState $ \s -> s 
                     { dmRelaysCache = LRU.insert author (validRelays, eventTimestamp) (dmRelaysCache s) }
 
             RelayListMetadata ->
-                let validRelays = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
+                let validRelays = [ r' | RTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
                 in modify @LmdbState $ \s -> s 
                     { generalRelaysCache = LRU.insert author (validRelays, eventTimestamp) (generalRelaysCache s) }
 

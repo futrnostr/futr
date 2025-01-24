@@ -298,7 +298,7 @@ runFutr = interpret $ \_ -> \case
                 case mEventAndRelays of
                   Just EventWithRelays{event = origEvent, relays = relaySet} -> do
                     let eventRelayUris = Set.fromList $ map getUri $
-                          catMaybes [Just r | RelayTag r <- tags origEvent]
+                          catMaybes [Just r | RTag r <- tags origEvent]
 
                     authorRelays <- getGeneralRelays (pubKey origEvent)
                     let authorInboxUris = Set.fromList $ map getUri $ 
@@ -351,7 +351,7 @@ runFutr = interpret $ \_ -> \case
                 case mEventAndRelays of
                   Just EventWithRelays{event = origEvent, relays = relaySet} -> do
                     let eventRelayUris = Set.fromList $ map getUri $
-                          catMaybes [Just r | RelayTag r <- tags origEvent]
+                          catMaybes [Just r | RTag r <- tags origEvent]
 
                     authorRelays <- getGeneralRelays (pubKey origEvent)
                     let authorInboxUris = Set.fromList $ map getUri $ 

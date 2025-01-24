@@ -241,7 +241,8 @@ data Tag
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
   | QTag EventId (Maybe RelayURI) (Maybe PubKeyXO)
   | KTag Text
-  | RelayTag Relay
+  | RTag Relay
+  | RelayTag RelayURI
   | ChallengeTag Text
   | ITag ExternalId (Maybe Text)
   | GenericTag [Value]
@@ -450,6 +451,7 @@ instance FromJSON Tag where
       ("q":rest) -> parseQTag rest v
       ("i":rest) -> parseITag rest v
       ("k":rest) -> parseKTag rest v
+      ("r":rest) -> parseRTag rest v
       ("relay":rest) -> parseRelayTag rest v
       ("challenge":rest) -> parseChallengeTag rest v
       _          -> parseGenericTag v
@@ -521,19 +523,27 @@ parseMaybeDisplayName v = fail $ "Expected string for display name, got: " ++ sh
 
 
 -- | Parses a relay tag from a JSON array.
-parseRelayTag :: [Value] -> Value -> Parser Tag
-parseRelayTag rest _ = case rest of
+parseRTag :: [Value] -> Value -> Parser Tag
+parseRTag rest _ = case rest of
   [relayVal, markerVal] -> do
     relayURI' <- parseRelayURI relayVal
     marker <- parseJSON markerVal :: Parser Text
     case T.toLower marker of
-      "write" -> return $ RelayTag (OutboxRelay relayURI')
-      "read"  -> return $ RelayTag (InboxRelay relayURI')
-      _ -> fail "Invalid RelayTag marker"
+      "write" -> return $ RTag (OutboxRelay relayURI')
+      "read"  -> return $ RTag (InboxRelay relayURI')
+      _ -> fail "Invalid RTag marker"
   [relayVal] -> do
     relayURI' <- parseRelayURI relayVal
-    return $ RelayTag (InboxOutboxRelay relayURI')
-  _ -> fail "Invalid RelayTag format"
+    return $ RTag (InboxOutboxRelay relayURI')
+  _ -> fail "Invalid RTag format"
+
+-- | Parses a relay tag from a JSON array.
+parseRelayTag :: [Value] -> Value -> Parser Tag
+parseRelayTag rest _ = case rest of
+  [relayVal] -> do
+    relayURI' <- parseRelayURI relayVal
+    return $ RelayTag relayURI'
+  _ -> fail "Invalid relay tag format. Expected single relay URI."
 
 
 -- | Parses a RelayURI from a JSON value.
@@ -593,11 +603,12 @@ instance ToJSON Tag where
         maybe [] (\url -> [text url]) urlHint
     KTag kind ->
       list id [ text "k", text kind ]
-    RelayTag relay -> 
+    RTag relay -> 
       list id $ case relay of
-        InboxRelay uri -> [text "relay", text uri, text "read"]
-        OutboxRelay uri -> [text "relay", text uri, text "write"]
-        InboxOutboxRelay uri -> [text "relay", text uri]
+        InboxRelay uri -> [text "r", text uri, text "read"]
+        OutboxRelay uri -> [text "r", text uri, text "write"]
+        InboxOutboxRelay uri -> [text "r", text uri]
+    RelayTag relayUri -> list id $ [text "relay", text relayUri]
     ChallengeTag challenge -> list id [text "challenge", text challenge]
     GenericTag values -> list toEncoding values
 
@@ -758,9 +769,9 @@ defaultGeneralRelays =
 
 
 -- | Provides a default list of DM relays.
-defaultDMRelays :: ([Relay], Int)
+defaultDMRelays :: ([RelayURI], Int)
 defaultDMRelays =
-  ( [ InboxOutboxRelay "wss://auth.nostr1.com" ], 0 )
+  ( [ "wss://auth.nostr1.com" ], 0 )
 
 
 -- | Extracts the scheme of a relay's URI.
