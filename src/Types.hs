@@ -35,6 +35,8 @@ data SubscriptionEvent
 -- | State for RelayPool handling.
 data RelayPool = RelayPool
     { activeConnections :: Map RelayURI RelayData
+    , subscriptions :: Map SubscriptionId SubscriptionDetails
+    , pendingSubscriptions :: Map SubscriptionId SubscriptionDetails
     , publishStatus :: Map EventId (Map RelayURI PublishStatus)
     , inboxQueue :: TQueue (RelayURI, SubscriptionEvent)
     , updateQueue :: TQueue ()
@@ -49,6 +51,7 @@ data SubscriptionDetails = SubscriptionDetails
     , responseQueue :: TQueue (RelayURI, SubscriptionEvent)
     , eventsProcessed :: Int
     , newestCreatedAt :: Int
+    , relay :: RelayURI
     }
 
 
@@ -73,7 +76,6 @@ data ConnectionState = Connected | Disconnected | Connecting
 data RelayData = RelayData
   { connectionState :: ConnectionState
   , requestChannel :: TChan Request
-  , activeSubscriptions :: Map SubscriptionId SubscriptionDetails
   , notices        :: [Text]
   , lastError      :: Maybe ConnectionError
   , connectionAttempts :: Int
@@ -87,6 +89,8 @@ data RelayData = RelayData
 initialRelayPool :: RelayPool
 initialRelayPool = RelayPool
   { activeConnections = Map.empty
+  , subscriptions = Map.empty
+  , pendingSubscriptions = Map.empty
   , publishStatus = Map.empty
   , inboxQueue = undefined
   , updateQueue = undefined

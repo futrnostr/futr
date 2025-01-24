@@ -457,25 +457,21 @@ searchInRelays xo mr = do
 
     forM_ searchRelays $ \relayUri' -> do
         when (Map.member relayUri' conns) $ do
-            subId' <- newSubscriptionId
             q <- newTQueueIO
-            res <- subscribe relayUri' subId' (metadataFilter [xo]) q
-            case res of
-                Left err -> logError $ "Failed to subscribe to " <> relayUri' <> ": " <> pack err
-                Right () -> do
-                    void $ async $ do
-                        let loop = do
-                                e <- atomically $ readTQueue q
-                                case e of
-                                    (r, EventAppeared event') -> do
-                                        updates <- handleEvent r event'
-                                        notify updates
-                                        loop
-                                    (_, SubscriptionEose) -> do
-                                        stopSubscription subId'
-                                        when (manuallyConnected && Just relayUri' == mr) $ do
-                                            disconnectRelay relayUri'
-                                    (_, SubscriptionClosed _) ->
-                                        when (manuallyConnected && Just relayUri' == mr) $ do
-                                            disconnectRelay relayUri'
-                        loop
+            subId' <- subscribe relayUri' (metadataFilter [xo]) q
+            void $ async $ do
+                let loop = do
+                        e <- atomically $ readTQueue q
+                        case e of
+                            (r, EventAppeared event') -> do
+                                updates <- handleEvent r event'
+                                notify updates
+                                loop
+                            (_, SubscriptionEose) -> do
+                                stopSubscription subId'
+                                when (manuallyConnected && Just relayUri' == mr) $ do
+                                    disconnectRelay relayUri'
+                            (_, SubscriptionClosed _) ->
+                                when (manuallyConnected && Just relayUri' == mr) $ do
+                                    disconnectRelay relayUri'
+                loop

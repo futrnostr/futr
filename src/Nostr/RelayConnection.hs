@@ -98,7 +98,6 @@ runRelayConnection = interpret $ \_ -> \case
                 let rd = RelayData
                             { connectionState = Connecting
                             , requestChannel = chan
-                            , activeSubscriptions = Map.empty
                             , lastError = Nothing
                             , connectionAttempts = 0
                             , notices = []
@@ -193,6 +192,19 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
             }
         notifyRelayStatus
 
+        -- Handle pending subscriptions
+        st <- get @RelayPool
+        let pendingSubs = pendingSubscriptions st
+        forM_ (Map.toList pendingSubs) $ \(subId', details) -> do
+            atomically $ writeTChan requestChan (NT.Subscribe $ NT.Subscription subId' (subscriptionFilter details))
+            logDebug $ "Creating subscription from pending for " <> r <> " with subId " <> subId'
+
+        -- Move pending subscriptions to active subscriptions
+        modify @RelayPool $ \st' ->
+            st' { subscriptions = Map.union (subscriptions st') pendingSubs
+                , pendingSubscriptions = Map.empty
+                }
+
         void $ atomically $ putTMVar connectionMVar True
 
         updateQueue <- newTQueueIO
@@ -251,23 +263,20 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
 handleResponse :: RelayConnectionEff es => RelayURI -> Response -> Eff es UIUpdates
 handleResponse relayURI' r = case r of
     EventReceived subId' event' -> do
-        recordLatestCreatedAt relayURI' event'
+        recordLatestCreatedAt subId' event'
         enqueueEvent subId' (EventAppeared event') -- @todo check against filters?
         return emptyUpdates
         where
-            recordLatestCreatedAt :: RelayConnectionEff es => RelayURI -> Event -> Eff es ()
-            recordLatestCreatedAt r' e = do
-                modify @RelayPool $ \st -> st { activeConnections = Map.adjust
-                    (\rd -> rd { activeSubscriptions = Map.adjust
+            recordLatestCreatedAt :: RelayConnectionEff es => SubscriptionId -> Event -> Eff es ()
+            recordLatestCreatedAt sid e = do
+                modify @RelayPool $ \st -> st
+                    { subscriptions = Map.adjust
                         (\subDetails -> if createdAt e > newestCreatedAt subDetails
-                                        then subDetails { newestCreatedAt = createdAt e }
-                                        else subDetails)
-                        subId'
-                        (activeSubscriptions rd)
-                    })
-                    r'
-                    (activeConnections st)
-                }
+                                      then subDetails { newestCreatedAt = createdAt e }
+                                      else subDetails)
+                        sid
+                        (subscriptions st)
+                    }
 
     Eose subId' -> do
         enqueueEvent subId' SubscriptionEose
@@ -278,25 +287,18 @@ handleResponse relayURI' r = case r of
             then do
                 -- Queue the subscription for retry after authentication
                 st <- get @RelayPool
-                case Map.lookup relayURI' (activeConnections st) of
-                    Just rd ->
-                        case Map.lookup subId' (activeSubscriptions rd) of
-                            Just subDetails -> do
-                                let subscription = NT.Subscription
-                                        { NT.subId = subId'
-                                        , NT.filter = subscriptionFilter subDetails
-                                        }
-                                handleAuthRequired relayURI' (NT.Subscribe subscription)
-                            Nothing -> logError $ "1 No subscription found for " <> T.pack (show subId')
-                    Nothing -> logError $ "Received auth-required but no connection found: " <> relayURI'
+                case Map.lookup subId' (subscriptions st) of
+                    Just subDetails -> do
+                        let subscription = NT.Subscription
+                                { NT.subId = subId'
+                                , NT.filter = subscriptionFilter subDetails
+                                }
+                        handleAuthRequired relayURI' (NT.Subscribe subscription)
+                    Nothing -> logError $ "1 No subscription found for " <> T.pack (show subId')
             else do
                 enqueueEvent subId' (SubscriptionClosed msg)
                 modify @RelayPool $ \st ->
-                    st { activeConnections = Map.adjust
-                        (\rd -> rd { activeSubscriptions = Map.delete subId' (activeSubscriptions rd) })
-                        relayURI'
-                        (activeConnections st)
-                    }
+                    st { subscriptions = Map.delete subId' (subscriptions st) }
         return emptyUpdates
 
     Ok eventId' accepted' msg -> do
@@ -381,11 +383,9 @@ handleResponse relayURI' r = case r of
         enqueueEvent :: RelayConnectionEff es => SubscriptionId -> SubscriptionEvent -> Eff es ()
         enqueueEvent subId' event' = do
             st <- get @RelayPool
-            case Map.lookup relayURI' (activeConnections st) of
-                Just rd -> case Map.lookup subId' (activeSubscriptions rd) of
-                    Just sd -> atomically $ writeTQueue (responseQueue sd) (relayURI', event')
-                    Nothing -> error $ "2 No subscription found for " <> show subId' <> " on " <> show relayURI' <> " with response: " <> show r
-                Nothing -> error $ "3 No connection found for " <> show relayURI'
+            case Map.lookup subId' (subscriptions st) of
+                Just sd -> atomically $ writeTQueue (responseQueue sd) (relayURI', event')
+                Nothing -> error $ "2 No subscription found for " <> show subId' <> " with response: " <> show r
 
 
 -- | Handle authentication required.
