@@ -25,6 +25,7 @@ import Store.Lmdb (LmdbState, initialLmdbState, runLmdbStore)
 import Types (AppState(..), RelayPool(..))
 import Types qualified as Types
 
+
 -- | Main function for the app.
 main :: IO ()
 main = do

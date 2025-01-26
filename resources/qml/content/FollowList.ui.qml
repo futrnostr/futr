@@ -40,7 +40,6 @@ Rectangle {
                     mode: AutoListModel.ByKey
                     equalityTest: function (oldItem, newItem) {
                         return oldItem.pubkey === newItem.pubkey
-                            && oldItem.relay === newItem.relay
                             && oldItem.petname === newItem.petname
                             && oldItem.displayName === newItem.displayName
                             && oldItem.name === newItem.name
