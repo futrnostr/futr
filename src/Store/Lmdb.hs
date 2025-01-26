@@ -33,7 +33,6 @@ import Data.Cache.LRU qualified as LRU
 import Data.List (sort)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.Set qualified as Set
-import Data.Text (unpack)
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
 import Effectful.Dispatch.Dynamic
@@ -44,7 +43,6 @@ import Lmdb.Codec qualified as Codec
 import Lmdb.Connection
 import Lmdb.Map qualified as Map
 import Lmdb.Types
-import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
 import Pipes.Prelude qualified as Pipes
 import Pipes ((>->))
 
@@ -156,10 +154,10 @@ runLmdbStore = interpret $ \_ -> \case
                     pure True
 
                 Repost -> do
-                    let etags = [t | t@(ETag _ _ _) <- tags (event ev)]
+                    let etags = [t | t@(ETag _ _ _ _) <- tags (event ev)]
                         mOriginalEvent = eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev)
                     case (etags, mOriginalEvent) of
-                        (ETag _ _ _ : _, Right originalEvent)
+                        (ETag _ _ _ _ : _, Right originalEvent)
                             | validateEvent originalEvent -> do
                                 Map.repsert' txn (eventDb currentState) (eventId originalEvent)
                                     (EventWithRelays originalEvent Set.empty)
@@ -168,7 +166,7 @@ runLmdbStore = interpret $ \_ -> \case
                         _ -> pure False
 
                 EventDeletion -> do
-                    let eventIdsToDelete = [eid | ETag eid _ _ <- tags (event ev)]
+                    let eventIdsToDelete = [eid | ETag eid _ _ _ <- tags (event ev)]
                     res <- forM eventIdsToDelete $ \eid -> do
                         mEvent <- Map.lookup' (readonly txn) (eventDb currentState) eid
                         case mEvent of
@@ -202,8 +200,8 @@ runLmdbStore = interpret $ \_ -> \case
 
                 FollowList -> do
                     let followList' = [Follow pk petName' | PTag pk _ petName' <- tags (event ev)]
-                    existingTimestamp <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
-                    case existingTimestamp of
+                    existingTimestamp' <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
+                    case existingTimestamp' of
                         Just existingTs ->
                             if eventTimestamp > existingTs then do
                                 Map.repsert' txn (followsDb currentState) author followList'
@@ -260,7 +258,7 @@ runLmdbStore = interpret $ \_ -> \case
                         pure ()
 
             EventDeletion -> 
-                let eventIdsToDelete = [eid | ETag eid _ _ <- tags (event ev)]
+                let eventIdsToDelete = [eid | ETag eid _ _ _ <- tags (event ev)]
                 in modify @LmdbState $ \s -> s
                     { eventCache = foldr (\eid cache -> fst $ LRU.delete eid cache) (eventCache s) eventIdsToDelete
                     , timelineCache = foldr (\eid cache -> 

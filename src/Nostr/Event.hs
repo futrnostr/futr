@@ -84,28 +84,28 @@ createComment originalEvent content' rootScope parentItem relayHint xo t =
         -- Root scope tags
         rootTags = case root of
           Left (ITag val _) -> 
-            [ ITag val relay
+            [ ITag val Nothing
             , KTag (pack $ show $ kind originalEvent)
             ]
           Right eid ->
-            [ ETag eid relay Nothing
+            [ ETag eid relay Nothing Nothing
             , KTag (pack $ show $ kind originalEvent)
             ]
           _ -> error "Invalid root scope tag"
 
         -- Parent tags (for replies)
         parentTags = case parent of
-          Just (ETag eid _ mpk) ->
-            [ ETag eid relay mpk
+          Just (ETag eid _ mpk _) ->
+            [ ETag eid relay mpk Nothing
             , KTag (pack $ show Comment)
             ]
           Just (ITag val _) ->
-            [ ITag val relay
+            [ ITag val Nothing
             , KTag (pack $ show $ kind originalEvent)
             ]
           Nothing -> case root of
             Left itag@(ITag _ _) -> [itag, KTag (pack $ show Comment)]
-            Right eid -> [ETag eid relay Nothing, KTag (pack $ show Comment)]
+            Right eid -> [ETag eid relay Nothing Nothing, KTag (pack $ show Comment)]
             _ -> []
           _ -> error "Invalid parent tag"
       in
@@ -119,7 +119,7 @@ createRepost event relayUrl xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = Repost
-    , tags' = [ ETag (eventId event) (Just relayUrl) Nothing
+    , tags' = [ ETag (eventId event) (Just relayUrl) Nothing Nothing
               , PTag (pubKey event) Nothing Nothing
               ]
     , content' = decodeUtf8 $ toStrict $ encode event
@@ -146,7 +146,7 @@ createGenericRepost event relayUrl xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = GenericRepost
-    , tags' = [ ETag (eventId event) (Just relayUrl) Nothing
+    , tags' = [ ETag (eventId event) (Just relayUrl) Nothing Nothing
               , PTag (pubKey event) Nothing Nothing
               , KTag (pack $ show $ kind event)
               ]
@@ -185,7 +185,7 @@ createReplyNote event note xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = ShortTextNote
-    , tags' = [ETag (eventId event) Nothing (Just Reply)]
+    , tags' = [ETag (eventId event) Nothing (Just Reply) Nothing]
     , content' = note
     }
 
@@ -213,7 +213,7 @@ createEventDeletion eids reason xo t =
     , content' = reason
     }
   where
-    toDelete = map (\eid -> ETag eid Nothing Nothing) eids
+    toDelete = map (\eid -> ETag eid Nothing Nothing Nothing) eids
 
 
 createRelayListMetadataEvent :: [Relay] -> PubKeyXO -> Int -> UnsignedEvent
@@ -311,7 +311,7 @@ createGiftWrap sealEvent recipientPubKey = do
                 { pubKey' = keyPairToPubKeyXO randomKeyPair
                 , createdAt' = floor $ utcTimeToPOSIXSeconds currentTime
                 , kind' = GiftWrap
-                , tags' = [PTag recipientPubKey Nothing Nothing]
+                , tags' = [PTagList [recipientPubKey]]
                 , content' = wrapContent
                 }
           signEvent wrapEvent randomKeyPair >>= \case
@@ -385,18 +385,18 @@ getRootEventId = getRelationshipEventId Root
 
 
 -- | Get the relationship event ID.
-getRelationshipEventId :: Relationship -> Event -> Maybe EventId
+getRelationshipEventId :: Marker -> Event -> Maybe EventId
 getRelationshipEventId m e =
   if null replyList
     then Nothing
     else Just $ extractEventId $ head replyList
   where
-    replyFilter :: Relationship -> Tag -> Bool
-    replyFilter m' (ETag _ _ (Just m'')) = m' == m''
+    replyFilter :: Marker -> Tag -> Bool
+    replyFilter m' (ETag _ _ (Just m'') _) = m' == m''
     replyFilter _ _ = False
 
     replyList = filter (replyFilter m) $ tags e
 
     extractEventId :: Tag -> EventId
-    extractEventId (ETag eid _ _) = eid
+    extractEventId (ETag eid _ _ _) = eid
     extractEventId _ = error "Could not extract event id from reply or root tag"

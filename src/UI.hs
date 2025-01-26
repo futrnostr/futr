@@ -34,7 +34,7 @@ import Nostr.Event (createMetadata)
 import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile(..), RelayURI
-                   , Relationship(..), Rumor(..), Tag(..) )
+                   , Marker(..), Rumor(..), Tag(..) )
 import Nostr.Util
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
@@ -164,13 +164,13 @@ runUI = interpret $ \_ -> \case
     followPool <- newFactoryPool (newObject followClass)
 
     let getRootReference evt =
-          case find (\case ETag _ _ (Just Root) -> True; _ -> False) (tags evt) of
-            Just (ETag eid _ _) -> return $ Just eid
+          case find (\case ETag _ _ (Just Root) _ -> True; _ -> False) (tags evt) of
+            Just (ETag eid _ _ _) -> return $ Just eid
             _ -> return Nothing
 
         getParentReference evt =
-          case find (\case ETag _ _ (Just Reply) -> True; _ -> False) (tags evt) of
-            Just (ETag eid _ _) -> return $ Just eid
+          case find (\case ETag _ _ (Just Reply) _ -> True; _ -> False) (tags evt) of
+            Just (ETag eid _ _ _) -> return $ Just eid
             _ -> return Nothing
 {-
         getEventCount subscriber postId = do
@@ -279,7 +279,7 @@ runUI = interpret $ \_ -> \case
           case eventMaybe of
             Just eventWithRelays -> do
               let ev = event eventWithRelays
-                  eTagRefs = [tagId | ETag tagId _ _ <- tags ev]
+                  eTagRefs = [tagId | ETag tagId _ _ _ <- tags ev]
                   qTagRefs = [tagId | QTag tagId _ _ <- tags ev]
                   contentRefs = extractNostrReferences (content ev)
                   allRefs = nub $ eTagRefs ++ qTagRefs ++ contentRefs

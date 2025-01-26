@@ -226,6 +226,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
                     receiveLoop conn' q
                 Left err -> do
                     logError $ "Could not decode server response from " <> r <> ": " <> T.pack err
+                    logError $ "Msg: " <> T.pack (show msg')
                     receiveLoop conn' q
 
     sendLoop conn' = do

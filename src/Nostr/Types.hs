@@ -32,7 +32,7 @@ import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
 import Prelude hiding (until)
 import Text.Read (readMaybe)
 
-import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature)
+import Nostr.Keys (PubKeyXO(..), Signature, byteStringToHex, exportPubKeyXO, exportSignature, importPubKeyXO)
 
 -- | Represents a relay URI.
 type RelayURI = Text
@@ -216,8 +216,8 @@ instance Ord Kind where
 newtype EventId = EventId { getEventId :: ByteString } deriving (Eq, Ord)
 
 
--- | Represents a relationship type.
-data Relationship = Reply | Root | Mention
+-- | Represents a marker type.
+data Marker = Reply | Root | Mention
   deriving (Eq, Generic, Show)
 
 
@@ -237,8 +237,9 @@ data ExternalId
 
 -- | Represents a tag in an event.
 data Tag
-  = ETag EventId (Maybe RelayURI) (Maybe Relationship)
+  = ETag EventId (Maybe RelayURI) (Maybe Marker) (Maybe PubKeyXO)
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
+  | PTagList [PubKeyXO]
   | QTag EventId (Maybe RelayURI) (Maybe PubKeyXO)
   | KTag Text
   | RTag Relay
@@ -447,13 +448,13 @@ instance FromJSON Tag where
   parseJSON v@(Array arr) =
     case V.toList arr of
       ("e":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseETag rest) v
-      ("p":rest) -> parsePTag rest v
-      ("q":rest) -> parseQTag rest v
-      ("i":rest) -> parseITag rest v
-      ("k":rest) -> parseKTag rest v
-      ("r":rest) -> parseRTag rest v
-      ("relay":rest) -> parseRelayTag rest v
-      ("challenge":rest) -> parseChallengeTag rest v
+      ("p":rest) -> either (const $ parseGenericTag v) return $ parseEither (parsePTag rest) v
+      ("q":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseQTag rest) v
+      ("i":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseITag rest) v
+      ("k":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseKTag rest) v
+      ("r":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseRTag rest) v
+      ("relay":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseRelayTag rest) v
+      ("challenge":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseChallengeTag rest) v
       _          -> parseGenericTag v
   parseJSON v = parseGenericTag v
 
@@ -462,24 +463,43 @@ instance FromJSON Tag where
 parseETag :: [Value] -> Value -> Parser Tag
 parseETag rest _ = do
   case rest of
+    [eventIdVal, relayVal, markerVal, pubkeyVal] -> do
+      eventId <- parseJSONSafe eventIdVal
+      relay <- parseMaybeRelayURI relayVal
+      marker <- parseMaybeMarker markerVal
+      pubkey <- parseMaybePubKey pubkeyVal
+      return $ ETag eventId relay marker pubkey
     [eventIdVal, relayVal, markerVal] -> do
       eventId <- parseJSONSafe eventIdVal
       relay <- parseMaybeRelayURI relayVal
-      marker <- parseMaybeRelationship markerVal
-      return $ ETag eventId relay marker
+      marker <- parseMaybeMarker markerVal
+      return $ ETag eventId relay marker Nothing
     [eventIdVal, relayVal] -> do
       eventId <- parseJSONSafe eventIdVal
       relay <- parseMaybeRelayURI relayVal
-      return $ ETag eventId relay Nothing
+      return $ ETag eventId relay Nothing Nothing
     [eventIdVal] -> do
       eventId <- parseJSONSafe eventIdVal
-      return $ ETag eventId Nothing Nothing
+      return $ ETag eventId Nothing Nothing Nothing
     _ -> fail "Invalid ETag format"
 
 
 -- | Parses a PTag from a JSON array.
 parsePTag :: [Value] -> Value -> Parser Tag
-parsePTag rest _ = case rest of
+parsePTag rest v = do
+    -- First try to parse as PTagList (multiple pubkeys)
+    case rest of
+        -- If all values are strings, try parsing as PTagList
+        values@(_:_) -> 
+            (do
+                pubkeys <- mapM parseJSONSafe values
+                return $ PTagList pubkeys)
+            <|> parseSinglePTag rest v  -- Fallback to single PTag parsing
+        _ -> parseSinglePTag rest v
+
+-- | Parses a single PTag (with optional relay and name)
+parseSinglePTag :: [Value] -> Value -> Parser Tag
+parseSinglePTag rest _ = case rest of
     (pubkeyVal : maybeRelay : maybeName : _) -> do
       pubkey <- parseJSONSafe pubkeyVal
       relay <- parseMaybeRelayURI maybeRelay
@@ -492,7 +512,7 @@ parsePTag rest _ = case rest of
     (pubkeyVal : _) -> do
       pubkey <- parseJSONSafe pubkeyVal
       return $ PTag pubkey Nothing Nothing
-    _ -> fail "Invalid PTag format"
+    [] -> fail "Invalid PTag format: empty array"
 
 
 -- | Parses a JSON value safely and returns the parsed result.
@@ -509,10 +529,10 @@ parseMaybeRelayURI Null = pure Nothing
 parseMaybeRelayURI _ = fail "Expected string or null for RelayURI"
 
 
--- | Parses a maybe relationship from a JSON value.
-parseMaybeRelationship :: Value -> Parser (Maybe Relationship)
-parseMaybeRelationship Null = return Nothing
-parseMaybeRelationship v = (Just <$> parseJSONSafe v) <|> return Nothing
+-- | Parses a maybe marker from a JSON value.
+parseMaybeMarker :: Value -> Parser (Maybe Marker)
+parseMaybeMarker Null = return Nothing
+parseMaybeMarker v = (Just <$> parseJSONSafe v) <|> return Nothing
 
 
 -- | Parses a maybe display name from a JSON value.
@@ -570,7 +590,7 @@ parseGenericTag v = fail $ "Expected array for generic tag, got: " ++ show v
 -- | Converts a 'Tag' to its JSON representation.
 instance ToJSON Tag where
   toEncoding tag = case tag of
-    ETag eventId relayURL marker ->
+    ETag eventId relayURL marker pubkey ->
       list id $
         [ text "e"
         , text $ decodeUtf8 $ B16.encode $ getEventId eventId
@@ -580,7 +600,8 @@ instance ToJSON Tag where
            Just Reply -> [text "reply"]
            Just Root -> [text "root"]
            Just Mention -> [text "mention"]
-           Nothing -> [])
+           Nothing -> []) ++
+        (maybe [] (\pk -> [text $ decodeUtf8 $ B16.encode $ exportPubKeyXO pk]) pubkey)
     PTag xo relayURL name ->
       list id $
         [ text "p"
@@ -588,6 +609,8 @@ instance ToJSON Tag where
         ] ++
         (maybe [] (\r -> [text r]) relayURL) ++
         (maybe [] (\n -> [text n]) name)
+    PTagList pubkeys ->
+      list id $ text "p" : map toEncoding pubkeys
     QTag eventId relayURL pubkey ->
       list id $
         [ text "q"
@@ -613,9 +636,9 @@ instance ToJSON Tag where
     GenericTag values -> list toEncoding values
 
 
--- | Converts a JSON string into a 'Relationship'.
-instance FromJSON Relationship where
- parseJSON = withText "Relationship" $ \m -> do
+-- | Converts a JSON string into a 'Marker'.
+instance FromJSON Marker where
+ parseJSON = withText "Marker" $ \m -> do
    case T.toLower m of
      "reply" -> return Reply
      "root"  -> return Root
@@ -623,8 +646,8 @@ instance FromJSON Relationship where
      _       -> mzero
 
 
--- | Converts a 'Relationship' to its JSON representation.
-instance ToJSON Relationship where
+-- | Converts a 'Marker' to its JSON representation.
+instance ToJSON Marker where
   toEncoding Reply = text "reply"
   toEncoding Root = text "root"
   toEncoding Mention = text "mention"
@@ -896,3 +919,11 @@ instance FromJSON ExternalId where
 instance ToJSON ExternalId where
   toEncoding = text . externalIdToText
   toJSON = String . externalIdToText
+
+-- | Parses a maybe pubkey from a JSON value.
+parseMaybePubKey :: Value -> Parser (Maybe PubKeyXO)
+parseMaybePubKey Null = return Nothing
+parseMaybePubKey (String s) = case decodeHex s of
+    Just bs | BS.length bs == 32 -> return $ importPubKeyXO bs
+    _ -> fail "Invalid pubkey format"
+parseMaybePubKey _ = fail "Expected string or null for pubkey"

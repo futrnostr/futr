@@ -129,8 +129,8 @@ runSubscription = interpret $ \_ -> \case
                         pure $ emptyUpdates { postsChanged = wasUpdated }
 
                     Repost ->
-                        case ([t | t@(ETag _ _ _) <- tags event'], eitherDecode (fromStrict $ encodeUtf8 $ content event')) of
-                            (ETag eid _ _:_, Right originalEvent) | validateEvent originalEvent ->
+                        case ([t | t@(ETag _ _ _ _) <- tags event'], eitherDecode (fromStrict $ encodeUtf8 $ content event')) of
+                            (ETag eid _ _ _:_, Right originalEvent) | validateEvent originalEvent ->
                                 pure $ emptyUpdates { postsChanged = wasUpdated }
                             _ -> do
                                 logWarning $ "Invalid repost or missing e-tag: " <> (byteStringToHex $ getEventId (eventId event'))
