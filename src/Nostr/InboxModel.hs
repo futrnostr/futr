@@ -26,7 +26,7 @@ import Effectful.TH
 import Logging
 import Nostr
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.RelayConnection (RelayConnection, connectRelay, disconnectRelay)
+import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Subscription 
     ( Subscription
     , giftWrapFilter
@@ -114,7 +114,7 @@ runInboxModel = interpret $ \_ -> \case
     modify @RelayPool $ \s -> s { updateThread = Nothing }
     -- Disconnect all relays
     forM_ (Map.keys $ activeConnections st) $ \relayUri -> do
-      disconnectRelay relayUri
+      disconnect relayUri
     put @RelayPool initialRelayPool
 
   AwaitAtLeastOneConnected -> awaitAtLeastOneConnected'
@@ -157,7 +157,7 @@ initializeWithDefaultRelays xo = do
   let (defaultRelays, _) = defaultGeneralRelays
 
   connectionResults <- forConcurrently defaultRelays $ \relay -> do
-    connected <- connectRelay (getUri relay)
+    connected <- connect (getUri relay)
     return (relay, connected)
 
   void $ awaitAtLeastOneConnected'
@@ -269,7 +269,7 @@ continueWithRelays followList inboxRelays dmRelays = do
 
   -- Connect to DM relays concurrently
   void $ forConcurrently dmRelays $ \relay -> do
-    connected <- connectRelay relay
+    connected <- connect relay
     if connected
       then do
         subscribeToGiftwraps relay xo
@@ -280,7 +280,7 @@ continueWithRelays followList inboxRelays dmRelays = do
   -- Connect to inbox relays concurrently
   void $ forConcurrently inboxRelays $ \relay -> do
     let relayUri = getUri relay
-    connected <- connectRelay relayUri
+    connected <- connect relayUri
     if connected
       then do
         when (isInboxCapable relay) $ do
@@ -297,7 +297,7 @@ continueWithRelays followList inboxRelays dmRelays = do
 
   -- Connect to follow relays concurrently
   void $ forConcurrently (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
-    connected <- connectRelay relayUri
+    connected <- connect relayUri
     if connected
       then do
         subscribeToRelay relayUri pubkeys
@@ -412,7 +412,7 @@ updateGeneralSubscriptions xo = do
   void $ forConcurrently inboxRelays $ \relay -> do
     when (isInboxCapable relay) $ do
       let relayUri = getUri relay
-      connected <- connectRelay relayUri
+      connected <- connect relayUri
       when connected $ subscribeToMentionsAndProfiles relayUri xo
 
   newRelayPubkeyMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
@@ -426,11 +426,11 @@ updateGeneralSubscriptions xo = do
   let relaysToUpdate = Set.intersection currentRelays newRelays
 
   void $ forConcurrently (Set.toList relaysToRemove) $ \relayUri -> do
-    disconnectRelay relayUri
+    disconnect relayUri
 
   void $ forConcurrently (Set.toList relaysToAdd) $ \relayUri -> do
     let pubkeys = Map.findWithDefault [] relayUri newRelayPubkeyMap
-    connected <- connectRelay relayUri
+    connected <- connect relayUri
     when connected $ do
       subscribeToRelay relayUri pubkeys
 
@@ -466,13 +466,13 @@ updateDMSubscriptions xo = do
             let hasOtherSubs = any (\sd -> relayUri == relayUri)
                                   (Map.elems $ subscriptions pool)
             when (not hasOtherSubs) $ do
-                disconnectRelay relayUri
+                disconnect relayUri
 
         let currentRelaySet = Map.keysSet (activeConnections pool)
         let relaysToAdd = Set.difference dmRelaySet currentRelaySet
 
         void $ forConcurrently (Set.toList relaysToAdd) $ \relayUri -> do
-            connected <- connectRelay relayUri
+            connected <- connect relayUri
             when connected $ do
                 subscribeToGiftwraps relayUri xo
 

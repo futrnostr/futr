@@ -193,10 +193,6 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
           defMethod' "removeGeneralRelay" $ \_ input -> runE $ do
             kp <- getKeyPair
             removeGeneralRelay (keyPairToPubKeyXO kp) input
-
-          --defMethod' "connectRelay" $ \_ input -> runE $ void $ async $ connect input,
-          
-          --defMethod' "disconnectRelay" $ \_ input -> runE $ disconnect input
           ]
 
         newObject contextClass ()

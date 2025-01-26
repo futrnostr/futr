@@ -45,7 +45,7 @@ import Nostr.Event ( createComment, createEventDeletion, createFollowList
 import Nostr.InboxModel (InboxModel, awaitAtLeastOneConnected, startInboxModel, stopInboxModel)
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.Publisher
-import Nostr.RelayConnection (RelayConnection, connectRelay, disconnectRelay)
+import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Subscription
 import Nostr.Types (Event(..), EventId, RelayURI, Tag(..), getUri, isInboxCapable)
 import Nostr.Util
@@ -444,7 +444,7 @@ searchInRelays xo mr = do
             if Map.member relayUri conns
                 then return False
                 else do
-                    void $ connectRelay relayUri
+                    void $ connect relayUri
                     return True
         Nothing -> return False
 
@@ -470,8 +470,8 @@ searchInRelays xo mr = do
                             (_, SubscriptionEose) -> do
                                 stopSubscription subId'
                                 when (manuallyConnected && Just relayUri' == mr) $ do
-                                    disconnectRelay relayUri'
+                                    disconnect relayUri'
                             (_, SubscriptionClosed _) ->
                                 when (manuallyConnected && Just relayUri' == mr) $ do
-                                    disconnectRelay relayUri'
+                                    disconnect relayUri'
                 loop

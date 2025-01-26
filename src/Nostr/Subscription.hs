@@ -152,8 +152,10 @@ runSubscription = interpret $ \_ -> \case
                                 logWarning $ "Failed to decode metadata: " <> pack err
                                 pure emptyUpdates
 
-                    FollowList ->
-                        pure $ emptyUpdates { followsChanged = wasUpdated }
+                    FollowList -> do
+                        kp <- getKeyPair
+                        let pk = keyPairToPubKeyXO kp   
+                        pure $ emptyUpdates { followsChanged = wasUpdated, myFollowsChanged = wasUpdated && pk == pubKey event' }
 
                     GiftWrap -> do
                         pure $ emptyUpdates { privateMessagesChanged = wasUpdated }

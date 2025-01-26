@@ -100,10 +100,10 @@ runPublisher =  interpret $ \_ -> \case
         forM_ existingRelays $ \r -> writeToChannel event' r
 
         forM_ newRelays $ \r -> async $ do
-            connected <- connectRelay r
+            connected <- connect r
             when connected $ do
                 writeToChannel event' r
-                disconnectRelay r
+                disconnect r
 
     PublishToOutbox event' -> do
         putEvent $ EventWithRelays event' Set.empty
@@ -150,10 +150,10 @@ runPublisher =  interpret $ \_ -> \case
 
                 forM_ existingRelays $ \r -> writeToChannel event' r
                 forM_ newRelays $ \r -> async $ do
-                    connected <- connectRelay r
+                    connected <- connect r
                     when connected $ do
                         writeToChannel event' r
-                        disconnectRelay r
+                        disconnect r
 
     GetPublishResult eventId' -> do
         st <- get @RelayPool

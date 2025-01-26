@@ -28,8 +28,7 @@ import Logging
 import Nostr
 import Nostr.Event (createCanonicalAuthentication)
 import Nostr.Keys (keyPairToPubKeyXO)
-import Nostr.Types ( Event(..), RelayURI
-                   , Request(..), Response(..), SubscriptionId )
+import Nostr.Types (Event(..), RelayURI, Response(..), SubscriptionId)
 import Nostr.Types qualified as NT
 import Nostr.Util
 import Types ( AppState(..), ConnectionError(..), ConnectionState(..)
@@ -44,8 +43,8 @@ data DisconnectReason = UserInitiated | ConnectionFailure
 
 -- | Effect for handling RelayPool operations.
 data RelayConnection :: Effect where
-    ConnectRelay :: RelayURI -> RelayConnection m Bool
-    DisconnectRelay :: RelayURI -> RelayConnection m ()
+    Connect :: RelayURI -> RelayConnection m Bool
+    Disconnect :: RelayURI -> RelayConnection m ()
 
 
 type instance DispatchOf RelayConnection = Dynamic
@@ -73,7 +72,7 @@ runRelayConnection
   => Eff (RelayConnection : es) a
   -> Eff es a
 runRelayConnection = interpret $ \_ -> \case
-    ConnectRelay r -> do
+    Connect r -> do
         let r' = normalizeRelayURI r
         conns <- gets @RelayPool activeConnections
         if Map.member r' conns
@@ -109,7 +108,7 @@ runRelayConnection = interpret $ \_ -> \case
                     st { activeConnections = Map.insert r' rd (activeConnections st) }
                 connectWithRetry r' 5 chan
 
-    DisconnectRelay r -> do
+    Disconnect r -> do
         let r' = normalizeRelayURI r
         st <- get @RelayPool
         case Map.lookup r'   (activeConnections st) of
@@ -121,7 +120,7 @@ runRelayConnection = interpret $ \_ -> \case
 
 
 -- | Connect with retry.
-connectWithRetry :: RelayConnectionEff es => RelayURI -> Int -> TChan Request -> Eff es Bool
+connectWithRetry :: RelayConnectionEff es => RelayURI -> Int -> TChan NT.Request -> Eff es Bool
 connectWithRetry r maxRetries requestChan = do
     st <- get @RelayPool
     
@@ -177,7 +176,7 @@ connectWithRetry r maxRetries requestChan = do
 
 
 -- | Nostr client for relay connections.
-nostrClient :: RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan Request -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
+nostrClient :: RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan NT.Request -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
 nostrClient connectionMVar r requestChan runE conn = runE $ do
     logDebug $ "Connected to " <> r
 
@@ -337,7 +336,7 @@ handleResponse relayURI' r = case r of
                                     }
 
                                 -- Retry events and requests
-                                forM_ pendingEvts $ \evt -> atomically $ writeTChan (requestChannel rd) (SendEvent evt)
+                                forM_ pendingEvts $ \evt -> atomically $ writeTChan (requestChannel rd) (NT.SendEvent evt)
                                 forM_ pendingReqs $ \req -> atomically $ writeTChan (requestChannel rd) req
 
                             _ -> logDebug $ "Received OK for event " <> T.pack (show eventId')
@@ -370,7 +369,7 @@ handleResponse relayURI' r = case r of
                                 relayURI'
                                 (activeConnections st')
                             }
-                        atomically $ writeTChan (requestChannel rd) (Authenticate signedEvent)
+                        atomically $ writeTChan (requestChannel rd) (NT.Authenticate signedEvent)
                         return emptyUpdates
                     Nothing -> do
                         logError "Failed to sign canonical authentication event"
@@ -389,9 +388,9 @@ handleResponse relayURI' r = case r of
 
 
 -- | Handle authentication required.
-handleAuthRequired :: RelayConnectionEff es => RelayURI -> Request -> Eff es ()
+handleAuthRequired :: RelayConnectionEff es => RelayURI -> NT.Request -> Eff es ()
 handleAuthRequired relayURI' request = case request of
-    SendEvent evt -> do
+    NT.SendEvent evt -> do
         modify @RelayPool $ \st' ->
             st' { activeConnections = Map.adjust
                 (\rd' -> rd' { pendingEvents = evt : pendingEvents rd' })

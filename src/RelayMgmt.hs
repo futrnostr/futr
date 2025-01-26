@@ -80,7 +80,7 @@ runRelayMgmt = interpret $ \_ -> \case
 
     RemoveGeneralRelay pk r -> do
         let r' = normalizeRelayURI r
-        disconnectRelay r'
+        disconnect r'
         existingRelays <- getGeneralRelays pk
         let rs = filter (\relay -> getUri relay /= r') existingRelays
         
