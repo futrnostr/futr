@@ -192,7 +192,7 @@ runFutr = interpret $ \_ -> \case
                 let newFollow = Follow targetPK Nothing
                     newFollows = newFollow : currentFollows
                 sendFollowListEvent newFollows
-                notify $ emptyUpdates { followsChanged = True }
+                notify $ emptyUpdates { myFollowsChanged = True }
         Nothing -> return ()
 
   UnfollowProfile npub' -> do
@@ -203,7 +203,7 @@ runFutr = interpret $ \_ -> \case
             currentFollows <- getFollows userPK
             let newFollows = filter ((/= targetPK) . pubkey) currentFollows
             sendFollowListEvent newFollows
-            notify $ emptyUpdates { followsChanged = True }
+            notify $ emptyUpdates { myFollowsChanged = True }
         Nothing -> return ()
 
   OpenChat pubKeyXO -> do
