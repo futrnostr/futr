@@ -236,9 +236,9 @@ runFutr = interpret $ \_ -> \case
             Nothing -> logError "Failed to create seal" >> return Nothing
 
         let validGiftWraps = catMaybes giftWraps
+
         forM_ validGiftWraps $ \gw -> do
-          putEvent $ EventWithRelays gw Set.empty
-          publishGiftWrap gw senderPubKeyXO
+          publishGiftWrap gw senderPubKeyXO recipient
         notify $ emptyUpdates { privateMessagesChanged = True }
 
       (Nothing, _) -> logError "No key pair found"
@@ -248,10 +248,11 @@ runFutr = interpret $ \_ -> \case
     kp <- getKeyPair
     now <- getCurrentTime
     let u = createShortTextNote input (keyPairToPubKeyXO kp) now
+    logDebug $ "Sending short text note: " <> input
+    logDebug $ "unsigned: " <> pack (show u)
     signed <- signEvent u kp
     case signed of
       Just s -> do
-        putEvent $ EventWithRelays s Set.empty
         publishToOutbox s
         notify $ emptyUpdates { postsChanged = True }
       Nothing -> logError "Failed to sign short text note"
@@ -306,7 +307,6 @@ runFutr = interpret $ \_ -> \case
 
                     let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
-                    putEvent $ EventWithRelays s targetUris
                     forM_ (Set.toList targetUris) $ \relay ->
                       publishToRelay s relay
                     notify $ emptyUpdates { postsChanged = True }
@@ -327,7 +327,6 @@ runFutr = interpret $ \_ -> \case
             signed <- signEvent q kp
             case signed of
               Just s -> do
-                putEvent $ EventWithRelays s Set.empty
                 publishToOutbox s
                 notify $ emptyUpdates { postsChanged = True }
               Nothing -> logError "Failed to sign quote repost"
@@ -359,7 +358,6 @@ runFutr = interpret $ \_ -> \case
 
                     let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
-                    putEvent $ EventWithRelays s targetUris
                     forM_ (Set.toList targetUris) $ \relay ->
                       publishToRelay s relay
                     notify $ emptyUpdates { postsChanged = True }
@@ -376,7 +374,6 @@ runFutr = interpret $ \_ -> \case
         signed <- signEvent deletion kp
         case signed of
           Just s -> do
-            putEvent $ EventWithRelays s Set.empty
             publishToOutbox s
             notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
           Nothing -> logError "Failed to sign event deletion"
@@ -430,7 +427,6 @@ sendFollowListEvent follows = do
             signedEvent <- signEvent event kp
             case signedEvent of
                 Just signedEvent' -> do
-                    putEvent $ EventWithRelays signedEvent' Set.empty
                     publishToOutbox signedEvent'
                 Nothing -> logError "Failed to sign follow list event"
 

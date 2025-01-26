@@ -163,110 +163,101 @@ Rectangle {
             Layout.topMargin: Constants.spacing_m
             currentIndex: chatTypeSelector.currentIndex
 
-            // Public Notes View
-            Item {
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                spacing: Constants.spacing_m
 
-                ColumnLayout {
-                    anchors.fill: parent
+                // Public notes list
+                ListView {
+                    id: postsView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    leftMargin: Constants.spacing_m
+                    rightMargin: Constants.spacing_m
                     spacing: Constants.spacing_m
+                    bottomMargin: 0
 
-                    // Public notes list (now takes all space except input area)
-                    ListView {
-                        id: postsView
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        leftMargin: Constants.spacing_m
-                        rightMargin: Constants.spacing_m
-                        spacing: Constants.spacing_m
-                        bottomMargin: Constants.spacing_m
-
-                        model: AutoListModel {
-                            id: postsModel
-                            source: posts
-                            mode: AutoListModel.ByKey
-                            equalityTest: function (oldItem, newItem) {
-                                return oldItem.content === newItem.content
-                                    && oldItem.timestamp === newItem.timestamp
-                            }
+                    model: AutoListModel {
+                        id: postsModel
+                        source: posts
+                        mode: AutoListModel.ByKey
+                        equalityTest: function (oldItem, newItem) {
+                            return oldItem.id === newItem.id
                         }
+                    }
 
-                        delegate: Loader {
-                            active: modelData !== undefined && modelData !== null
-                            width: postsView.width - postsView.leftMargin - postsView.rightMargin
-                            height: active ? item.implicitHeight : 0
+                    delegate: Loader {
+                        active: modelData !== undefined && modelData !== null
+                        width: postsView.width - postsView.leftMargin - postsView.rightMargin
+                        height: active ? item.implicitHeight : 0
 
-                            sourceComponent: PostContent {
-                                post: modelData
+                        sourceComponent: PostContent {
+                            post: modelData
 
-                                onCommentClicked: {
-                                    if (modelData) {    
-                                        commentsDialog.targetPost = modelData
-                                        commentsDialog.open()
-                                    }
-                                }
-
-                                onRepostClicked: {
-                                    if (modelData) {
-                                        repostMenu.targetPost = modelData
-                                        repostMenu.popup()
-                                    }
+                            onCommentClicked: {
+                                if (modelData) {
+                                    commentsDialog.targetPost = modelData
+                                    commentsDialog.open()
                                 }
                             }
-                        }
 
-                        onCountChanged: {
-                            if (atYEnd || count === 1) {
-                                positionViewAtEnd()
-                            }
-                        }
-
-                        Component.onCompleted: {
-                            positionViewAtEnd()
-                        }
-
-                        ScrollBar.vertical: ScrollBar {
-                            id: scrollBar
-                            active: true
-                            interactive: true
-                            policy: ScrollBar.AsNeeded
-                            
-                            contentItem: Rectangle {
-                                implicitWidth: 6
-                                radius: width / 2
-                                color: scrollBar.pressed ? Material.scrollBarPressedColor :
-                                       scrollBar.hovered ? Material.scrollBarHoveredColor :
-                                                         Material.scrollBarColor
-                                opacity: scrollBar.active ? 1 : 0
-                                
-                                Behavior on opacity {
-                                    NumberAnimation { duration: 150 }
+                            onRepostClicked: {
+                                if (modelData) {
+                                    repostMenu.targetPost = modelData
+                                    repostMenu.popup()
                                 }
-                            }
-                        }
-
-                        onContentHeightChanged: {
-                            if (atYEnd) {
-                                positionViewAtEnd()
                             }
                         }
                     }
 
-                    // Input area for new public notes (at the bottom)
-                    MessageInput {
-                        placeholderText: qsTr("What's on your mind?")
-                        buttonText: qsTr("Post")
-                        onMessageSent: function(text) {
-                            sendShortTextNote(text)
+                    onCountChanged: {
+                        if (atYEnd) {
+                            Qt.callLater(() => {
+                                positionViewAtEnd()
+                            })
                         }
+                    }
+
+                    Component.onCompleted: positionViewAtEnd()
+
+
+                    ScrollBar.vertical: ScrollBar {
+                        id: scrollBar
+                        active: true
+                        interactive: true
+                        policy: ScrollBar.AsNeeded
+
+                        contentItem: Rectangle {
+                            implicitWidth: 6
+                            radius: width / 2
+                            color: scrollBar.pressed ? Material.scrollBarPressedColor :
+                                    scrollBar.hovered ? Material.scrollBarHoveredColor :
+                                                        Material.scrollBarColor
+                            opacity: scrollBar.active ? 1 : 0
+
+                            Behavior on opacity {
+                                NumberAnimation { duration: 150 }
+                            }
+                        }
+                    }
+                }
+
+                // Input area for new public notes (at the bottom)
+                MessageInput {
+                    placeholderText: qsTr("What's on your mind?")
+                    buttonText: qsTr("Post")
+                    onMessageSent: function(text) {
+                        sendShortTextNote(text)
                     }
                 }
             }
 
             // Private Chat View
             ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 spacing: Constants.spacing_m
 
                 DMRelays {
@@ -276,7 +267,7 @@ Rectangle {
                 }
 
                 ListView {
-                    id: messageListView
+                    id: privateMessageListView
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
@@ -284,6 +275,8 @@ Rectangle {
                     layoutDirection: Qt.LeftToRight
                     leftMargin: Constants.spacing_m
                     rightMargin: Constants.spacing_m
+                    spacing: Constants.spacing_m
+                    bottomMargin: 0
                     visible: ctxRelayMgmt.dmRelays.length > 0
 
                     model: AutoListModel {
@@ -291,15 +284,13 @@ Rectangle {
                         source: privateMessages
                         mode: AutoListModel.ByKey
                         equalityTest: function (oldItem, newItem) {
-                            return oldItem.content === newItem.content
-                                && oldItem.isOwnMessage === newItem.isOwnMessage
-                                && oldItem.timestamp === newItem.timestamp
+                            return oldItem.id === newItem.id
                         }
                     }
 
                     delegate: Loader {
                         active: modelData !== undefined && modelData !== null
-                        width: messageListView.width - messageListView.leftMargin - messageListView.rightMargin - 15
+                        width: privateMessageListView.width - privateMessageListView.leftMargin - privateMessageListView.rightMargin - 15
                         height: active ? item.height : 0
 
                         sourceComponent: Item {
@@ -355,22 +346,33 @@ Rectangle {
                     }
 
                     onCountChanged: {
-                        if (atYEnd || count === 1) {
-                            positionViewAtEnd()
+                        if (atYEnd) {
+                            Qt.callLater(() => {
+                                positionViewAtEnd()
+                            })
                         }
                     }
 
-                    onContentHeightChanged: {
-                        positionViewAtEnd()
-                    }
-
-                    Component.onCompleted: {
-                        positionViewAtEnd()
-                    }
+                    Component.onCompleted: positionViewAtEnd()
 
                     ScrollBar.vertical: ScrollBar {
+                        id: scrollBarPrivate
                         active: true
+                        interactive: true
                         policy: ScrollBar.AsNeeded
+
+                        contentItem: Rectangle {
+                            implicitWidth: 6
+                            radius: width / 2
+                            color: scrollBarPrivate.pressed ? Material.scrollBarPressedColor :
+                                    scrollBarPrivate.hovered ? Material.scrollBarHoveredColor :
+                                                        Material.scrollBarColor
+                            opacity: scrollBarPrivate.active ? 1 : 0
+
+                            Behavior on opacity {
+                                NumberAnimation { duration: 150 }
+                            }
+                        }
                     }
                 }
 
