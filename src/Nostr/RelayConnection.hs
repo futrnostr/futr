@@ -196,7 +196,6 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
         let pendingSubs = pendingSubscriptions st
         forM_ (Map.toList pendingSubs) $ \(subId', details) -> do
             atomically $ writeTChan requestChan (NT.Subscribe $ NT.Subscription subId' (subscriptionFilter details))
-            logDebug $ "Creating subscription from pending for " <> r <> " with subId " <> subId'
 
         -- Move pending subscriptions to active subscriptions
         modify @RelayPool $ \st' ->
@@ -385,7 +384,7 @@ handleResponse relayURI' r = case r of
             st <- get @RelayPool
             case Map.lookup subId' (subscriptions st) of
                 Just sd -> atomically $ writeTQueue (responseQueue sd) (relayURI', event')
-                Nothing -> error $ "2 No subscription found for " <> show subId' <> " with response: " <> show r
+                Nothing -> error $ "2 No subscription found for " <> show subId' -- <> " with response: " <> show r
 
 
 -- | Handle authentication required.

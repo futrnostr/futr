@@ -152,6 +152,8 @@ runUI = interpret $ \_ -> \case
         followProp "petname" $ \_ -> return . maybe "" (fromMaybe "" . petName),
         followProp "displayName" $ \_ -> maybe (return "") (\follow -> do
             profile <- runE $ getProfile (pubkey follow)
+            runE $ logDebug $ pack $ show profile
+            runE $ logDebug $ pack $ show $ displayName profile
             return $ fromMaybe "" (displayName profile)),
         followProp "name" $ \_ -> maybe (return "") (\follow -> do
             profile <- runE $ getProfile (pubkey follow)

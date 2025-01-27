@@ -86,12 +86,10 @@ runSubscription = interpret $ \_ -> \case
                 modify @RelayPool $ \st' ->
                     st' { subscriptions = Map.insert subId' sub (subscriptions st') }
                 atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' f)
-                logDebug $ "Subscribed to " <> r <> " with subId " <> subId' <> " and filter " <> pack (show f)
                 return subId'
             Nothing -> do
                 modify @RelayPool $ \st' ->
                     st' { pendingSubscriptions = Map.insert subId' sub (pendingSubscriptions st') }
-                logDebug $ "Added pending subscription for " <> r <> " with subId " <> subId' <> " and filter " <> pack (show f)
                 return subId'
 
     StopSubscription subId' -> do
@@ -128,13 +126,8 @@ runSubscription = interpret $ \_ -> \case
                     ShortTextNote ->
                         pure $ emptyUpdates { postsChanged = wasUpdated }
 
-                    Repost ->
-                        case ([t | t@(ETag _ _ _ _) <- tags event'], eitherDecode (fromStrict $ encodeUtf8 $ content event')) of
-                            (ETag eid _ _ _:_, Right originalEvent) | validateEvent originalEvent ->
-                                pure $ emptyUpdates { postsChanged = wasUpdated }
-                            _ -> do
-                                logWarning $ "Invalid repost or missing e-tag: " <> (byteStringToHex $ getEventId (eventId event'))
-                                pure emptyUpdates
+                    Repost -> do
+                        pure $ emptyUpdates { postsChanged = wasUpdated }
 
                     EventDeletion ->
                         pure $ emptyUpdates { postsChanged = wasUpdated, privateMessagesChanged = wasUpdated }
@@ -154,43 +147,19 @@ runSubscription = interpret $ \_ -> \case
 
                     FollowList -> do
                         kp <- getKeyPair
-                        let pk = keyPairToPubKeyXO kp   
+                        let pk = keyPairToPubKeyXO kp
+                        when (wasUpdated && pk == pubKey event') $ do
+                            logDebug $ "!!!!! MY Follow list changed !!!!"
                         pure $ emptyUpdates { followsChanged = wasUpdated, myFollowsChanged = wasUpdated && pk == pubKey event' }
 
                     GiftWrap -> do
                         pure $ emptyUpdates { privateMessagesChanged = wasUpdated }
 
                     RelayListMetadata -> do
-                        let validRelayTags = [ r' | RTag r' <- tags event', isValidRelayURI (getUri r') ]
-                        case validRelayTags of
-                            [] -> do
-                                logWarning $ "No valid relay URIs found in RelayListMetadata event from "
-                                    <> (pubKeyXOToBech32 $ pubKey event')
-                                logWarning $ "Event: " <> pack (show event')
-                                pure emptyUpdates
-                            relays -> do
-                                {- @todo: handle relay list update
-                                handleRelayListUpdate (pubKey event') relays (createdAt event')
-                                    importGeneralRelays
-                                    generalRelays
-                                -}
-                                pure $ emptyUpdates { generalRelaysChanged = wasUpdated }
+                        pure $ emptyUpdates { generalRelaysChanged = wasUpdated }
 
                     PreferredDMRelays -> do
-                        let validRelayTags = [ r' | RelayTag r' <- tags event', isValidRelayURI r' ]
-                        case validRelayTags of
-                            [] -> do
-                                logWarning $ "No valid relay URIs found in PreferredDMRelays event from "
-                                    <> (pubKeyXOToBech32 $ pubKey event')
-                                logWarning $ "Event: " <> pack (show event')
-                                pure emptyUpdates
-                            relays -> do
-                                {- @todo: handle relay list update
-                                handleRelayListUpdate (pubKey event') relays (createdAt event')
-                                    importDMRelays
-                                    dmRelays
-                                -}
-                                pure $ emptyUpdates { dmRelaysChanged = wasUpdated }
+                        pure $ emptyUpdates { dmRelaysChanged = wasUpdated }
 
                     _ -> do
                         logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
@@ -245,7 +214,7 @@ generateRandomSubscriptionId = do
 profilesFilter :: [PubKeyXO] -> Maybe Int -> Filter
 profilesFilter authors lastTimestamp = emptyFilter 
     { authors = Just authors
-    , kinds = Just [RelayListMetadata, PreferredDMRelays, FollowList]
+    , kinds = Just [RelayListMetadata, PreferredDMRelays, FollowList, Metadata]
     , since = lastTimestamp
     }
 

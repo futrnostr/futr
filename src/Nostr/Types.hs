@@ -490,7 +490,7 @@ parsePTag rest v = do
     -- First try to parse as PTagList (multiple pubkeys)
     case rest of
         -- If all values are strings, try parsing as PTagList
-        values@(_:_) -> 
+        values@(_:_) ->
             (do
                 pubkeys <- mapM parseJSONSafe values
                 return $ PTagList pubkeys)

@@ -154,13 +154,12 @@ initializeSubscriptions xo = do
 -- | Initialize using default relays when no relay configuration exists
 initializeWithDefaultRelays :: InboxModelEff es => PubKeyXO -> Eff es ()
 initializeWithDefaultRelays xo = do
+  logDebug "Initializing with default relays..."
   let (defaultRelays, _) = defaultGeneralRelays
 
   connectionResults <- forConcurrently defaultRelays $ \relay -> do
     connected <- connect (getUri relay)
     return (relay, connected)
-
-  void $ awaitAtLeastOneConnected'
 
   let connectedRelays = [relay | (relay, success) <- connectionResults, success]
 
@@ -168,7 +167,6 @@ initializeWithDefaultRelays xo = do
   let filter' = profilesFilter [xo] Nothing
 
   subIds <- subscribeToFilter connectedRelays filter' initQueue
-  logDebug "Looking for relay data on default relays..."
   receivedEvents <- collectEventsUntilEose initQueue
 
   forM_ receivedEvents $ \(r, e') -> do
@@ -187,7 +185,6 @@ initializeWithDefaultRelays xo = do
     let filter'' = profilesFilter followList Nothing
 
     subIds' <- subscribeToFilter connectedRelays filter'' initQueue
-    logDebug "Looking for follower data on default relays..."
     receivedEvents' <- collectEventsUntilEose initQueue
 
     forM_ receivedEvents' $ \(r, e') -> do
@@ -218,6 +215,7 @@ initializeWithDefaultRelays xo = do
 -- | Initialize with existing relay configuration
 initializeWithExistingRelays :: InboxModelEff es => PubKeyXO -> [PubKeyXO] -> [Relay] -> Eff es ()
 initializeWithExistingRelays xo followList inboxRelays = do
+  logDebug "Initializing with existing relays..."
   dmRelays <- getDMRelays xo
   continueWithRelays followList inboxRelays dmRelays
 
@@ -233,16 +231,26 @@ subscribeToFilter relays f queue = do
         let relayUri = getUri relay
         subscribe relayUri f queue
 
--- | Collect events until EOSE is received
+-- | Collect events until EOSE is received from all subscriptions
 collectEventsUntilEose :: InboxModelEff es => TQueue (RelayURI, SubscriptionEvent) -> Eff es [(RelayURI, SubscriptionEvent)]
 collectEventsUntilEose queue = do
-  let loop acc = do
-        event <- atomically $ readTQueue queue
-        case snd event of
-          SubscriptionEose -> return acc
-          SubscriptionClosed _ -> return acc
-          _ -> loop (event : acc)
-  loop []
+    st <- get @RelayPool
+    let expectedEoseCount = length $ Map.keys $ activeConnections st
+
+    let loop acc eoseRelays = do
+          event@(relayUri, evt) <- atomically $ readTQueue queue
+          case evt of
+            SubscriptionEose ->
+              let newEoseRelays = Set.insert relayUri eoseRelays
+              in if Set.size newEoseRelays == expectedEoseCount  -- All active relays have sent EOSE
+                 then return (event : acc)
+                 else loop (event : acc) newEoseRelays
+            SubscriptionClosed _ -> loop acc eoseRelays
+            _ -> loop (event : acc) eoseRelays
+
+    if expectedEoseCount == 0
+      then return []
+      else loop [] Set.empty
 
 -- | Check if RelayListMetadata event is present
 hasRelayListMetadata :: [SubscriptionEvent] -> Bool
