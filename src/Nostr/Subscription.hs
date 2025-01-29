@@ -22,12 +22,14 @@ import Effectful.TH
 import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
 import System.Random (randomIO)
 
+import Crypto.Hash.SHA256 qualified as SHA256
+import Data.Aeson (encode)
 
 import QtQuick
 import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
-import Nostr.Event (validateEvent)
+import Nostr.Event (validateEvent, validateEventId, verifySignature)
 import Nostr.Keys (PubKeyXO, byteStringToHex, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.RelayConnection
 import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Relay(..)
@@ -120,6 +122,19 @@ runSubscription = interpret $ \_ -> \case
         if not (validateEvent event')
             then do
                 logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
+                {-
+                logWarning $ "EventID: " <> if validateEventId event' then "valid" else "invalid"
+                logWarning $ "Signature: " <> if verifySignature event' then "valid" else "invalid"
+
+
+                let unsignedEvent = NT.UnsignedEvent (pubKey event') (createdAt event') (kind event') (tags event') (content event')
+                    serializedEvent = BS.toStrict $ encode unsignedEvent
+                    computedId = SHA256.hash serializedEvent
+                    eventId' = getEventId $ eventId event'
+
+                logWarning $ "Raw event: " <> pack (show serializedEvent)
+                logWarning $ "Event: " <> pack (show event')
+                -}
                 pure emptyUpdates
             else do
                 wasUpdated <- putEvent ev
@@ -233,12 +248,10 @@ userPostsFilter authors lastTimestamp = emptyFilter
 
 
 -- | Creates a filter for metadata.
-metadataFilter :: [PubKeyXO] -> Filter
-metadataFilter authors = emptyFilter { authors = Just authors, kinds = Just [Metadata] }
+metadataFilter pks = emptyFilter { authors = Just pks, kinds = Just [Metadata] }
 
 -- | Creates a filter for short text notes.
-shortTextNoteFilter :: [PubKeyXO] -> Filter
-shortTextNoteFilter authors = emptyFilter { authors = Just authors, kinds = Just [ShortTextNote, EventDeletion, Repost] }
+shortTextNoteFilter pks = emptyFilter { authors = Just pks, kinds = Just [ShortTextNote, EventDeletion, Repost] }
 
 -- | Creates filter for gift wrapped messages.
 giftWrapFilter :: PubKeyXO -> Maybe Int -> Filter
@@ -246,10 +259,10 @@ giftWrapFilter xo lastTimestamp = emptyFilter { kinds = Just [GiftWrap], fTags =
 
 -- | Creates a filter for preferred DM relays.
 preferredDMRelaysFilter :: [PubKeyXO] -> Filter
-preferredDMRelaysFilter authors = emptyFilter { authors = Just authors, kinds = Just [PreferredDMRelays] }
+preferredDMRelaysFilter pks = emptyFilter { authors = Just pks, kinds = Just [PreferredDMRelays] }
 
 relayListMetadataFilter :: [PubKeyXO] -> Filter
-relayListMetadataFilter authors = emptyFilter { authors = Just authors, kinds = Just [RelayListMetadata] }
+relayListMetadataFilter pks = emptyFilter { authors = Just pks, kinds = Just [RelayListMetadata] }
 
 -- | Creates a filter for a specific event by its ID.
 eventFilter :: EventId -> Filter
@@ -265,15 +278,15 @@ commentsFilter eid = emptyFilter { kinds = Just [ShortTextNote], fTags = Just $ 
 
 -- | Filter for followers of a specific public key.
 followersFilter :: PubKeyXO -> Filter
-followersFilter pubkey = emptyFilter { kinds = Just [FollowList], fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pubkey] }
+followersFilter pk = emptyFilter { kinds = Just [FollowList], fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pk] }
 
 -- | Filter for following a specific public key.
 followingFilter :: PubKeyXO -> Filter
-followingFilter pubkey = emptyFilter { authors = Just [pubkey], kinds = Just [FollowList] }
+followingFilter pk = emptyFilter { authors = Just [pk], kinds = Just [FollowList] }
 
 -- | Filter for mentions of a specific public key.
 mentionsFilter :: PubKeyXO -> Maybe Int ->Filter
-mentionsFilter pubkey ts = emptyFilter
+mentionsFilter pk ts = emptyFilter
     { kinds = Just [ShortTextNote, Repost, Comment, EventDeletion]
-    , fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pubkey]
+    , fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pk]
     , since = ts }

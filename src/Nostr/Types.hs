@@ -20,7 +20,7 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.Function (on)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.Scientific (toBoundedInteger)
 import Data.String.Conversions (ConvertibleStrings, cs)
 import Data.Text (Text)
@@ -222,7 +222,7 @@ data Marker = Reply | Root | Mention
 
 
 -- | Represents different types of external content IDs as specified in NIP-73
-data ExternalId
+data ExternalContentId
   = UrlId Text              -- ^ Normalized URL without fragment
   | HashtagId Text          -- ^ Lowercase hashtag
   | GeohashId Text          -- ^ Lowercase geohash
@@ -237,15 +237,19 @@ data ExternalId
 
 -- | Represents a tag in an event.
 data Tag
-  = ETag EventId (Maybe RelayURI) (Maybe Marker) (Maybe PubKeyXO)
-  | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
+  = ETag EventId (Maybe RelayURI) (Maybe Marker) (Maybe PubKeyXO) -- For lowercase "e"
+  | ETag' EventId (Maybe RelayURI) (Maybe PubKeyXO)               -- For uppercase "E"
+  | ETag'' EventId (Maybe RelayURI) (Maybe PubKeyXO)              -- For lowercase "e" without marker
+  | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)            -- For lowercase "p"
+  | PTag' PubKeyXO (Maybe RelayURI)                               -- For uppercase "P"
   | PListTag [PubKeyXO]
   | QTag EventId (Maybe RelayURI) (Maybe PubKeyXO)
-  | KTag Text
+  | KTag Text                                                     -- For lowercase "k" (parent kind)
+  | KTag' Text                                                    -- For uppercase "K" (root kind)
   | RTag Relay
   | RelayTag RelayURI
   | ChallengeTag Text
-  | ITag ExternalId (Maybe Text)
+  | ITag ExternalContentId (Maybe Text)
   | GenericTag [Value]
   deriving (Eq, Generic, Show)
 
@@ -461,27 +465,47 @@ instance FromJSON Tag where
 
 -- | Parses an ETag from a JSON array.
 parseETag :: [Value] -> Value -> Parser Tag
-parseETag rest _ = do
-  case rest of
+parseETag rest (Array arr) = case rest of
+    -- Case for full ETag with marker
     [eventIdVal, relayVal, markerVal, pubkeyVal] -> do
       eventId <- parseJSONSafe eventIdVal
       relay <- parseMaybeRelayURI relayVal
       marker <- parseMaybeMarker markerVal
       pubkey <- parseMaybePubKey pubkeyVal
-      return $ ETag eventId relay marker pubkey
-    [eventIdVal, relayVal, markerVal] -> do
+      case V.head arr of
+        String "e" -> return $ ETag eventId relay marker pubkey
+        String "E" -> return $ ETag' eventId relay pubkey
+        _ -> fail "Invalid ETag type"
+
+    -- Case for ETag without marker
+    [eventIdVal, relayVal, pubkeyVal] -> do
       eventId <- parseJSONSafe eventIdVal
       relay <- parseMaybeRelayURI relayVal
-      marker <- parseMaybeMarker markerVal
-      return $ ETag eventId relay marker Nothing
+      pubkey <- parseMaybePubKey pubkeyVal
+      case V.head arr of
+        String "e" -> return $ ETag'' eventId relay pubkey
+        String "E" -> return $ ETag' eventId relay pubkey
+        _ -> fail "Invalid ETag type"
+
+    -- Case for ETag with just relay
     [eventIdVal, relayVal] -> do
       eventId <- parseJSONSafe eventIdVal
       relay <- parseMaybeRelayURI relayVal
-      return $ ETag eventId relay Nothing Nothing
+      case V.head arr of
+        String "e" -> return $ ETag'' eventId relay Nothing
+        String "E" -> return $ ETag' eventId relay Nothing
+        _ -> fail "Invalid ETag type"
+
+    -- Case for minimal ETag
     [eventIdVal] -> do
       eventId <- parseJSONSafe eventIdVal
-      return $ ETag eventId Nothing Nothing Nothing
+      case V.head arr of
+        String "e" -> return $ ETag'' eventId Nothing Nothing
+        String "E" -> return $ ETag' eventId Nothing Nothing
+        _ -> fail "Invalid ETag type"
+
     _ -> fail "Invalid ETag format"
+parseETag _ _ = fail "Expected array for ETag"
 
 
 -- | Parses a PTag from a JSON array.
@@ -499,20 +523,26 @@ parsePTag rest v = do
 
 -- | Parses a single PTag (with optional relay and name)
 parseSinglePTag :: [Value] -> Value -> Parser Tag
-parseSinglePTag rest _ = case rest of
-    (pubkeyVal : maybeRelay : maybeName : _) -> do
+parseSinglePTag rest v = case (v, rest) of
+    (Array _, pubkeyVal : maybeRelay : maybeName : _) -> do
       pubkey <- parseJSONSafe pubkeyVal
       relay <- parseMaybeRelayURI maybeRelay
       name <- parseMaybeDisplayName maybeName
       return $ PTag pubkey relay name
-    (pubkeyVal : maybeRelay : _) -> do
+    (Array arr, pubkeyVal : maybeRelay : _) -> do
       pubkey <- parseJSONSafe pubkeyVal
       relay <- parseMaybeRelayURI maybeRelay
-      return $ PTag pubkey relay Nothing
-    (pubkeyVal : _) -> do
+      case V.head arr of
+        String "p" -> return $ PTag pubkey relay Nothing
+        String "P" -> return $ PTag' pubkey relay
+        _ -> fail "Invalid PTag type - must be 'P' or 'p'"
+    (Array arr, pubkeyVal : _) -> do
       pubkey <- parseJSONSafe pubkeyVal
-      return $ PTag pubkey Nothing Nothing
-    [] -> fail "Invalid PTag format: empty array"
+      case V.head arr of
+        String "p" -> return $ PTag pubkey Nothing Nothing
+        String "P" -> return $ PTag' pubkey Nothing
+        _ -> fail "Invalid PTag type - must be 'P' or 'p'"
+    _ -> fail "Invalid PTag format: empty array"
 
 
 -- | Parses a JSON value safely and returns the parsed result.
@@ -594,13 +624,27 @@ instance ToJSON Tag where
       list id $
         [ text "e"
         , text $ decodeUtf8 $ B16.encode $ getEventId eventId
+        , text $ fromMaybe "" relayURL
+        , text $ case marker of
+            Just Reply -> "reply"
+            Just Root -> "root"
+            Just Mention -> "mention"
+            Nothing -> ""
+        , text $ maybe "" (decodeUtf8 . B16.encode . exportPubKeyXO) pubkey
+        ]
+    ETag' eventId relayURL pubkey ->
+      list id $
+        [ text "E"
+        , text $ decodeUtf8 $ B16.encode $ getEventId eventId
         ] ++
         (maybe [] (\r -> [text r]) relayURL) ++
-        (case marker of
-           Just Reply -> [text "reply"]
-           Just Root -> [text "root"]
-           Just Mention -> [text "mention"]
-           Nothing -> []) ++
+        (maybe [] (\pk -> [text $ decodeUtf8 $ B16.encode $ exportPubKeyXO pk]) pubkey)
+    ETag'' eventId relayURL pubkey ->
+      list id $
+        [ text "e"
+        , text $ decodeUtf8 $ B16.encode $ getEventId eventId
+        ] ++
+        (maybe [] (\r -> [text r]) relayURL) ++
         (maybe [] (\pk -> [text $ decodeUtf8 $ B16.encode $ exportPubKeyXO pk]) pubkey)
     PTag xo relayURL name ->
       list id $
@@ -609,6 +653,12 @@ instance ToJSON Tag where
         ] ++
         (maybe [] (\r -> [text r]) relayURL) ++
         (maybe [] (\n -> [text n]) name)
+    PTag' xo relayURL ->
+      list id $
+        [ text "P"
+        , toEncoding xo
+        ] ++
+        (maybe [] (\r -> [text r]) relayURL)
     PListTag pubkeys ->
       list id $ text "p" : map toEncoding pubkeys
     QTag eventId relayURL pubkey ->
@@ -621,11 +671,11 @@ instance ToJSON Tag where
     ITag eid urlHint ->
       list id $
         [ text "i"
-        , text (externalIdToText eid)
+        , text (externalContentIdToText eid)
         ] ++
         maybe [] (\url -> [text url]) urlHint
-    KTag kind ->
-      list id [ text "k", text kind ]
+    KTag kind -> list id [ text "k", text kind ]
+    KTag' kind -> list id [ text "K", text kind ]
     RTag relay -> 
       list id $ case relay of
         InboxRelay uri -> [text "r", text uri, text "read"]
@@ -782,7 +832,7 @@ instance FromJSON Profile where
 defaultGeneralRelays :: ([Relay], Int)
 defaultGeneralRelays =
   ( [ InboxOutboxRelay "wss://nos.lol"
-    , InboxOutboxRelay "wss://relay.nostr.bg"
+    --, InboxOutboxRelay "wss://relay.nostr.bg"
     , InboxOutboxRelay "wss://nostr.mom"
     , InboxOutboxRelay "wss://offchain.pub"
     , InboxRelay "wss://relay.damus.io"
@@ -843,13 +893,11 @@ sameRelay = (==) `on` getUri
 
 -- Add parser for QTag
 parseQTag :: [Value] -> Value -> Parser Tag
-parseQTag rest _ = case rest of
+parseQTag rest v = case rest of
     [eventIdVal, relayVal, pubkeyVal] -> do
       eventId <- parseJSONSafe eventIdVal
       relay <- parseMaybeRelayURI relayVal
-      pubkey <- case parseEither parseJSON pubkeyVal of
-                  Right pk -> return (Just pk)
-                  Left _ -> return Nothing
+      pubkey <- parseMaybePubKey pubkeyVal
       return $ QTag eventId relay pubkey
     [eventIdVal, relayVal] -> do
       eventId <- parseJSONSafe eventIdVal
@@ -858,12 +906,15 @@ parseQTag rest _ = case rest of
     [eventIdVal] -> do
       eventId <- parseJSONSafe eventIdVal
       return $ QTag eventId Nothing Nothing
-    _ -> fail "Invalid QTag format"
+    _ -> parseGenericTag v  -- Fall back to generic tag for any other format
 
 -- Add parser for KTag
 parseKTag :: [Value] -> Value -> Parser Tag
-parseKTag rest _ = case rest of
-    [String kind] -> return $ KTag kind
+parseKTag rest v = case (v, rest) of
+    (Array arr, [String kind]) -> case V.head arr of
+      String "k" -> return $ KTag kind
+      String "K" -> return $ KTag' kind
+      _ -> fail "Invalid KTag type - must be 'K' or 'k'"
     _ -> fail "Invalid KTag format"
 
 
@@ -871,19 +922,19 @@ parseKTag rest _ = case rest of
 parseITag :: [Value] -> Value -> Parser Tag
 parseITag rest _ = case rest of
     [String identifier, String urlHint] -> do
-      case parseExternalId identifier of
+      case parseExternalContentId identifier of
         Just eid -> return $ ITag eid (Just urlHint)
         Nothing -> fail $ "Invalid external identifier: " <> T.unpack identifier
     [String identifier] -> do
-      case parseExternalId identifier of
+      case parseExternalContentId identifier of
         Just eid -> return $ ITag eid Nothing
         Nothing -> fail $ "Invalid external identifier: " <> T.unpack identifier
     _ -> fail "Invalid ITag format"
 
 
--- | Parse an ExternalId from text
-parseExternalId :: Text -> Maybe ExternalId
-parseExternalId t = case T.splitOn ":" t of
+-- | Parse an ExternalContentId from text
+parseExternalContentId :: Text -> Maybe ExternalContentId
+parseExternalContentId t = case T.splitOn ":" t of
   ["isbn", isbn] -> Just $ IsbnId isbn
   ["podcast", "guid", guid] -> Just $ PodcastGuidId guid
   ["podcast", "item", "guid", guid] -> Just $ PodcastItemGuidId guid
@@ -895,30 +946,30 @@ parseExternalId t = case T.splitOn ":" t of
   _ -> Nothing
 
 
--- | Convert ExternalId to text
-externalIdToText :: ExternalId -> Text
-externalIdToText = \case
+-- | Convert ExternalContentId to text
+externalContentIdToText :: ExternalContentId -> Text
+externalContentIdToText = \case
   UrlId url -> url
   HashtagId tag -> tag
   GeohashId hash -> "geo:" <> hash
   IsbnId isbn -> "isbn:" <> isbn
-  PodcastGuidId guid -> "podcast:guid:" <> guid
-  PodcastItemGuidId guid -> "podcast:item:guid:" <> guid
-  PodcastPublisherGuidId guid -> "podcast:publisher:guid:" <> guid
-  IsanId isan -> "isan:" <> isan
-  DoiId doi -> "doi:" <> doi
+  PodcastGuidId guid -> "podcast:guid:" <> guid                     -- Podcast Feeds
+  PodcastItemGuidId guid -> "podcast:item:guid:" <> guid            -- Podcast Episodes
+  PodcastPublisherGuidId guid -> "podcast:publisher:guid:" <> guid  -- Podcast Publishers
+  IsanId isan -> "isan:" <> isan                                    -- Movies
+  DoiId doi -> "doi:" <> doi                                        -- Papers
 
--- | FromJSON instance for ExternalId
-instance FromJSON ExternalId where
-  parseJSON = withText "ExternalId" $ \t -> 
-    case parseExternalId t of
+-- | FromJSON instance for ExternalContentId
+instance FromJSON ExternalContentId where
+  parseJSON = withText "ExternalContentId" $ \t ->
+    case parseExternalContentId t of
       Just eid -> return eid
       Nothing -> fail $ "Invalid external identifier: " <> T.unpack t
 
--- | ToJSON instance for ExternalId
-instance ToJSON ExternalId where
-  toEncoding = text . externalIdToText
-  toJSON = String . externalIdToText
+-- | ToJSON instance for ExternalContentId
+instance ToJSON ExternalContentId where
+  toEncoding = text . externalContentIdToText
+  toJSON = String . externalContentIdToText
 
 -- | Parses a maybe pubkey from a JSON value.
 parseMaybePubKey :: Value -> Parser (Maybe PubKeyXO)

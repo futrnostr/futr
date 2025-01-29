@@ -53,7 +53,7 @@ import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
 import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
-                  , getEvent, getFollows, putEvent, getGeneralRelays )
+                  , getEvent, getFollows, getGeneralRelays )
 import Types
 
 -- | Signal key class for LoginStatusChanged.

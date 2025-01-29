@@ -159,7 +159,7 @@ connectWithRetry r maxRetries requestChan = do
                     Right _ -> return ()
                     Left e -> runE $ do
                         atomically $ putTMVar connectionMVar False
-                        logError $ "Connection error: " <> T.pack (show e)
+                        logError $ "Connection error on " <> r <> ": " <> T.pack (show e)
                         st' <- get @RelayPool
                         when (Map.member r (activeConnections st')) $
                             modify @RelayPool $ \s ->
