@@ -1,6 +1,6 @@
 module Nostr.Publisher where
 
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_, void, when)
 import Data.List (nub, partition)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -38,7 +38,7 @@ data Publisher :: Effect where
     Broadcast :: Event -> Publisher m ()
     PublishToOutbox :: Event -> Publisher m ()
     PublishToRelay :: Event -> RelayURI -> Publisher m ()
-    PublishGiftWrap :: Event -> PubKeyXO -> Publisher m ()
+    PublishGiftWrap :: Event -> PubKeyXO -> PubKeyXO -> Publisher m () -- sender, recipient
     GetPublishResult :: EventId -> Publisher m PublishResult
 
 type instance DispatchOf Publisher = Dynamic
@@ -66,7 +66,7 @@ runPublisher
   -> Eff es a
 runPublisher =  interpret $ \_ -> \case
     Broadcast event' -> do
-        putEvent $ EventWithRelays event' Set.empty
+        void $ putEvent $ EventWithRelays event' Set.empty
 
         kp <- getKeyPair
         let xo = keyPairToPubKeyXO kp
@@ -106,7 +106,7 @@ runPublisher =  interpret $ \_ -> \case
                 disconnect r
 
     PublishToOutbox event' -> do
-        putEvent $ EventWithRelays event' Set.empty
+        void $ putEvent $ EventWithRelays event' Set.empty
 
         kp <- getKeyPair
         let pk = keyPairToPubKeyXO kp
@@ -124,7 +124,7 @@ runPublisher =  interpret $ \_ -> \case
         forM_ outboxCapableURIs $ \r -> writeToChannel event' r
 
     PublishToRelay event' relayUri' -> do
-        putEvent $ EventWithRelays event' $ Set.empty
+        void $ putEvent $ EventWithRelays event' $ Set.empty
         modify $ \st -> st 
             { publishStatus = Map.adjust 
                 (\existingMap -> Map.insert relayUri' Publishing existingMap)
@@ -133,10 +133,10 @@ runPublisher =  interpret $ \_ -> \case
             }
         writeToChannel event' relayUri'
 
-    PublishGiftWrap event' senderPk -> do
-        putEvent $ EventWithRelays event' Set.empty
+    PublishGiftWrap event' senderPk recipientPk -> do
+        void $ putEvent $ EventWithRelays event' Set.empty
         dmRelayList <- getDMRelays senderPk
-        recipientDMRelays <- getDMRelays (pubKey event')
+        recipientDMRelays <- getDMRelays recipientPk
 
         if null dmRelayList || null recipientDMRelays
             then pure ()

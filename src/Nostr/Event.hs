@@ -311,7 +311,7 @@ createGiftWrap sealEvent recipientPubKey = do
                 { pubKey' = keyPairToPubKeyXO randomKeyPair
                 , createdAt' = floor $ utcTimeToPOSIXSeconds currentTime
                 , kind' = GiftWrap
-                , tags' = [PTagList [recipientPubKey]]
+                , tags' = [PListTag [recipientPubKey]]
                 , content' = wrapContent
                 }
           signEvent wrapEvent randomKeyPair >>= \case

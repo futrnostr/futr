@@ -77,6 +77,7 @@ runSubscription
   -> Eff es a
 runSubscription = interpret $ \_ -> \case
     Subscribe r f queue -> do
+        logDebug $ "Subscribing to relay: " <> r <> " with filter: " <> pack (show f)
         subId' <- generateRandomSubscriptionId
         let sub = SubscriptionDetails subId' f queue 0 0 r
         st <- get @RelayPool
@@ -123,7 +124,7 @@ runSubscription = interpret $ \_ -> \case
             else do
                 wasUpdated <- putEvent ev
                 updates <- case kind event' of
-                    ShortTextNote ->
+                    ShortTextNote -> do
                         pure $ emptyUpdates { postsChanged = wasUpdated }
 
                     Repost -> do
@@ -148,8 +149,6 @@ runSubscription = interpret $ \_ -> \case
                     FollowList -> do
                         kp <- getKeyPair
                         let pk = keyPairToPubKeyXO kp
-                        when (wasUpdated && pk == pubKey event') $ do
-                            logDebug $ "!!!!! MY Follow list changed !!!!"
                         pure $ emptyUpdates { followsChanged = wasUpdated, myFollowsChanged = wasUpdated && pk == pubKey event' }
 
                     GiftWrap -> do

@@ -239,7 +239,7 @@ data ExternalId
 data Tag
   = ETag EventId (Maybe RelayURI) (Maybe Marker) (Maybe PubKeyXO)
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
-  | PTagList [PubKeyXO]
+  | PListTag [PubKeyXO]
   | QTag EventId (Maybe RelayURI) (Maybe PubKeyXO)
   | KTag Text
   | RTag Relay
@@ -487,13 +487,13 @@ parseETag rest _ = do
 -- | Parses a PTag from a JSON array.
 parsePTag :: [Value] -> Value -> Parser Tag
 parsePTag rest v = do
-    -- First try to parse as PTagList (multiple pubkeys)
+    -- First try to parse as PListTag (multiple pubkeys)
     case rest of
-        -- If all values are strings, try parsing as PTagList
+        -- If all values are strings, try parsing as PListTag
         values@(_:_) ->
             (do
                 pubkeys <- mapM parseJSONSafe values
-                return $ PTagList pubkeys)
+                return $ PListTag pubkeys)
             <|> parseSinglePTag rest v  -- Fallback to single PTag parsing
         _ -> parseSinglePTag rest v
 
@@ -609,7 +609,7 @@ instance ToJSON Tag where
         ] ++
         (maybe [] (\r -> [text r]) relayURL) ++
         (maybe [] (\n -> [text n]) name)
-    PTagList pubkeys ->
+    PListTag pubkeys ->
       list id $ text "p" : map toEncoding pubkeys
     QTag eventId relayURL pubkey ->
       list id $
