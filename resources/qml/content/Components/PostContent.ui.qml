@@ -111,12 +111,12 @@ Pane {
                     implicitWidth: 36
                     implicitHeight: 36
                     padding: 8
-                    icon.color: post.commentCount > 0 ? Material.primary : Material.secondaryTextColor
+                    icon.color: post.comments.length > 0 ? Material.primary : Material.secondaryTextColor
                     onClicked: commentClicked()
                 }
                 Text {
-                    text: post.commentCount || "0"
-                    color: post.commentCount > 0 ? Material.primary : Material.secondaryTextColor
+                    text: post.comments.length || "0"
+                    color: post.comments.length > 0 ? Material.primary : Material.secondaryTextColor
                 }
             }
 

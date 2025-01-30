@@ -42,7 +42,7 @@ import Nostr.Bech32
 import Nostr.Event ( createComment, createEventDeletion, createFollowList
                    , createQuoteRepost, createRepost, createRumor, createShortTextNote
                    )
-import Nostr.InboxModel (InboxModel, awaitAtLeastOneConnected, startInboxModel, stopInboxModel)
+import Nostr.InboxModel (InboxModel, awaitAtLeastOneConnected, startInboxModel, stopInboxModel, subscribeToCommentsFor, unsubscribeToCommentsFor)
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
 import Nostr.Publisher
 import Nostr.RelayConnection (RelayConnection, connect, disconnect)
@@ -82,6 +82,7 @@ data Futr :: Effect where
   Login :: ObjRef () -> Text -> Futr m ()
   Search :: ObjRef () -> Text -> Futr m SearchResult
   SetCurrentProfile :: Text -> Futr m ()
+  SetCurrentPost :: Maybe EventId -> Futr m ()
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
   OpenChat :: PubKeyXO -> Futr m ()
@@ -181,6 +182,22 @@ runFutr = interpret $ \_ -> \case
       Nothing -> do
         logError $ "Invalid npub, cannot set current profile: " <> npub'
         return ()
+
+  SetCurrentPost eid -> do
+    previousPost <- gets @AppState currentPost
+
+    modify @AppState $ \st -> st { currentPost = eid }
+
+    case (eid, previousPost) of
+      (Just newId, _) -> subscribeToCommentsFor newId
+      (Nothing, Just oldId) -> do
+        clearCommentsRef
+        unsubscribeToCommentsFor oldId
+      (Nothing, Nothing) -> clearCommentsRef
+    where
+      clearCommentsRef =
+        modify @QtQuickState $ \st ->
+          st { uiRefs = (uiRefs st) { currentPostCommentsObjRef = Nothing } }
 
   FollowProfile npub' -> do
     let targetPK = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'

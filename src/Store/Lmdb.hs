@@ -23,10 +23,11 @@ module Store.Lmdb
     , getGeneralRelays
     , getDMRelays
     , getLatestTimestamp
+    , getCommentIds
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_, unless, when)
 import Data.Aeson (ToJSON, FromJSON, encode, decode, eitherDecode)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Cache.LRU qualified as LRU
@@ -49,7 +50,7 @@ import Pipes ((>->))
 import Logging
 import Nostr.Event (validateEvent, unwrapGiftWrap, unwrapSeal)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile, Relay, RelayURI, Tag(..)
+import Nostr.Types ( Event(..), EventId(..), Kind(..), Marker(..), Profile, Relay, RelayURI, Tag(..)
                    , Rumor(..), emptyProfile, getUri, isValidRelayURI
                    , rumorPubKey, rumorTags, rumorCreatedAt )
 import Nostr.Util
@@ -75,6 +76,7 @@ data LmdbState = LmdbState
     , generalRelaysDb :: Database PubKeyXO ([Relay], Int)
     , dmRelaysDb :: Database PubKeyXO ([RelayURI], Int)
     , latestTimestampDb :: Database (PubKeyXO, Kind) Int
+    , commentDb :: Database EventId [EventId]
     , eventCache :: LRU.LRU EventId EventWithRelays
     , profileCache :: LRU.LRU PubKeyXO Profile
     , followsCache :: LRU.LRU PubKeyXO [Follow]
@@ -82,6 +84,7 @@ data LmdbState = LmdbState
     , generalRelaysCache :: LRU.LRU PubKeyXO ([Relay], Int)
     , dmRelaysCache :: LRU.LRU PubKeyXO ([RelayURI], Int)
     , latestTimestampCache :: LRU.LRU (PubKeyXO, Kind) Int
+    , commentCache :: LRU.LRU EventId [EventId]
     } deriving (Generic)
 
 
@@ -98,6 +101,7 @@ data LmdbStore :: Effect where
     GetGeneralRelays :: PubKeyXO -> LmdbStore m [Relay]
     GetDMRelays :: PubKeyXO -> LmdbStore m [RelayURI]
     GetLatestTimestamp :: PubKeyXO -> [Kind] -> LmdbStore m (Maybe Int)
+    GetCommentIds :: EventId -> LmdbStore m [EventId]
 
 
 type instance DispatchOf LmdbStore = Dynamic
@@ -154,9 +158,20 @@ runLmdbStore = interpret $ \_ -> \case
                         _ -> pure False
 
                 ShortTextNote -> do
+                    let parentEvents = [eid | ETag eid _ marker _ <- tags (event ev), marker `elem` [Just Root, Just Reply]]
+
                     addTimelineEntryTx txn (postTimelineDb currentState) ev [author] eventTimestamp
                     runE $ modify @LmdbState $ \s -> s
                         { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
+
+                    forM_ parentEvents $ \parentId -> do
+                        existing <- Map.lookup' (readonly txn) (commentDb currentState) parentId
+                        let comments = maybe [] id existing
+                            newEventId = eventId $ event ev
+                        unless (newEventId `elem` comments) $ do
+                            Map.repsert' txn (commentDb currentState) parentId (newEventId : comments)
+                            runE $ modify @LmdbState $ \s -> s
+                                { commentCache = fst $ LRU.delete parentId (commentCache s) }
 
                     pure True
 
@@ -312,9 +327,7 @@ runLmdbStore = interpret $ \_ -> \case
     GetEvent eid -> do
         st <- get @LmdbState
         case LRU.lookup eid (eventCache st) of
-            (newCache, Just ev) -> do
-                modify @LmdbState $ \s -> s { eventCache = newCache }
-                pure (Just ev)
+            (_, Just ev) -> pure (Just ev)
             (_, Nothing) -> do
                 mev <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
                     Map.lookup' (readonly txn) (eventDb st) eid
@@ -327,9 +340,7 @@ runLmdbStore = interpret $ \_ -> \case
     GetFollows pk -> do
         st <- get @LmdbState
         case LRU.lookup pk (followsCache st) of
-            (newCache, Just fs) -> do
-                modify @LmdbState $ \s -> s { followsCache = newCache }
-                pure fs
+            (_, Just fs) -> pure fs
             (_, Nothing) -> do
                 mfs <- liftIO $ withTransaction (lmdbEnv st) $ \txn -> do
                     Map.lookup' (readonly txn) (followsDb st) pk
@@ -357,8 +368,6 @@ runLmdbStore = interpret $ \_ -> \case
             (_, Just ids) -> do
                 pure ids
             (_, Nothing) -> do
-                -- Add debug logging
-                liftIO $ putStrLn $ "GetTimelineIds: type=" ++ show timelineType ++ " author=" ++ show author
                 ids <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
                     withCursor (readonly txn) (if timelineType == PostTimeline then postTimelineDb st else chatTimelineDb st) $ \cursor -> do
                         Pipes.toListM $
@@ -372,9 +381,7 @@ runLmdbStore = interpret $ \_ -> \case
     GetGeneralRelays pubKey -> do
         st <- get @LmdbState
         case LRU.lookup pubKey (generalRelaysCache st) of
-            (newCache, Just (relays, _)) -> do
-                modify @LmdbState $ \s -> s { generalRelaysCache = newCache }
-                pure relays
+            (_, Just (relays, _)) -> pure relays
             (_, Nothing) -> do
                 mRelays <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
                     Map.lookup' (readonly txn) (generalRelaysDb st) pubKey
@@ -388,9 +395,7 @@ runLmdbStore = interpret $ \_ -> \case
     GetDMRelays pubKey -> do
         st <- get @LmdbState
         case LRU.lookup pubKey (dmRelaysCache st) of
-            (newCache, Just (relays, _)) -> do
-                modify @LmdbState $ \s -> s { dmRelaysCache = newCache }
-                pure relays
+            (_, Just (relays, _)) -> pure relays
             (_, Nothing) -> do
                 mRelays <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
                     Map.lookup' (readonly txn) (dmRelaysDb st) pubKey
@@ -406,21 +411,30 @@ runLmdbStore = interpret $ \_ -> \case
         timestamps <- forM kinds $ \k -> do
             let key = (pubKey, k)
             case LRU.lookup key (latestTimestampCache st) of
-                (newCache, Just ts) -> do
-                    modify @LmdbState $ \s -> s { latestTimestampCache = newCache }
-                    return (Just ts)
+                (_, Just ts) -> return (Just ts)
                 (_, Nothing) -> do
                     mts <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
                         Map.lookup' (readonly txn) (latestTimestampDb st) key
                     case mts of
                         Just ts -> do
-                            -- Update the cache
                             modify @LmdbState $ \s -> s { latestTimestampCache = LRU.insert key ts (latestTimestampCache s) }
                             return (Just ts)
                         Nothing -> return Nothing
 
         let validTimestamps = catMaybes timestamps
         return $ if null validTimestamps then Nothing else Just (maximum validTimestamps)
+
+    GetCommentIds eventId -> do
+        st <- get @LmdbState
+        case LRU.lookup eventId (commentCache st) of
+            (_, Just comments) -> pure comments
+            (_, Nothing) -> do
+                mComments <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+                    Map.lookup' (readonly txn) (commentDb st) eventId
+                let comments = maybe [] id mComments
+                modify @LmdbState $ \s -> s
+                    { commentCache = LRU.insert eventId comments $ commentCache s }
+                pure comments
 
 
 -- Helper function for timeline entries within a transaction
@@ -462,7 +476,7 @@ maxReaders :: Int
 maxReaders = 120
 
 maxDbs :: Int
-maxDbs = 8 -- currently 5 are required, leave some room for future growth
+maxDbs = 9
 
 -- | Initialize the Lmdb environment
 initializeEnv :: FilePath -> IO (Environment ReadWrite, MVar ())
@@ -537,6 +551,7 @@ initializeLmdbState dbPath = do
         generalRelaysDb' <- openDatabase txn (Just "general_relays") defaultJsonSettings
         dmRelaysDb' <- openDatabase txn (Just "dm_relays") defaultJsonSettings
         latestTimestampDb' <- openDatabase txn (Just "latest_timestamps") latestTimestampDbSettings
+        commentDb' <- openDatabase txn (Just "comments") defaultJsonSettings
 
         pure $ LmdbState
             { lmdbLock = lock
@@ -549,6 +564,7 @@ initializeLmdbState dbPath = do
             , generalRelaysDb = generalRelaysDb'
             , dmRelaysDb = dmRelaysDb'
             , latestTimestampDb = latestTimestampDb'
+            , commentDb = commentDb'
             , eventCache = LRU.newLRU (Just cacheSize)
             , profileCache = LRU.newLRU (Just smallCacheSize)
             , followsCache = LRU.newLRU (Just smallCacheSize)
@@ -556,6 +572,7 @@ initializeLmdbState dbPath = do
             , generalRelaysCache = LRU.newLRU (Just smallCacheSize)
             , dmRelaysCache = LRU.newLRU (Just smallCacheSize)
             , latestTimestampCache = LRU.newLRU (Just smallCacheSize)
+            , commentCache = LRU.newLRU (Just smallCacheSize)
             }
 
 -- | Cache size constants
@@ -578,6 +595,7 @@ initialLmdbState = LmdbState
     , generalRelaysDb = error "LMDB not initialized"
     , dmRelaysDb = error "LMDB not initialized"
     , latestTimestampDb = error "LMDB not initialized"
+    , commentDb = error "LMDB not initialized"
     , eventCache = LRU.newLRU (Just cacheSize)
     , profileCache = LRU.newLRU (Just smallCacheSize)
     , followsCache = LRU.newLRU (Just smallCacheSize)
@@ -585,6 +603,7 @@ initialLmdbState = LmdbState
     , generalRelaysCache = LRU.newLRU (Just smallCacheSize)
     , dmRelaysCache = LRU.newLRU (Just smallCacheSize)
     , latestTimestampCache = LRU.newLRU (Just smallCacheSize)
+    , commentCache = LRU.newLRU (Just smallCacheSize)
     }
 
 -- | Remove timeline entries for a given author

@@ -41,6 +41,7 @@ data RelayPool = RelayPool
     , inboxQueue :: TQueue (RelayURI, SubscriptionEvent)
     , updateQueue :: TQueue ()
     , updateThread :: Maybe (Async ())
+    , commentSubscriptions :: Map EventId [SubscriptionId]
     }
 
 
@@ -95,6 +96,7 @@ initialRelayPool = RelayPool
   , inboxQueue = undefined
   , updateQueue = undefined
   , updateThread = Nothing
+  , commentSubscriptions = Map.empty
   }
 
 
@@ -128,6 +130,7 @@ data AppState = AppState
   , currentScreen :: AppScreen -- @todo remove maybe?
   , currentContact :: (Maybe PubKeyXO, Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
+  , currentPost :: Maybe EventId
   }
 
 
@@ -159,4 +162,5 @@ initialState = AppState
   , currentScreen = KeyMgmt
   , currentContact = (Nothing, Nothing)
   , currentProfile = Nothing
+  , currentPost = Nothing
   }

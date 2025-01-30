@@ -44,6 +44,10 @@ Rectangle {
         onMessageSubmitted: function(text) {
             comment(targetPost.id, text)
         }
+
+        onRejected: {
+            setCurrentPost(null)
+        }
     }
 
     Menu {
@@ -200,6 +204,7 @@ Rectangle {
                                 if (modelData) {
                                     commentsDialog.targetPost = modelData
                                     commentsDialog.open()
+                                    setCurrentPost(modelData.id)
                                 }
                             }
 

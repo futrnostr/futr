@@ -6,6 +6,7 @@ import QtQuick.Layouts 1.15
 
 import Components 1.0
 import Futr 1.0
+import HsQML.Model 1.0
 
 Dialog {
     id: root
@@ -112,7 +113,7 @@ Dialog {
                         }
 
                         Text {
-                            text: (root.targetPost ? (root.targetPost.commentCount || "0") : "0") + qsTr(" Comments")
+                            text: (root.targetPost ? root.targetPost.comments.length : "0") + qsTr(" Comments")
                             color: Material.secondaryTextColor
                             font: Constants.smallFontMedium
                         }
@@ -123,12 +124,66 @@ Dialog {
 
         // Comments sections
         ListView {
+            id: commentsView
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
+            verticalLayoutDirection: ListView.TopToBottom
+            layoutDirection: Qt.LeftToRight
+            leftMargin: Constants.spacing_m
+            rightMargin: Constants.spacing_m
             spacing: Constants.spacing_m
+            bottomMargin: 0
 
-            // @todo comments here
+            model: AutoListModel {
+                id: commentsModel
+                source: root.targetPost ? root.targetPost.comments : []
+                mode: AutoListModel.ByKey
+                equalityTest: function (oldItem, newItem) {
+                    return oldItem.id === newItem.id
+                }
+            }
+
+            delegate: Loader {
+                active: modelData !== undefined && modelData !== null
+                width: commentsView.width - commentsView.leftMargin - commentsView.rightMargin
+                height: active ? item.implicitHeight : 0
+
+                sourceComponent: PostContent {
+                    post: modelData
+                }
+            }
+
+            onCountChanged: {
+                if (atYEnd) {
+                    Qt.callLater(() => {
+                        positionViewAtEnd()
+                    })
+                }
+            }
+
+            Component.onCompleted: positionViewAtEnd()
+
+
+            ScrollBar.vertical: ScrollBar {
+                id: scrollBar
+                active: true
+                interactive: true
+                policy: ScrollBar.AsNeeded
+
+                contentItem: Rectangle {
+                    implicitWidth: 6
+                    radius: width / 2
+                    color: scrollBar.pressed ? Material.scrollBarPressedColor :
+                            scrollBar.hovered ? Material.scrollBarHoveredColor :
+                                                Material.scrollBarColor
+                    opacity: scrollBar.active ? 1 : 0
+
+                    Behavior on opacity {
+                        NumberAnimation { duration: 150 }
+                    }
+                }
+            }
         }
 
         Item {
