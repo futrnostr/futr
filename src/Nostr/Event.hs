@@ -73,7 +73,7 @@ createComment originalEvent content' rootScope parentItem relayHint xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
-    , kind' = Comment
+    , kind' = ShortTextNote
     , tags' = buildTags rootScope parentItem relayHint
     , content' = content'
     }
@@ -85,11 +85,11 @@ createComment originalEvent content' rootScope parentItem relayHint xo t =
         rootTags = case root of
           Left (ITag val _) -> 
             [ ITag val Nothing
-            , KTag (pack $ show $ kind originalEvent)
+            , KTag (pack $ show $ kindToInt $ kind originalEvent)
             ]
           Right eid ->
-            [ ETag eid relay Nothing Nothing
-            , KTag (pack $ show $ kind originalEvent)
+            [ ETag eid relay (Just Root) Nothing
+            , KTag (pack $ show $ kindToInt $ kind originalEvent)
             ]
           _ -> error "Invalid root scope tag"
 
@@ -97,16 +97,13 @@ createComment originalEvent content' rootScope parentItem relayHint xo t =
         parentTags = case parent of
           Just (ETag eid _ mpk _) ->
             [ ETag eid relay mpk Nothing
-            , KTag (pack $ show Comment)
+            , KTag (pack $ show $ kindToInt Comment)
             ]
           Just (ITag val _) ->
             [ ITag val Nothing
-            , KTag (pack $ show $ kind originalEvent)
+            , KTag (pack $ show $ kindToInt $ kind originalEvent)
             ]
-          Nothing -> case root of
-            Left itag@(ITag _ _) -> [itag, KTag (pack $ show Comment)]
-            Right eid -> [ETag eid relay Nothing Nothing, KTag (pack $ show Comment)]
-            _ -> []
+          Nothing -> []
           _ -> error "Invalid parent tag"
       in
         rootTags ++ parentTags

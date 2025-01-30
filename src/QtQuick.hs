@@ -15,6 +15,7 @@ import Effectful.TH
 import Graphics.QML qualified as QML
 
 import Logging
+import Nostr.Types (EventId)
 import Types (AppState(..))
 
 
@@ -32,6 +33,7 @@ data UIReferences = UIReferences
   { profileObjRef :: Maybe (QML.ObjRef ())
   , followsObjRef :: Maybe (QML.ObjRef ())
   , postsObjRef :: Maybe (QML.ObjRef ())
+  , currentPostCommentsObjRef :: Maybe (QML.ObjRef EventId)
   , privateMessagesObjRef :: Maybe (QML.ObjRef ())
   , dmRelaysObjRef :: Maybe (QML.ObjRef ())
   , generalRelaysObjRef :: Maybe (QML.ObjRef ())
@@ -86,7 +88,7 @@ initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs Nothing
 
 -- | Initial UI references.
 initialUIRefs :: UIReferences
-initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 -- | Define the effects for QML operations.

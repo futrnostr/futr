@@ -190,27 +190,26 @@ data Kind
   deriving (Eq, Generic, Read, Show)
 
 
+kindToInt :: Kind -> Int
+kindToInt = \case
+  Metadata -> 0
+  ShortTextNote -> 1
+  FollowList -> 3
+  EventDeletion -> 5
+  Repost -> 6
+  Reaction -> 7
+  GenericRepost -> 16
+  Seal -> 13
+  GiftWrap -> 1059
+  DirectMessage -> 14
+  PreferredDMRelays -> 10050
+  CanonicalAuthentication -> 22242
+  RelayListMetadata -> 10002
+  Comment -> 1111
+  UnknownKind n -> n
+
 instance Ord Kind where
     compare k1 k2 = compare (kindToInt k1) (kindToInt k2)
-      where
-        kindToInt :: Kind -> Int
-        kindToInt = \case
-          Metadata -> 0
-          ShortTextNote -> 1
-          FollowList -> 3
-          EventDeletion -> 5
-          Repost -> 6
-          Reaction -> 7
-          GenericRepost -> 16
-          Seal -> 13
-          GiftWrap -> 1059
-          DirectMessage -> 14
-          PreferredDMRelays -> 10050
-          CanonicalAuthentication -> 22242
-          RelayListMetadata -> 10002
-          Comment -> 1111
-          UnknownKind n -> n
-
 
 -- | Represents an event id as a byte string.
 newtype EventId = EventId { getEventId :: ByteString } deriving (Eq, Ord)

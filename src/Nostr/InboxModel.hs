@@ -36,11 +36,13 @@ import Nostr.Subscription
     , stopSubscription
     , subscribe
     , userPostsFilter
+    , commentsFilter
     )
 import Nostr.Types
   ( RelayURI
   , Relay(..)
   , Event(..)
+  , EventId
   , Filter(..)
   , Kind(..)
   , SubscriptionId
@@ -60,6 +62,8 @@ data InboxModel :: Effect where
   StartInboxModel :: InboxModel m ()
   StopInboxModel :: InboxModel m ()
   AwaitAtLeastOneConnected :: InboxModel m Bool
+  SubscribeToCommentsFor :: EventId -> InboxModel m ()
+  UnsubscribeToCommentsFor :: EventId -> InboxModel m ()
 
 type instance DispatchOf InboxModel = Dynamic
 
@@ -108,15 +112,37 @@ runInboxModel = interpret $ \_ -> \case
 
   StopInboxModel -> do
     st <- get @RelayPool
-    -- Cancel the update thread if it exists
+
     forM_ (updateThread st) cancel
+
     modify @RelayPool $ \s -> s { updateThread = Nothing }
-    -- Disconnect all relays
+
     forM_ (Map.keys $ activeConnections st) $ \relayUri -> do
       disconnect relayUri
+
     put @RelayPool initialRelayPool
 
   AwaitAtLeastOneConnected -> awaitAtLeastOneConnected'
+
+  SubscribeToCommentsFor eid -> do
+    pool <- get @RelayPool
+    queue <- gets @RelayPool inboxQueue
+    let activeRelays = Map.keys $ activeConnections pool
+
+    subIds <- forM activeRelays $ \relayUri -> do
+      subscribe relayUri (commentsFilter eid) queue
+
+    modify @RelayPool $ \s ->
+      s { commentSubscriptions = Map.insert eid subIds (commentSubscriptions s) }
+
+  UnsubscribeToCommentsFor eid -> do
+    pool <- get @RelayPool
+    let subIds = Map.findWithDefault [] eid (commentSubscriptions pool)
+
+    forM_ subIds stopSubscription
+
+    modify @RelayPool $ \s ->
+      s { commentSubscriptions = Map.delete eid (commentSubscriptions pool) }
 
 -- | Wait until at least one relay is connected
 awaitAtLeastOneConnected' :: InboxModelEff es => Eff es Bool
@@ -298,7 +324,7 @@ continueWithRelays inboxRelays = do
       then do
         subscribeToProfilesAndPosts relayUri pubkeys
       else
-        logError $ "Failed to connect to Follow Relay: " <> relayUri
+        logError $ "Failed to connect to relay: " <> relayUri
 
 -- | Subscribe to Giftwrap events on a relay
 subscribeToGiftwraps :: InboxModelEff es => RelayURI -> PubKeyXO -> Eff es ()

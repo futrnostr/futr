@@ -39,7 +39,7 @@ import Nostr.Util
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb (TimelineType(..), getEvent, getFollows, getProfile, getTimelineIds)
+import Store.Lmdb (TimelineType(..), getCommentIds, getEvent, getFollows, getProfile, getTimelineIds)
 import TimeFormatter
 import Types
 
@@ -187,7 +187,7 @@ runUI = interpret $ \_ -> \case
                 Nothing -> return 0
 -}
     postClass <- mfix $ \postClass' -> newClass [
-        defPropertySigRO' "id" changeKey' $ \obj -> do
+        defPropertyRO' "id" $ \obj -> do
           let eid = fromObjRef obj :: EventId
           let value = TE.decodeUtf8 $ B16.encode $ getEventId eid
           return value,
@@ -287,13 +287,15 @@ runUI = interpret $ \_ -> \case
             Nothing -> return [],
 
         -- Event count properties using the helper
-        defPropertySigRO' "repostCount" changeKey' $ \obj -> do
+        defPropertySigRO' "repostCount" changeKey' $ \_ -> do
             return (0 :: Int),
             --runE $ getEventCount subscribeToReposts (fromObjRef obj),
 
-        defPropertySigRO' "commentCount" changeKey' $ \obj -> do
-            return (0 :: Int)
-            --runE $ getEventCount subscribeToComments (fromObjRef obj)
+        defPropertySigRO' "comments" changeKey' $ \obj -> do
+          runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { currentPostCommentsObjRef = Just obj } }
+          let postId = fromObjRef obj :: EventId
+          commentIds <- runE $ getCommentIds postId
+          mapM (newObject postClass') commentIds
       ]
 
     postsPool <- newFactoryPool (newObject postClass)
@@ -413,7 +415,14 @@ runUI = interpret $ \_ -> \case
 
         defMethod' "deleteEvent" $ \_ eid input -> runE $ do -- NIP-09 delete post
           let eid' = read (unpack eid) :: EventId
-          deleteEvent eid' input
+          deleteEvent eid' input,
+
+        defMethod' "setCurrentPost" $ \_ meid -> runE $ do
+          case meid of
+            Just eid -> do
+              let eid' = read (unpack eid) :: EventId
+              setCurrentPost $ Just eid'
+            Nothing -> setCurrentPost Nothing
       ]
 
     rootObj <- newObject rootClass ()
