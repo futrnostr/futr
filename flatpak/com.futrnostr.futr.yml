@@ -22,6 +22,16 @@ finish-args:
   - --socket=session-bus
 
 modules:
+  - name: lmdb
+    buildsystem: simple
+    build-commands:
+      - cd libraries/liblmdb && make
+      - cd libraries/liblmdb && make install prefix=/app
+    sources:
+      - type: archive
+        url: https://github.com/LMDB/lmdb/archive/LMDB_0.9.31.tar.gz
+        sha256: dd70a8c67807b3b8532b3e987b0a4e998962ecc28643e1af5ec77696b081c9b0
+
   - name: libsecp256k1
     buildsystem: autotools
     sources:
