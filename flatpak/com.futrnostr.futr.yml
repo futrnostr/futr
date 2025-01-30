@@ -26,7 +26,9 @@ modules:
     buildsystem: simple
     build-commands:
       - cd libraries/liblmdb && make
-      - cd libraries/liblmdb && make install prefix=/app
+      - mkdir -p /app/lib
+      - cp libraries/liblmdb/liblmdb.so /app/lib/liblmdb.so.0
+      - ln -s /app/lib/liblmdb.so.0 /app/lib/liblmdb.so
     sources:
       - type: archive
         url: https://github.com/LMDB/lmdb/archive/LMDB_0.9.31.tar.gz
