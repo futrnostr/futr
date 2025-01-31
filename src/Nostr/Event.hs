@@ -66,8 +66,8 @@ createComment :: Event                  -- ^ Original event being commented on
               -> Either Tag EventId     -- ^ Root scope (Tag for I-tags, EventId for events)
               -> Maybe Tag              -- ^ Optional parent item (for replies)
               -> Maybe RelayURI         -- ^ Optional relay hint
-              -> PubKeyXO              -- ^ Author's public key
-              -> Int                   -- ^ Timestamp
+              -> PubKeyXO               -- ^ Author's public key
+              -> Int                    -- ^ Timestamp
               -> UnsignedEvent
 createComment originalEvent content' rootScope parentItem relayHint xo t =
   UnsignedEvent

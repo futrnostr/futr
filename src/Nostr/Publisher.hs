@@ -4,23 +4,21 @@ import Control.Monad (forM, forM_, void, when)
 import Data.List (nub, partition)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
-import Data.Text (Text, pack)
+import Data.Text (Text)
 import Effectful
 import Effectful.Concurrent (Concurrent)
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (atomically, writeTChan)
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, get, gets, modify)
+import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
---import Network.URI (URI(..), parseURI, uriAuthority, uriPort, uriRegName, uriScheme)
 
-import QtQuick
 import Logging
-import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.RelayConnection
-import Nostr.Types (Event(..), EventId, Relay(..), RelayURI, Request(..), getUri, isInboxCapable, isOutboxCapable)
+import Nostr.Types (Event(..), EventId, RelayURI, Request(..), getUri, isInboxCapable, isOutboxCapable)
 import Nostr.Util
+import QtQuick
 import Store.Lmdb (LmdbStore, getFollows, getDMRelays, getGeneralRelays, putEvent)
 import Types ( AppState(..), ConnectionState(..), EventWithRelays(..), Follow(..)
              , PublishStatus(..), RelayData(..), RelayPool(..) )
@@ -79,8 +77,8 @@ runPublisher =  interpret $ \_ -> \case
         let followPks = map pubkey follows
 
         followerRelays <- forM followPks $ \pk -> do
-            relays <- getGeneralRelays pk
-            return $ filter isInboxCapable relays
+            relays' <- getGeneralRelays pk
+            return $ filter isInboxCapable relays'
 
         let allTargetRelays = nub $ 
                 dmRelays ++
