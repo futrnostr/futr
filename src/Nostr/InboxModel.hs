@@ -295,36 +295,23 @@ continueWithRelays inboxRelays = do
   -- Connect to DM relays concurrently
   void $ forConcurrently dmRelays $ \r -> do
     connected <- connect r
-    if connected
-      then do
-        subscribeToGiftwraps r xo
-      else
-        logError $ "Failed to connect to DM Relay: " <> r
+    when connected $ subscribeToGiftwraps r xo
 
   -- Connect to inbox relays concurrently
   void $ forConcurrently inboxRelays $ \r -> do
     let relayUri = getUri r
     connected <- connect relayUri
-    if connected
-      then do
-        when (isInboxCapable r) $ do
-          subscribeToMentions relayUri xo
-      else
-        logError $ "Failed to connect to Inbox Relay: " <> relayUri
+    when (connected && isInboxCapable r) $ subscribeToGiftwraps relayUri xo
 
   follows <- getFollows xo
   let followList = xo : map pubkey follows
   followRelayMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
-  logDebug $ "Build Relay-PubKey Map: " <> pack (show followRelayMap)
+  --logDebug $ "Build Relay-PubKey Map: " <> pack (show followRelayMap)
 
   -- Connect to follow relays concurrently
   void $ forConcurrently (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
     connected <- connect relayUri
-    if connected
-      then do
-        subscribeToProfilesAndPosts relayUri pubkeys
-      else
-        logError $ "Failed to connect to relay: " <> relayUri
+    when connected $ subscribeToProfilesAndPosts relayUri pubkeys
 
 -- | Subscribe to Giftwrap events on a relay
 subscribeToGiftwraps :: InboxModelEff es => RelayURI -> PubKeyXO -> Eff es ()

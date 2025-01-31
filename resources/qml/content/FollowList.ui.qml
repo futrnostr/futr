@@ -62,18 +62,20 @@ Rectangle {
                         if (!modelData) return false;
                         if (followListFilter.filterText === "") return true;
                         var searchText = followListFilter.filterText.toLowerCase();
-                        return modelData.pubkey.toLowerCase().includes(searchText) ||
-                                (modelData.displayName && modelData.displayName.toLowerCase().includes(searchText));
+                        var displayName = modelData.displayName !== undefined ? modelData.displayName : "";
+                        var pubkey = modelData.pubkey !== undefined ? modelData.pubkey : "";
+                        return pubkey.toLowerCase().includes(searchText) ||
+                               displayName.toLowerCase().includes(searchText);
                     }
 
                     sourceComponent: Rectangle {
                         id: followItem
                         property bool mouseHover: false
-                        height: 80
+                        height: 54
                         width: parent.width
                         color: {
                             if (mouseHover) return Material.accentColor;
-                            if (modelData.pubkey === followsView.selectedPubkey) return Qt.darker(Material.accentColor, 1.2);
+                            if (modelData && modelData.pubkey === followsView.selectedPubkey) return Qt.darker(Material.accentColor, 1.2);
                             return Material.backgroundColor;
                         }
                         border.color: Material.dividerColor
@@ -81,12 +83,12 @@ Rectangle {
 
                         RowLayout {
                             anchors.fill: parent
-                            anchors.margins: 10
+                            anchors.margins: 7
 
                             Image {
                                 source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
-                                Layout.preferredWidth: 50
-                                Layout.preferredHeight: 50
+                                Layout.preferredWidth: 34
+                                Layout.preferredHeight: 34
                                 Layout.alignment: Qt.AlignVCenter
                                 smooth: true
                                 fillMode: Image.PreserveAspectCrop
@@ -94,7 +96,7 @@ Rectangle {
 
                             ColumnLayout {
                                 Layout.fillWidth: true
-                                spacing: 5
+                                spacing: 3
 
                                 Text {
                                     text: modelData.petname ||modelData.displayName || modelData.name || modelData.pubkey

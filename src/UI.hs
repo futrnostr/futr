@@ -12,7 +12,6 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.List (find, nub)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Proxy (Proxy(..))
-import qualified Data.Set as Set
 import Data.Text (Text, drop, pack, unpack)
 import Data.Text.Encoding qualified as TE
 import Effectful

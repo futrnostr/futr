@@ -80,17 +80,14 @@ runRelayConnection = interpret $ \_ -> \case
                 let connState = connectionState <$> Map.lookup r' conns
                 case connState of
                     Just Connected -> do
-                        logDebug $ "Already connected to " <> r'
                         return True
                     Just Connecting -> do
-                        logDebug $ "Connection already in progress for " <> r'
                         return False
                     Just Disconnected -> do
                         -- Try to reconnect
                         chan <- newTChanIO
                         connectWithRetry r' 5 chan
                     Nothing -> do
-                        logWarning $ "No connection state found for relay: " <> r'
                         return False
             else do
                 chan <- newTChanIO
@@ -178,8 +175,6 @@ connectWithRetry r maxRetries requestChan = do
 -- | Nostr client for relay connections.
 nostrClient :: RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan NT.Request -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
 nostrClient connectionMVar r requestChan runE conn = runE $ do
-    logDebug $ "Connected to " <> r
-
     liftIO $ withPingPong defaultPingPongOptions conn $ \conn' -> runE $ do
         modify @RelayPool $ \st ->
             st { activeConnections = Map.adjust
@@ -205,12 +200,12 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
 
         void $ atomically $ putTMVar connectionMVar True
 
-        updateQueue <- newTQueueIO
-        receiveThread <- async $ receiveLoop conn' updateQueue
+        updateQueue' <- newTQueueIO
+        receiveThread <- async $ receiveLoop conn' updateQueue'
         sendThread <- async $ sendLoop conn'
         void $ waitAnyCancel [receiveThread, sendThread]
-        modify @RelayPool $ \st ->
-            st { activeConnections = Map.adjust (\d -> d { connectionState = Disconnected }) r (activeConnections st) }
+        modify @RelayPool $ \st' ->
+            st' { activeConnections = Map.adjust (\d -> d { connectionState = Disconnected }) r (activeConnections st') }
         notifyRelayStatus
 
   where
@@ -318,11 +313,12 @@ handleResponse relayURI' r = case r of
                             Just authId | authId == eventId' && accepted' -> do
                                 let pendingReqs = pendingRequests rd
                                 let pendingEvts = pendingEvents rd
-
+                                {-
                                 logDebug $ "Auth successful, retrying " <> T.pack (show (length pendingReqs))
                                         <> " pending requests and "
                                         <> T.pack (show (length pendingEvts))
                                         <> " pending events for " <> relayURI'
+                                -}
 
                                 -- Clear pending lists and auth ID
                                 modify @RelayPool $ \st' ->
@@ -339,8 +335,11 @@ handleResponse relayURI' r = case r of
                                 forM_ pendingEvts $ \evt -> atomically $ writeTChan (requestChannel rd) (NT.SendEvent evt)
                                 forM_ pendingReqs $ \req -> atomically $ writeTChan (requestChannel rd) req
 
-                            _ -> logDebug $ "Received OK for event " <> T.pack (show eventId')
+                            _ -> return ()
+                                {-
+                                logDebug $ "Received OK for event " <> T.pack (show eventId')
                                         <> " (accepted: " <> T.pack (show accepted') <> ")"
+                                -}
                     Nothing -> logError $ "Received OK but no connection found: " <> relayURI'
         return $ emptyUpdates { publishStatusChanged = True }
         
@@ -384,7 +383,7 @@ handleResponse relayURI' r = case r of
             st <- get @RelayPool
             case Map.lookup subId' (subscriptions st) of
                 Just sd -> atomically $ writeTQueue (responseQueue sd) (relayURI', event')
-                Nothing -> error $ "2 No subscription found for " <> show subId' -- <> " with response: " <> show r
+                Nothing -> logError $ "No subscription found for " <> T.pack (show subId')
 
 
 -- | Handle authentication required.
