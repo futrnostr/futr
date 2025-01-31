@@ -79,7 +79,7 @@ runSubscription
   -> Eff es a
 runSubscription = interpret $ \_ -> \case
     Subscribe r f queue -> do
-        logDebug $ "Subscribing to relay: " <> r <> " with filter: " <> pack (show f)
+        --logDebug $ "Subscribing to relay: " <> r <> " with filter: " <> pack (show f)
         subId' <- generateRandomSubscriptionId
         let sub = SubscriptionDetails subId' f queue 0 0 r
         st <- get @RelayPool
@@ -156,7 +156,7 @@ runSubscription = interpret $ \_ -> \case
                                 when isOwnProfile $ do
                                     let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
                                     updateProfile aid profile
-                                pure $ emptyUpdates { profilesChanged = wasUpdated }
+                                pure $ emptyUpdates { profilesChanged = wasUpdated, myFollowsChanged = wasUpdated }
                             Left err -> do
                                 logWarning $ "Failed to decode metadata: " <> pack err
                                 pure emptyUpdates
