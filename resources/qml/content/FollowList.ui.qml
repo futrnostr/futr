@@ -55,24 +55,30 @@ Rectangle {
                 }
 
                 delegate: Loader {
-                    active: modelData !== undefined && modelData !== null && visible
+                    id: delegateLoader
                     width: followsView.width - followsView.ScrollBar.vertical.width
-                    height: active ? item.height : 0
+                    height: active && item && visible ? 54 : 0
+                    active: modelData !== undefined && modelData !== null
                     visible: {
                         if (!modelData) return false;
                         if (followListFilter.filterText === "") return true;
                         var searchText = followListFilter.filterText.toLowerCase();
-                        var displayName = modelData.displayName !== undefined ? modelData.displayName : "";
-                        var pubkey = modelData.pubkey !== undefined ? modelData.pubkey : "";
+                        var displayName = modelData.displayName || "";
+                        var petname = modelData.petname || "";
+                        var name = modelData.name || "";
+                        var pubkey = modelData.pubkey || "";
                         return pubkey.toLowerCase().includes(searchText) ||
-                               displayName.toLowerCase().includes(searchText);
+                               displayName.toLowerCase().includes(searchText) ||
+                               petname.toLowerCase().includes(searchText) ||
+                               name.toLowerCase().includes(searchText);
                     }
 
                     sourceComponent: Rectangle {
                         id: followItem
                         property bool mouseHover: false
-                        height: 54
+                        height: delegateLoader.visible ? 54 : 0
                         width: parent.width
+                        visible: delegateLoader.visible
                         color: {
                             if (mouseHover) return Material.accentColor;
                             if (modelData && modelData.pubkey === followsView.selectedPubkey) return Qt.darker(Material.accentColor, 1.2);
