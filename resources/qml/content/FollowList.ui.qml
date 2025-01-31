@@ -47,11 +47,6 @@ Rectangle {
                     }
                 }
 
-                highlightRangeMode: ListView.ApplyRange
-                highlightMoveDuration: 0
-                cacheBuffer: height * 0.5
-                displayMarginBeginning: height * 0.5
-                displayMarginEnd: height * 0.5
                 reuseItems: true
 
                 ScrollBar.vertical: ScrollBar {
@@ -59,11 +54,10 @@ Rectangle {
                     policy: ScrollBar.AlwaysOn
                 }
 
-                delegate: Rectangle {
-                    id: followItem
-                    property bool mouseHover: false
-                    height: visible ? 80 : 0
+                delegate: Loader {
+                    active: modelData !== undefined && modelData !== null && visible
                     width: followsView.width - followsView.ScrollBar.vertical.width
+                    height: active ? item.height : 0
                     visible: {
                         if (!modelData) return false;
                         if (followListFilter.filterText === "") return true;
@@ -71,70 +65,76 @@ Rectangle {
                         return modelData.pubkey.toLowerCase().includes(searchText) ||
                                 (modelData.displayName && modelData.displayName.toLowerCase().includes(searchText));
                     }
-                    color: {
-                        if (!modelData) return Material.backgroundColor;
-                        if (mouseHover) return Material.accentColor;
-                        if (modelData.pubkey === followsView.selectedPubkey) return Qt.darker(Material.accentColor, 1.2);
-                        return Material.backgroundColor;
-                    }
-                    border.color: Material.dividerColor
-                    radius: 5
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 10
-
-                        Image {
-                            source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
-                            Layout.preferredWidth: 50
-                            Layout.preferredHeight: 50
-                            Layout.alignment: Qt.AlignVCenter
-                            smooth: true
-                            fillMode: Image.PreserveAspectCrop
+                    sourceComponent: Rectangle {
+                        id: followItem
+                        property bool mouseHover: false
+                        height: 80
+                        width: parent.width
+                        color: {
+                            if (mouseHover) return Material.accentColor;
+                            if (modelData.pubkey === followsView.selectedPubkey) return Qt.darker(Material.accentColor, 1.2);
+                            return Material.backgroundColor;
                         }
+                        border.color: Material.dividerColor
+                        radius: 5
 
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 5
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 10
 
-                            Text {
-                                text: modelData.petname ||modelData.displayName || modelData.name || modelData.pubkey
-                                font: Constants.font
-                                color: Material.primaryTextColor
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
+                            Image {
+                                source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
+                                Layout.preferredWidth: 50
+                                Layout.preferredHeight: 50
+                                Layout.alignment: Qt.AlignVCenter
+                                smooth: true
+                                fillMode: Image.PreserveAspectCrop
                             }
 
-                            Text {
-                                text: modelData.name || modelData.pubkey
-                                elide: Text.ElideRight
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                font: Constants.smallFont
-                                color: Material.secondaryTextColor
-                                visible: modelData.displayName !== "" || modelData.name !== ""
+                                spacing: 5
+
+                                Text {
+                                    text: modelData.petname ||modelData.displayName || modelData.name || modelData.pubkey
+                                    font: Constants.font
+                                    color: Material.primaryTextColor
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+
+                                Text {
+                                    text: modelData.name || modelData.pubkey
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                    font: Constants.smallFont
+                                    color: Material.secondaryTextColor
+                                    visible: modelData.displayName !== "" || modelData.name !== ""
+                                }
                             }
                         }
-                    }
 
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
 
-                        onEntered: followItem.mouseHover = true
-                        onExited: followItem.mouseHover = false
+                            onEntered: followItem.mouseHover = true
+                            onExited: followItem.mouseHover = false
 
-                        onClicked: {
-                            followsView.selectedPubkey = modelData.pubkey
-                            setCurrentProfile(modelData.pubkey)
-                            openChat(modelData.pubkey)
-                            profileLoader.setSource("Profile/Profile.ui.qml", {
-                                "profileData": currentProfile,
-                                "npub": modelData.pubkey
-                            })
-                            chatLoader.setSource("MainContent.ui.qml", {
-                                "profileData": currentProfile,
-                                "npub": modelData.pubkey
-                            })
+                            onClicked: {
+                                followsView.selectedPubkey = modelData.pubkey
+                                setCurrentProfile(modelData.pubkey)
+                                openChat(modelData.pubkey)
+                                profileLoader.setSource("Profile/Profile.ui.qml", {
+                                    "profileData": currentProfile,
+                                    "npub": modelData.pubkey
+                                })
+                                chatLoader.setSource("MainContent.ui.qml", {
+                                    "profileData": currentProfile,
+                                    "npub": modelData.pubkey
+                                })
+                            }
                         }
                     }
                 }
