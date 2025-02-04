@@ -490,10 +490,10 @@ getRelayData relayUri = do
   return $ fromMaybe (error $ "No RelayData for " <> unpack relayUri) $ Map.lookup relayUri (activeConnections st)
 
 -- | Get pubkeys from subscriptions in RelayData
--- @todo broken function???
 getSubscribedPubkeys :: RelayPool -> RelayURI -> [PubKeyXO]
-getSubscribedPubkeys pool _ =
+getSubscribedPubkeys pool relayUri =
   [ pk
-  | sd <- Map.elems (subscriptions pool)
+  | (_, sd) <- Map.toList (subscriptions pool)
+  , relay sd == relayUri
   , pk <- fromMaybe [] (authors $ subscriptionFilter sd)
   ]
