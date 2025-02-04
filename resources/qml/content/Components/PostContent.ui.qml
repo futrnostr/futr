@@ -34,7 +34,6 @@ Pane {
             color: Material.foreground
         }
 
-        // Referenced content boxes
         Repeater {
             model: post.referencedPosts || []
             delegate: Rectangle {
@@ -195,7 +194,7 @@ Pane {
 
         onAccepted: {
             deleteEvent(post.id, reasonField.text)
-            reasonField.text = "" // Clear the field after use
+            reasonField.text = ""
         }
     }
 }

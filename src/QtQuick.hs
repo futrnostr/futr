@@ -15,6 +15,7 @@ import Effectful.TH
 import Graphics.QML qualified as QML
 
 import Logging
+import Nostr.Keys (PubKeyXO)
 import Nostr.Types (EventId)
 import Types (AppState(..))
 
@@ -30,7 +31,7 @@ data QtQuickState = QtQuickState
 
 -- | UI object references grouped together
 data UIReferences = UIReferences
-  { profileObjRef :: Maybe (QML.ObjRef ())
+  { profileObjRef :: Maybe (QML.ObjRef PubKeyXO)
   , followsObjRef :: Maybe (QML.ObjRef ())
   , postsObjRef :: Maybe (QML.ObjRef ())
   , currentPostCommentsObjRef :: Maybe (QML.ObjRef EventId)
@@ -122,9 +123,8 @@ runQtQuick = interpret $ \_ -> \case
 
           refs <- gets uiRefs
           -- Define update checks and their corresponding refs
-          let updates = [ (profilesChanged, profileObjRef)
-                        -- followsChanged is not used
-                        , (myFollowsChanged, followsObjRef)
+          let updates = [ -- followsChanged is not used, profileObjRef is handled separately
+                          (myFollowsChanged, followsObjRef)
                         , (postsChanged, postsObjRef)
                         , (privateMessagesChanged, privateMessagesObjRef)
                         , (dmRelaysChanged, dmRelaysObjRef)
@@ -135,6 +135,9 @@ runQtQuick = interpret $ \_ -> \case
           forM_ updates $ \(checkFn, getRef) ->
             when (checkFn combinedUpdates) $
               forM_ (getRef refs) (liftIO . QML.fireSignal changeKey)
+
+          when (profilesChanged combinedUpdates) $
+            forM_ (profileObjRef refs) (liftIO . QML.fireSignal changeKey)
 
           threadDelay 200000  -- 0.2 second delay for UI updates
 

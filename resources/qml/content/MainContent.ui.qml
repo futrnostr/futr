@@ -307,22 +307,20 @@ Rectangle {
                                 width: parent.width
                                 spacing: Constants.spacing_m
                                 y: Constants.spacing_m
-                                layoutDirection: message ? (message.isOwnMessage ? Qt.RightToLeft : Qt.LeftToRight) : Qt.LeftToRight
+                                layoutDirection: message ? (message.author.npub == mynpub ? Qt.RightToLeft : Qt.LeftToRight) : Qt.LeftToRight
 
                                 ProfilePicture {
-                                    imageSource: message ? (message.isOwnMessage ?
-                                        Util.getProfilePicture(mypicture, mynpub) :
-                                        Util.getProfilePicture(profileData.picture, profileData.npub)) : ""
+                                    imageSource: message ? Util.getProfilePicture(message.author.picture, message.author.npub) : ""
                                 }
 
                                 Pane {
                                     Layout.fillWidth: true
                                     Layout.maximumWidth: parent.width * 0.7
-                                    Layout.rightMargin: message ? (message.isOwnMessage ? 0 : Constants.spacing_m) : Constants.spacing_m
+                                    Layout.rightMargin: message ? (message.author.npub == mynpub ? 0 : Constants.spacing_m) : Constants.spacing_m
                                     Layout.leftMargin: message ? Constants.spacing_m : 0
                                     padding: Constants.spacing_m
                                     background: Rectangle {
-                                        color: message ? (message.isOwnMessage ? Material.accentColor : Material.dividerColor) : Material.dividerColor
+                                        color: message ? (message.author.npub == mynpub ? Material.accentColor : Material.dividerColor) : Material.dividerColor
                                         radius: 10
                                     }
 
@@ -338,7 +336,7 @@ Rectangle {
                                         }
 
                                         Text {
-                                            Layout.alignment: message ? (message.isOwnMessage ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
+                                            Layout.alignment: message ? (message.author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
                                             text: message ? message.timestamp : ""
                                             font: Constants.smallFontMedium
                                             color: Material.secondaryTextColor

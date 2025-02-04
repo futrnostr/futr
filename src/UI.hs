@@ -17,7 +17,7 @@ import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent.STM (TQueue)
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (get, modify)
+import Effectful.State.Static.Shared (get, gets, modify)
 import Effectful.TH
 import QtQuick
 import Graphics.QML hiding (fireSignal, runEngineLoop)
@@ -31,7 +31,7 @@ import Nostr
 import Nostr.Bech32
 import Nostr.Event (createMetadata)
 import Nostr.Publisher
-import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
+import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile(..), RelayURI
                    , Marker(..), Rumor(..), Tag(..) )
 import Nostr.Util
@@ -69,51 +69,51 @@ runUI = interpret $ \_ -> \case
             return 0 -- @todo implement
 
     profileClass <- newClass [
-        defPropertySigRO' "name" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+        defPropertySigRO' "id" changeKey' $ \obj -> do
+          let pk = fromObjRef obj :: PubKeyXO
+          let value = TE.decodeUtf8 $ B16.encode $ exportPubKeyXO pk
+          return value,
+
+        defPropertySigRO' "npub" changeKey' $ \obj -> do
+          let pk = fromObjRef obj :: PubKeyXO
+          return $ pubKeyXOToBech32 pk,
+
+        defPropertySigRO' "name" changeKey' $ \obj -> do
+          let pk = fromObjRef obj :: PubKeyXO
           profile <- runE $ getProfile pk
           return $ name profile,
 
-        defPropertySigRO' "displayName" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+        defPropertySigRO' "displayName" changeKey' $ \obj -> do
+          let pk = fromObjRef obj :: PubKeyXO
           profile <- runE $ getProfile pk
           return $ displayName profile,
 
-        defPropertySigRO' "about" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+        defPropertySigRO' "about" changeKey' $ \obj -> do
+          let pk = fromObjRef obj :: PubKeyXO
           profile <- runE $ getProfile pk
           return $ about profile,
 
-        defPropertySigRO' "picture" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+        defPropertySigRO' "picture" changeKey' $ \obj -> do
+          let pk = fromObjRef obj :: PubKeyXO
           profile <- runE $ getProfile pk
           return $ picture profile,
 
-        defPropertySigRO' "nip05" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+        defPropertySigRO' "nip05" changeKey' $ \obj -> do
+          let pk = fromObjRef obj :: PubKeyXO
           profile <- runE $ getProfile pk
           return $ nip05 profile,
 
-        defPropertySigRO' "banner" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
+        defPropertySigRO' "banner" changeKey' $ \obj -> do
+          let pk = fromObjRef obj :: PubKeyXO
           profile <- runE $ getProfile pk
           return $ banner profile,
 
-        defPropertySigRO' "isFollow" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          let currentPubKey = keyPairToPubKeyXO <$> keyPair st
-          let profilePubKey = currentProfile st
-          case (currentPubKey, profilePubKey) of
-            (Just userPK, Just profilePK) -> do
-              follows <- runE $ getFollows userPK
-              return $ profilePK `elem` map pubkey follows
-            _ -> return False,
+        defPropertySigRO' "isFollow" changeKey' $ \obj -> do
+          let pk = fromObjRef obj :: PubKeyXO
+          kp <- runE getKeyPair
+          let currentPubKey = keyPairToPubKeyXO kp
+          follows <- runE $ getFollows currentPubKey
+          return $ pk `elem` map pubkey follows,
 
         defPropertySigRO' "followerCount" changeKey' $ \obj -> do
             return (0 :: Int),
@@ -217,10 +217,6 @@ runUI = interpret $ \_ -> \case
             Just eventWithRelays -> do
               let ev = event eventWithRelays
               case kind ev of
-                Repost -> do
-                  case eitherDecode (BSL.fromStrict $ TE.encodeUtf8 $ content ev) of
-                    Right repostedEvent -> return $ Just $ content repostedEvent
-                    Left _ -> return $ Just $ content ev
                 GiftWrap -> do
                   kp <- getKeyPair
                   sealed <- unwrapGiftWrap ev kp
@@ -240,8 +236,22 @@ runUI = interpret $ \_ -> \case
             Nothing -> return Nothing
           return value,
 
-        defPropertySigRO' "author" changeKey' $ \_ -> do
-          Just <$> newObject profileClass (),
+        defPropertySigRO' "author" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          value <- runE $ getEvent eid >>= \case
+            Just eventWithRelays -> do
+              let ev = event eventWithRelays
+              case kind ev of
+                GiftWrap -> do
+                  kp <- getKeyPair
+                  sealed <- unwrapGiftWrap ev kp
+                  rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
+                  return $ rumorPubKey <$> rumor
+                _ -> return $ Just $ pubKey ev
+            Nothing -> return Nothing
+          case value of
+            Just pk -> Just <$> newObject profileClass pk
+            Nothing -> return Nothing,
 
         -- For comments: points to the original post that started the thread
         -- Example: Post A <- Comment B <- Comment C
@@ -306,10 +316,13 @@ runUI = interpret $ \_ -> \case
         defPropertyConst' "ctxRelayMgmt" (\_ -> return relayMgmtObj),
 
         defPropertyConst' "currentProfile" (\_ -> do
-          profileObj <- newObject profileClass ()
-          runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { profileObjRef = Just profileObj } }
-          return profileObj
-        ),
+          mp <- runE $ gets @AppState currentProfile
+          case mp of
+            Just pk -> do
+              profileObj <- newObject profileClass pk
+              runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { profileObjRef = Just profileObj } }
+              return $ Just profileObj
+            Nothing -> return Nothing),
 
         defPropertySigRW' "currentScreen" changeKey'
             (\_ -> do
