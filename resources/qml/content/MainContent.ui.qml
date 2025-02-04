@@ -252,6 +252,7 @@ Rectangle {
                 // Input area for new public notes (at the bottom)
                 MessageInput {
                     placeholderText: qsTr("What's on your mind?")
+                    visible: mynpub == npub
                     buttonText: qsTr("Post")
                     onMessageSent: function(text) {
                         sendShortTextNote(text)
