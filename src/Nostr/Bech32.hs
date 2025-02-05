@@ -15,7 +15,7 @@ module Nostr.Bech32
     ) where
 
 import Codec.Binary.Bech32 qualified as Bech32
-import Data.Binary.Put (runPut, putWord8, putByteString)
+import Data.Binary.Put (runPut, putWord8, putByteString, putWord32be)
 import Data.Binary.Get (runGet, getWord8, getByteString, isEmpty)
 import Data.ByteString qualified as BS
 import qualified Data.ByteString.Lazy as LBS
@@ -27,7 +27,7 @@ import Data.Word (Word8)
 import Text.Read (readMaybe)
 
 import Nostr.Keys (SecKey, PubKeyXO, importPubKeyXO, exportPubKeyXO, importSecKey, exportSecKey)
-import Nostr.Types (Event(..), EventId(..), Kind, RelayURI)
+import Nostr.Types (Event(..), EventId(..), Kind, RelayURI, kindToInt)
 
 
 -- | Bech32 encoding for SecKey
@@ -74,13 +74,12 @@ naddrToEvent txt = do
 eventToNevent :: Event -> Maybe RelayURI -> T.Text
 eventToNevent event relayURI' = toBech32 "nevent" $ encodeTLV tlvData
   where
-    baseTLV = [ (0, BSS.toShort $ getEventId $ eventId event)
-              , (2, BSS.toShort $ exportPubKeyXO $ pubKey event)
-              , (3, BSS.toShort $ encodeUtf8 $ T.pack $ show $ kind event)
-              ]
-    tlvData = case relayURI' of
-      Just r  -> (1, BSS.toShort $ encodeUtf8 r) : baseTLV
-      Nothing -> baseTLV
+    tlvData = filter ((/= 1) . fst) $ -- Remove empty relay slot but maintain order
+      [ (0, BSS.toShort $ getEventId $ eventId event)
+      , (1, BSS.toShort $ maybe "" encodeUtf8 relayURI')
+      , (2, BSS.toShort $ exportPubKeyXO $ pubKey event)
+      , (3, BSS.toShort $ LBS.toStrict $ runPut $ putWord32be $ fromIntegral $ kindToInt $ kind event)
+      ]
 
 
 -- | Decode nevent bech32 encoding to Event components

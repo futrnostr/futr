@@ -335,13 +335,84 @@ Rectangle {
                                             wrapMode: Text.Wrap
                                             color: Material.foreground
                                         }
-
+/*
                                         Text {
                                             Layout.alignment: message ? (message.author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
                                             text: message ? message.timestamp : ""
                                             font: Constants.smallFontMedium
                                             color: Material.secondaryTextColor
                                             opacity: 0.9
+                                        }
+*/
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: Constants.spacing_s
+
+                                            Item {
+                                                Layout.fillWidth: true
+                                                visible: message.author.npub === mynpub
+                                            }
+
+                                            Text {
+                                                Layout.alignment: message ? (message.author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
+                                                text: message ? message.timestamp : ""
+                                                font: Constants.smallFontMedium
+                                                color: Material.secondaryTextColor
+                                                Layout.topMargin: Constants.spacing_xs
+                                                visible: message.author.npub === mynpub
+                                            }
+
+                                            Button {
+                                                flat: true
+                                                icon.source: "qrc:/icons/menu.svg"
+                                                icon.width: 20
+                                                icon.height: 20
+                                                implicitWidth: 36
+                                                Layout.alignment: Qt.AlignRight
+                                                onClicked: postMenu.open()
+
+                                                Menu {
+                                                    id: postMenu
+                                                    y: parent.height
+
+                                                    MenuItem {
+                                                        text: qsTr("Copy Event ID")
+                                                        onTriggered: {
+                                                            clipboard.copyText(modelData.nevent)
+                                                        }
+                                                    }
+
+                                                    MenuItem {
+                                                        text: qsTr("Show Event JSON")
+                                                        onTriggered: {
+                                                            eventJsonDialog.targetPost = modelData
+                                                            eventJsonDialog.open()
+                                                        }
+                                                    }
+
+                                                    MenuItem {
+                                                        text: qsTr("Seen on Relays")
+                                                        onTriggered: {
+                                                            seenOnRelaysDialog.targetPost = modelData
+                                                            seenOnRelaysDialog.open()
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                Layout.alignment: message ? (message.author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
+                                                text: message ? message.timestamp : ""
+                                                font: Constants.smallFontMedium
+                                                color: Material.secondaryTextColor
+                                                Layout.topMargin: Constants.spacing_xs
+                                                visible: message.author.npub !== mynpub
+                                            }
+
+                                            Item {
+                                                Layout.fillWidth: true
+                                                visible: message.author.npub !== mynpub
+                                            }
                                         }
                                     }
                                 }
@@ -459,5 +530,12 @@ Rectangle {
             }
         }
     ]
-}
 
+    EventJSONDialog {
+        id: eventJsonDialog
+    }
+
+    SeenOnRelaysDialog {
+        id: seenOnRelaysDialog
+    }
+}

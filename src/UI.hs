@@ -6,12 +6,14 @@
 module UI where
 
 import Control.Monad.Fix (mfix)
-import Data.Aeson (decode, eitherDecode, encode)
+import Data.Aeson (decode, eitherDecode, encode, toJSON)
+import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (find, nub)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Proxy (Proxy(..))
+import Data.Set qualified as Set
 import Data.Text (Text, drop, pack, unpack)
 import Data.Text.Encoding qualified as TE
 import Effectful
@@ -24,7 +26,6 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Prelude hiding (drop)
 import Text.Read (readMaybe)
 import Text.Regex.TDFA
-
 
 import Logging
 import Nostr
@@ -190,6 +191,47 @@ runUI = interpret $ \_ -> \case
           let eid = fromObjRef obj :: EventId
           let value = TE.decodeUtf8 $ B16.encode $ getEventId eid
           return value,
+
+        defPropertyRO' "nevent" $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> do
+              let e = event eventWithRelays
+              let r = head $ Set.toList $ relays eventWithRelays
+              runE $ logDebug $ "nevent: " <> pack (show e)
+              return $ eventToNevent e (Just r)
+            Nothing -> return "",
+
+        defPropertySigRO' "raw" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> do
+              let e = event eventWithRelays
+                  prettyConfig = defConfig {
+                    confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
+                      `mappend` compare
+                  }
+                  prettyEncode x = TE.decodeUtf8 . BSL.toStrict $ encodePretty' prettyConfig (toJSON x)
+              case kind e of
+                GiftWrap -> do
+                  kp <- runE getKeyPair
+                  sealed <- runE $ unwrapGiftWrap e kp
+                  rumor <- runE $ maybe (return Nothing) (\s -> unwrapSeal s kp) sealed
+                  return $ [prettyEncode e]
+                       ++ maybe [] ((:[]) . prettyEncode) sealed
+                       ++ maybe [] ((:[]) . prettyEncode) rumor
+                _ -> return [prettyEncode e]
+            Nothing -> return [],
+
+        defPropertySigRO' "relays" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays -> do
+              return $ Set.toList $ relays eventWithRelays
+            Nothing -> return [],
 
         defPropertySigRO' "postType" changeKey' $ \obj -> do
           let eid = fromObjRef obj :: EventId
