@@ -301,9 +301,7 @@ continueWithRelays inboxRelays = do
   void $ forConcurrently inboxRelays $ \r -> do
     let relayUri = getUri r
     connected <- connect relayUri
-    when (connected && isInboxCapable r) $ do
-      subscribeToMentions relayUri xo
-      subscribeToProfilesAndPosts relayUri [xo]
+    when (connected && isInboxCapable r) $ subscribeToMentions relayUri xo
 
   follows <- getFollows xo
   let followList = xo : map pubkey follows
