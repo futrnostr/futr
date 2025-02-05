@@ -53,6 +53,10 @@ instance Ord Relay where
 
 -- | Instance for converting a 'Relay' to JSON.
 instance ToJSON Relay where
+  toJSON relay = case relay of
+    InboxRelay uri -> toJSON ["r", uri, "read"]
+    OutboxRelay uri -> toJSON ["r", uri, "write"]
+    InboxOutboxRelay uri -> toJSON ["r", uri]
   toEncoding relay = case relay of
     InboxRelay uri -> list id [text "r", text uri, text "read"]
     OutboxRelay uri -> list id [text "r", text uri, text "write"]
@@ -401,6 +405,15 @@ instance FromJSON Event where
 
 -- | Converts an 'Event' to its JSON representation.
 instance ToJSON Event where
+  toJSON Event {..} = object
+    [ "id"         .= byteStringToHex (getEventId eventId)
+    , "pubkey"     .= byteStringToHex (exportPubKeyXO pubKey)
+    , "created_at" .= createdAt
+    , "kind"       .= kind
+    , "tags"       .= tags
+    , "content"    .= content
+    , "sig"        .= byteStringToHex (exportSignature sig)
+    ]
   toEncoding Event {..} = pairs
      ( "id"         .= (byteStringToHex $ getEventId eventId)
     <> "pubkey"     .= (byteStringToHex $ exportPubKeyXO pubKey)
@@ -414,6 +427,14 @@ instance ToJSON Event where
 
 -- | Converts an 'UnsignedEvent' to its JSON representation.
 instance ToJSON UnsignedEvent where
+  toJSON UnsignedEvent {..} = toJSON
+    [ toJSON (0 :: Int)
+    , toJSON $ byteStringToHex $ exportPubKeyXO pubKey'
+    , toJSON createdAt'
+    , toJSON kind'
+    , toJSON tags'
+    , toJSON content'
+    ]
   toEncoding UnsignedEvent {..} = list id
      [ toEncoding (0 :: Int)
      , text $ byteStringToHex $ exportPubKeyXO pubKey'
@@ -436,6 +457,14 @@ instance FromJSON Rumor where
 
 -- | 'ToJSON' instance for 'Rumor'.
 instance ToJSON Rumor where
+  toJSON Rumor {..} = object
+    [ "id"         .= byteStringToHex (getEventId rumorId)
+    , "pubkey"     .= byteStringToHex (exportPubKeyXO rumorPubKey)
+    , "created_at" .= rumorCreatedAt
+    , "kind"       .= rumorKind
+    , "tags"       .= rumorTags
+    , "content"    .= rumorContent
+    ]
   toEncoding Rumor {..} = pairs
      ( "id"         .= (byteStringToHex $ getEventId rumorId)
     <> "pubkey"     .= (byteStringToHex $ exportPubKeyXO rumorPubKey)
@@ -618,6 +647,71 @@ parseGenericTag v = fail $ "Expected array for generic tag, got: " ++ show v
 
 -- | Converts a 'Tag' to its JSON representation.
 instance ToJSON Tag where
+  toJSON tag = case tag of
+    ETag eventId relayURL marker pubkey ->
+      toJSON
+        [ "e"
+        , decodeUtf8 $ B16.encode $ getEventId eventId
+        , fromMaybe "" relayURL
+        , case marker of
+            Just Reply -> "reply"
+            Just Root -> "root"
+            Just Mention -> "mention"
+            Nothing -> ""
+        , maybe "" (decodeUtf8 . B16.encode . exportPubKeyXO) pubkey
+        ]
+    ETag' eventId relayURL pubkey ->
+      toJSON $
+        [ "E"
+        , decodeUtf8 $ B16.encode $ getEventId eventId
+        ] ++
+        (maybe [] (\r -> [r]) relayURL) ++
+        (maybe [] (\pk -> [decodeUtf8 $ B16.encode $ exportPubKeyXO pk]) pubkey)
+    ETag'' eventId relayURL pubkey ->
+      toJSON $
+        [ "e"
+        , decodeUtf8 $ B16.encode $ getEventId eventId
+        ] ++
+        (maybe [] (\r -> [r]) relayURL) ++
+        (maybe [] (\pk -> [decodeUtf8 $ B16.encode $ exportPubKeyXO pk]) pubkey)
+    PTag xo relayURL name ->
+      toJSON $
+        [ "p"
+        , toJSON xo
+        ] ++
+        (maybe [] (\r -> [toJSON r]) relayURL) ++
+        (maybe [] (\n -> [toJSON n]) name)
+    PTag' xo relayURL ->
+      toJSON $
+        [ "P"
+        , toJSON xo
+        ] ++
+        (maybe [] (\r -> [toJSON r]) relayURL)
+    PListTag pubkeys ->
+      toJSON $ "p" : map toJSON pubkeys
+    QTag eventId relayURL pubkey ->
+      toJSON $
+        [ "q"
+        , decodeUtf8 $ B16.encode $ getEventId eventId
+        ] ++
+        (maybe [] (\r -> [r]) relayURL) ++
+        (maybe [] (\pk -> [decodeUtf8 $ B16.encode $ exportPubKeyXO pk]) pubkey)
+    ITag eid urlHint ->
+      toJSON $
+        [ "i"
+        , externalContentIdToText eid
+        ] ++
+        maybe [] (\url -> [url]) urlHint
+    KTag kind -> toJSON [ "k", kind ]
+    KTag' kind -> toJSON [ "K", kind ]
+    RTag relay ->
+      toJSON $ case relay of
+        InboxRelay uri -> ["r", uri, "read"]
+        OutboxRelay uri -> ["r", uri, "write"]
+        InboxOutboxRelay uri -> ["r", uri]
+    RelayTag relayUri -> toJSON ["relay", relayUri]
+    ChallengeTag challenge -> toJSON ["challenge", challenge]
+    GenericTag values -> toJSON values
   toEncoding tag = case tag of
     ETag eventId relayURL marker pubkey ->
       list id $
@@ -675,7 +769,7 @@ instance ToJSON Tag where
         maybe [] (\url -> [text url]) urlHint
     KTag kind -> list id [ text "k", text kind ]
     KTag' kind -> list id [ text "K", text kind ]
-    RTag relay -> 
+    RTag relay ->
       list id $ case relay of
         InboxRelay uri -> [text "r", text uri, text "read"]
         OutboxRelay uri -> [text "r", text uri, text "write"]
@@ -772,21 +866,8 @@ instance FromJSON Kind where
 -- | 'ToJSON' instance for 'Kind'.
 -- This allows serializing 'Kind' values into JSON numbers.
 instance ToJSON Kind where
-  toEncoding Metadata      = toEncoding (0 :: Int)
-  toEncoding ShortTextNote = toEncoding (1 :: Int)
-  toEncoding FollowList    = toEncoding (3 :: Int)
-  toEncoding EventDeletion = toEncoding (5 :: Int)
-  toEncoding Repost        = toEncoding (6 :: Int)
-  toEncoding GenericRepost = toEncoding (16 :: Int)
-  toEncoding Reaction      = toEncoding (7 :: Int)
-  toEncoding Seal          = toEncoding (13 :: Int)
-  toEncoding GiftWrap      = toEncoding (1059 :: Int)
-  toEncoding DirectMessage = toEncoding (14 :: Int)
-  toEncoding PreferredDMRelays = toEncoding (10050 :: Int)
-  toEncoding CanonicalAuthentication = toEncoding (22242 :: Int)
-  toEncoding RelayListMetadata = toEncoding (10002 :: Int)
-  toEncoding Comment = toEncoding (1111 :: Int)
-  toEncoding (UnknownKind n) = toEncoding n
+  toJSON = toJSON . kindToInt
+  toEncoding = toEncoding . kindToInt
 
 
 -- | 'ToJSON' instance for 'Filter'.

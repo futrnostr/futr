@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Window 2.15
 import Components 1.0
 import Futr 1.0
 
@@ -155,14 +156,57 @@ Pane {
             Item { Layout.fillWidth: true }
         }
 
-        // Timestamp
-        Text {
+        RowLayout {
             Layout.fillWidth: true
-            text: post.timestamp || ""
-            font: Constants.smallFontMedium
-            color: Material.secondaryTextColor
-            horizontalAlignment: Text.AlignRight
-            Layout.topMargin: Constants.spacing_xs
+            spacing: Constants.spacing_s
+
+            Item { Layout.fillWidth: true }
+
+            Text {
+                Layout.alignment: Qt.AlignRight
+                text: post.timestamp || ""
+                font: Constants.smallFontMedium
+                color: Material.secondaryTextColor
+                Layout.topMargin: Constants.spacing_xs
+            }
+
+            Button {
+                flat: true
+                icon.source: "qrc:/icons/menu.svg"
+                icon.width: 20
+                icon.height: 20
+                implicitWidth: 36
+                Layout.alignment: Qt.AlignRight
+                onClicked: postMenu.open()
+
+                Menu {
+                    id: postMenu
+                    y: parent.height
+
+                    MenuItem {
+                        text: qsTr("Copy Event ID")
+                        onTriggered: {
+                            clipboard.copyText(modelData.nevent)
+                        }
+                    }
+
+                    MenuItem {
+                        text: qsTr("Show Event JSON")
+                        onTriggered: {
+                            eventJsonDialog.targetPost = modelData
+                            eventJsonDialog.open()
+                        }
+                    }
+
+                    MenuItem {
+                        text: qsTr("Seen on Relays")
+                        onTriggered: {
+                            seenOnRelaysDialog.targetPost = modelData
+                            seenOnRelaysDialog.open()
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 module Dialogs
 ConnectingModal 1.0 ConnectingModal.ui.qml
+EventJSONDialog 1.0 EventJSONDialog.ui.qml
 ImportAccountDialog 1.0 ImportAccountDialog.ui.qml
 ImportSuccessDialog 1.0 ImportSuccessDialog.ui.qml
 ShowKeysDialog 1.0 ShowKeysDialog.ui.qml
@@ -8,3 +9,4 @@ PostDialog 1.0 PostDialog.ui.qml
 RelayMgmtDialog 1.0 RelayMgmtDialog.ui.qml
 RemoveAccountDialog 1.0 RemoveAccountDialog.ui.qml
 RemoveRelayDialog 1.0 RemoveRelayDialog.ui.qml
+SeenOnRelaysDialog 1.0 SeenOnRelaysDialog.ui.qml
