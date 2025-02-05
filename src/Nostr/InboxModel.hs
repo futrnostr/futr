@@ -355,11 +355,20 @@ buildRelayPubkeyMap :: InboxModelEff es => [PubKeyXO] -> [RelayURI] -> Eff es (M
 buildRelayPubkeyMap pks ownInboxRelays = do
   relayPubkeyPairs <- forM pks $ \pk -> do
     relays <- getGeneralRelays pk
+
     let outboxRelayURIs = [ getUri r | r <- relays, isOutboxCapable r ]
-    let selectedRelays = if null outboxRelayURIs
-          then ownInboxRelays
-          else let (prioritized, other) = partition (`elem` ownInboxRelays) outboxRelayURIs
-               in take maxRelaysPerContact $ prioritized ++ other
+
+        prioritized = filter (`elem` ownInboxRelays) outboxRelayURIs
+
+        nonPrioritized = filter (not . (`elem` ownInboxRelays)) outboxRelayURIs
+
+        selectedRelays
+          | null outboxRelayURIs = ownInboxRelays
+          | not (null prioritized) && not (null nonPrioritized) =
+              take maxRelaysPerContact (take 1 prioritized ++ nonPrioritized)
+          | not (null prioritized) = take maxRelaysPerContact prioritized
+          | otherwise = take maxRelaysPerContact nonPrioritized
+
     return (pk, selectedRelays)
 
   return $ Map.filter (not . null) $ foldr (\(pk, relays) acc ->
@@ -368,7 +377,7 @@ buildRelayPubkeyMap pks ownInboxRelays = do
 
 -- | Maximum number of outbox relays to consider per contact
 maxRelaysPerContact :: Int
-maxRelaysPerContact = 3
+maxRelaysPerContact = 2
 
 -- | Event loop to handle incoming events and updates
 eventLoop :: InboxModelEff es => PubKeyXO -> Eff es ()
