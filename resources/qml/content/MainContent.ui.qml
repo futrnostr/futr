@@ -126,7 +126,7 @@ Rectangle {
             TabButton {
                 id: privateTab
                 implicitWidth: chatTypeSelector.width / 2
-                text: npub === mynpub ? qsTr("Saved Messages") : qsTr("Private Chat")
+                text: npub === mynpub ? qsTr("Messages to myself") : qsTr("Private Chat")
 
                 background: Rectangle {
                     color: parent.down || parent.checked ? Material.primaryColor : "transparent"
