@@ -82,6 +82,7 @@ Rectangle {
                         color: {
                             if (mouseHover) return Material.accentColor;
                             if (modelData && modelData.pubkey === followsView.selectedPubkey) return Qt.darker(Material.accentColor, 1.2);
+                            if (modelData && modelData.pubkey === mynpub) return Material.primaryColor;
                             return Material.backgroundColor;
                         }
                         border.color: Material.dividerColor
@@ -105,11 +106,14 @@ Rectangle {
                                 spacing: 3
 
                                 Text {
-                                    text: modelData.petname ||modelData.displayName || modelData.name || modelData.pubkey
+                                    text: modelData.petname || modelData.displayName || modelData.name || modelData.pubkey
                                     font: Constants.font
                                     color: Material.primaryTextColor
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
+                                    visible: modelData !== undefined
+                                        && modelData !== null
+                                        && modelData.pubkey !== mynpub
                                 }
 
                                 Text {
@@ -118,7 +122,21 @@ Rectangle {
                                     Layout.fillWidth: true
                                     font: Constants.smallFont
                                     color: Material.secondaryTextColor
-                                    visible: modelData.displayName !== "" || modelData.name !== ""
+                                    visible: modelData !== undefined
+                                        && modelData !== null
+                                        && modelData.pubkey !== mynpub
+                                        && (modelData.displayName !== "" || modelData.name !== "")
+                                }
+
+                                Text {
+                                    text: "Myself"
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                    font: Constants.smallFont
+                                    color: Material.secondaryTextColor
+                                    visible: modelData !== undefined
+                                        && modelData !== null
+                                        && modelData.pubkey === mynpub
                                 }
                             }
                         }
@@ -131,6 +149,8 @@ Rectangle {
                             onExited: followItem.mouseHover = false
 
                             onClicked: {
+                                if (modelData === undefined || modelData === null) return;
+
                                 followsView.selectedPubkey = modelData.pubkey
                                 setCurrentProfile(modelData.pubkey)
                                 openChat(modelData.pubkey)
