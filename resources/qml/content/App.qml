@@ -40,18 +40,4 @@ ApplicationWindow {
         }
         active: currentScreen === "Home" || currentScreen === "KeyMgmt"
     }
-
-    Button {
-        id: themeToggle
-        anchors.top: parent.top
-        anchors.right: parent.right
-        anchors.margins: 10
-        icon.source: isDarkTheme ? "qrc:/icons/light_mode.svg" : "qrc:/icons/dark_mode.svg"
-        icon.color: Material.foreground
-        onClicked: isDarkTheme = !isDarkTheme
-        flat: true
-
-        ToolTip.visible: hovered
-        ToolTip.text: qsTr("Switch to " + (isDarkTheme ? "Light" : "Dark") + " Mode")
-    }
 }

@@ -335,15 +335,7 @@ Rectangle {
                                             wrapMode: Text.Wrap
                                             color: Material.foreground
                                         }
-/*
-                                        Text {
-                                            Layout.alignment: message ? (message.author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
-                                            text: message ? message.timestamp : ""
-                                            font: Constants.smallFontMedium
-                                            color: Material.secondaryTextColor
-                                            opacity: 0.9
-                                        }
-*/
+
                                         RowLayout {
                                             Layout.fillWidth: true
                                             spacing: Constants.spacing_s

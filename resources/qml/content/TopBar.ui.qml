@@ -2,80 +2,89 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
+import QtGraphicalEffects 1.15
 
 import Futr 1.0
 
 Item {
     id: topBar
 
-    RoundButton {
-        id: profileButton
+    RowLayout {
+        id: controlsLayout
         anchors.right: parent.right
-        anchors.rightMargin: 100
         anchors.verticalCenter: parent.verticalCenter
-        width: 75
-        height: 75
-        flat: true
+        anchors.rightMargin: 10
+        spacing: 10
 
-        icon.width: 65
-        icon.height: 65
-        icon.color: "transparent"
-        icon.source: Util.getProfilePicture(mypicture, mynpub)
-
-        Material.elevation: 6
-
-        onClicked: profileMenu.open()
-
-        background: Rectangle {
-            color: "transparent"
+        Image {
+            id: profilePicture
+            Layout.preferredWidth: 60
+            Layout.preferredHeight: 60
+            source: Util.getProfilePicture(mypicture, mynpub)
+            fillMode: Image.PreserveAspectCrop
+            
+            layer.enabled: true
+            layer.effect: OpacityMask {
+                maskSource: Rectangle {
+                    width: profilePicture.width
+                    height: profilePicture.height
+                    radius: width / 2
+                }
+            }
         }
 
-        states: [
-            State {
-                name: "pressed"
-                when: profileButton.pressed
-                PropertyChanges { target: profileButton; opacity: 0.8 }
+        Button {
+            id: themeToggle
+            Layout.preferredWidth: 40
+            Layout.preferredHeight: 40
+            icon.source: isDarkTheme ? "qrc:/icons/light_mode.svg" : "qrc:/icons/dark_mode.svg"
+            icon.color: Material.foreground
+            onClicked: isDarkTheme = !isDarkTheme
+            flat: true
+
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Switch to " + (isDarkTheme ? "Light" : "Dark") + " Mode")
+        }
+
+        Button {
+            id: menuButton
+            Layout.preferredWidth: 40
+            Layout.preferredHeight: 40
+            flat: true
+            
+            icon.source: "qrc:/icons/menu.svg"
+            icon.width: 24
+            icon.height: 24
+            
+            onClicked: profileMenu.open()
+        }
+    }
+
+    Menu {
+        id: profileMenu
+        y: menuButton.y + menuButton.height + 10
+        x: parent.width - width - 10
+
+        MenuItem {
+            text: qsTr("Relay Management")
+            onTriggered: {
+                profileMenu.close()
+                relayMgmtDialog.open()
             }
-        ]
+        }
 
-        Menu {
-            id: profileMenu
-            y: profileButton.height
-
-            MenuItem {
-                text: qsTr("My Profile")
-                onTriggered: {
-                    setCurrentProfile(mynpub)
-                    chatLoader.source = ""
-                    profileLoader.setSource(
-                        "Profile/Profile.ui.qml",
-                        { "profileData": currentProfile, "npub": mynpub }
-                    )
-                    profileMenu.close()
-                }
+        MenuItem {
+            text: qsTr("My Keys")
+            onTriggered: {
+                profileMenu.close()
+                showKeysDialog.open()
             }
+        }
 
-            MenuItem {
-                text: qsTr("Relay Management")
-                onTriggered: {
-                    profileMenu.close()
-                    relayMgmtDialog.open()
-                }
-            }
-
-            MenuItem {
-                text: qsTr("My Keys")
-                onTriggered: {
-                    profileMenu.close()
-                    showKeysDialog.open()
-                }
-            }
-
-            MenuItem {
-                text: qsTr("Logout")
-                onTriggered: {
-                    logout()
-                }
+        MenuItem {
+            text: qsTr("Logout")
+            onTriggered: {
+                logout()
             }
         }
     }
