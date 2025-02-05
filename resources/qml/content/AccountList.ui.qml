@@ -47,7 +47,7 @@ ScrollView {
                 spacing: 10
 
                 Image {
-                    source: Util.getProfilePicture(modelData.picture, modelData.npub)
+                    source: Util.getProfilePicture(modelData.picture || "", modelData.npub  || "")
                     Layout.preferredWidth: 40
                     Layout.preferredHeight: 40
                     Layout.alignment: Qt.AlignVCenter
@@ -81,7 +81,7 @@ ScrollView {
                             anchors.left: parent.left
                             anchors.bottom: parent.verticalCenter
                             font: Constants.font
-                            text: modelData.displayName
+                            text: modelData.displayName || ""
                             elide: Text.ElideRight
                             width: parent.width
                             color: Material.primaryTextColor
@@ -90,7 +90,7 @@ ScrollView {
                         Text {
                             anchors.left: parent.left
                             anchors.top: parent.verticalCenter
-                            text: modelData.npub
+                            text: modelData.npub || ""
                             font.pixelSize: Constants.font.pixelSize * 0.8
                             elide: Text.ElideRight
                             width: parent.width
