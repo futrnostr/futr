@@ -16,6 +16,7 @@ module Store.Lmdb
     , initializeLmdbState
     , runLmdbStore
     , putEvent
+    , recordFailedRelay
     , getEvent
     , getFollows
     , getProfile
@@ -24,6 +25,7 @@ module Store.Lmdb
     , getDMRelays
     , getLatestTimestamp
     , getCommentIds
+    , getFailedRelaysWithinLastNDays
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
@@ -77,6 +79,7 @@ data LmdbState = LmdbState
     , dmRelaysDb :: Database PubKeyXO ([RelayURI], Int)
     , latestTimestampDb :: Database (PubKeyXO, Kind) Int
     , commentDb :: Database EventId [EventId]
+    , failedRelaysDb :: Database RelayURI Int
     , eventCache :: LRU.LRU EventId EventWithRelays
     , profileCache :: LRU.LRU PubKeyXO Profile
     , followsCache :: LRU.LRU PubKeyXO [Follow]
@@ -92,6 +95,7 @@ data LmdbState = LmdbState
 data LmdbStore :: Effect where
     -- Event operations
     PutEvent :: EventWithRelays -> LmdbStore m Bool
+    RecordFailedRelay:: RelayURI -> LmdbStore m () -- Int: timestamp
     
     -- Query operations (read-only)
     GetEvent :: EventId -> LmdbStore m (Maybe EventWithRelays)
@@ -102,6 +106,7 @@ data LmdbStore :: Effect where
     GetDMRelays :: PubKeyXO -> LmdbStore m [RelayURI]
     GetLatestTimestamp :: PubKeyXO -> [Kind] -> LmdbStore m (Maybe Int)
     GetCommentIds :: EventId -> LmdbStore m [EventId]
+    GetFailedRelaysWithinLastNDays :: Int -> LmdbStore m [RelayURI] -- Int: number of days to look back
 
 
 type instance DispatchOf LmdbStore = Dynamic
@@ -114,6 +119,12 @@ runLmdbStore :: (Util :> es, IOE :> es, State LmdbState :> es, Logging :> es)
              => Eff (LmdbStore : es) a
              -> Eff es a
 runLmdbStore = interpret $ \_ -> \case
+    RecordFailedRelay relayUri -> do
+        ts <- getCurrentTime
+        st <- get @LmdbState
+        liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+            Map.repsert' txn (failedRelaysDb st) relayUri ts
+
     PutEvent ev -> do
         let author = pubKey $ event ev
             eventKind = kind $ event ev
@@ -211,7 +222,7 @@ runLmdbStore = interpret $ \_ -> \case
                                     Nothing -> pure False
 
                                 runE $ modify @LmdbState $ \s -> s
-                                    { eventCache = fst (LRU.delete eid (eventCache s))
+                                    { eventCache = fst $ LRU.delete eid (eventCache s)
                                     , timelineCache =
                                         removeAuthorTimelineEntries PostTimeline author $
                                         removeAuthorTimelineEntries ChatTimeline author (timelineCache s)
@@ -436,6 +447,24 @@ runLmdbStore = interpret $ \_ -> \case
                     { commentCache = LRU.insert eventId comments $ commentCache s }
                 pure comments
 
+    GetFailedRelaysWithinLastNDays days -> do
+        st <- get @LmdbState
+        now <- getCurrentTime
+        let threshold = now - (days * 86400)
+        failedUris <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+            withCursor (readonly txn) (failedRelaysDb st) $ \cursor -> do
+                pairs <- Pipes.toListM (Map.firstForward cursor)
+                forM pairs $ \kv ->
+                    let uri = keyValueKey kv
+                        ts = keyValueValue kv
+                    in if ts >= threshold
+                       then return (Just uri)
+                       else do
+                           -- Clean up old entries
+                           Map.delete' txn (failedRelaysDb st) uri
+                           return Nothing
+        pure $ catMaybes failedUris
+
 
 -- Helper function for timeline entries within a transaction
 addTimelineEntryTx :: Transaction 'ReadWrite 
@@ -552,6 +581,7 @@ initializeLmdbState dbPath = do
         dmRelaysDb' <- openDatabase txn (Just "dm_relays") defaultJsonSettings
         latestTimestampDb' <- openDatabase txn (Just "latest_timestamps") latestTimestampDbSettings
         commentDb' <- openDatabase txn (Just "comments") defaultJsonSettings
+        failedRelaysDb' <- openDatabase txn (Just "failed_relays") defaultJsonSettings
 
         pure $ LmdbState
             { lmdbLock = lock
@@ -565,6 +595,7 @@ initializeLmdbState dbPath = do
             , dmRelaysDb = dmRelaysDb'
             , latestTimestampDb = latestTimestampDb'
             , commentDb = commentDb'
+            , failedRelaysDb = failedRelaysDb'
             , eventCache = LRU.newLRU (Just cacheSize)
             , profileCache = LRU.newLRU (Just smallCacheSize)
             , followsCache = LRU.newLRU (Just smallCacheSize)
@@ -596,6 +627,7 @@ initialLmdbState = LmdbState
     , dmRelaysDb = error "LMDB not initialized"
     , latestTimestampDb = error "LMDB not initialized"
     , commentDb = error "LMDB not initialized"
+    , failedRelaysDb = error "LMDB not initialized"
     , eventCache = LRU.newLRU (Just cacheSize)
     , profileCache = LRU.newLRU (Just smallCacheSize)
     , followsCache = LRU.newLRU (Just smallCacheSize)
