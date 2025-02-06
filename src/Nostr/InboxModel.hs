@@ -9,14 +9,13 @@
 module Nostr.InboxModel where
 
 import Control.Monad (forever, forM, forM_, unless, void, when)
-import Data.List (partition)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Set qualified as Set
 import Data.Text (pack, unpack)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (async, cancel,forConcurrently)
+import Effectful.Concurrent.Async (async, cancel, forConcurrently)
 import Effectful.Concurrent.STM
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, put, modify)
@@ -54,8 +53,10 @@ import Nostr.Types
 import Nostr.Util
 import QtQuick (QtQuick, UIUpdates(..), notify)
 import RelayMgmt
-import Store.Lmdb (LmdbStore, getFollows, getGeneralRelays, getDMRelays, getLatestTimestamp)
-import Types (AppState(..), ConnectionState(..), Follow(..), SubscriptionDetails(..), RelayPool(..), RelayData(..), SubscriptionEvent(..), initialRelayPool)
+import Store.Lmdb ( LmdbStore, getFollows, getGeneralRelays, getDMRelays
+                  , getLatestTimestamp, getFailedRelaysWithinLastNDays, recordFailedRelay )
+import Types ( AppState(..), ConnectionState(..), Follow(..), SubscriptionDetails(..)
+             , RelayPool(..), RelayData(..), SubscriptionEvent(..), initialRelayPool )
 
 -- | InboxModel effects
 data InboxModel :: Effect where
@@ -280,6 +281,53 @@ hasPreferredDMRelays events = any isPreferredDMRelays events
     isPreferredDMRelays (EventAppeared event') = kind event' == PreferredDMRelays
     isPreferredDMRelays _ = False
 
+-- | Get relay lists for multiple pubkeys, making only one LMDB call per pubkey
+getRelayListsForPubkeys :: InboxModelEff es => [PubKeyXO] -> Eff es (Map.Map PubKeyXO [Relay])
+getRelayListsForPubkeys pks = do
+    let uniquePks = Set.toList $ Set.fromList pks
+    relayLists <- forM uniquePks $ \pk -> do
+        relays <- getGeneralRelays pk
+        return (pk, relays)
+    return $ Map.fromList relayLists
+
+-- | Try to connect to a relay, falling back to an alternative if it fails
+connectWithFallback :: InboxModelEff es => RelayURI -> [PubKeyXO] -> Map.Map PubKeyXO [Relay] -> Eff es (Maybe RelayURI)
+connectWithFallback relayUri pks relayMap = do
+  connected <- connect relayUri
+  if connected
+    then return $ Just relayUri
+    else do
+      recordFailedRelay relayUri
+
+      let outboxRelayURIs = [ getUri r
+                            | pk <- pks
+                            , r <- Map.findWithDefault [] pk relayMap
+                            , isOutboxCapable r
+                            , getUri r /= relayUri ]
+      recentlyFailedRelays <- getFailedRelaysWithinLastNDays 5
+      let workingRelays = filter (`notElem` recentlyFailedRelays) outboxRelayURIs
+
+      case workingRelays of
+        (alternativeRelay:_) -> do
+          connected' <- connect alternativeRelay
+          if connected'
+            then return $ Just alternativeRelay
+            else do
+              recordFailedRelay alternativeRelay
+              inboxRelays <- getGeneralRelays =<< (keyPairToPubKeyXO <$> getKeyPair)
+              case [ getUri r | r <- inboxRelays, isInboxCapable r ] of
+                (inboxUri:_) -> do
+                  connected'' <- connect inboxUri
+                  return $ if connected'' then Just inboxUri else Nothing
+                [] -> return Nothing
+        [] -> do
+          inboxRelays <- getGeneralRelays =<< (keyPairToPubKeyXO <$> getKeyPair)
+          case [ getUri r | r <- inboxRelays, isInboxCapable r ] of
+            (inboxUri:_) -> do
+              connected' <- connect inboxUri
+              return $ if connected' then Just inboxUri else Nothing
+            [] -> return Nothing
+
 -- | Continue with discovered relays
 continueWithRelays :: InboxModelEff es => [Relay] -> Eff es ()
 continueWithRelays inboxRelays = do
@@ -288,30 +336,34 @@ continueWithRelays inboxRelays = do
   let ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
 
   dmRelays <- getDMRelays xo
+  follows <- getFollows xo
+  let followList = xo : map pubkey follows
+
+  relayMap <- getRelayListsForPubkeys followList
 
   logDebug $ "Initializing subscriptions for Discovered Inbox Relays: " <> pack (show ownInboxRelayURIs)
   logDebug $ "Initializing subscriptions for Discovered DM Relays: " <> pack (show dmRelays)
 
   -- Connect to DM relays concurrently
   void $ forConcurrently dmRelays $ \r -> do
-    connected <- connect r
+    connected <- connect r -- no fallback for DM relays
     when connected $ subscribeToGiftwraps r xo
 
   -- Connect to inbox relays concurrently
   void $ forConcurrently inboxRelays $ \r -> do
-    let relayUri = getUri r
-    connected <- connect relayUri
-    when (connected && isInboxCapable r) $ subscribeToMentions relayUri xo
+    when (isInboxCapable r) $ do
+      let relayUri = getUri r
+      mConnectedUri <- connectWithFallback relayUri [xo] relayMap
+      forM_ mConnectedUri $ \uri ->
+        subscribeToMentions uri xo
 
-  follows <- getFollows xo
-  let followList = xo : map pubkey follows
   followRelayMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
-  --logDebug $ "Build Relay-PubKey Map: " <> pack (show followRelayMap)
 
   -- Connect to follow relays concurrently
   void $ forConcurrently (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
-    connected <- connect relayUri
-    when connected $ subscribeToProfilesAndPosts relayUri pubkeys
+    mConnectedUri <- connectWithFallback relayUri pubkeys relayMap
+    forM_ mConnectedUri $ \uri ->
+      subscribeToProfilesAndPosts uri pubkeys
 
 -- | Subscribe to Giftwrap events on a relay
 subscribeToGiftwraps :: InboxModelEff es => RelayURI -> PubKeyXO -> Eff es ()
@@ -350,29 +402,24 @@ getSubscriptionTimestamp pks ks = do
       [] -> return Nothing
       ts -> return $ Just $ minimum ts
 
--- | Build a map from relay URI to pubkeys, prioritizing existing inbox relays
+-- | Build a map from relay URI to pubkeys, using inbox relays only as fallback
 buildRelayPubkeyMap :: InboxModelEff es => [PubKeyXO] -> [RelayURI] -> Eff es (Map.Map RelayURI [PubKeyXO])
 buildRelayPubkeyMap pks ownInboxRelays = do
+  recentlyFailedRelays <- getFailedRelaysWithinLastNDays 5
   relayPubkeyPairs <- forM pks $ \pk -> do
     relays <- getGeneralRelays pk
-
     let outboxRelayURIs = [ getUri r | r <- relays, isOutboxCapable r ]
+        workingRelays = filter (`notElem` recentlyFailedRelays) outboxRelayURIs
 
-        prioritized = filter (`elem` ownInboxRelays) outboxRelayURIs
-
-        nonPrioritized = filter (not . (`elem` ownInboxRelays)) outboxRelayURIs
-
-        selectedRelays
-          | null outboxRelayURIs = ownInboxRelays
-          | not (null prioritized) && not (null nonPrioritized) =
-              take maxRelaysPerContact (take 1 prioritized ++ nonPrioritized)
-          | not (null prioritized) = take maxRelaysPerContact prioritized
-          | otherwise = take maxRelaysPerContact nonPrioritized
+        selectedRelays =
+          if null workingRelays
+            then ownInboxRelays
+            else take maxRelaysPerContact workingRelays
 
     return (pk, selectedRelays)
 
   return $ Map.filter (not . null) $ foldr (\(pk, relays) acc ->
-    foldr (\r acc' -> Map.insertWith (++) r [pk] acc') acc relays
+      foldr (\r acc' -> Map.insertWith (++) r [pk] acc') acc relays
     ) Map.empty relayPubkeyPairs
 
 -- | Maximum number of outbox relays to consider per contact
@@ -425,11 +472,14 @@ updateGeneralSubscriptions xo = do
   inboxRelays <- getGeneralRelays xo
   let ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
 
+  relayMap <- getRelayListsForPubkeys (xo : followList)
+
   void $ forConcurrently inboxRelays $ \relay' -> do
     when (isInboxCapable relay') $ do
       let relayUri = getUri relay'
-      connected <- connect relayUri
-      when connected $ subscribeToMentions relayUri xo
+      mConnectedUri <- connectWithFallback relayUri [xo] relayMap
+      forM_ mConnectedUri $ \uri ->
+        subscribeToMentions uri xo
 
   newRelayPubkeyMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
 
@@ -446,16 +496,18 @@ updateGeneralSubscriptions xo = do
 
   void $ forConcurrently (Set.toList relaysToAdd) $ \relayUri -> do
     let pubkeys = Map.findWithDefault [] relayUri newRelayPubkeyMap
-    connected <- connect relayUri
-    when connected $ do
-      subscribeToProfilesAndPosts relayUri pubkeys
+    mConnectedUri <- connectWithFallback relayUri pubkeys relayMap
+    forM_ mConnectedUri $ \uri ->
+      subscribeToProfilesAndPosts uri pubkeys
 
   void $ forConcurrently (Set.toList relaysToUpdate) $ \relayUri -> do
     let newPubkeys = Set.fromList $ Map.findWithDefault [] relayUri newRelayPubkeyMap
     let currentPubkeys = Set.fromList $ getSubscribedPubkeys pool relayUri
     when (newPubkeys /= currentPubkeys) $ do
       stopAllSubscriptions relayUri
-      subscribeToProfilesAndPosts relayUri (Set.toList newPubkeys)
+      mConnectedUri <- connectWithFallback relayUri (Set.toList newPubkeys) relayMap
+      forM_ mConnectedUri $ \uri ->
+        subscribeToProfilesAndPosts uri (Set.toList newPubkeys)
 
 -- | Update DM subscriptions
 updateDMSubscriptions :: InboxModelEff es => PubKeyXO -> Eff es ()
