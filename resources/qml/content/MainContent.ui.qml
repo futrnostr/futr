@@ -25,13 +25,7 @@ Rectangle {
         isQuoteMode: true
 
         onMessageSubmitted: function(text) {
-            if (targetPost.postType == "repost") {
-                if (targetPost.referencedPosts.length > 0) {
-                    quoteRepost(targetPost.referencedPosts[0].id, text)
-                }
-            } else {
-                quoteRepost(targetPost.id, text)
-            }
+            quoteRepost(targetPost.id, text)
         }
     }
 
@@ -58,7 +52,7 @@ Rectangle {
             text: qsTr("Repost")
             onTriggered: {
                 if (repostMenu.targetPost.postType == "repost") {
-                    repost(repostMenu.targetPost.referencedEventId, text)
+                    repost(repostMenu.targetPost.referencedPosts[0].id, text)
                 } else {
                     repost(repostMenu.targetPost.id, text)
                 }
@@ -69,6 +63,13 @@ Rectangle {
             text: qsTr("Quote Post")
             onTriggered: {
                 quoteReplyDialog.targetPost = repostMenu.targetPost
+
+                if (repostMenu.targetPost.postType == "repost") {
+                    quoteReplyDialog.targetPost = repostMenu.targetPost.referencedPosts[0]
+                } else {
+                    quoteReplyDialog.targetPost = repostMenu.targetPost
+                }
+
                 quoteReplyDialog.open()
             }
         }
@@ -202,9 +203,14 @@ Rectangle {
 
                             onCommentClicked: {
                                 if (modelData) {
-                                    commentsDialog.targetPost = modelData
+                                    if (modelData.postType === "repost") {
+                                        commentsDialog.targetPost = modelData.referencedPosts[0]
+                                        setCurrentPost(modelData.referencedPosts[0].id)
+                                    } else {
+                                        commentsDialog.targetPost = modelData
+                                        setCurrentPost(modelData.id)
+                                    }
                                     commentsDialog.open()
-                                    setCurrentPost(modelData.id)
                                 }
                             }
 
