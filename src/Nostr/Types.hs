@@ -493,47 +493,43 @@ instance FromJSON Tag where
 
 -- | Parses an ETag from a JSON array.
 parseETag :: [Value] -> Value -> Parser Tag
-parseETag rest (Array arr) = case rest of
-    -- Case for full ETag with marker
-    [eventIdVal, relayVal, markerVal, pubkeyVal] -> do
-      eventId <- parseJSONSafe eventIdVal
-      relay <- parseMaybeRelayURI relayVal
-      marker <- parseMaybeMarker markerVal
-      pubkey <- parseMaybePubKey pubkeyVal
-      case V.head arr of
-        String "e" -> return $ ETag eventId relay marker pubkey
-        String "E" -> return $ ETag' eventId relay pubkey
-        _ -> fail "Invalid ETag type"
+parseETag rest v@(Array arr) = case V.head arr of
+    String "e" ->
+        (case rest of
+            -- Try parsing as ETag with marker first
+            (eventIdVal:relayVal:markerVal:pubkeyVal:_) -> do
+                eventId <- parseJSONSafe eventIdVal
+                relay <- parseMaybeRelayURI relayVal
+                marker <- parseMaybeMarker markerVal
+                pubkey <- parseMaybePubKey pubkeyVal
+                return $ ETag eventId relay marker pubkey
 
-    -- Case for ETag without marker
-    [eventIdVal, relayVal, pubkeyVal] -> do
-      eventId <- parseJSONSafe eventIdVal
-      relay <- parseMaybeRelayURI relayVal
-      pubkey <- parseMaybePubKey pubkeyVal
-      case V.head arr of
-        String "e" -> return $ ETag'' eventId relay pubkey
-        String "E" -> return $ ETag' eventId relay pubkey
-        _ -> fail "Invalid ETag type"
+            -- If no marker present, parse as ETag''
+            (eventIdVal:relayVal:pubkeyVal:_) -> do
+                eventId <- parseJSONSafe eventIdVal
+                relay <- parseMaybeRelayURI relayVal
+                pubkey <- parseMaybePubKey pubkeyVal
+                return $ ETag'' eventId relay pubkey
 
-    -- Case for ETag with just relay
-    [eventIdVal, relayVal] -> do
-      eventId <- parseJSONSafe eventIdVal
-      relay <- parseMaybeRelayURI relayVal
-      case V.head arr of
-        String "e" -> return $ ETag'' eventId relay Nothing
-        String "E" -> return $ ETag' eventId relay Nothing
-        _ -> fail "Invalid ETag type"
+            (eventIdVal:_) -> do
+                eventId <- parseJSONSafe eventIdVal
+                return $ ETag'' eventId Nothing Nothing
+        ) <|> parseGenericTag v
 
-    -- Case for minimal ETag
-    [eventIdVal] -> do
-      eventId <- parseJSONSafe eventIdVal
-      case V.head arr of
-        String "e" -> return $ ETag'' eventId Nothing Nothing
-        String "E" -> return $ ETag' eventId Nothing Nothing
-        _ -> fail "Invalid ETag type"
+    String "E" ->
+        (case rest of
+            (eventIdVal:relayVal:pubkeyVal:_) -> do
+                eventId <- parseJSONSafe eventIdVal
+                relay <- parseMaybeRelayURI relayVal
+                pubkey <- parseMaybePubKey pubkeyVal
+                return $ ETag' eventId relay pubkey
 
-    _ -> fail "Invalid ETag format"
-parseETag _ _ = fail "Expected array for ETag"
+            (eventIdVal:_) -> do
+                eventId <- parseJSONSafe eventIdVal
+                return $ ETag' eventId Nothing Nothing
+        ) <|> parseGenericTag v
+
+    _ -> fail "Invalid ETag type"
 
 
 -- | Parses a PTag from a JSON array.
@@ -582,6 +578,7 @@ parseJSONSafe v = case parseEither parseJSON v of
 
 -- | Parses a maybe relay URI from a JSON value.
 parseMaybeRelayURI :: Value -> Parser (Maybe RelayURI)
+parseMaybeRelayURI (String s) | T.null s = pure Nothing
 parseMaybeRelayURI (String s) = pure (Just s)
 parseMaybeRelayURI Null = pure Nothing
 parseMaybeRelayURI _ = fail "Expected string or null for RelayURI"
@@ -1053,8 +1050,9 @@ instance ToJSON ExternalContentId where
 
 -- | Parses a maybe pubkey from a JSON value.
 parseMaybePubKey :: Value -> Parser (Maybe PubKeyXO)
-parseMaybePubKey Null = return Nothing
+parseMaybePubKey (String s) | T.null s = return Nothing
 parseMaybePubKey (String s) = case decodeHex s of
     Just bs | BS.length bs == 32 -> return $ importPubKeyXO bs
     _ -> fail "Invalid pubkey format"
+parseMaybePubKey Null = return Nothing
 parseMaybePubKey _ = fail "Expected string or null for pubkey"
