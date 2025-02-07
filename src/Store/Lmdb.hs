@@ -505,7 +505,7 @@ maxReaders :: Int
 maxReaders = 120
 
 maxDbs :: Int
-maxDbs = 9
+maxDbs = 10
 
 -- | Initialize the Lmdb environment
 initializeEnv :: FilePath -> IO (Environment ReadWrite, MVar ())
