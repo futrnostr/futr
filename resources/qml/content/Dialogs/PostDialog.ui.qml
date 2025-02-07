@@ -38,167 +38,181 @@ Dialog {
         anchors.margins: Constants.spacing_m
         spacing: Constants.spacing_m
 
-        // Original post container
-        Rectangle {
+        ScrollView {
             Layout.fillWidth: true
-            color: Material.dialogColor
-            Layout.preferredHeight: contentColumn.height + 32
-            border.width: 1
-            border.color: Material.dividerColor
-
+            Layout.fillHeight: true
+            spacing: 0
+            clip: true
+            id: scrollView
+            
             ColumnLayout {
-                id: contentColumn
-                width: parent.width
-                anchors.margins: Constants.spacing_m
-                spacing: Constants.spacing_m
+                width: scrollView.width - 20
+                Layout.fillWidth: true
+                Layout.fillHeight: true
 
-                // Author info
-                RowLayout {
-                    spacing: Constants.spacing_m
-                    Layout.topMargin: Constants.spacing_m
-                    Layout.leftMargin: Constants.spacing_m
-                    Layout.rightMargin: Constants.spacing_m
-                    
-                    ProfilePicture {
-                        imageSource: root.targetPost ? 
-                            Util.getProfilePicture(root.targetPost.authorPicture || "", root.targetPost.authorNpub || "") : ""
-                        Layout.preferredWidth: 48
-                        Layout.preferredHeight: 48
-                    }
-
-                    ColumnLayout {
-                        spacing: Constants.spacing_s
-                        Text {
-                            text: root.targetPost ? (root.targetPost.authorName || "") : ""
-                            font: Constants.fontMedium
-                        }
-                        Text {
-                            text: root.targetPost ? (root.targetPost.timestamp || "") : ""
-                            color: Material.secondaryTextColor
-                            font: Constants.smallFontMedium
-                        }
-                    }
-                }
-
-                // Post content
-                Text {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: Constants.spacing_m
-                    Layout.rightMargin: Constants.spacing_m
-                    Layout.topMargin: Constants.spacing_m
-                    text: Util.getFormattedContent(root.targetPost)
-                    color: Material.foreground
-                    wrapMode: Text.Wrap
-                    font: Constants.fontMedium
-                }
-
-                // Engagement stats
+                // Original post container
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.topMargin: Constants.spacing_m
-                    Layout.preferredHeight: 48
-                    color: Material.backgroundColor
+                    color: Material.dialogColor
+                    Layout.preferredHeight: contentColumn.height + 32
                     border.width: 1
                     border.color: Material.dividerColor
 
-                    RowLayout {
-                        anchors.fill: parent
+                    ColumnLayout {
+                        id: contentColumn
+                        width: parent.width
                         anchors.margins: Constants.spacing_m
                         spacing: Constants.spacing_m
 
-                        Text {
-                            text: (root.targetPost ? (root.targetPost.repostCount || "0") : "0") + qsTr(" Reposts")
-                            color: Material.secondaryTextColor
-                            font: Constants.smallFontMedium
+                        // Author info
+                        RowLayout {
+                            spacing: Constants.spacing_m
+                            Layout.topMargin: Constants.spacing_m
+                            Layout.leftMargin: Constants.spacing_m
+                            Layout.rightMargin: Constants.spacing_m
+                            
+                            ProfilePicture {
+                                imageSource: root.targetPost ? 
+                                    Util.getProfilePicture(root.targetPost.authorPicture || "", root.targetPost.authorNpub || "") : ""
+                                Layout.preferredWidth: 48
+                                Layout.preferredHeight: 48
+                            }
+
+                            ColumnLayout {
+                                spacing: Constants.spacing_s
+                                Text {
+                                    text: root.targetPost ? (root.targetPost.authorName || "") : ""
+                                    font: Constants.fontMedium
+                                }
+                                Text {
+                                    text: root.targetPost ? (root.targetPost.timestamp || "") : ""
+                                    color: Material.secondaryTextColor
+                                    font: Constants.smallFontMedium
+                                }
+                            }
                         }
 
+                        // Post content
                         Text {
-                            text: (root.targetPost ? root.targetPost.comments.length : "0") + qsTr(" Comments")
-                            color: Material.secondaryTextColor
-                            font: Constants.smallFontMedium
+                            Layout.fillWidth: true
+                            Layout.leftMargin: Constants.spacing_m
+                            Layout.rightMargin: Constants.spacing_m
+                            Layout.topMargin: Constants.spacing_m
+                            text: Util.getFormattedContent(root.targetPost)
+                            color: Material.foreground
+                            wrapMode: Text.Wrap
+                            font: Constants.fontMedium
+                        }
+
+                        // Engagement stats
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.topMargin: Constants.spacing_m
+                            Layout.preferredHeight: 48
+                            color: Material.backgroundColor
+                            border.width: 1
+                            border.color: Material.dividerColor
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: Constants.spacing_m
+                                spacing: Constants.spacing_m
+
+                                Text {
+                                    text: (root.targetPost ? (root.targetPost.repostCount || "0") : "0") + qsTr(" Reposts")
+                                    color: Material.secondaryTextColor
+                                    font: Constants.smallFontMedium
+                                }
+
+                                Text {
+                                    text: (root.targetPost ? root.targetPost.comments.length : "0") + qsTr(" Comments")
+                                    color: Material.secondaryTextColor
+                                    font: Constants.smallFontMedium
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
 
-        // Comments sections
-        ListView {
-            id: commentsView
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            verticalLayoutDirection: ListView.TopToBottom
-            layoutDirection: Qt.LeftToRight
-            leftMargin: Constants.spacing_m
-            rightMargin: Constants.spacing_m
-            spacing: Constants.spacing_m
-            bottomMargin: 0
+                // Comments sections
+                ListView {
+                    id: commentsView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    width: scrollView.width - 20
+                    spacing: Constants.spacing_m
+                    bottomMargin: 0
 
-            model: AutoListModel {
-                id: commentsModel
-                source: root.targetPost ? root.targetPost.comments : []
-                mode: AutoListModel.ByKey
-                equalityTest: function (oldItem, newItem) {
-                    return oldItem.id === newItem.id
-                }
-            }
+                    model: AutoListModel {
+                        id: commentsModel
+                        source: root.targetPost ? root.targetPost.comments : []
+                        mode: AutoListModel.ByKey
+                        equalityTest: function (oldItem, newItem) {
+                            return oldItem.id === newItem.id
+                        }
+                    }
 
-            delegate: Loader {
-                active: modelData !== undefined && modelData !== null
-                width: commentsView.width - commentsView.leftMargin - commentsView.rightMargin
-                height: active ? item.implicitHeight : 0
+                    delegate: Loader {
+                        active: modelData !== undefined && modelData !== null
+                        width: commentsView.width - commentsView.leftMargin - commentsView.rightMargin
+                        height: active ? item.implicitHeight : 0
 
-                sourceComponent: PostContent {
-                    post: modelData
-                }
-            }
+                        sourceComponent: PostContent {
+                            post: modelData
+                        }
+                    }
 
-            onCountChanged: {
-                if (atYEnd) {
-                    Qt.callLater(() => {
-                        positionViewAtEnd()
-                    })
-                }
-            }
+                    onCountChanged: {
+                        if (atYEnd) {
+                            Qt.callLater(() => {
+                                positionViewAtEnd()
+                            })
+                        }
+                    }
 
-            Component.onCompleted: positionViewAtEnd()
+                    Component.onCompleted: positionViewAtEnd()
 
 
-            ScrollBar.vertical: ScrollBar {
-                id: scrollBar
-                active: true
-                interactive: true
-                policy: ScrollBar.AsNeeded
+                    ScrollBar.vertical: ScrollBar {
+                        id: scrollBar
+                        active: true
+                        interactive: true
+                        policy: ScrollBar.AsNeeded
 
-                contentItem: Rectangle {
-                    implicitWidth: 6
-                    radius: width / 2
-                    color: scrollBar.pressed ? Material.scrollBarPressedColor :
-                            scrollBar.hovered ? Material.scrollBarHoveredColor :
-                                                Material.scrollBarColor
-                    opacity: scrollBar.active ? 1 : 0
+                        contentItem: Rectangle {
+                            implicitWidth: 6
+                            radius: width / 2
+                            color: scrollBar.pressed ? Material.scrollBarPressedColor :
+                                    scrollBar.hovered ? Material.scrollBarHoveredColor :
+                                                        Material.scrollBarColor
+                            opacity: scrollBar.active ? 1 : 0
 
-                    Behavior on opacity {
-                        NumberAnimation { duration: 150 }
+                            Behavior on opacity {
+                                NumberAnimation { duration: 150 }
+                            }
+                        }
                     }
                 }
-            }
-        }
 
-        Item {
-            Layout.fillHeight: true
-        }
+                Item {
+                    Layout.fillHeight: true
+                }
 
-        MessageInput {
-            id: replyInput
-            width: parent.width
-            placeholderText: root.inputPlaceholder
-            buttonText: root.buttonText
+                MessageInput {
+                    id: replyInput
+                    width: scrollView.width - 20
+                    Layout.margins: 0
+                    spacing: 0
+                    Layout.fillWidth: true
+                    placeholderText: root.inputPlaceholder
+                    buttonText: root.buttonText
 
-            onMessageSent: function(text) {
-                root.messageSubmitted(text)
-                root.close()
+                    onMessageSent: function(text) {
+                        root.messageSubmitted(text)
+                        root.close()
+                    }
+                }
             }
         }
     }
