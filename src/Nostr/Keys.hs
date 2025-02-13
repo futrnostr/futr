@@ -50,6 +50,8 @@ module Nostr.Keys (
     , keyPairToPubKeyXO
     , mnemonicToKeyPair
     , secKeyToKeyPair
+    , pubKeyXOFromHex
+    , pubKeyXOToHex
 
     -- * Schnorr signatures
     , schnorrSign
@@ -63,7 +65,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as C
-import Data.Text qualified as T
+import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import GHC.Generics (Generic)
 import Haskoin.Crypto
@@ -88,10 +90,10 @@ newtype Signature = Signature { getSignature :: S.SchnorrSignature } deriving (E
 
 instance FromJSON PubKeyXO where
   parseJSON = withText "PubKeyXO" $ \t -> do
-    decoded <- either fail return $ B16.decode (C.pack $ T.unpack t)
+    decoded <- either fail return $ B16.decode (C.pack $ unpack t)
     case importPubKeyXO decoded of
       Just pk -> return pk
-      Nothing -> fail $ "Invalid PubKeyXO: " ++ T.unpack t
+      Nothing -> fail $ "Invalid PubKeyXO: " ++ unpack t
 
 instance ToJSON PubKeyXO where
   toJSON = String . byteStringToHex . exportPubKeyXO
@@ -99,7 +101,7 @@ instance ToJSON PubKeyXO where
 
 instance FromJSON Signature where
   parseJSON = withText "Signature" $ \t -> do
-    decoded <- either fail return $ B16.decode (C.pack $ T.unpack t)
+    decoded <- either fail return $ B16.decode (C.pack $ unpack t)
     case S.importSchnorrSignature decoded of
       Just sig -> return $ Signature sig
       Nothing -> fail "Invalid Signature"
@@ -146,7 +148,7 @@ exportSignature :: Signature -> ByteString
 exportSignature = S.exportSchnorrSignature . getSignature
 
 -- | Convert byte string to hex string
-byteStringToHex :: ByteString -> T.Text
+byteStringToHex :: ByteString -> Text
 byteStringToHex = decodeUtf8 . B16.encode
 
 -- | Sign message using Schnorr signature scheme
@@ -198,6 +200,19 @@ derivePublicKeyXO sk = PubKeyXO p
     where
         (p, _) = S.xyToXO $ S.derivePubKey (getSecKey sk)
 
+
+-- | Convert PubKeyXO to hex-encoded Text
+pubKeyXOToHex :: PubKeyXO -> Text
+pubKeyXOToHex = byteStringToHex . exportPubKeyXO
+
+
+-- | Convert hex-encoded Text to PubKeyXO
+pubKeyXOFromHex :: Text -> Maybe PubKeyXO
+pubKeyXOFromHex hex = case hexToByteString $ unpack hex of
+    Right bytes -> importPubKeyXO bytes
+    Left _ -> Nothing
+
+
 -- Utility functions
 
 -- | Generate a random byte sequence for a secret key
@@ -223,4 +238,4 @@ strip xs = tail (init xs)
 
 -- | Check if a mnemonic has exactly 12 words
 isValid12WordMnemonic :: Mnemonic -> Bool
-isValid12WordMnemonic mnemonic = length (words $ T.unpack mnemonic) == 12
+isValid12WordMnemonic mnemonic = length (words $ unpack mnemonic) == 12

@@ -26,9 +26,10 @@ import Wuss qualified as Wuss
 import QtQuick
 import Logging
 import Nostr
-import Nostr.Event (createCanonicalAuthentication)
+import Nostr.Event (Event(..), createCanonicalAuthentication)
 import Nostr.Keys (keyPairToPubKeyXO)
-import Nostr.Types (Event(..), RelayURI, Response(..), SubscriptionId)
+import Nostr.Relay (RelayURI)
+import Nostr.Types (Response(..), SubscriptionId)
 import Nostr.Types qualified as NT
 import Nostr.Util
 import Types ( AppState(..), ConnectionError(..), ConnectionState(..)
@@ -313,7 +314,7 @@ handleResponse relayURI' r = case r of
                 st <- get @RelayPool
                 case Map.lookup relayURI' (activeConnections st) of
                     Just rd ->
-                        case find (\e -> NT.eventId e == eventId') (pendingEvents rd) of
+                        case find (\e -> eventId e == eventId') (pendingEvents rd) of
                             Just event -> handleAuthRequired relayURI' (NT.SendEvent event)
                             Nothing -> logDebug $ "No pending event found for " <> T.pack (show eventId')
                     Nothing -> logError $ "Received auth-required but no connection found: " <> relayURI'

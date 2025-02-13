@@ -9,7 +9,7 @@ import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.STM (TQueue, TVar, atomically, flushTQueue, newTVarIO, readTQueue, readTVar, writeTChan, writeTQueue, writeTVar )
+import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTVarIO, readTQueue, readTVar, writeTChan, writeTQueue, writeTVar )
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
@@ -18,8 +18,7 @@ import Prelude hiding (until)
 -- DEBUG IMPORTS
 import Data.Aeson (encode)
 import Data.ByteString qualified as BS
-import Data.ByteString.Base16 qualified as B16
-import Crypto.Hash.SHA256 qualified as SHA256
+--import Crypto.Hash.SHA256 qualified as SHA256
 import Nostr.Event (validateEventId, verifySignature)
 -- END DEBUG IMPORTS
 
@@ -27,10 +26,11 @@ import QtQuick
 import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
-import Nostr.Event (validateEvent)
+import Nostr.Event (Event(..), EventId(..), Kind(..), UnsignedEvent(..), validateEvent)
 import Nostr.Keys (byteStringToHex, keyPairToPubKeyXO)
+import Nostr.Relay (RelayURI)
 import Nostr.Subscription
-import Nostr.Types (Event(..), EventId(..), Filter(..), Kind(..), RelayURI, SubscriptionId)
+import Nostr.Types (Filter(..), SubscriptionId)
 import Nostr.Types qualified as NT
 import Nostr.Util
 import Store.Lmdb
@@ -64,15 +64,15 @@ runSubscriptionHandler
   => Eff (SubscriptionHandler : es) a
   -> Eff es a
 runSubscriptionHandler = interpret $ \_ -> \case
-    HandleSubscription subId' queue -> processQueue False subId' queue
+    HandleSubscription subId' queue' -> processQueue False subId' queue'
 
-    HandleSubscriptionUntilEOSE subId' queue -> processQueue True subId' queue
+    HandleSubscriptionUntilEOSE subId' queue' -> processQueue True subId' queue'
 
-    HandlePaginationSubscription subId' queue -> do
+    HandlePaginationSubscription subId' queue' -> do
         shouldStopVar <- newTVarIO False
         let loop = do
-                e  <- atomically $ readTQueue queue
-                es <- atomically $ flushTQueue queue
+                e  <- atomically $ readTQueue queue'
+                es <- atomically $ flushTQueue queue'
                 forM_ (e:es) $ \(relayUri, e') -> do
                     case e' of
                         EventAppeared event' -> do
@@ -83,19 +83,19 @@ runSubscriptionHandler = interpret $ \_ -> \case
                                             (error "Subscription not found")
                                             subId'
                                             subs
-                                filter = subscriptionFilter subInfo
-                                relayUri = relay subInfo
+                                filter' = subscriptionFilter subInfo
+                                relayUri' = relay subInfo
                                 newUntil = (oldestCreatedAt subInfo) - 1
-                                shouldPaginate = maybe False (\l -> eventsProcessed subInfo >= l && l /= 0) (limit filter)
-                                                && maybe True (\s -> newUntil > s) (since filter)
+                                shouldPaginate = maybe False (\l -> eventsProcessed subInfo >= l && l /= 0) (limit filter')
+                                                && maybe True (\s -> newUntil > s) (since filter')
                             
                             if shouldPaginate
                                 then do
                                     st <- get @RelayPool
-                                    case Map.lookup relayUri (activeConnections st) of
+                                    case Map.lookup relayUri' (activeConnections st) of
                                         Just rd -> do
                                             let channel = requestChannel rd
-                                                newFilter = filter { until = Just newUntil }
+                                                newFilter = filter' { until = Just newUntil }
                                                 newSub = subInfo { subscriptionFilter = newFilter }
 
                                             atomically $ writeTChan channel (NT.Close subId')
@@ -118,16 +118,16 @@ runSubscriptionHandler = interpret $ \_ -> \case
         loop
 
 
-processQueue :: forall es m. (SubscriptionHandlerEff es, State RelayPool :> es) 
+processQueue :: (SubscriptionHandlerEff es, State RelayPool :> es)
             => Bool 
             -> SubscriptionId 
             -> TQueue (RelayURI, SubscriptionEvent) 
             -> Eff es ()
-processQueue stopOnEOSE subId' queue = do
+processQueue stopOnEOSE subId' queue' = do
     shouldStopVar <- newTVarIO False
     let loop = do
-            e <- atomically $ readTQueue queue
-            es <- atomically $ flushTQueue queue
+            e <- atomically $ readTQueue queue'
+            es <- atomically $ flushTQueue queue'
         
             forM_ (e:es) $ \(relayUri, e') -> do
                 case e' of
@@ -152,10 +152,10 @@ handleEvent r event' = do
             logWarning $ "EventID: " <> if validateEventId event' then "valid" else "invalid"
             logWarning $ "Signature: " <> if verifySignature event' then "valid" else "invalid"
 
-            let unsignedEvent = NT.UnsignedEvent (pubKey event') (createdAt event') (kind event') (tags event') (content event')
+            let unsignedEvent = UnsignedEvent (pubKey event') (createdAt event') (kind event') (tags event') (content event')
                 serializedEvent = BS.toStrict $ encode unsignedEvent
-                computedId = SHA256.hash serializedEvent
-                eventId' = getEventId $ eventId event'
+                --computedId = SHA256.hash serializedEvent
+                --eventId' = getEventId $ eventId event'
 
             logWarning $ "Raw event: " <> pack (show serializedEvent)
             logWarning $ "Event: " <> pack (show event')

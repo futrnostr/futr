@@ -39,16 +39,17 @@ import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
 import Nostr
 import Nostr.Bech32
-import Nostr.Event ( createComment, createEventDeletion, createFollowList
+import Nostr.Event ( Event(..), EventId
+                   , createComment, createEventDeletion, createFollowList
                    , createQuoteRepost, createRepost, createRumor, createShortTextNote
                    )
 import Nostr.InboxModel (InboxModel, awaitAtLeastOneConnected, startInboxModel, stopInboxModel, subscribeToCommentsFor, unsubscribeToCommentsFor)
-import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPair)
+import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, pubKeyXOToHex, secKeyToKeyPair)
 import Nostr.Publisher
+import Nostr.Relay (RelayURI, getUri, isInboxCapable, isValidRelayURI)
 import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Subscription
 import Nostr.SubscriptionHandler
-import Nostr.Types (Event(..), EventId, RelayURI, Tag(..), getUri, isInboxCapable)
 import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
@@ -241,7 +242,7 @@ runFutr = interpret $ \_ -> \case
         now <- getCurrentTime
         let senderPubKeyXO = keyPairToPubKeyXO kp
             allRecipients = nub [senderPubKeyXO, recipient]
-            rumor = createRumor senderPubKeyXO now (map (\xo -> PTag xo Nothing Nothing) [recipient]) input
+            rumor = createRumor senderPubKeyXO now (map (\xo -> ["p", pubKeyXOToHex xo]) [recipient]) input
 
         giftWraps <- forM allRecipients $ \recipient' -> do
           seal <- createSeal rumor kp recipient'
@@ -316,8 +317,10 @@ runFutr = interpret $ \_ -> \case
                 mEventAndRelays <- getEvent eid
                 case mEventAndRelays of
                   Just EventWithRelays{event = origEvent, relays = relaySet} -> do
-                    let eventRelayUris = Set.fromList $ map getUri $
-                          catMaybes [Just r | RTag r <- tags origEvent]
+                    let eventRelayUris = Set.fromList $
+                          [ uri | ("r":uri:_) <- tags origEvent
+                          , isValidRelayURI uri
+                          ]
 
                     authorRelays <- getGeneralRelays (pubKey origEvent)
                     let authorInboxUris = Set.fromList $ map getUri $ 
@@ -359,7 +362,7 @@ runFutr = interpret $ \_ -> \case
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
           Just ev -> do
-            let c = createComment (event ev) comment' (Right eid) Nothing Nothing (keyPairToPubKeyXO kp) now
+            let c = createComment (event ev) comment' (keyPairToPubKeyXO kp) now
             signed <- signEvent c kp
             case signed of
               Just s -> do
@@ -367,8 +370,10 @@ runFutr = interpret $ \_ -> \case
                 mEventAndRelays <- getEvent eid
                 case mEventAndRelays of
                   Just EventWithRelays{event = origEvent, relays = relaySet} -> do
-                    let eventRelayUris = Set.fromList $ map getUri $
-                          catMaybes [Just r | RTag r <- tags origEvent]
+                    let eventRelayUris = Set.fromList $
+                          [ uri | ("r":uri:_) <- tags origEvent
+                          , isValidRelayURI uri
+                          ]
 
                     authorRelays <- getGeneralRelays (pubKey origEvent)
                     let authorInboxUris = Set.fromList $ map getUri $ 

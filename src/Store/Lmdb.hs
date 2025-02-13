@@ -29,12 +29,12 @@ module Store.Lmdb
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Monad (forM, forM_, unless, when)
+import Control.Monad (forM, forM_, when)
 import Data.Aeson (ToJSON, FromJSON, encode, decode, eitherDecode)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Cache.LRU qualified as LRU
 import Data.List (sort)
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
 import Data.Set qualified as Set
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
@@ -50,11 +50,11 @@ import Pipes.Prelude qualified as Pipes
 import Pipes ((>->))
 
 import Logging
-import Nostr.Event (validateEvent, unwrapGiftWrap, unwrapSeal)
-import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types ( Event(..), EventId(..), Kind(..), Marker(..), Profile, Relay, RelayURI, Tag(..)
-                   , Rumor(..), emptyProfile, getUri, isValidRelayURI
-                   , rumorPubKey, rumorTags, rumorCreatedAt )
+import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..), Rumor(..), Tag
+                   , eventIdFromHex, validateEvent, unwrapGiftWrap, unwrapSeal )
+import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, pubKeyXOFromHex)
+import Nostr.Profile (Profile, emptyProfile)
+import Nostr.Relay (Relay(..), RelayURI, getUri, isValidRelayURI)
 import Nostr.Util
 import Types (EventWithRelays(..), Follow(..))
 
@@ -149,7 +149,7 @@ runLmdbStore = interpret $ \_ -> \case
                                         Just decryptedRumor
                                             | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
                                                 let tags' = rumorTags decryptedRumor
-                                                    pListPks = getAllPListTags tags'
+                                                    pListPks = getAllPubKeysFromPTags tags'
                                                     participants = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
                                                       then sort pListPks
                                                       else filter (/= keyPairToPubKeyXO kp)
@@ -169,40 +169,77 @@ runLmdbStore = interpret $ \_ -> \case
                         _ -> pure False
 
                 ShortTextNote -> do
-                    let parentEvents = [eid | ETag eid _ marker _ <- tags (event ev), marker `elem` [Just Root, Just Reply]]
+                    let threadRefs = [ (eid, marker)
+                                   | ("e":eidHex:rest) <- tags (event ev)
+                                   , Just eid <- [eventIdFromHex eidHex]
+                                   , let marker = case drop 1 rest of
+                                           ("root":_) -> Just Root
+                                           ("reply":_) -> Just Reply
+                                           _ -> Nothing
+                                   ]
 
-                    addTimelineEntryTx txn (postTimelineDb currentState) ev [author] eventTimestamp
-                    runE $ modify @LmdbState $ \s -> s
-                        { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
+                    let isReply = not $ null threadRefs
 
-                    forM_ parentEvents $ \parentId -> do
+                    madeChanges <- if isReply
+                        then pure False
+                        else do
+                            addTimelineEntryTx txn (postTimelineDb currentState) ev [author] eventTimestamp
+                            runE $ modify @LmdbState $ \s -> s
+                                { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
+                            pure True
+
+                    commentChanges <- fmap or $ forM threadRefs $ \(parentId, _) -> do
                         existing <- Map.lookup' (readonly txn) (commentDb currentState) parentId
                         let comments = maybe [] id existing
                             newEventId = eventId $ event ev
-                        unless (newEventId `elem` comments) $ do
-                            Map.repsert' txn (commentDb currentState) parentId (newEventId : comments)
-                            runE $ modify @LmdbState $ \s -> s
-                                { commentCache = fst $ LRU.delete parentId (commentCache s) }
+                        if newEventId `elem` comments
+                            then pure False
+                            else do
+                                Map.repsert' txn (commentDb currentState) parentId (newEventId : comments)
+                                runE $ modify @LmdbState $ \s -> s
+                                    { commentCache = fst $ LRU.delete parentId (commentCache s) }
+                                pure True
 
-                    pure True
+                    pure (madeChanges || commentChanges)
 
                 Repost -> do
-                    let etags = [t | t@(ETag _ _ _ _) <- tags (event ev)]
+                    let mEventTag = [ (eid, fromMaybe "" relay)
+                                    | ("e":eidHex:rest) <- tags (event ev)
+                                    , Just eid <- [eventIdFromHex eidHex]
+                                    , let relay = listToMaybe rest
+                                    ]
+                        mPubkeyTag = [ pk
+                                   | ("p":pkHex:_) <- tags (event ev)
+                                   , Just pk <- [pubKeyXOFromHex pkHex] ]
                         mOriginalEvent = eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev)
-                    case (etags, mOriginalEvent) of
-                        (ETag _ _ _ _ : _, Right originalEvent)
-                            | validateEvent originalEvent -> do
+                    case (mEventTag, mOriginalEvent) of
+                        ((_, relay):_, Right originalEvent)
+                            -- Validate it's a repost of kind 1 for kind 6
+                            | kind (event ev) == Repost && kind originalEvent == ShortTextNote
+                            -- Validate pubkey if provided
+                            && (null mPubkeyTag || head mPubkeyTag == pubKey originalEvent)
+                            && validateEvent originalEvent -> do
                                 Map.repsert' txn (eventDb currentState) (eventId originalEvent)
-                                    (EventWithRelays originalEvent Set.empty)
+                                    (EventWithRelays originalEvent (Set.singleton relay))
                                 addTimelineEntryTx txn (postTimelineDb currentState) ev [author] eventTimestamp
                                 runE $ modify @LmdbState $ \s -> s
                                     { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
-
                                 pure True
                         _ -> pure False
 
                 EventDeletion -> do
-                    let eventIdsToDelete = [eid | ETag eid _ _ _ <- tags (event ev)]
+                    let eventIdsToDelete =
+                          -- Extract event IDs from e-tags
+                          [eid | ("e":eidHex:_) <- tags (event ev)
+                               , Just eid <- [eventIdFromHex eidHex]]
+                          -- -- Extract event IDs from a-tags (replaceable events) - TODO
+                          -- ++ [aid | ["a", coordStr] <- tags (event ev)
+                          --         , Just aid <- [parseCoordinate coordStr]]
+                          -- where
+                          --   parseCoordinate :: Text -> Maybe EventId
+                          --   parseCoordinate coord = case Text.splitOn ":" coord of
+                          --     [kind, pubkey, dTag] -> Nothing  -- TODO: Implement coordinate parsing
+                          --     _ -> Nothing
                     res <- forM eventIdsToDelete $ \eid -> do
                         mEvent <- Map.lookup' (readonly txn) (eventDb currentState) eid
                         case mEvent of
@@ -255,7 +292,11 @@ runLmdbStore = interpret $ \_ -> \case
                             { profileCache = fst $ LRU.delete author (profileCache s) }
 
                 FollowList -> do
-                    let followList' = [Follow pk petName' | PTag pk _ petName' <- tags (event ev)]
+                    let followList' = [ Follow pk petname
+                                    | ("p":pkHex:rest) <- tags (event ev)
+                                    , Just pk <- [pubKeyXOFromHex pkHex]
+                                    , let petname = listToMaybe rest
+                                    ]
                     existingTimestamp' <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
                     case existingTimestamp' of
                         Just existingTs ->
@@ -274,7 +315,14 @@ runLmdbStore = interpret $ \_ -> \case
                             { followsCache = fst $ LRU.delete author (followsCache s) }
 
                 PreferredDMRelays -> do
-                    let validRelayTags = [ r' | RelayTag r' <- tags (event ev), isValidRelayURI r' ]
+                    let validRelayTags = [ r
+                                       | ("r":uri:rest) <- tags (event ev)
+                                       , isValidRelayURI uri
+                                       , let r = case rest of
+                                                ("write":_) -> OutboxRelay uri
+                                                ("read":_) -> InboxRelay uri
+                                                _ -> InboxOutboxRelay uri
+                                       ]
                     case validRelayTags of
                         [] -> pure False
                         relays -> do
@@ -282,12 +330,14 @@ runLmdbStore = interpret $ \_ -> \case
                             case existingRelays of
                                 Just (_, existingTs) ->
                                     if eventTimestamp > existingTs then do
-                                        Map.repsert' txn (dmRelaysDb currentState) author (relays, eventTimestamp)
+                                        let relays' = map getUri relays
+                                        Map.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
                                         updateState
                                         pure True
                                     else pure False
                                 Nothing -> do
-                                    Map.repsert' txn (dmRelaysDb currentState) author (relays, eventTimestamp)
+                                    let relays' = map getUri relays
+                                    Map.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
                                     updateState
                                     pure True
                     where
@@ -295,7 +345,14 @@ runLmdbStore = interpret $ \_ -> \case
                             { dmRelaysCache = fst $ LRU.delete author (dmRelaysCache s) }
 
                 RelayListMetadata -> do
-                    let validRelayTags = [ r' | RTag r' <- tags (event ev), isValidRelayURI (getUri r') ]
+                    let validRelayTags = [ r
+                                       | ("r":uri:rest) <- tags (event ev)
+                                       , isValidRelayURI uri
+                                       , let r = case rest of
+                                                ("write":_) -> OutboxRelay uri
+                                                ("read":_) -> InboxRelay uri
+                                                _ -> InboxOutboxRelay uri
+                                       ]
                     case validRelayTags of
                         [] -> pure False
                         relays -> do
@@ -560,12 +617,17 @@ latestTimestampDbSettings = makeSettings
             Left _ -> Nothing))
 
 
--- | Get all p tags from the rumor tags
-getAllPListTags :: [Tag] -> [PubKeyXO]
-getAllPListTags = concatMap extractPubKeys
+-- | Extract pubkeys from p-tags in the tags list
+getAllPubKeysFromPTags :: [Tag] -> [PubKeyXO]
+getAllPubKeysFromPTags = concatMap extractPubKey
   where
-    extractPubKeys (PListTag pks) = pks
-    extractPubKeys _ = []
+    extractPubKey ["p", pubkeyHex, _] = case pubKeyXOFromHex pubkeyHex of
+        Just pk -> [pk]
+        Nothing -> []
+    extractPubKey ["p", pubkeyHex] = case pubKeyXOFromHex pubkeyHex of
+        Just pk -> [pk]
+        Nothing -> []
+    extractPubKey _ = []
 
 -- | Initialize LMDB state
 initializeLmdbState :: FilePath -> IO LmdbState

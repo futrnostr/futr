@@ -40,10 +40,10 @@ import Nostr
 import Nostr.Bech32
 import Nostr.Keys ( KeyPair, PubKeyXO, SecKey, derivePublicKeyXO
                   , keyPairToPubKeyXO, keyPairToSecKey, secKeyToKeyPair)
-import Nostr.Types hiding (displayName, picture)
+import Nostr.Profile (Profile(..))
+import Nostr.Relay (Relay)
 import System.FilePath (takeFileName, (</>))
 import Text.Read (readMaybe)
-import qualified Nostr.Types as NT
 import Types (AppState(..))
 
 
@@ -191,8 +191,8 @@ runKeyMgmt = interpret $ \_ -> \case
   UpdateProfile aid profile -> do
     modify $ \st -> st 
       { accountMap = Map.adjust (\acc -> acc 
-          { accountDisplayName = NT.displayName profile
-          , accountPicture = NT.picture profile
+          { accountDisplayName = displayName profile
+          , accountPicture = picture profile
           }) aid (accountMap st) 
       }
     accounts <- gets accountMap
