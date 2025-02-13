@@ -110,6 +110,9 @@ runSubscription = interpret $ \_ -> \case
                                 , relay subDetails == relayUri
                                 ]
 
+                modify @RelayPool $ \s -> s
+                    { stoppingSubscriptions = relaySubIds ++ stoppingSubscriptions s }
+
                 forM_ relaySubIds $ \subId -> do
                     atomically $ writeTChan (requestChannel rd) (NT.Close subId)
             Nothing -> return ()
@@ -123,9 +126,7 @@ runSubscription = interpret $ \_ -> \case
             atomically $ writeTQueue (responseQueue subDetails) (relay subDetails, SubscriptionClosed "Subscription stopped")
 
         modify @RelayPool $ \s -> s
-            { subscriptions = Map.filterWithKey (\k v -> relay v /= relayUri) (subscriptions s)
-            , pendingSubscriptions = Map.filterWithKey (\k v -> relay v /= relayUri) (pendingSubscriptions s)
-            }
+            { pendingSubscriptions = Map.filterWithKey (\k v -> relay v /= relayUri) (pendingSubscriptions s) }
 
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId
@@ -157,12 +158,15 @@ profilesFilter authors lastTimestamp = emptyFilter
 -- This filter targets three event kinds:
 -- * ShortTextNote - User's regular posts
 -- * Repost        - Content the user has reposted
--- * Comment       - User's replies to other posts
-userPostsFilter :: [PubKeyXO] -> Maybe Int -> Filter
-userPostsFilter authors lastTimestamp = emptyFilter 
-    { authors = Just authors
+-- * EventDeletion - User's delete requests
+userPostsFilter :: [PubKeyXO] -> Maybe Int -> Maybe Int -> Filter
+userPostsFilter pks s ml = emptyFilter
+    { authors = Just pks
     , kinds = Just [ShortTextNote, Repost, EventDeletion]
-    , since = lastTimestamp
+    , since = s
+    , limit = case ml of
+        Just l -> Just l
+        Nothing -> Just $ 2000 * length pks
     }
 
 
