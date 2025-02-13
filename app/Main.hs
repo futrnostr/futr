@@ -16,6 +16,7 @@ import Nostr.InboxModel (runInboxModel)
 import Nostr.Publisher (runPublisher)
 import Nostr.RelayConnection (runRelayConnection)
 import Nostr.Subscription (runSubscription)
+import Nostr.SubscriptionHandler (runSubscriptionHandler)
 import Nostr.Util (runUtil)
 import Presentation.KeyMgmtUI (runKeyMgmtUI)
 import Presentation.RelayMgmtUI (runRelayMgmtUI)
@@ -57,6 +58,7 @@ main = do
         . runPublisher
         . runRelayMgmt
         . runSubscription
+        . runSubscriptionHandler
         . runInboxModel
         -- presentation related
         . runKeyMgmtUI

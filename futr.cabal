@@ -26,7 +26,7 @@ custom-setup
 
 executable futr
     main-is:          Main.hs
-    hs-source-dirs:   src
+    hs-source-dirs:   app, src
 
     other-modules:
         QtQuick
@@ -44,6 +44,7 @@ executable futr
         Nostr.Publisher
         Nostr.RelayConnection
         Nostr.Subscription
+        Nostr.SubscriptionHandler
         Nostr.Types
         Nostr.Util
         Presentation.KeyMgmtUI
