@@ -40,7 +40,7 @@ import Types
 data SubscriptionHandler :: Effect where
     HandleSubscription :: SubscriptionId -> TQueue (RelayURI, SubscriptionEvent) -> SubscriptionHandler m ()
     HandleSubscriptionUntilEOSE :: SubscriptionId -> TQueue (RelayURI, SubscriptionEvent) -> SubscriptionHandler m ()
-    HandlePaginationSubscription :: RelayURI -> Filter -> SubscriptionId -> TQueue (RelayURI, SubscriptionEvent) -> SubscriptionHandler m ()    
+    HandlePaginationSubscription :: SubscriptionId -> TQueue (RelayURI, SubscriptionEvent) -> SubscriptionHandler m ()
 
 type instance DispatchOf SubscriptionHandler = Dynamic
 
@@ -68,7 +68,7 @@ runSubscriptionHandler = interpret $ \_ -> \case
 
     HandleSubscriptionUntilEOSE subId' queue -> processQueue True subId' queue
 
-    HandlePaginationSubscription r f subId' queue -> do
+    HandlePaginationSubscription subId' queue -> do
         shouldStopVar <- newTVarIO False
         let loop = do
                 e  <- atomically $ readTQueue queue
@@ -83,22 +83,26 @@ runSubscriptionHandler = interpret $ \_ -> \case
                                             (error "Subscription not found")
                                             subId'
                                             subs
-                            let newUntil = (oldestCreatedAt subInfo) - 1
-                            let shouldPaginate = maybe False (\l -> eventsProcessed subInfo >= l && l /= 0) (limit f)
-                                                && maybe True (\s -> newUntil > s) (since f)
+                                filter = subscriptionFilter subInfo
+                                relayUri = relay subInfo
+                                newUntil = (oldestCreatedAt subInfo) - 1
+                                shouldPaginate = maybe False (\l -> eventsProcessed subInfo >= l && l /= 0) (limit filter)
+                                                && maybe True (\s -> newUntil > s) (since filter)
                             
                             if shouldPaginate
                                 then do
                                     st <- get @RelayPool
-                                    case Map.lookup r (activeConnections st) of
+                                    case Map.lookup relayUri (activeConnections st) of
                                         Just rd -> do
                                             let channel = requestChannel rd
+                                                newFilter = filter { until = Just newUntil }
+                                                newSub = subInfo { subscriptionFilter = newFilter }
+
                                             atomically $ writeTChan channel (NT.Close subId')
-                                            let newFilter = f { until = Just newUntil }
-                                            let newSub    = newSubscriptionState newFilter queue r
                                             modify @RelayPool $ \st' ->
                                                 st' { subscriptions = Map.insert subId' newSub (subscriptions st') }
                                             atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' newFilter)
+
                                         Nothing -> pure ()
                                 else pure ()
 

@@ -3,7 +3,7 @@
 module Nostr.RelayConnection where
 
 import Control.Exception (SomeException, try)
-import Control.Monad (forM_,void, when)
+import Control.Monad (forM_, unless, void, when)
 import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (dropWhileEnd, find)
@@ -288,11 +288,22 @@ handleResponse relayURI' r = case r of
                         handleAuthRequired relayURI' (NT.Subscribe subscription)
                     Nothing -> logError $ "No subscription found for " <> T.pack (show subId')
             else do
-                enqueueEvent subId' (SubscriptionClosed msg)
+                st <- get @RelayPool
+                -- Only remove subscription if it's in stoppingSubscriptions
                 stoppingSubs <- gets @RelayPool stoppingSubscriptions
                 when (subId' `elem` stoppingSubs) $ do
-                    modify @RelayPool $ \st ->
-                        st { subscriptions = Map.delete subId' (subscriptions st) }
+                    -- First enqueue the closed event before removing the subscription
+                    case Map.lookup subId' (subscriptions st) of
+                        Just sd -> do
+                            atomically $ writeTQueue (responseQueue sd) (relayURI', SubscriptionClosed msg)
+                            modify @RelayPool $ \st' ->
+                                st' { subscriptions = Map.delete subId' (subscriptions st')
+                                    , stoppingSubscriptions = filter (/= subId') (stoppingSubscriptions st')
+                                    }
+                        Nothing -> pure ()
+                -- If not in stoppingSubscriptions, just enqueue the event without removing the subscription
+                unless (subId' `elem` stoppingSubs) $
+                    enqueueEvent subId' (SubscriptionClosed msg)
 
         return emptyUpdates
 
@@ -384,7 +395,7 @@ handleResponse relayURI' r = case r of
             st <- get @RelayPool
             case Map.lookup subId' (subscriptions st) of
                 Just sd -> atomically $ writeTQueue (responseQueue sd) (relayURI', event')
-                Nothing -> logError $ "No subscription found for " <> T.pack (show subId')
+                Nothing -> logError $ "No response queue for subscription found: " <> T.pack (show subId')
 
 
 -- | Handle authentication required.
