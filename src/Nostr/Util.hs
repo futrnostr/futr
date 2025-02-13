@@ -8,6 +8,7 @@ import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get)
 import Effectful.TH
+import System.Random.Shuffle (shuffleM)
 
 import Nostr.Keys (KeyPair)
 import Types (AppState(..))
@@ -16,6 +17,7 @@ import Types (AppState(..))
 data Util :: Effect where
   GetCurrentTime :: Util m Int
   GetKeyPair :: Util m KeyPair
+  ShuffleList :: [a] -> Util m [a]
 
 type instance DispatchOf Util = Dynamic
 
@@ -34,3 +36,5 @@ runUtil = interpret $ \_ -> \case
   GetKeyPair -> do
     st <- get @AppState
     return $ maybe (error "No key pair found in app state") id $ keyPair st
+
+  ShuffleList xs -> liftIO $ shuffleM xs

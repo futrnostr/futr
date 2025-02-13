@@ -534,39 +534,41 @@ parseETag rest v@(Array arr) = case V.head arr of
 
 -- | Parses a PTag from a JSON array.
 parsePTag :: [Value] -> Value -> Parser Tag
-parsePTag rest v = do
-    -- First try to parse as PListTag (multiple pubkeys)
-    case rest of
-        -- If all values are strings, try parsing as PListTag
-        values@(_:_) ->
-            (do
-                pubkeys <- mapM parseJSONSafe values
-                return $ PListTag pubkeys)
-            <|> parseSinglePTag rest v  -- Fallback to single PTag parsing
-        _ -> parseSinglePTag rest v
-
--- | Parses a single PTag (with optional relay and name)
-parseSinglePTag :: [Value] -> Value -> Parser Tag
-parseSinglePTag rest v = case (v, rest) of
-    (Array _, pubkeyVal : maybeRelay : maybeName : _) -> do
-      pubkey <- parseJSONSafe pubkeyVal
-      relay <- parseMaybeRelayURI maybeRelay
-      name <- parseMaybeDisplayName maybeName
-      return $ PTag pubkey relay name
-    (Array arr, pubkeyVal : maybeRelay : _) -> do
-      pubkey <- parseJSONSafe pubkeyVal
-      relay <- parseMaybeRelayURI maybeRelay
-      case V.head arr of
-        String "p" -> return $ PTag pubkey relay Nothing
-        String "P" -> return $ PTag' pubkey relay
-        _ -> fail "Invalid PTag type - must be 'P' or 'p'"
-    (Array arr, pubkeyVal : _) -> do
-      pubkey <- parseJSONSafe pubkeyVal
-      case V.head arr of
-        String "p" -> return $ PTag pubkey Nothing Nothing
-        String "P" -> return $ PTag' pubkey Nothing
-        _ -> fail "Invalid PTag type - must be 'P' or 'p'"
-    _ -> fail "Invalid PTag format: empty array"
+parsePTag rest v@(Array arr) = case V.head arr of
+    -- Case 1: PListTag - multiple pubkeys in a list
+    String "p" | length rest > 1 -> do
+        pubkeys <- mapM parseJSONSafe rest
+        return $ PListTag pubkeys
+        
+    -- Case 2: PTag - lowercase "p" with single pubkey
+    String "p" -> case rest of
+        [pubkeyVal, relayVal, nameVal] -> do
+            pubkey <- parseJSONSafe pubkeyVal
+            relay <- parseMaybeRelayURI relayVal
+            name <- parseMaybeDisplayName nameVal
+            return $ PTag pubkey relay name
+        [pubkeyVal, relayVal] -> do
+            pubkey <- parseJSONSafe pubkeyVal
+            relay <- parseMaybeRelayURI relayVal
+            return $ PTag pubkey relay Nothing
+        [pubkeyVal] -> do
+            pubkey <- parseJSONSafe pubkeyVal
+            return $ PTag pubkey Nothing Nothing
+        _ -> parseGenericTag v
+            
+    -- Case 3: PTag' - uppercase "P" with single pubkey
+    String "P" -> case rest of
+        [pubkeyVal, relayVal] -> do
+            pubkey <- parseJSONSafe pubkeyVal
+            relay <- parseMaybeRelayURI relayVal
+            return $ PTag' pubkey relay
+        [pubkeyVal] -> do
+            pubkey <- parseJSONSafe pubkeyVal
+            return $ PTag' pubkey Nothing
+        _ -> parseGenericTag v
+            
+    _ -> parseGenericTag v
+parsePTag _ v = parseGenericTag v
 
 
 -- | Parses a JSON value safely and returns the parsed result.

@@ -2,6 +2,7 @@
 
 module RelayMgmt where
 
+import Control.Monad (when)
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.TH
@@ -10,7 +11,7 @@ import QtQuick
 import Logging
 import Nostr
 import Nostr.Event (createPreferredDMRelaysEvent, createRelayListMetadataEvent)
-import Nostr.Keys (PubKeyXO)
+import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Publisher
 import Nostr.RelayConnection
 import Nostr.Types (Relay(..), RelayURI, defaultDMRelays, defaultGeneralRelays, getUri)
@@ -23,11 +24,11 @@ data RelayMgmt :: Effect where
     -- General Relay Management
     AddGeneralRelay :: PubKeyXO -> RelayURI -> Bool -> Bool -> RelayMgmt m Bool
     RemoveGeneralRelay :: PubKeyXO -> RelayURI -> RelayMgmt m ()
-    SetDefaultGeneralRelays :: PubKeyXO -> RelayMgmt m ()
+    SetDefaultGeneralRelays :: RelayMgmt m ()
     -- DM Relay Management
     AddDMRelay :: PubKeyXO -> RelayURI -> RelayMgmt m Bool
     RemoveDMRelay :: PubKeyXO -> RelayURI -> RelayMgmt m ()
-    SetDefaultDMRelays :: PubKeyXO -> RelayMgmt m ()
+    SetDefaultDMRelays :: RelayMgmt m ()
 
 type instance DispatchOf RelayMgmt = Dynamic
 
@@ -122,12 +123,20 @@ runRelayMgmt = interpret $ \_ -> \case
             Nothing -> logError $ "Failed to sign preferred DM relays event"
         notifyRelayStatus
 
-    SetDefaultGeneralRelays xo -> do
+    SetDefaultGeneralRelays -> do
         logInfo "Setting default general relays..."
         kp <- getKeyPair
+        let xo = keyPairToPubKeyXO kp
         now <- getCurrentTime
-        let (relays, _) = defaultGeneralRelays
-            unsigned = createRelayListMetadataEvent relays xo now
+        let (allRelays, _) = defaultGeneralRelays
+        when (null allRelays) $
+            logError "No default relays configured"
+        shuffledRelays <- shuffleList allRelays
+        let relays = case shuffledRelays of
+              [] -> error "No default relays available"
+              [x] -> [x]
+              xs -> take 2 xs
+        let unsigned = createRelayListMetadataEvent relays xo now
         signed <- signEvent unsigned kp
         case signed of
             Just event -> do
@@ -136,12 +145,20 @@ runRelayMgmt = interpret $ \_ -> \case
             Nothing -> 
                 logError "Failed to sign relay list metadata event"
 
-    SetDefaultDMRelays xo -> do
+    SetDefaultDMRelays -> do
         logInfo "Setting default DM relays..."
         kp <- getKeyPair
+        let xo = keyPairToPubKeyXO kp
         now <- getCurrentTime
         let (dmRelays, _) = defaultDMRelays
-            unsigned = createPreferredDMRelaysEvent dmRelays xo now
+        when (null dmRelays) $
+            logError "No default DM relays configured"
+        shuffledRelays <- shuffleList dmRelays
+        let relays = case shuffledRelays of
+              [] -> error "No default DM relays available"
+              [x] -> [x]
+              xs -> take 2 xs
+        let unsigned = createPreferredDMRelaysEvent relays xo now
         signed <- signEvent unsigned kp
         case signed of
             Just event -> do

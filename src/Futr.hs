@@ -17,7 +17,7 @@ import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
-import Effectful.Concurrent.STM (atomically, newTQueueIO, readTQueue)
+import Effectful.Concurrent.STM (atomically, flushTQueue, newTQueueIO, newTVarIO, readTQueue, readTVar, writeTVar)
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.Exception (SomeException, try)
 import Effectful.FileSystem
@@ -47,6 +47,7 @@ import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, secKeyToKeyPa
 import Nostr.Publisher
 import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Subscription
+import Nostr.SubscriptionHandler
 import Nostr.Types (Event(..), EventId, RelayURI, Tag(..), getUri, isInboxCapable)
 import Nostr.Util
 import Presentation.KeyMgmtUI (KeyMgmtUI)
@@ -472,19 +473,29 @@ searchInRelays xo mr = do
         when (Map.member relayUri' conns) $ do
             q <- newTQueueIO
             subId' <- subscribe relayUri' (metadataFilter [xo]) q
+            -- @todo duplicated from subscription handler, but closes unneeded connections
+            
             void $ async $ do
+                shouldStopVar <- newTVarIO False
                 let loop = do
                         e <- atomically $ readTQueue q
-                        case e of
-                            (r, EventAppeared event') -> do
-                                updates <- handleEvent r event'
-                                notify updates
-                                loop
-                            (_, SubscriptionEose) -> do
-                                stopSubscription subId'
-                                when (manuallyConnected && Just relayUri' == mr) $ do
+                        es <- atomically $ flushTQueue q
+                    
+                        forM_ (e:es) $ \(relayUri, e') -> do
+                            case e' of
+                                EventAppeared event' -> handleEvent relayUri event'
+
+                                SubscriptionEose _ -> do
+                                  stopSubscription subId'
+                                  when (manuallyConnected && Just relayUri' == mr) $ do
                                     disconnect relayUri'
-                            (_, SubscriptionClosed _) ->
-                                when (manuallyConnected && Just relayUri' == mr) $ do
+
+                                SubscriptionClosed _ -> do
+                                  atomically $ writeTVar shouldStopVar True
+                                  when (manuallyConnected && Just relayUri' == mr) $ do
                                     disconnect relayUri'
+
+                        shouldStop <- atomically $ readTVar shouldStopVar
+                        unless shouldStop loop
+                
                 loop

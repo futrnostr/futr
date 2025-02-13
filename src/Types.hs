@@ -28,17 +28,17 @@ data PublishStatus
 -- | Subscription events
 data SubscriptionEvent
     = EventAppeared Event
-    | SubscriptionEose
+    | SubscriptionEose SubscriptionId
     | SubscriptionClosed Text
 
 
 -- | State for RelayPool handling.
 data RelayPool = RelayPool
     { activeConnections :: Map RelayURI RelayData
-    , subscriptions :: Map SubscriptionId SubscriptionDetails
-    , pendingSubscriptions :: Map SubscriptionId SubscriptionDetails
+    , subscriptions :: Map SubscriptionId SubscriptionState
+    , pendingSubscriptions :: Map SubscriptionId SubscriptionState
+    , stoppingSubscriptions :: [SubscriptionId]
     , publishStatus :: Map EventId (Map RelayURI PublishStatus)
-    , inboxQueue :: TQueue (RelayURI, SubscriptionEvent)
     , updateQueue :: TQueue ()
     , updateThread :: Maybe (Async ())
     , commentSubscriptions :: Map EventId [SubscriptionId]
@@ -46,14 +46,18 @@ data RelayPool = RelayPool
 
 
 -- | Subscription details.
-data SubscriptionDetails = SubscriptionDetails
-    { subscriptionId :: SubscriptionId
-    , subscriptionFilter :: Filter
+data SubscriptionState = SubscriptionState
+    { subscriptionFilter :: Filter
     , responseQueue :: TQueue (RelayURI, SubscriptionEvent)
-    , eventsProcessed :: Int
-    , newestCreatedAt :: Int
     , relay :: RelayURI
+    , eventsProcessed :: Int
+    , oldestCreatedAt :: Int
     }
+
+
+-- | Create a new subscription state.
+newSubscriptionState :: Filter -> TQueue (RelayURI, SubscriptionEvent) -> RelayURI -> SubscriptionState
+newSubscriptionState f q r = SubscriptionState f q r 0 0
 
 
 -- | Connection errors.
@@ -92,8 +96,8 @@ initialRelayPool = RelayPool
   { activeConnections = Map.empty
   , subscriptions = Map.empty
   , pendingSubscriptions = Map.empty
+  , stoppingSubscriptions = []
   , publishStatus = Map.empty
-  , inboxQueue = undefined
   , updateQueue = undefined
   , updateThread = Nothing
   , commentSubscriptions = Map.empty

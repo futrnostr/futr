@@ -17,9 +17,10 @@ import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM ( TQueue, atomically, flushTQueue, newTQueueIO, newTVarIO
                                 , readTQueue, readTVar, tryReadTQueue, writeTChan, writeTQueue, writeTVar )
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, get, modify)
+import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
 import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
+import Prelude hiding (until)
 import System.Random (randomIO)
 
 import Crypto.Hash.SHA256 qualified as SHA256
@@ -41,22 +42,6 @@ import Store.Lmdb
 import Types
 
 
--- | Subscription effects
-data Subscription :: Effect where
-    Subscribe
-        :: RelayURI
-        -> Filter
-        -> TQueue (RelayURI, SubscriptionEvent)
-        -> Subscription m SubscriptionId
-    StopSubscription :: SubscriptionId -> Subscription m ()
-    HandleEvent :: RelayURI -> Event -> Subscription m UIUpdates
-    StopAllSubscriptions :: RelayURI -> Subscription m ()
-
-type instance DispatchOf Subscription = Dynamic
-
-makeEffect ''Subscription
-
-
 -- | SubscriptionEff
 type SubscriptionEff es =
   ( State AppState :> es
@@ -72,6 +57,19 @@ type SubscriptionEff es =
   , IOE :> es
   )
 
+
+-- | Subscription effects
+data Subscription :: Effect where
+    Subscribe :: RelayURI -> Filter -> TQueue (RelayURI, SubscriptionEvent) -> Subscription m SubscriptionId
+    StopSubscription :: SubscriptionId -> Subscription m ()
+    --HandleEvent :: RelayURI -> Event -> Subscription m UIUpdates
+    StopAllSubscriptions :: RelayURI -> Subscription m ()
+    
+
+type instance DispatchOf Subscription = Dynamic
+
+makeEffect ''Subscription
+
 -- | Handler for subscription effects.
 runSubscription
   :: SubscriptionEff es
@@ -79,24 +77,17 @@ runSubscription
   -> Eff es a
 runSubscription = interpret $ \_ -> \case
     Subscribe r f queue -> do
-        --logDebug $ "Subscribing to relay: " <> r <> " with filter: " <> pack (show f)
         subId' <- generateRandomSubscriptionId
-        let sub = SubscriptionDetails subId' f queue 0 0 r
-        st <- get @RelayPool
-        case Map.lookup r (activeConnections st) of
-            Just rd -> do
-                let channel = requestChannel rd
-                modify @RelayPool $ \st' ->
-                    st' { subscriptions = Map.insert subId' sub (subscriptions st') }
-                atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' f)
-                return subId'
-            Nothing -> do
-                modify @RelayPool $ \st' ->
-                    st' { pendingSubscriptions = Map.insert subId' sub (pendingSubscriptions st') }
-                return subId'
-
+        let sub = newSubscriptionState f queue r
+        registerSubscription r subId' sub f
+   
     StopSubscription subId' -> do
         st <- get @RelayPool
+
+        modify @RelayPool $ \s -> s
+            { stoppingSubscriptions = subId' : stoppingSubscriptions s
+            , pendingSubscriptions = Map.delete subId' (pendingSubscriptions s)
+            }
 
         case Map.lookup subId' (subscriptions st) of
             Just subDetails -> do
@@ -109,77 +100,6 @@ runSubscription = interpret $ \_ -> \case
             Just subDetails ->
                 atomically $ writeTQueue (responseQueue subDetails) (relay subDetails, SubscriptionClosed "Subscription stopped")
             Nothing -> pure ()
-
-        modify @RelayPool $ \s -> s
-            { subscriptions = Map.delete subId' (subscriptions s)
-            , pendingSubscriptions = Map.delete subId' (pendingSubscriptions s)
-            }
-
-    HandleEvent r event' -> do
-        --logDebug $ "Starting handleEvent' for event: " <> pack (show event')
-        let ev = EventWithRelays event' (Set.singleton r)
-
-        if not (validateEvent event')
-            then do
-                logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
-                {-
-                logWarning $ "EventID: " <> if validateEventId event' then "valid" else "invalid"
-                logWarning $ "Signature: " <> if verifySignature event' then "valid" else "invalid"
-
-
-                let unsignedEvent = NT.UnsignedEvent (pubKey event') (createdAt event') (kind event') (tags event') (content event')
-                    serializedEvent = BS.toStrict $ encode unsignedEvent
-                    computedId = SHA256.hash serializedEvent
-                    eventId' = getEventId $ eventId event'
-
-                logWarning $ "Raw event: " <> pack (show serializedEvent)
-                logWarning $ "Event: " <> pack (show event')
-                -}
-                pure emptyUpdates
-            else do
-                wasUpdated <- putEvent ev
-                updates <- case kind event' of
-                    ShortTextNote -> do
-                        pure $ emptyUpdates { postsChanged = wasUpdated }
-
-                    Repost -> do
-                        pure $ emptyUpdates { postsChanged = wasUpdated }
-
-                    EventDeletion ->
-                        pure $ emptyUpdates { postsChanged = wasUpdated, privateMessagesChanged = wasUpdated }
-
-                    Metadata -> do
-                        case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
-                            Right profile -> do
-                                st <- get @AppState
-                                let isOwnProfile = maybe False (\kp -> pubKey event' == keyPairToPubKeyXO kp) (keyPair st)
-                                when isOwnProfile $ do
-                                    let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
-                                    updateProfile aid profile
-                                pure $ emptyUpdates { profilesChanged = wasUpdated, myFollowsChanged = wasUpdated }
-                            Left err -> do
-                                logWarning $ "Failed to decode metadata: " <> pack err
-                                pure emptyUpdates
-
-                    FollowList -> do
-                        kp <- getKeyPair
-                        let pk = keyPairToPubKeyXO kp
-                        pure $ emptyUpdates { followsChanged = wasUpdated, myFollowsChanged = wasUpdated && pk == pubKey event' }
-
-                    GiftWrap -> do
-                        pure $ emptyUpdates { privateMessagesChanged = wasUpdated }
-
-                    RelayListMetadata -> do
-                        pure $ emptyUpdates { generalRelaysChanged = wasUpdated }
-
-                    PreferredDMRelays -> do
-                        pure $ emptyUpdates { dmRelaysChanged = wasUpdated }
-
-                    _ -> do
-                        logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
-                        pure emptyUpdates
-                --logDebug $ "Finished handleEvent' for event: " <> pack (show event')
-                pure updates
 
     StopAllSubscriptions relayUri -> do
         st <- get @RelayPool
@@ -206,7 +126,6 @@ runSubscription = interpret $ \_ -> \case
             { subscriptions = Map.filterWithKey (\k v -> relay v /= relayUri) (subscriptions s)
             , pendingSubscriptions = Map.filterWithKey (\k v -> relay v /= relayUri) (pendingSubscriptions s)
             }
-
 
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId
@@ -290,3 +209,25 @@ mentionsFilter pk ts = emptyFilter
     { kinds = Just [ShortTextNote, Repost, Comment, EventDeletion]
     , fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pk]
     , since = ts }
+
+-- | Register a new subscription with the relay pool and optionally start it if the relay is connected
+registerSubscription 
+    :: SubscriptionEff es 
+    => RelayURI 
+    -> SubscriptionId 
+    -> SubscriptionState 
+    -> Filter 
+    -> Eff es SubscriptionId
+registerSubscription r subId' sub f = do
+    st <- get @RelayPool
+    case Map.lookup r (activeConnections st) of
+        Just rd -> do
+            let channel = requestChannel rd
+            modify @RelayPool $ \st' ->
+                st' { subscriptions = Map.insert subId' sub (subscriptions st') }
+            atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' f)
+            return subId'
+        Nothing -> do
+            modify @RelayPool $ \st' ->
+                st' { pendingSubscriptions = Map.insert subId' sub (pendingSubscriptions st') }
+            return subId'

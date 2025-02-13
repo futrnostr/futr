@@ -12,7 +12,7 @@ import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent (Concurrent, forkIO)
 import Effectful.Concurrent.Async (async, waitAnyCancel)
-import Effectful.Concurrent.STM ( TChan, TMVar, atomically, newTChanIO, newTQueueIO
+import Effectful.Concurrent.STM ( TChan, TMVar, atomically, newTChanIO
                                 , newEmptyTMVarIO, putTMVar, readTChan
                                 , takeTMVar, writeTChan, writeTQueue )
 import Effectful.Dispatch.Dynamic (interpret)
@@ -33,7 +33,7 @@ import Nostr.Types qualified as NT
 import Nostr.Util
 import Types ( AppState(..), ConnectionError(..), ConnectionState(..)
              , RelayPool(..), RelayData(..)
-             , SubscriptionDetails(..), SubscriptionEvent(..))
+             , SubscriptionState(..), SubscriptionEvent(..))
 
 
 -- | Reason for disconnecting from a relay.
@@ -200,8 +200,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
 
         void $ atomically $ putTMVar connectionMVar True
 
-        updateQueue' <- newTQueueIO
-        receiveThread <- async $ receiveLoop conn' updateQueue'
+        receiveThread <- async $ receiveLoop conn'
         sendThread <- async $ sendLoop conn'
         void $ waitAnyCancel [receiveThread, sendThread]
         modify @RelayPool $ \st' ->
@@ -209,19 +208,18 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
         notifyRelayStatus
 
   where
-    receiveLoop conn' q = do
+    receiveLoop conn' = do
         msg <- liftIO (try (WS.receiveData conn') :: IO (Either SomeException BSL.ByteString))
         case msg of
             Left _ -> return ()  -- Exit the loop on error
             Right msg' -> case eitherDecode msg' of
                 Right response -> do
-                    updates <- handleResponse r response
-                    atomically $ writeTQueue q updates
-                    receiveLoop conn' q
+                    void $ handleResponse r response
+                    receiveLoop conn'
                 Left err -> do
                     logError $ "Could not decode server response from " <> r <> ": " <> T.pack err
                     logError $ "Msg: " <> T.pack (show msg')
-                    receiveLoop conn' q
+                    receiveLoop conn'
 
     sendLoop conn' = do
         msg <- atomically $ readTChan requestChan
@@ -257,23 +255,23 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
 handleResponse :: RelayConnectionEff es => RelayURI -> Response -> Eff es UIUpdates
 handleResponse relayURI' r = case r of
     EventReceived subId' event' -> do
-        recordLatestCreatedAt subId' event'
+        recordOldestCreatedAt subId' event'
         enqueueEvent subId' (EventAppeared event') -- @todo check against filters?
         return emptyUpdates
         where
-            recordLatestCreatedAt :: RelayConnectionEff es => SubscriptionId -> Event -> Eff es ()
-            recordLatestCreatedAt sid e = do
+            recordOldestCreatedAt :: RelayConnectionEff es => SubscriptionId -> Event -> Eff es ()
+            recordOldestCreatedAt sid e = do
                 modify @RelayPool $ \st -> st
                     { subscriptions = Map.adjust
-                        (\subDetails -> if createdAt e > newestCreatedAt subDetails
-                                      then subDetails { newestCreatedAt = createdAt e }
+                        (\subDetails -> if createdAt e < oldestCreatedAt subDetails
+                                      then subDetails { oldestCreatedAt = createdAt e }
                                       else subDetails)
                         sid
                         (subscriptions st)
                     }
 
     Eose subId' -> do
-        enqueueEvent subId' SubscriptionEose
+        enqueueEvent subId' (SubscriptionEose subId')
         return emptyUpdates
 
     Closed subId' msg -> do
@@ -288,11 +286,14 @@ handleResponse relayURI' r = case r of
                                 , NT.filter = subscriptionFilter subDetails
                                 }
                         handleAuthRequired relayURI' (NT.Subscribe subscription)
-                    Nothing -> logError $ "1 No subscription found for " <> T.pack (show subId')
+                    Nothing -> logError $ "No subscription found for " <> T.pack (show subId')
             else do
                 enqueueEvent subId' (SubscriptionClosed msg)
-                modify @RelayPool $ \st ->
-                    st { subscriptions = Map.delete subId' (subscriptions st) }
+                stoppingSubs <- gets @RelayPool stoppingSubscriptions
+                when (subId' `elem` stoppingSubs) $ do
+                    modify @RelayPool $ \st ->
+                        st { subscriptions = Map.delete subId' (subscriptions st) }
+
         return emptyUpdates
 
     Ok eventId' accepted' msg -> do
