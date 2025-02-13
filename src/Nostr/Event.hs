@@ -1,23 +1,331 @@
 -- | Module: Nostr.Event
 -- Defines functions related to events in the Nostr protocol.
 
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Nostr.Event where
 
 import Crypto.Hash.SHA256 qualified as SHA256
 import Crypto.Random (getRandomBytes)
 import Data.Aeson
+import Data.Aeson.Encoding (list, text)
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
+import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy (fromStrict, toStrict)
+import Data.Maybe (fromMaybe)
+import Data.Scientific (toBoundedInteger)
+import Data.String.Conversions (ConvertibleStrings, cs)
 import Data.Text (Text, pack)
+import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Time.Clock.POSIX (getCurrentTime, utcTimeToPOSIXSeconds)
+import GHC.Generics (Generic)
 import System.Random (randomRIO)
 
-import Nostr.Bech32 (eventToNevent)
+--import Nostr.Bech32 (eventToNevent)
 import Nostr.Keys
-import Nostr.Types hiding (filter)
 import Nostr.Encryption (decrypt, getConversationKey, encrypt)
+import Nostr.Profile (Profile(..))
+import Nostr.Relay (Relay, RelayURI, getUri, isInboxCapable, isOutboxCapable)
+
+
+-- | The 'Kind' data type represents different kinds of events in the Nostr protocol.
+data Kind
+  = Metadata                -- NIP-01 (kind 0)
+  | ShortTextNote           -- NIP-01 (kind 1)
+  | FollowList              -- NIP-02 (kind 3)
+  | EventDeletion           -- NIP-09 (kind 5)
+  | Repost                  -- NIP-18 (kind 6)
+  | Reaction                -- NIP-25 (kind 7)
+  | GenericRepost           -- NIP-18 (kind 16)
+  | Seal                    -- NIP-59 (kind 13)
+  | GiftWrap                -- NIP-59 (kind 1059)
+  | DirectMessage           -- NIP-17 (kind 14)
+  | PreferredDMRelays       -- NIP-17 (kind 10050)
+  | CanonicalAuthentication -- NIP-42 (kind 22242)
+  | RelayListMetadata       -- NIP-65 (kind 10002)
+  | Comment                 -- NIP-22 (kind 1111)
+  | UnknownKind Int
+  deriving (Eq, Generic, Read, Show)
+
+
+kindToInt :: Kind -> Int
+kindToInt = \case
+  Metadata -> 0
+  ShortTextNote -> 1
+  FollowList -> 3
+  EventDeletion -> 5
+  Repost -> 6
+  Reaction -> 7
+  GenericRepost -> 16
+  Seal -> 13
+  GiftWrap -> 1059
+  DirectMessage -> 14
+  PreferredDMRelays -> 10050
+  CanonicalAuthentication -> 22242
+  RelayListMetadata -> 10002
+  Comment -> 1111
+  UnknownKind n -> n
+
+instance Ord Kind where
+    compare k1 k2 = compare (kindToInt k1) (kindToInt k2)
+
+-- | Represents an event id as a byte string.
+newtype EventId = EventId { getEventId :: ByteString } deriving (Eq, Ord)
+
+
+-- | Represents a marker type.
+data Marker = Reply | Root | Mention
+  deriving (Eq, Generic)
+
+
+-- | Represents different types of external content IDs as specified in NIP-73
+data ExternalContentId
+  = UrlId Text              -- ^ Normalized URL without fragment
+  | HashtagId Text          -- ^ Lowercase hashtag
+  | GeohashId Text          -- ^ Lowercase geohash
+  | IsbnId Text             -- ^ ISBN without hyphens
+  | PodcastGuidId Text      -- ^ Podcast GUID
+  | PodcastItemGuidId Text  -- ^ Podcast Episode GUID
+  | PodcastPublisherGuidId Text -- ^ Podcast Publisher GUID
+  | IsanId Text             -- ^ ISAN without version part
+  | DoiId Text              -- ^ Lowercase DOI
+  deriving (Eq, Generic, Show)
+
+
+type Tag = [Text]
+
+-- | Represents an event.
+data Event = Event
+  { eventId   :: EventId
+  , pubKey    :: PubKeyXO
+  , createdAt :: Int
+  , kind      :: Kind
+  , tags      :: [Tag]
+  , content   :: Text
+  , sig       :: Signature
+  }
+  deriving (Eq, Generic, Show)
+
+
+-- | Represents an unsigned event.
+data UnsignedEvent = UnsignedEvent
+  { pubKey'    :: PubKeyXO
+  , createdAt' :: Int
+  , kind'      :: Kind
+  , tags'      :: [Tag]
+  , content'   :: Text
+  }
+  deriving (Eq, Generic, Show)
+
+
+-- | Represents a rumor (unsigned event).
+data Rumor = Rumor
+  { rumorId        :: EventId
+  , rumorPubKey    :: PubKeyXO
+  , rumorCreatedAt :: Int
+  , rumorKind      :: Kind
+  , rumorTags      :: [Tag]
+  , rumorContent   :: Text
+  }
+  deriving (Eq, Generic, Show)
+
+
+-- Instance declarations
+
+-- | Converts an 'EventId' to its string representation.
+instance Show EventId where
+  showsPrec _ = shows . B16.encode . getEventId
+
+
+-- | Reads an 'EventId' from its string representation.
+instance Read EventId where
+  readsPrec _ str = case decodeHex str of
+    Just bs | BS.length bs == 32 -> [(EventId bs, "")]
+    _ -> []
+
+
+instance Show Marker where
+  show = \case
+    Reply -> "reply"
+    Root -> "root"
+    Mention -> "mention"
+
+
+-- | Converts a JSON string into an 'EventId'.
+instance FromJSON EventId where
+  parseJSON = withText "EventId" $ \i -> do
+    case eventId' i of
+      Just e -> return e
+      _      -> fail "invalid event id"
+    where
+      eventId' :: Text -> Maybe EventId
+      eventId' t = do
+        bs <- decodeHex t
+        case BS.length bs of
+          32 -> Just $ EventId bs
+          _  -> Nothing
+
+
+-- | Converts an 'EventId' to its JSON representation.
+instance ToJSON EventId where
+  toJSON = String . decodeUtf8 . B16.encode . getEventId
+  toEncoding = text . decodeUtf8 . B16.encode . getEventId
+
+
+-- | Converts a JSON object into an 'Event'.
+instance FromJSON Event where
+  parseJSON = withObject "event data" $ \e -> Event
+    <$> e .: "id"
+    <*> e .: "pubkey"
+    <*> e .: "created_at"
+    <*> e .: "kind"
+    <*> e .: "tags"
+    <*> e .: "content"
+    <*> e .: "sig"
+
+
+-- | Converts an 'Event' to its JSON representation.
+instance ToJSON Event where
+  toJSON Event {..} = object
+    [ "id"         .= byteStringToHex (getEventId eventId)
+    , "pubkey"     .= byteStringToHex (exportPubKeyXO pubKey)
+    , "created_at" .= createdAt
+    , "kind"       .= kind
+    , "tags"       .= tags
+    , "content"    .= content
+    , "sig"        .= byteStringToHex (exportSignature sig)
+    ]
+  toEncoding Event {..} = pairs
+     ( "id"         .= (byteStringToHex $ getEventId eventId)
+    <> "pubkey"     .= (byteStringToHex $ exportPubKeyXO pubKey)
+    <> "created_at" .= createdAt
+    <> "kind"       .= kind
+    <> "tags"       .= tags
+    <> "content"    .= content
+    <> "sig"        .= (byteStringToHex $ exportSignature sig)
+     )
+
+
+-- | Converts an 'UnsignedEvent' to its JSON representation.
+instance ToJSON UnsignedEvent where
+  toJSON UnsignedEvent {..} = toJSON
+    [ toJSON (0 :: Int)
+    , toJSON $ byteStringToHex $ exportPubKeyXO pubKey'
+    , toJSON createdAt'
+    , toJSON kind'
+    , toJSON tags'
+    , toJSON content'
+    ]
+  toEncoding UnsignedEvent {..} = list id
+     [ toEncoding (0 :: Int)
+     , text $ byteStringToHex $ exportPubKeyXO pubKey'
+     , toEncoding createdAt'
+     , toEncoding kind'
+     , toEncoding tags'
+     , text content'
+     ]
+
+
+-- | 'FromJSON' instance for 'Rumor'.
+instance FromJSON Rumor where
+  parseJSON = withObject "rumor data" $ \r -> Rumor
+    <$> r .: "id"
+    <*> r .: "pubkey"
+    <*> r .: "created_at"
+    <*> r .: "kind"
+    <*> r .: "tags"
+    <*> r .: "content"
+
+-- | 'ToJSON' instance for 'Rumor'.
+instance ToJSON Rumor where
+  toJSON Rumor {..} = object
+    [ "id"         .= byteStringToHex (getEventId rumorId)
+    , "pubkey"     .= byteStringToHex (exportPubKeyXO rumorPubKey)
+    , "created_at" .= rumorCreatedAt
+    , "kind"       .= rumorKind
+    , "tags"       .= rumorTags
+    , "content"    .= rumorContent
+    ]
+  toEncoding Rumor {..} = pairs
+     ( "id"         .= (byteStringToHex $ getEventId rumorId)
+    <> "pubkey"     .= (byteStringToHex $ exportPubKeyXO rumorPubKey)
+    <> "created_at" .= rumorCreatedAt
+    <> "kind"       .= rumorKind
+    <> "tags"       .= rumorTags
+    <> "content"    .= rumorContent
+     )
+
+-- | 'FromJSON' instance for 'Kind'.
+-- This allows parsing JSON numbers into 'Kind' values.
+instance FromJSON Kind where
+  parseJSON = withScientific "kind" $ \k -> case toBoundedInteger k of
+    Just n  -> case n of
+      0  -> return Metadata
+      1  -> return ShortTextNote
+      3  -> return FollowList
+      5  -> return EventDeletion
+      6  -> return Repost
+      7  -> return Reaction
+      16 -> return GenericRepost
+      13 -> return Seal
+      1059 -> return GiftWrap
+      14 -> return DirectMessage
+      10050 -> return PreferredDMRelays
+      22242 -> return CanonicalAuthentication
+      10002 -> return RelayListMetadata
+      1111 -> return Comment
+      _  -> return $ UnknownKind n
+    Nothing -> fail "Expected an integer for Kind"
+
+
+-- | 'ToJSON' instance for 'Kind'.
+-- This allows serializing 'Kind' values into JSON numbers.
+instance ToJSON Kind where
+  toJSON = toJSON . kindToInt
+  toEncoding = toEncoding . kindToInt
+
+
+-- | Parse an ExternalContentId from text
+parseExternalContentId :: Text -> Maybe ExternalContentId
+parseExternalContentId t = case T.splitOn ":" t of
+  ["isbn", isbn] -> Just $ IsbnId isbn
+  ["podcast", "guid", guid] -> Just $ PodcastGuidId guid
+  ["podcast", "item", "guid", guid] -> Just $ PodcastItemGuidId guid
+  ["podcast", "publisher", "guid", guid] -> Just $ PodcastPublisherGuidId guid
+  ["isan", isan] -> Just $ IsanId isan
+  ["geo", geohash] -> Just $ GeohashId geohash
+  ["doi", doi] -> Just $ DoiId (T.toLower doi)
+  [tag] | T.head tag == '#' -> Just $ HashtagId (T.toLower tag)
+  _ -> Nothing
+
+
+-- | Convert ExternalContentId to text
+externalContentIdToText :: ExternalContentId -> Text
+externalContentIdToText = \case
+  UrlId url -> url
+  HashtagId tag -> tag
+  GeohashId hash -> "geo:" <> hash
+  IsbnId isbn -> "isbn:" <> isbn
+  PodcastGuidId guid -> "podcast:guid:" <> guid                     -- Podcast Feeds
+  PodcastItemGuidId guid -> "podcast:item:guid:" <> guid            -- Podcast Episodes
+  PodcastPublisherGuidId guid -> "podcast:publisher:guid:" <> guid  -- Podcast Publishers
+  IsanId isan -> "isan:" <> isan                                    -- Movies
+  DoiId doi -> "doi:" <> doi                                        -- Papers
+
+-- | FromJSON instance for ExternalContentId
+instance FromJSON ExternalContentId where
+  parseJSON = withText "ExternalContentId" $ \t ->
+    case parseExternalContentId t of
+      Just eid -> return eid
+      Nothing -> fail $ "Invalid external identifier: " <> T.unpack t
+
+-- | ToJSON instance for ExternalContentId
+instance ToJSON ExternalContentId where
+  toEncoding = text . externalContentIdToText
+  toJSON = String . externalContentIdToText
 
 
 -- | Sign an event.
@@ -60,53 +368,44 @@ validateEvent :: Event -> Bool
 validateEvent e = validateEventId e && verifySignature e
 
 
--- | Create a comment event (NIP-22) for text notes.
-createComment :: Event                  -- ^ Original event being commented on
-              -> Text                   -- ^ Comment content
-              -> Either Tag EventId     -- ^ Root scope (Tag for I-tags, EventId for events)
-              -> Maybe Tag              -- ^ Optional parent item (for replies)
-              -> Maybe RelayURI         -- ^ Optional relay hint
-              -> PubKeyXO               -- ^ Author's public key
-              -> Int                    -- ^ Timestamp
-              -> UnsignedEvent
-createComment originalEvent content' rootScope parentItem relayHint xo t =
+-- | Convert EventId to hex-encoded Text
+eventIdToHex :: EventId -> Text
+eventIdToHex = decodeUtf8 . B16.encode . getEventId
+
+-- | Convert hex-encoded Text to EventId
+eventIdFromHex :: Text -> Maybe EventId
+eventIdFromHex hex = case B16.decode (encodeUtf8 hex) of
+    Right bs -> Just $ EventId bs
+    Left _ -> Nothing
+
+
+-- | Create a comment event (NIP-10) for text notes.
+createComment :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
+createComment originalEvent content' xo createdAt' =
   UnsignedEvent
     { pubKey' = xo
-    , createdAt' = t
+    , createdAt' = createdAt'
     , kind' = ShortTextNote
-    , tags' = buildTags rootScope parentItem relayHint
+    , tags' = buildTags originalEvent
     , content' = content'
     }
   where
-    buildTags :: Either Tag EventId -> Maybe Tag -> Maybe RelayURI -> [Tag]
-    buildTags root parent relay = 
-      let
-        -- Root scope tags
-        rootTags = case root of
-          Left (ITag val _) -> 
-            [ ITag val Nothing
-            , KTag (pack $ show $ kindToInt $ kind originalEvent)
-            ]
-          Right eid ->
-            [ ETag eid relay (Just Root) Nothing
-            , KTag (pack $ show $ kindToInt $ kind originalEvent)
-            ]
-          _ -> error "Invalid root scope tag"
+    buildTags :: Event -> [Tag]
+    buildTags e =
+      let rootTag = case getRootEventId e of
+            Just rootId -> [["e", eventIdToHex rootId, "", "root", pubKeyXOToHex $ pubKey e]]
+            Nothing -> [["e", eventIdToHex $ eventId e, "", "root", pubKeyXOToHex $ pubKey e]]
 
-        -- Parent tags (for replies)
-        parentTags = case parent of
-          Just (ETag eid _ mpk _) ->
-            [ ETag eid relay mpk Nothing
-            , KTag (pack $ show $ kindToInt Comment)
-            ]
-          Just (ITag val _) ->
-            [ ITag val Nothing
-            , KTag (pack $ show $ kindToInt $ kind originalEvent)
-            ]
-          Nothing -> []
-          _ -> error "Invalid parent tag"
+          replyTag = [["e", eventIdToHex $ eventId e, "", "reply", pubKeyXOToHex $ pubKey e]]
+
+          originalPTags = [tag | tag@["p", _] <- tags e]
+
+          authorPTag = ["p", pubKeyXOToHex $ pubKey e]
+          pTags = if authorPTag `elem` originalPTags
+                  then originalPTags
+                  else authorPTag : originalPTags
       in
-        rootTags ++ parentTags
+          rootTag ++ replyTag ++ pTags
 
 
 -- | Create a repost event (kind 6) for text notes.
@@ -116,8 +415,8 @@ createRepost event relayUrl xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = Repost
-    , tags' = [ ETag (eventId event) (Just relayUrl) Nothing Nothing
-              , PTag (pubKey event) Nothing Nothing
+    , tags' = [ ["e", eventIdToHex $ eventId event, relayUrl]
+              , ["p", pubKeyXOToHex $ pubKey event]
               ]
     , content' = decodeUtf8 $ toStrict $ encode event
     }
@@ -130,9 +429,10 @@ createQuoteRepost event relayUrl quote xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = ShortTextNote
-    , tags' = [ QTag (eventId event) (Just relayUrl) (Just $ pubKey event)
+    , tags' = [ ["q", eventIdToHex $ eventId event, relayUrl, pubKeyXOToHex $ pubKey event]
               ]
-    , content' = quote <> "\n\nnostr:" <> eventToNevent event (Just relayUrl)
+    --, content' = quote <> "\n\nnostr:" <> eventToNevent event (Just relayUrl)
+    , content' = quote
     }
 
 
@@ -143,9 +443,9 @@ createGenericRepost event relayUrl xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = GenericRepost
-    , tags' = [ ETag (eventId event) (Just relayUrl) Nothing Nothing
-              , PTag (pubKey event) Nothing Nothing
-              , KTag (pack $ show $ kind event)
+    , tags' = [ ["e", eventIdToHex $ eventId event, relayUrl]
+              , ["p", pubKeyXOToHex $ pubKey event]
+              , ["k", pack $ show $ kindToInt $ kind event]
               ]
     , content' = decodeUtf8 $ toStrict $ encode event
     }
@@ -175,28 +475,21 @@ createMetadata p xo t =
     }
 
 
--- | Create a reply note event.
-createReplyNote :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
-createReplyNote event note xo t =
-  UnsignedEvent
-    { pubKey' = xo
-    , createdAt' = t
-    , kind' = ShortTextNote
-    , tags' = [ETag (eventId event) Nothing (Just Reply) Nothing]
-    , content' = note
-    }
-
-
 -- | Create a follow list event.
-createFollowList :: [(PubKeyXO, Maybe DisplayName)] -> PubKeyXO -> Int -> UnsignedEvent
+createFollowList :: [(PubKeyXO, Maybe Text)] -> PubKeyXO -> Int -> UnsignedEvent
 createFollowList contacts xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
     , kind' = FollowList
-    , tags' = map (\c -> PTag (fst c) (Just "") (snd c)) contacts
+    , tags' = map makeContactTag contacts
     , content' = ""
     }
+  where
+    makeContactTag (pubKey, maybeAlias) =
+      ["p", pubKeyXOToHex pubKey] ++
+      [""] ++  -- relay URL (empty in this case)
+      [fromMaybe "" maybeAlias]  -- petname/alias
 
 
 -- | Create a delete event.
@@ -210,7 +503,7 @@ createEventDeletion eids reason xo t =
     , content' = reason
     }
   where
-    toDelete = map (\eid -> ETag eid Nothing Nothing Nothing) eids
+    toDelete = map (\eid -> ["e", eventIdToHex eid]) eids
 
 
 createRelayListMetadataEvent :: [Relay] -> PubKeyXO -> Int -> UnsignedEvent
@@ -219,9 +512,16 @@ createRelayListMetadataEvent relays xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = RelayListMetadata
-    , tags' = map (\r -> RTag r) relays
+    , tags' = map makeRelayTag relays
     , content' = ""
     }
+  where
+    makeRelayTag r = ["r", getUri r] ++
+      if isOutboxCapable r && not (isInboxCapable r)
+        then ["write"]
+      else if isInboxCapable r && not (isOutboxCapable r)
+        then ["read"]
+      else []
 
 
 createPreferredDMRelaysEvent :: [RelayURI] -> PubKeyXO -> Int -> UnsignedEvent
@@ -230,7 +530,7 @@ createPreferredDMRelaysEvent urls xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = PreferredDMRelays
-    , tags' = map (\url -> RelayTag url) urls
+    , tags' = map (\url -> ["relay", url]) urls
     , content' = ""
     }
 
@@ -241,7 +541,7 @@ createCanonicalAuthentication r challenge xo t =
     { pubKey' = xo
     , createdAt' = t
     , kind' = CanonicalAuthentication
-    , tags' = [RelayTag $ r, ChallengeTag challenge]
+    , tags' = [["relay", r], ["challenge", challenge]]
     , content' = ""
     }
 
@@ -308,7 +608,7 @@ createGiftWrap sealEvent recipientPubKey = do
                 { pubKey' = keyPairToPubKeyXO randomKeyPair
                 , createdAt' = floor $ utcTimeToPOSIXSeconds currentTime
                 , kind' = GiftWrap
-                , tags' = [PListTag [recipientPubKey]]
+                , tags' = [["p"] ++ map pubKeyXOToHex [recipientPubKey]]
                 , content' = wrapContent
                 }
           signEvent wrapEvent randomKeyPair >>= \case
@@ -362,15 +662,6 @@ unwrapSeal sealEvent kp = do
       return Nothing
 
 
--- | Read profile from event.
-readProfile :: Event -> Maybe Profile
-readProfile event = case kind event of
-  Metadata ->
-    decode $ fromStrict $ encodeUtf8 $ content event
-  _ ->
-    Nothing
-
-
 -- | Get the reply event ID.
 getReplyEventId :: Event -> Maybe EventId
 getReplyEventId = getRelationshipEventId Reply
@@ -386,14 +677,23 @@ getRelationshipEventId :: Marker -> Event -> Maybe EventId
 getRelationshipEventId m e =
   if null replyList
     then Nothing
-    else Just $ extractEventId $ head replyList
+    else extractEventId $ head replyList
   where
     replyFilter :: Marker -> Tag -> Bool
-    replyFilter m' (ETag _ _ (Just m'') _) = m' == m''
+    replyFilter m' ["e", _, _, m'', _] = show m' == show m''
     replyFilter _ _ = False
 
     replyList = filter (replyFilter m) $ tags e
 
-    extractEventId :: Tag -> EventId
-    extractEventId (ETag eid _ _ _) = eid
-    extractEventId _ = error "Could not extract event id from reply or root tag"
+    extractEventId :: Tag -> Maybe EventId
+    extractEventId ["e", eid, _, _, _] =
+      decodeHex (encodeUtf8 eid) >>= Just . EventId
+    extractEventId _ = Nothing
+
+
+-- | Decodes a hex string to a byte string.
+decodeHex :: ConvertibleStrings a ByteString => a -> Maybe ByteString
+decodeHex str =
+  case B16.decode $ cs str of
+    Right bs -> Just bs
+    Left _   -> Nothing

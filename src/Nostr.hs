@@ -8,11 +8,12 @@ import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.TH
 import Haskoin.Crypto (Mnemonic, Passphrase)
+import Nostr.Event (Event, Rumor, UnsignedEvent)
 import Nostr.Event qualified as NE
 import Nostr.Keys (KeyPair, PubKeyXO, SecKey)
 import Nostr.Keys qualified as Keys
+import Nostr.Profile (Profile)
 import Nostr.Profile qualified as NP
-import Nostr.Types (Event, Profile, Rumor, UnsignedEvent)
 
 data Nostr :: Effect where
   -- Keys related

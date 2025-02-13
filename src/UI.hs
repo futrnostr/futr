@@ -6,7 +6,7 @@
 module UI where
 
 import Control.Monad.Fix (mfix)
-import Data.Aeson (decode, eitherDecode, encode, toJSON)
+import Data.Aeson (decode, encode, toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
@@ -30,11 +30,12 @@ import Text.Regex.TDFA
 import Logging
 import Nostr
 import Nostr.Bech32
-import Nostr.Event (createMetadata)
+import Nostr.Event ( Event(..), EventId(..), Kind(..), Rumor(..)
+                   , createMetadata, eventIdFromHex )
 import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
-import Nostr.Types ( Event(..), EventId(..), Kind(..), Profile(..), RelayURI
-                   , Marker(..), Rumor(..), Tag(..) )
+import Nostr.Profile (Profile(..))
+import Nostr.Relay (RelayURI)
 import Nostr.Util
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
@@ -164,13 +165,13 @@ runUI = interpret $ \_ -> \case
     followPool <- newFactoryPool (newObject followClass)
 
     let getRootReference evt =
-          case find (\case ETag _ _ (Just Root) _ -> True; _ -> False) (tags evt) of
-            Just (ETag eid _ _ _) -> return $ Just eid
+          case find (\case ("e":_:"root":_) -> True; _ -> False) (tags evt) of
+            Just ("e":eidHex:_) -> return $ eventIdFromHex eidHex
             _ -> return Nothing
 
         getParentReference evt =
-          case find (\case ETag _ _ (Just Reply) _ -> True; _ -> False) (tags evt) of
-            Just (ETag eid _ _ _) -> return $ Just eid
+          case find (\case ("e":_:"reply":_) -> True; _ -> False) (tags evt) of
+            Just ("e":eidHex:_) -> return $ eventIdFromHex eidHex
             _ -> return Nothing
 {-
         getEventCount subscriber postId = do
@@ -241,7 +242,7 @@ runUI = interpret $ \_ -> \case
                     pack $ case kind (event eventWithRelays) of
                         ShortTextNote ->
                             if any (\t -> case t of
-                                          QTag _ _ _ -> True
+                                          ("q":_) -> True
                                           _ -> False) (tags (event eventWithRelays))
                             then "quote_repost"
                             else "short_text_note"
@@ -330,8 +331,10 @@ runUI = interpret $ \_ -> \case
           case eventMaybe of
             Just eventWithRelays -> do
               let ev = event eventWithRelays
-                  eTagRefs = [tagId | ETag tagId _ _ _ <- tags ev]
-                  qTagRefs = [tagId | QTag tagId _ _ <- tags ev]
+                  eTagRefs = [ eid | ("e":eidHex:_) <- tags ev
+                                 , Just eid <- [eventIdFromHex eidHex] ]
+                  qTagRefs = [ eid | ("q":eidHex:_) <- tags ev
+                                 , Just eid <- [eventIdFromHex eidHex] ]
                   contentRefs = extractNostrReferences (content ev)
                   allRefs = nub $ eTagRefs ++ qTagRefs ++ contentRefs
               mapM (newObject postClass') allRefs

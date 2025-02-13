@@ -26,8 +26,9 @@ import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Word (Word8)
 import Text.Read (readMaybe)
 
+import Nostr.Event (Event(..), EventId(..), Kind, kindToInt)
 import Nostr.Keys (SecKey, PubKeyXO, importPubKeyXO, exportPubKeyXO, importSecKey, exportSecKey)
-import Nostr.Types (Event(..), EventId(..), Kind, RelayURI, kindToInt)
+import Nostr.Relay (RelayURI)
 
 
 -- | Bech32 encoding for SecKey

@@ -1,40 +1,31 @@
 module Nostr.Subscription where
 
-import Control.Monad (forM, forM_, replicateM, unless, void, when)
-import Data.Aeson (eitherDecode)
+import Control.Monad (forM_, replicateM)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
-import Data.ByteString.Lazy (fromStrict)
-import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
-import Data.Ord (comparing)
-import Data.Set qualified as Set
-import Data.Text (pack, unpack)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.Text.Encoding (decodeUtf8)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (async)
-import Effectful.Concurrent.STM ( TQueue, atomically, flushTQueue, newTQueueIO, newTVarIO
-                                , readTQueue, readTVar, tryReadTQueue, writeTChan, writeTQueue, writeTVar )
+import Effectful.Concurrent.STM (TQueue, atomically, writeTChan, writeTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, get, gets, modify)
+import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
-import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
 import Prelude hiding (until)
 import System.Random (randomIO)
 
-import Crypto.Hash.SHA256 qualified as SHA256
-import Data.Aeson (encode)
+-- debug imports
+--import Crypto.Hash.SHA256 qualified as SHA256
+--import Data.Aeson (encode)
 
 import QtQuick
-import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
+import KeyMgmt (KeyMgmt)
 import Logging
-import Nostr.Bech32 (pubKeyXOToBech32)
-import Nostr.Event (validateEvent, validateEventId, verifySignature)
-import Nostr.Keys (PubKeyXO, byteStringToHex, exportPubKeyXO, keyPairToPubKeyXO)
+import Nostr.Event (EventId(..), Kind(..))
+import Nostr.Keys (PubKeyXO, byteStringToHex, exportPubKeyXO)
+import Nostr.Relay (RelayURI)
 import Nostr.RelayConnection
-import Nostr.Types ( Event(..), EventId(..), Filter(..), Kind(..), Relay(..)
-                   , RelayURI, SubscriptionId, Tag(..), emptyFilter, getUri, isValidRelayURI )
+import Nostr.Types (Filter(..), SubscriptionId, emptyFilter)
 import Nostr.Types qualified as NT
 import Nostr.Util
 import RelayMgmt
@@ -76,9 +67,9 @@ runSubscription
   => Eff (Subscription : es) a
   -> Eff es a
 runSubscription = interpret $ \_ -> \case
-    Subscribe r f queue -> do
+    Subscribe r f queue' -> do
         subId' <- generateRandomSubscriptionId
-        let sub = newSubscriptionState f queue r
+        let sub = newSubscriptionState f queue' r
         registerSubscription r subId' sub f
    
     StopSubscription subId' -> do
@@ -126,7 +117,7 @@ runSubscription = interpret $ \_ -> \case
             atomically $ writeTQueue (responseQueue subDetails) (relay subDetails, SubscriptionClosed "Subscription stopped")
 
         modify @RelayPool $ \s -> s
-            { pendingSubscriptions = Map.filterWithKey (\k v -> relay v /= relayUri) (pendingSubscriptions s) }
+            { pendingSubscriptions = Map.filterWithKey (\_ v -> relay v /= relayUri) (pendingSubscriptions s) }
 
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId
@@ -146,8 +137,8 @@ generateRandomSubscriptionId = do
 -- * PreferredDMRelays (Kind 10003) - User's preferred DM relays
 -- * FollowList        (Kind 3)     - User's list of followed pubkeys
 profilesFilter :: [PubKeyXO] -> Maybe Int -> Filter
-profilesFilter authors lastTimestamp = emptyFilter 
-    { authors = Just authors
+profilesFilter pks lastTimestamp = emptyFilter
+    { authors = Just pks
     , kinds = Just [RelayListMetadata, PreferredDMRelays, FollowList, Metadata]
     , since = lastTimestamp
     }
@@ -171,9 +162,11 @@ userPostsFilter pks s ml = emptyFilter
 
 
 -- | Creates a filter for metadata.
+metadataFilter :: [PubKeyXO] -> Filter
 metadataFilter pks = emptyFilter { authors = Just pks, kinds = Just [Metadata] }
 
 -- | Creates a filter for short text notes.
+shortTextNoteFilter :: [PubKeyXO] -> Filter
 shortTextNoteFilter pks = emptyFilter { authors = Just pks, kinds = Just [ShortTextNote, EventDeletion, Repost] }
 
 -- | Creates filter for gift wrapped messages.

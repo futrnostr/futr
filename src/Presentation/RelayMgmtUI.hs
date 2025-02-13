@@ -18,7 +18,7 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import QtQuick (QtQuickState(..), UIReferences(..))
 import Logging
 import Nostr.Keys (keyPairToPubKeyXO)
-import Nostr.Types hiding (displayName, filter, picture)
+import Nostr.Relay (RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.Util
 import RelayMgmt (RelayMgmt, addDMRelay, addGeneralRelay, removeDMRelay, removeGeneralRelay)
 import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)

@@ -12,8 +12,10 @@ import Data.Text (Text)
 import Control.Concurrent.Async (Async)
 import Effectful.Concurrent.STM (TChan, TQueue)
 import GHC.Generics (Generic)
+import Nostr.Event (Event, EventId)
 import Nostr.Keys (KeyPair, PubKeyXO)
-import Nostr.Types (Event, EventId, Filter, RelayURI, Request, SubscriptionId)
+import Nostr.Types (Filter, Request, SubscriptionId)
+import Nostr.Relay (RelayURI)
 
 
 -- | Status of a publish operation

@@ -14,9 +14,11 @@ import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
 
 import Logging
+import Nostr.Event (Event(..), EventId)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
+import Nostr.Relay (RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.RelayConnection
-import Nostr.Types (Event(..), EventId, RelayURI, Request(..), getUri, isInboxCapable, isOutboxCapable)
+import Nostr.Types (Request(..))
 import Nostr.Util
 import QtQuick
 import Store.Lmdb (LmdbStore, getFollows, getDMRelays, getGeneralRelays, putEvent)

@@ -15,8 +15,8 @@ import Effectful.TH
 import Graphics.QML qualified as QML
 
 import Logging
+import Nostr.Event (EventId)
 import Nostr.Keys (PubKeyXO)
-import Nostr.Types (EventId)
 import Types (AppState(..))
 
 

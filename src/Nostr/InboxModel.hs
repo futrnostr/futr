@@ -24,7 +24,9 @@ import Effectful.TH
 
 import Logging
 import Nostr
+import Nostr.Event (EventId, Kind(..))
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
+import Nostr.Relay (Relay(..), RelayURI, defaultGeneralRelays, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Subscription 
     ( Subscription
@@ -38,18 +40,7 @@ import Nostr.Subscription
     , commentsFilter
     )
 import Nostr.SubscriptionHandler
-import Nostr.Types
-  ( RelayURI
-  , Relay(..)
-  , EventId
-  , Filter(..)
-  , Kind(..)
-  , emptyFilter
-  , getUri
-  , isInboxCapable
-  , isOutboxCapable
-  , defaultGeneralRelays
-  )
+import Nostr.Types (Filter(..), emptyFilter)
 import Nostr.Util
 import QtQuick (QtQuick)
 import RelayMgmt

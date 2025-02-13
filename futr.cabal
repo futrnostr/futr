@@ -42,6 +42,7 @@ executable futr
         Nostr.Keys
         Nostr.Profile
         Nostr.Publisher
+        Nostr.Relay
         Nostr.RelayConnection
         Nostr.Subscription
         Nostr.SubscriptionHandler

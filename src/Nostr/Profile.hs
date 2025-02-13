@@ -1,8 +1,12 @@
 -- | Module: Nostr.Profile
 -- Defines types and instances for profiles in the Nostr protocol.
 
+{-# LANGUAGE DeriveGeneric #-}
+
 module Nostr.Profile
-  ( verifyNip05 -- @todo move to effect system
+  ( Profile(..)
+  , emptyProfile
+  , verifyNip05 -- @todo move to effect system
   )
   where
 
@@ -13,17 +17,58 @@ import Control.Lens ((&), (.~), (^.))
 import Control.Exception (try, SomeException)
 import Data.ByteString.Lazy (ByteString)
 import Data.Text (Text, pack, splitOn, unpack)
+import GHC.Generics (Generic)
 import Network.Wreq (Response, getWith, defaults, param, responseBody)
 
 import Nostr.Keys (PubKeyXO)
-import Nostr.Types (Profile(..))
+
+-- | Represents a user profile.
+data Profile = Profile
+  { name :: Maybe Text
+  , displayName :: Maybe Text
+  , about :: Maybe Text
+  , picture :: Maybe Text
+  , nip05 :: Maybe Text
+  , banner :: Maybe Text
+  } deriving (Eq, Generic, Show)
+
+
+-- | Empty profile.
+emptyProfile :: Profile
+emptyProfile = Profile Nothing Nothing Nothing Nothing Nothing Nothing
+
 
 data Nip05Response = Nip05Response
   { names :: Maybe Object
   } deriving (Show)
 
+
+
+-- | 'ToJSON' instance for 'Profile'.
+instance ToJSON Profile where
+  toEncoding (Profile name displayName about picture nip05 banner) = pairs $
+    "name" .= name <>
+    "display_name" .= displayName <>
+    "about" .= about <>
+    "picture" .= picture <>
+    "nip05" .= nip05 <>
+    "banner" .= banner
+
+
+-- | 'FromJSON' instance for 'Profile'.
+instance FromJSON Profile where
+  parseJSON = withObject "profile" $ \e -> Profile
+    <$> e .:? "name"
+    <*> e .:? "display_name"
+    <*> e .:? "about"
+    <*> e .:? "picture"
+    <*> e .:? "nip05"
+    <*> e .:? "banner"
+
+
 instance FromJSON Nip05Response where
   parseJSON = withObject "Nip05Response" $ \v -> Nip05Response <$> v .:? "names"
+
 
 verifyNip05 :: Profile -> PubKeyXO -> IO Bool
 verifyNip05 p pubkey = case nip05 p of
@@ -34,6 +79,7 @@ verifyNip05 p pubkey = case nip05 p of
     return $ either (const False) (checkResponse localPart (pack $ show pubkey) . (^. responseBody)) result
   Nothing -> return False
 
+
 checkResponse :: Text -> Text -> ByteString -> Bool
 checkResponse localPart pubkey body =
   case decode body of
@@ -42,6 +88,7 @@ checkResponse localPart pubkey body =
         Just (String key) -> key == pubkey
         _ -> False
     _ -> False
+
 
 parseNip05 :: Text -> (Text, Text)
 parseNip05 n = case splitOn "@" n of
