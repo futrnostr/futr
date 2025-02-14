@@ -75,7 +75,7 @@ data Request
 -- | Represents a response from the relay.
 data Response
   = EventReceived SubscriptionId Event
-  | Ok EventId Bool Text
+  | Ok EventId Bool (Maybe Text)
   | Eose SubscriptionId
   | Closed SubscriptionId Text
   | Notice Text
@@ -113,7 +113,9 @@ instance FromJSON Response where
       "OK" -> do
         id' <- parseJSON $ arr V.! 1 :: Parser EventId
         bool <- parseJSON $ arr V.! 2
-        message <- parseJSON $ arr V.! 3
+        message <- if V.length arr > 3
+                    then Just <$> parseJSON (arr V.! 3)
+                    else pure Nothing
         return $ Ok id' bool message
       "EOSE" -> do
         subId' <- parseJSON $ arr V.! 1

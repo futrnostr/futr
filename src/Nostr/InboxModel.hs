@@ -171,7 +171,12 @@ initializeWithDefaultRelays xo = do
   void $ forConcurrently connectedRelays $ \r -> do
       queue <- newTQueueIO
       subId' <- subscribe (getUri r) bootstrapFilter queue
-      void $ async $ handleSubscription subId' queue
+      void $ async $ handleSubscriptionUntilEOSE subId' queue
+      follows <- getFollows xo
+      unless (null follows) $ do
+        let followFilter = inboxRelayTopologyFilter $ map pubkey follows
+        subId'' <- subscribe (getUri r) followFilter queue
+        void $ async $ handleSubscriptionUntilEOSE subId'' queue
 
   myGeneralRelays <- getGeneralRelays xo
   myDMRelays <- getDMRelays xo
@@ -282,13 +287,16 @@ subscribeToProfilesAndPosts relayUri pks = do
     -- Subscribe to profiles
     queue <- newTQueueIO
     lastTimestamp <- getSubscriptionTimestamp pks [RelayListMetadata, PreferredDMRelays, FollowList, Metadata]
-    subId' <- subscribe relayUri (profilesFilter pks lastTimestamp) queue
+    let profileFilter = profilesFilter pks lastTimestamp
+    subId' <- subscribe relayUri profileFilter queue
     void $ async $ handleSubscription subId' queue
 
     -- Subscribe to posts
     queue' <- newTQueueIO
     postsLastTimestamp <- getSubscriptionTimestamp pks [ShortTextNote, Repost, EventDeletion]
-    subId'' <- subscribe relayUri (userPostsFilter pks postsLastTimestamp Nothing) queue'
+    let postsFilter = userPostsFilter pks postsLastTimestamp Nothing
+
+    subId'' <- subscribe relayUri postsFilter queue'
     void $ async $ handlePaginationSubscription subId'' queue'
 
 

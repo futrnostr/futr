@@ -39,10 +39,11 @@ import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
 import Nostr
 import Nostr.Bech32
-import Nostr.Event ( Event(..), EventId
+import Nostr.Event ( Event(..), EventId, UnsignedEvent(..)
                    , createComment, createEventDeletion, createFollowList
-                   , createQuoteRepost, createRepost, createRumor, createShortTextNote
+                   , createRepost, createRumor, createShortTextNote, eventIdToHex
                    )
+import Nostr.Event qualified as NE
 import Nostr.InboxModel (InboxModel, awaitAtLeastOneConnected, startInboxModel, stopInboxModel, subscribeToCommentsFor, unsubscribeToCommentsFor)
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, pubKeyXOToHex, secKeyToKeyPair)
 import Nostr.Publisher
@@ -351,6 +352,17 @@ runFutr = interpret $ \_ -> \case
                 publishToOutbox s
                 notify $ emptyUpdates { postsChanged = True }
               Nothing -> logError "Failed to sign quote repost"
+    where
+      createQuoteRepost :: Event -> RelayURI -> Text -> PubKeyXO -> Int -> UnsignedEvent
+      createQuoteRepost event relayUrl quote' xo t =
+        UnsignedEvent
+          { pubKey' = xo
+          , createdAt' = t
+          , kind' = NE.ShortTextNote
+          , tags' = [ ["q", eventIdToHex $ eventId event, relayUrl, pubKeyXOToHex $ pubKey event]
+                    ]
+          , content' = quote' <> "\n\nnostr:" <> eventToNevent event (Just relayUrl)
+          }
 
   Comment eid comment' -> do
     st <- get @AppState

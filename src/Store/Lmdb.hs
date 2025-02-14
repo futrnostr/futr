@@ -54,7 +54,7 @@ import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..), Rumor(..), Ta
                    , eventIdFromHex, validateEvent, unwrapGiftWrap, unwrapSeal )
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, pubKeyXOFromHex)
 import Nostr.Profile (Profile, emptyProfile)
-import Nostr.Relay (Relay(..), RelayURI, getUri, isValidRelayURI)
+import Nostr.Relay (Relay(..), RelayURI, isValidRelayURI)
 import Nostr.Util
 import Types (EventWithRelays(..), Follow(..))
 
@@ -295,7 +295,9 @@ runLmdbStore = interpret $ \_ -> \case
                     let followList' = [ Follow pk petname
                                     | ("p":pkHex:rest) <- tags (event ev)
                                     , Just pk <- [pubKeyXOFromHex pkHex]
-                                    , let petname = listToMaybe rest
+                                    , let petname = case drop 1 rest of
+                                            (_:name:_) -> Just name  -- Skip relay URL, get petname
+                                            _ -> Nothing
                                     ]
                     existingTimestamp' <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
                     case existingTimestamp' of
@@ -315,28 +317,22 @@ runLmdbStore = interpret $ \_ -> \case
                             { followsCache = fst $ LRU.delete author (followsCache s) }
 
                 PreferredDMRelays -> do
-                    let validRelayTags = [ r
-                                       | ("r":uri:rest) <- tags (event ev)
+                    let validRelayTags = [ uri
+                                       | ("relay":uri:_) <- tags (event ev)
                                        , isValidRelayURI uri
-                                       , let r = case rest of
-                                                ("write":_) -> OutboxRelay uri
-                                                ("read":_) -> InboxRelay uri
-                                                _ -> InboxOutboxRelay uri
                                        ]
                     case validRelayTags of
                         [] -> pure False
-                        relays -> do
+                        relays' -> do
                             existingRelays <- Map.lookup' (readonly txn) (dmRelaysDb currentState) author
                             case existingRelays of
                                 Just (_, existingTs) ->
                                     if eventTimestamp > existingTs then do
-                                        let relays' = map getUri relays
                                         Map.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
                                         updateState
                                         pure True
                                     else pure False
                                 Nothing -> do
-                                    let relays' = map getUri relays
                                     Map.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
                                     updateState
                                     pure True
@@ -621,10 +617,7 @@ latestTimestampDbSettings = makeSettings
 getAllPubKeysFromPTags :: [Tag] -> [PubKeyXO]
 getAllPubKeysFromPTags = concatMap extractPubKey
   where
-    extractPubKey ["p", pubkeyHex, _] = case pubKeyXOFromHex pubkeyHex of
-        Just pk -> [pk]
-        Nothing -> []
-    extractPubKey ["p", pubkeyHex] = case pubKeyXOFromHex pubkeyHex of
+    extractPubKey ("p":pubkeyHex:_) = case pubKeyXOFromHex pubkeyHex of
         Just pk -> [pk]
         Nothing -> []
     extractPubKey _ = []
