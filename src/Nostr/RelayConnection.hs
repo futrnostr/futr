@@ -109,11 +109,15 @@ runRelayConnection = interpret $ \_ -> \case
     Disconnect r -> do
         let r' = normalizeRelayURI r
         st <- get @RelayPool
-        case Map.lookup r'   (activeConnections st) of
+        case Map.lookup r' (activeConnections st) of
             Just rd -> do
                 void $ atomically $ writeTChan (requestChannel rd) NT.Disconnect
                 modify @RelayPool $ \st' ->
-                    st' { activeConnections = Map.delete r' (activeConnections st') }
+                    st' { activeConnections = Map.adjust
+                        (\d -> d { connectionState = Disconnected })
+                        r'
+                        (activeConnections st')
+                    }
             Nothing -> return ()
 
 
@@ -135,6 +139,15 @@ connectWithRetry r maxRetries requestChan = do
                 }
             return False
         else do
+            modify @RelayPool $ \st' ->
+                st' { activeConnections = Map.adjust
+                    (\d -> d { connectionState = Connecting
+                            , connectionAttempts = connectionAttempts d + 1
+                            })
+                    r
+                    (activeConnections st')
+                }
+
             connectionMVar <- newEmptyTMVarIO
 
             let connectAction = case parseURI (T.unpack r) of
@@ -309,7 +322,8 @@ handleResponse relayURI' r = case r of
         return emptyUpdates
 
     Ok eventId' accepted' msg -> do
-        if "auth-required" `T.isPrefixOf` msg
+        let isAuthRequired = maybe False ("auth-required" `T.isPrefixOf`) msg
+        if isAuthRequired
             then do
                 st <- get @RelayPool
                 case Map.lookup relayURI' (activeConnections st) of

@@ -422,20 +422,6 @@ createRepost event relayUrl xo t =
     }
 
 
--- | Create a quote repost event (kind 1 with q tag).
-createQuoteRepost :: Event -> RelayURI -> Text -> PubKeyXO -> Int -> UnsignedEvent
-createQuoteRepost event relayUrl quote xo t =
-  UnsignedEvent
-    { pubKey' = xo
-    , createdAt' = t
-    , kind' = ShortTextNote
-    , tags' = [ ["q", eventIdToHex $ eventId event, relayUrl, pubKeyXOToHex $ pubKey event]
-              ]
-    --, content' = quote <> "\n\nnostr:" <> eventToNevent event (Just relayUrl)
-    , content' = quote
-    }
-
-
 -- | Create a generic repost event (kind 16) for non-text-note events.
 createGenericRepost :: Event -> RelayURI -> PubKeyXO -> Int -> UnsignedEvent
 createGenericRepost event relayUrl xo t =
