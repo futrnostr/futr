@@ -295,7 +295,6 @@ subscribeToProfilesAndPosts relayUri pks = do
     queue' <- newTQueueIO
     postsLastTimestamp <- getSubscriptionTimestamp pks [ShortTextNote, Repost, EventDeletion]
     let postsFilter = userPostsFilter pks postsLastTimestamp Nothing
-
     subId'' <- subscribe relayUri postsFilter queue'
     void $ async $ handlePaginationSubscription subId'' queue'
 

@@ -9,19 +9,21 @@
 
 module Nostr.Types where
 
+import Control.Monad (when)
 import Data.Aeson hiding (Error)
 import Data.Aeson.Encoding (list, text, pair)
 import Data.Aeson.Key (fromText)
 import Data.Aeson.Types (Parser)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding (encodeUtf8)
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
 import Prelude hiding (until)
 
-import Nostr.Event (Event, EventId, Kind)
+import Nostr.Event (Event, EventId(..), Kind, decodeHex)
 import Nostr.Keys (PubKeyXO(..))
 
 -- | Represents a subscription id as text.
@@ -75,7 +77,7 @@ data Request
 -- | Represents a response from the relay.
 data Response
   = EventReceived SubscriptionId Event
-  | Ok EventId Bool (Maybe Text)
+  | Ok (Maybe EventId) Bool (Maybe Text)
   | Eose SubscriptionId
   | Closed SubscriptionId Text
   | Notice Text
@@ -111,13 +113,19 @@ instance FromJSON Response where
         event <- parseJSON $ arr V.! 2
         return $ EventReceived subId' event
       "OK" -> do
-        id' <- parseJSON $ arr V.! 1 :: Parser EventId
+        idStr <- parseJSON $ arr V.! 1 :: Parser Text
         bool <- parseJSON $ arr V.! 2
         message <- if V.length arr > 3
                     then Just <$> parseJSON (arr V.! 3)
                     else pure Nothing
-        return $ Ok id' bool message
+        -- Convert empty string to Nothing, otherwise try to parse as EventId
+        let eventId = if T.null idStr
+                     then Nothing
+                     else Just $ EventId $ fromMaybe "" $ decodeHex $ encodeUtf8 idStr
+        return $ Ok eventId bool message
       "EOSE" -> do
+        when (V.length arr < 2) $
+          fail "Malformed EOSE message: missing subscription ID"
         subId' <- parseJSON $ arr V.! 1
         return $ Eose subId'
       "CLOSED" -> do

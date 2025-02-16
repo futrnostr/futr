@@ -270,6 +270,12 @@ handleResponse :: RelayConnectionEff es => RelayURI -> Response -> Eff es UIUpda
 handleResponse relayURI' r = case r of
     EventReceived subId' event' -> do
         recordOldestCreatedAt subId' event'
+        modify @RelayPool $ \st -> st
+            { subscriptions = Map.adjust
+                (\subDetails -> subDetails { eventsProcessed = eventsProcessed subDetails + 1 })
+                subId'
+                (subscriptions st)
+            }
         enqueueEvent subId' (EventAppeared event') -- @todo check against filters?
         return emptyUpdates
         where
@@ -328,16 +334,18 @@ handleResponse relayURI' r = case r of
                 st <- get @RelayPool
                 case Map.lookup relayURI' (activeConnections st) of
                     Just rd ->
-                        case find (\e -> eventId e == eventId') (pendingEvents rd) of
-                            Just event -> handleAuthRequired relayURI' (NT.SendEvent event)
-                            Nothing -> logDebug $ "No pending event found for " <> T.pack (show eventId')
+                        case eventId' of
+                            Just eid -> case find (\e -> eventId e == eid) (pendingEvents rd) of
+                                Just event -> handleAuthRequired relayURI' (NT.SendEvent event)
+                                Nothing -> logDebug $ "No pending event found for " <> T.pack (show eid)
+                            Nothing -> logError "Received auth-required but no event ID"
                     Nothing -> logError $ "Received auth-required but no connection found: " <> relayURI'
             else do
                 st <- get @RelayPool
                 case Map.lookup relayURI' (activeConnections st) of
                     Just rd ->
-                        case pendingAuthId rd of
-                            Just authId | authId == eventId' && accepted' -> do
+                        case (pendingAuthId rd, eventId') of
+                            (Just authId, Just eid) | authId == eid && accepted' -> do
                                 let pendingReqs = pendingRequests rd
                                 let pendingEvts = pendingEvents rd
                                 {-

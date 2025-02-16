@@ -59,7 +59,7 @@ data SubscriptionState = SubscriptionState
 
 -- | Create a new subscription state.
 newSubscriptionState :: Filter -> TQueue (RelayURI, SubscriptionEvent) -> RelayURI -> SubscriptionState
-newSubscriptionState f q r = SubscriptionState f q r 0 0
+newSubscriptionState f q r = SubscriptionState f q r 0 (maxBound :: Int)
 
 
 -- | Connection errors.

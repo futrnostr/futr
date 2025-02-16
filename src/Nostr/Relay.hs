@@ -101,7 +101,8 @@ isValidRelayURI uriText =
 defaultGeneralRelays :: ([Relay], Int)
 defaultGeneralRelays =
   ( [ InboxOutboxRelay "wss://nos.lol"
-    --, InboxOutboxRelay "wss://relay.nostr.bg"
+    , InboxOutboxRelay "wss://nostr.bitcoiner.social"
+    , InboxOutboxRelay "wss://relay.nostr.bg"
     , InboxOutboxRelay "wss://nostr.mom"
     , InboxOutboxRelay "wss://offchain.pub"
     , InboxRelay "wss://relay.damus.io"
