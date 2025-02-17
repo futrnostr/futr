@@ -46,13 +46,13 @@ data Nip05Response = Nip05Response
 
 -- | 'ToJSON' instance for 'Profile'.
 instance ToJSON Profile where
-  toEncoding (Profile name displayName about picture nip05 banner) = pairs $
-    "name" .= name <>
-    "display_name" .= displayName <>
-    "about" .= about <>
-    "picture" .= picture <>
-    "nip05" .= nip05 <>
-    "banner" .= banner
+  toEncoding (Profile n dn abt pic nip bnr) = pairs $
+    "name" .= n <>
+    "display_name" .= dn <>
+    "about" .= abt <>
+    "picture" .= pic <>
+    "nip05" .= nip <>
+    "banner" .= bnr
 
 
 -- | 'FromJSON' instance for 'Profile'.
