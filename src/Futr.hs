@@ -440,6 +440,7 @@ loginWithAccount obj a = do
       then do
         modify @AppState $ \s -> s { currentScreen = Home }
         liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
+        fireSignal obj
       else do
         liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Failed to connect to any relay"
 
