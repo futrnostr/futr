@@ -157,7 +157,7 @@ userPostsFilter pks s ml = emptyFilter
     , since = s
     , limit = case ml of
         Just l -> Just l
-        Nothing -> Just $ 2000 * length pks
+        Nothing -> Just $ 500 * length pks
     }
 
 

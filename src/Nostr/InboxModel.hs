@@ -136,24 +136,21 @@ runInboxModel = interpret $ \_ -> \case
     modify @RelayPool $ \s ->
       s { commentSubscriptions = Map.delete eid (commentSubscriptions pool) }
 
--- | Wait until at least one relay is connected
+-- | Wait up to 3 seconds for at least one relay to connect
 awaitAtLeastOneConnected' :: InboxModelEff es => Eff es Bool
 awaitAtLeastOneConnected' = do
-  let loop = do
-        st <- get @RelayPool
-        let states = map (connectionState . snd) $ Map.toList $ activeConnections st
-        if any (== Connected) states
-            then return True
-            else if null states
-              then do
-                threadDelay 50000  -- 50ms delay
-                loop
-              else if all (== Disconnected) states
-                  then return False
-                  else do
-                      threadDelay 50000  -- 50ms delay
-                      loop
-  loop
+    let maxAttempts = 300  -- 15 seconds total (300 * 50ms)
+        loop :: InboxModelEff es =>Int -> Eff es Bool
+        loop 0 = return False  -- No more attempts left
+        loop n = do
+            st <- get @RelayPool
+            let states = map (connectionState . snd) $ Map.toList $ activeConnections st
+            if any (== Connected) states
+                then return True
+                else do
+                    threadDelay 50000  -- 50ms delay
+                    loop (n - 1)
+    loop maxAttempts
 
 -- | Initialize using default relays when no relay configuration exists
 initializeWithDefaultRelays :: InboxModelEff es => PubKeyXO -> Eff es ()
@@ -287,7 +284,6 @@ subscribeToProfilesAndPosts relayUri pks = do
     -- Subscribe to profiles
     queue <- newTQueueIO
     let profileFilter = profilesFilter pks
-    logDebug $ "R: " <> relayUri <> " " <>pack (show profileFilter)
     subId' <- subscribe relayUri profileFilter queue
     void $ async $ handlePaginationSubscription subId' queue
 

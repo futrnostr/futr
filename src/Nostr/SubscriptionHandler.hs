@@ -114,28 +114,32 @@ runSubscriptionHandler = interpret $ \_ -> \case
                                 let shouldPaginate = not (Set.null currentBatch) 
                                         && maybe True (\l -> seenEventsCount < l) requestedLimit
                                         && isJust nextUntil
-
+{-
                                 logDebug $ "Pagination check for " <> relayUri' <> " (sub " <> pack (show subId') <> ") - "
                                         <> "Should paginate: " <> pack (show shouldPaginate) 
                                         <> ", Events in batch: " <> pack (show (Set.size currentBatch))
                                         <> ", Total events: " <> pack (show seenEventsCount)
                                         <> ", Requested limit: " <> pack (show requestedLimit)
                                         <> ", Next until: " <> pack (show nextUntil)
-
+-}
                                 when shouldPaginate $ do
                                     st <- get @RelayPool
                                     case Map.lookup relayUri' (activeConnections st) of
                                         Nothing -> pure ()
 
                                         Just rd -> do
-                                            let channel = requestChannel rd
-                                                -- Add a small buffer to the nextUntil time to avoid missing events
-                                                adjustedUntil = fmap (\t -> t + 1) nextUntil
-                                                newFilter = filter' { until = adjustedUntil }
+                                            currentTime <- getCurrentTime
 
+                                            let channel = requestChannel rd
+                                                adjustedUntil = do
+                                                    n <- nextUntil
+                                                    return $ min n currentTime
+
+                                                newFilter = filter' { until = adjustedUntil }
+{-
                                             logDebug $ "Paginating subscription " <> pack (show subId')
                                                     <> " with new until: " <> pack (show adjustedUntil)
-
+-}
                                             -- Clear current batch cache and nextUntil
                                             atomically $ do
                                                 writeTVar currentBatchVar Set.empty
