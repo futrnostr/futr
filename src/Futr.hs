@@ -428,24 +428,20 @@ parseNprofileOrNpub input =
 loginWithAccount :: FutrEff es => ObjRef () -> Account -> Eff es ()
 loginWithAccount obj a = do
     modify @AppState $ \s -> s { keyPair = Just (secKeyToKeyPair $ accountSecKey a) }
-
     modify @KeyMgmtState $ \st -> st
         { nsecView = secKeyToBech32 $ accountSecKey a
         , npubView = pubKeyXOToBech32 $ derivePublicKeyXO $ accountSecKey a
         }
 
-    void $ async $ do
-        startInboxModel
-        atLeastOneConnected <- awaitAtLeastOneConnected
-        -- Update UI state after connections are established
-        when atLeastOneConnected $ do
-            modify @AppState $ \s -> s { currentScreen = Home }
-            fireSignal obj
+    void $ async $ startInboxModel
+    atLeastOneConnected <- awaitAtLeastOneConnected
 
-        -- Fire final status
-        if not atLeastOneConnected 
-            then liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Failed to connect to any relay"
-            else liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
+    if atLeastOneConnected
+      then do
+        modify @AppState $ \s -> s { currentScreen = Home }
+        liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
+      else do
+        liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Failed to connect to any relay"
 
 
 -- | Send a follow list event.
