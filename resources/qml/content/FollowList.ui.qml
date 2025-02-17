@@ -37,16 +37,13 @@ Rectangle {
                 model: AutoListModel {
                     id: followsModel
                     source: followList
-                    mode: AutoListModel.ByKey
-                    equalityTest: function (oldItem, newItem) {
-                        return oldItem.pubkey === newItem.pubkey
-                            && oldItem.petname === newItem.petname
-                            && oldItem.displayName === newItem.displayName
-                            && oldItem.name === newItem.name
-                            && oldItem.picture === newItem.picture
+                    mode: AutoListModel.ByKeyNoReorder
+                    keyFunction: function(item) {
+                        return item ? item.pubkey : ""
                     }
                 }
 
+                cacheBuffer: 200
                 reuseItems: true
 
                 ScrollBar.vertical: ScrollBar {
