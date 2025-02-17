@@ -136,11 +136,11 @@ generateRandomSubscriptionId = do
 -- * RelayListMetadata (Kind 10002) - User's preferred general-purpose relays
 -- * PreferredDMRelays (Kind 10003) - User's preferred DM relays
 -- * FollowList        (Kind 3)     - User's list of followed pubkeys
-profilesFilter :: [PubKeyXO] -> Maybe Int -> Filter
-profilesFilter pks lastTimestamp = emptyFilter
+profilesFilter :: [PubKeyXO] -> Filter
+profilesFilter pks = emptyFilter
     { authors = Just pks
     , kinds = Just [RelayListMetadata, PreferredDMRelays, FollowList, Metadata]
-    , since = lastTimestamp
+    , limit = Just $ 500 * length pks
     }
 
 
@@ -190,7 +190,11 @@ repostsFilter eid = emptyFilter { kinds = Just [Repost], fTags = Just $ Map.sing
 
 -- | Filter for comments on a specific event.
 commentsFilter :: EventId -> Filter
-commentsFilter eid = emptyFilter { kinds = Just [ShortTextNote], fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid] }
+commentsFilter eid = emptyFilter
+    { kinds = Just [ShortTextNote]
+    , fTags = Just $ Map.singleton 'e' [decodeUtf8 $ B16.encode $ getEventId eid]
+    , limit = Just $ 2000
+    }
 
 -- | Filter for followers of a specific public key.
 followersFilter :: PubKeyXO -> Filter
@@ -205,7 +209,9 @@ mentionsFilter :: PubKeyXO -> Maybe Int ->Filter
 mentionsFilter pk ts = emptyFilter
     { kinds = Just [ShortTextNote, Repost, Comment, EventDeletion]
     , fTags = Just $ Map.singleton 'p' [byteStringToHex $ exportPubKeyXO pk]
-    , since = ts }
+    , since = ts
+    , limit = Just $ 2000
+    }
 
 -- | Register a new subscription with the relay pool and optionally start it if the relay is connected
 registerSubscription 

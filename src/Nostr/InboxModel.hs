@@ -125,7 +125,7 @@ runInboxModel = interpret $ \_ -> \case
       queue <- newTQueueIO
       subId' <- subscribe relayUri (commentsFilter eid) queue
       modify @RelayPool $ \s -> s { commentSubscriptions = Map.insertWith (++) eid [subId'] (commentSubscriptions s) }
-      void $ async $ handleSubscription subId' queue
+      void $ async $ handlePaginationSubscription subId' queue
 
   UnsubscribeToCommentsFor eid -> do
     pool <- get @RelayPool
@@ -278,7 +278,7 @@ subscribeToMentions relayUri xo = do
   queue <- newTQueueIO
   lastTimestamp <- getSubscriptionTimestamp [xo] [ShortTextNote, Repost, Comment, EventDeletion]
   subId' <- subscribe relayUri (mentionsFilter xo lastTimestamp) queue
-  void $ async $ handleSubscription subId' queue
+  void $ async $ handlePaginationSubscription subId' queue
 
 
 -- | Subscribe to profiles and posts for a relay
@@ -286,10 +286,10 @@ subscribeToProfilesAndPosts :: InboxModelEff es => RelayURI -> [PubKeyXO] -> Eff
 subscribeToProfilesAndPosts relayUri pks = do
     -- Subscribe to profiles
     queue <- newTQueueIO
-    lastTimestamp <- getSubscriptionTimestamp pks [RelayListMetadata, PreferredDMRelays, FollowList, Metadata]
-    let profileFilter = profilesFilter pks lastTimestamp
+    let profileFilter = profilesFilter pks
+    logDebug $ "R: " <> relayUri <> " " <>pack (show profileFilter)
     subId' <- subscribe relayUri profileFilter queue
-    void $ async $ handleSubscription subId' queue
+    void $ async $ handlePaginationSubscription subId' queue
 
     -- Subscribe to posts
     queue' <- newTQueueIO
