@@ -268,8 +268,6 @@ runFutr = interpret $ \_ -> \case
     kp <- getKeyPair
     now <- getCurrentTime
     let u = createShortTextNote input (keyPairToPubKeyXO kp) now
-    logDebug $ "Sending short text note: " <> input
-    logDebug $ "unsigned: " <> pack (show u)
     signed <- signEvent u kp
     case signed of
       Just s -> do

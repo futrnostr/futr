@@ -176,6 +176,7 @@ Rectangle {
                 // Public notes list
                 ListView {
                     id: postsView
+                    verticalLayoutDirection: ListView.TopToBottom
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
@@ -223,22 +224,40 @@ Rectangle {
                         }
                     }
 
+                    property bool autoScroll: true
+                    property real scrollThreshold: 50  // pixels from bottom
+                    property int lastCount: 0
+
                     onCountChanged: {
-                        if (atYEnd) {
-                            Qt.callLater(() => {
-                                positionViewAtEnd()
-                            })
+                        if (count > lastCount && autoScroll) {
+                            scrollToBottom()
+                        }
+                        lastCount = count
+                    }
+
+                    onContentYChanged: {
+                        if (contentHeight > height) {
+                            autoScroll = contentHeight - (contentY + height) < scrollThreshold
                         }
                     }
 
-                    Component.onCompleted: positionViewAtEnd()
+                    function scrollToBottom() {
+                        Qt.callLater(() => {
+                            positionViewAtEnd()
+                            autoScroll = true
+                        })
+                    }
 
+                    Component.onCompleted: {
+                        lastCount = count
+                        scrollToBottom()
+                    }
 
                     ScrollBar.vertical: ScrollBar {
                         id: scrollBar
                         active: true
                         interactive: true
-                        policy: ScrollBar.AsNeeded
+                        policy: ScrollBar.AlwaysOn
 
                         contentItem: Rectangle {
                             implicitWidth: 6
@@ -418,21 +437,40 @@ Rectangle {
                         }
                     }
 
+                    property bool autoScroll: true
+                    property real scrollThreshold: 50
+                    property int lastCount: 0
+
                     onCountChanged: {
-                        if (atYEnd) {
-                            Qt.callLater(() => {
-                                positionViewAtEnd()
-                            })
+                        if (count > lastCount && autoScroll) {
+                            scrollToBottom()
+                        }
+                        lastCount = count
+                    }
+
+                    onContentYChanged: {
+                        if (contentHeight > height) {
+                            autoScroll = contentHeight - (contentY + height) < scrollThreshold
                         }
                     }
 
-                    Component.onCompleted: positionViewAtEnd()
+                    function scrollToBottom() {
+                        Qt.callLater(() => {
+                            positionViewAtEnd()
+                            autoScroll = true
+                        })
+                    }
+
+                    Component.onCompleted: {
+                        lastCount = count
+                        scrollToBottom()
+                    }
 
                     ScrollBar.vertical: ScrollBar {
                         id: scrollBarPrivate
                         active: true
                         interactive: true
-                        policy: ScrollBar.AsNeeded
+                        policy: ScrollBar.AlwaysOn
 
                         contentItem: Rectangle {
                             implicitWidth: 6
