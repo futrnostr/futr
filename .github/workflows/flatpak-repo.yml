@@ -8,8 +8,8 @@ on:
 
 # Add concurrency to prevent multiple runs from interfering with each other
 concurrency:
-  group: "flatpak-repo-${{ github.ref }}"
-  cancel-in-progress: true
+  group: "pages-${{ github.workflow }}"
+  cancel-in-progress: false
 
 permissions:
   contents: write
