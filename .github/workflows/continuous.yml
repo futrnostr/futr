@@ -115,7 +115,6 @@ jobs:
           name: "🚧 Development Build (Continuous)"
           files: "futr.flatpak"
           prerelease: true
-          draft: false
           body: |
             ⚠️ This is an automated development build from the latest master branch.
             This build is not recommended for production use.
