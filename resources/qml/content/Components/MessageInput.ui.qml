@@ -47,11 +47,11 @@ Pane {
             focus: true
             
             Keys.onReturnPressed: function(event) {
-                if (event.modifiers & Qt.ControlModifier) {
+                if (event.modifiers & Qt.ShiftModifier) {
+                    event.accepted = false
+                } else {
                     event.accepted = true
                     sendMessage()
-                } else {
-                    event.accepted = false
                 }
             }
         }
