@@ -178,7 +178,7 @@ Dialog {
                         id: scrollBar
                         active: true
                         interactive: true
-                        policy: ScrollBar.AsNeeded
+                        policy: ScrollBar.AlwaysOn
 
                         contentItem: Rectangle {
                             implicitWidth: 6
