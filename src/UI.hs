@@ -356,6 +356,11 @@ runUI = interpret $ \_ -> \case
     chatPool <- newFactoryPool (newObject postClass)
 
     rootClass <- newClass [
+        defPropertyConst' "version" (\_ -> do
+          st <- runE $ get @AppState
+          return $ version st
+        ),
+
         defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
 
         defPropertyConst' "ctxRelayMgmt" (\_ -> return relayMgmtObj),

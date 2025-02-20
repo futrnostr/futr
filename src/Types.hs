@@ -137,6 +137,7 @@ data AppState = AppState
   , currentContact :: (Maybe PubKeyXO, Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
   , currentPost :: Maybe EventId
+  , version :: Text
   }
 
 
@@ -169,4 +170,5 @@ initialState = AppState
   , currentContact = (Nothing, Nothing)
   , currentProfile = Nothing
   , currentPost = Nothing
+  , version = "v0.2.3-dev"
   }
