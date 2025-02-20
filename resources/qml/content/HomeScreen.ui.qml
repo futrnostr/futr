@@ -70,6 +70,28 @@ Item {
                 }
             }
         }
+
+        Rectangle {
+            Layout.fillWidth: true
+            height: 30
+            color: Material.backgroundColor
+
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: Material.dividerColor
+                anchors.top: parent.top
+            }
+
+            Text {
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 10
+                text: version
+                font: Constants.smallFont
+                color: Material.secondaryTextColor
+            }
+        }
     }
 
     RelayMgmtDialog {

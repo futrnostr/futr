@@ -176,4 +176,13 @@ Rectangle {
     ImportSuccessDialog {
         id: importSuccessDialog
     }
+
+    Text {
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 10
+        text: version
+        font: Constants.smallFont
+        color: Material.secondaryTextColor
+    }
 }
