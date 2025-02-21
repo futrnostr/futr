@@ -28,12 +28,21 @@ Pane {
         spacing: Constants.spacing_xs
 
         // Main post content
-        Text {
+        TextEdit {
             Layout.fillWidth: true
-            text: (post.content || "").replace(/nostr:(note|nevent|naddr)1[a-zA-Z0-9]+/g, '').trim()
+            text: {
+                let content = (post.content || "").replace(/nostr:(note|nevent|naddr)1[a-zA-Z0-9]+/g, '').trim();
+                content = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');  // Escape any HTML first
+                content = content.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" style="color: ' + Material.accentColor + '">$1</a>');
+                return content;
+            }
             visible: post.postType === "short_text_note" || post.postType === "quote_repost"
             wrapMode: Text.Wrap
             color: Material.foreground
+            readOnly: true
+            selectByMouse: true
+            textFormat: TextEdit.RichText
+            onLinkActivated: (link) => Qt.openUrlExternally(link)
         }
 
         Repeater {
