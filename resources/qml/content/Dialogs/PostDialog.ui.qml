@@ -131,18 +131,50 @@ Dialog {
                                 }
                             }
                         }
+
+                        ColumnLayout {
+                            spacing: Constants.spacing_m
+                            Layout.leftMargin: Constants.spacing_m
+                            Layout.rightMargin: Constants.spacing_m
+
+                            Text {
+                                text: qsTr("Seen on relays:")
+                                color: Material.secondaryTextColor
+                                font: Constants.smallFontMedium
+                                visible: root.targetPost && root.targetPost.relays.length > 0
+                            }
+
+                            Repeater {
+                                model: root.targetPost ? root.targetPost.relays : []
+                                delegate: ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Constants.spacing_s
+
+                                    Text {
+                                        text: modelData
+                                        color: Material.foreground
+                                        wrapMode: Text.Wrap
+                                        Layout.fillWidth: true
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        height: 1
+                                        color: Material.dividerColor
+                                        visible: root.targetPost && root.targetPost.relays.length > 1 && index < root.targetPost.relays.length - 1
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
                 // Comments sections
-                ListView {
+                ScrollingListView {
                     id: commentsView
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    clip: true
                     width: scrollView.width - 20
-                    spacing: Constants.spacing_m
-                    bottomMargin: 0
 
                     model: AutoListModel {
                         id: commentsModel
@@ -160,37 +192,6 @@ Dialog {
 
                         sourceComponent: PostContent {
                             post: modelData
-                        }
-                    }
-
-                    onCountChanged: {
-                        if (atYEnd) {
-                            Qt.callLater(() => {
-                                positionViewAtEnd()
-                            })
-                        }
-                    }
-
-                    Component.onCompleted: positionViewAtEnd()
-
-
-                    ScrollBar.vertical: ScrollBar {
-                        id: scrollBar
-                        active: true
-                        interactive: true
-                        policy: ScrollBar.AlwaysOn
-
-                        contentItem: Rectangle {
-                            implicitWidth: 6
-                            radius: width / 2
-                            color: scrollBar.pressed ? Material.scrollBarPressedColor :
-                                    scrollBar.hovered ? Material.scrollBarHoveredColor :
-                                                        Material.scrollBarColor
-                            opacity: scrollBar.active ? 1 : 0
-
-                            Behavior on opacity {
-                                NumberAnimation { duration: 150 }
-                            }
                         }
                     }
                 }
