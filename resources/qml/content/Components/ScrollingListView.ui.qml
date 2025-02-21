@@ -18,6 +18,10 @@ ListView {
     property int lastContentY: 0
     property int lastContentHeight: 0
 
+    focus: true
+    keyNavigationEnabled: true
+    keyNavigationWraps: false
+
     onContentHeightChanged: {
         // If content height increased and we were at bottom, maintain bottom position
         if (contentHeight > lastContentHeight && autoScroll) {
@@ -65,11 +69,7 @@ ListView {
             color: parent.pressed ? Material.scrollBarPressedColor :
                    parent.hovered ? Material.scrollBarHoveredColor :
                                   Material.scrollBarColor
-            opacity: parent.active ? 1 : 0
-
-            Behavior on opacity {
-                NumberAnimation { duration: 150 }
-            }
+            opacity: 1
         }
     }
 }
