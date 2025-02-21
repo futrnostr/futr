@@ -101,9 +101,17 @@ runPublisher =  interpret $ \_ -> \case
 
         forM_ newRelays $ \r -> async $ do
             connected <- connect r
-            when connected $ do
-                writeToChannel event' r
-                disconnect r
+            if connected
+                then do
+                    writeToChannel event' r
+                    disconnect r
+                else do
+                    modify $ \st' -> st'
+                        { publishStatus = Map.adjust
+                            (Map.insert r (Failure "Relay server unreachable"))
+                            (eventId event')
+                            (publishStatus st')
+                        }
 
     PublishToOutbox event' -> do
         void $ putEvent $ EventWithRelays event' Set.empty
@@ -126,10 +134,10 @@ runPublisher =  interpret $ \_ -> \case
     PublishToRelay event' relayUri' -> do
         void $ putEvent $ EventWithRelays event' $ Set.empty
         modify $ \st -> st 
-            { publishStatus = Map.adjust 
+            { publishStatus = Map.adjust
                 (\existingMap -> Map.insert relayUri' Publishing existingMap)
                 (eventId event')
-                (publishStatus st) 
+                (publishStatus st)
             }
         writeToChannel event' relayUri'
 
@@ -158,9 +166,17 @@ runPublisher =  interpret $ \_ -> \case
                 forM_ existingRelays $ \r -> writeToChannel event' r
                 forM_ newRelays $ \r -> async $ do
                     connected <- connect r
-                    when connected $ do
-                        writeToChannel event' r
-                        disconnect r
+                    if connected
+                        then do
+                            writeToChannel event' r
+                            disconnect r
+                        else do
+                            modify $ \st' -> st'
+                                { publishStatus = Map.adjust
+                                    (Map.insert r (Failure "Relay server unreachable"))
+                                    (eventId event')
+                                    (publishStatus st')
+                                }
 
     GetPublishResult eventId' -> do
         st <- get @RelayPool
