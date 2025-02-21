@@ -8,6 +8,7 @@ import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (dropWhileEnd, find)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent (Concurrent, forkIO)
@@ -33,7 +34,7 @@ import Nostr.Types (Response(..), SubscriptionId)
 import Nostr.Types qualified as NT
 import Nostr.Util
 import Types ( AppState(..), ConnectionError(..), ConnectionState(..)
-             , RelayPool(..), RelayData(..)
+             , PublishStatus(..), RelayPool(..), RelayData(..)
              , SubscriptionState(..), SubscriptionEvent(..))
 
 
@@ -329,6 +330,18 @@ handleResponse relayURI' r = case r of
 
     Ok eventId' accepted' msg -> do
         let isAuthRequired = maybe False ("auth-required" `T.isPrefixOf`) msg
+
+        when (not isAuthRequired && isJust eventId') $ do
+            modify @RelayPool $ \st -> st {
+                publishStatus = Map.adjust
+                    (Map.insert relayURI' $
+                        if accepted'
+                            then Success
+                            else Failure (fromMaybe "Rejected by relay" msg))
+                    (fromMaybe (error "No event ID") eventId')
+                    (publishStatus st)
+            }
+
         if isAuthRequired
             then do
                 st <- get @RelayPool

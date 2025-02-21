@@ -5,12 +5,14 @@
 
 module UI where
 
+import Control.Monad (filterM)
 import Control.Monad.Fix (mfix)
 import Data.Aeson (decode, encode, toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (find, nub)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
@@ -355,6 +357,27 @@ runUI = interpret $ \_ -> \case
     postsPool <- newFactoryPool (newObject postClass)
     chatPool <- newFactoryPool (newObject postClass)
 
+    publishStatusClass <- newClass [
+        defPropertySigRO' "eventId" changeKey'$ \obj -> do
+            let eid = fromObjRef obj :: EventId
+            return $ TE.decodeUtf8 $ B16.encode $ getEventId eid,
+
+        defPropertySigRO' "relayStatuses" changeKey' $ \obj -> do
+            let eid = fromObjRef obj :: EventId
+            st <- runE $ get @RelayPool
+            return $ case Map.lookup eid (publishStatus st) of
+                Just statusMap ->
+                    [ [relay, if status == Success then ("" :: Text) else
+                        case status of
+                            Failure msg -> msg
+                            _ -> ""]
+                    | (relay, status) <- Map.toList statusMap ]
+                Nothing -> []
+        ]
+
+    -- Create a pool for publish statuses
+    publishStatusPool <- newFactoryPool (newObject publishStatusClass)
+
     rootClass <- newClass [
         defPropertyConst' "version" (\_ -> do
           st <- runE $ get @AppState
@@ -450,6 +473,20 @@ runUI = interpret $ \_ -> \case
                 messageIds <- runE $ getTimelineIds ChatTimeline recipient 1000
                 mapM (getPoolObject chatPool) messageIds
             Nothing -> return [],
+
+        defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
+            runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
+            st <- runE $ get @RelayPool
+            now <- runE getCurrentTime
+            -- Filter statuses where event is newer than 10 seconds
+            let statusMap = publishStatus st
+            recentEids <- filterM (\eid -> do
+                eventMaybe <- runE $ getEvent eid
+                case eventMaybe of
+                    Just eventWithRelays ->
+                        return $ createdAt (event eventWithRelays) + 10 > now
+                    Nothing -> return False) (Map.keys statusMap)
+            mapM (getPoolObject publishStatusPool) recentEids,
 
         defMethod' "follow" $ \_ npubText -> runE $ followProfile npubText,
 

@@ -143,6 +143,13 @@ runPublisher =  interpret $ \_ -> \case
             else do
                 let allRelayURIs = nub $ dmRelayList ++ recipientDMRelays
 
+                modify $ \st -> st
+                    { publishStatus = Map.insert
+                        (eventId event')
+                        (Map.fromList [(relay, Publishing) | relay <- allRelayURIs])
+                        (publishStatus st)
+                    }
+
                 existingConnections <- getConnectedRelays
                 let (existingRelays, newRelays) = partition 
                         (`elem` existingConnections) 

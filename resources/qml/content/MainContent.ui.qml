@@ -174,16 +174,12 @@ Rectangle {
                 spacing: Constants.spacing_m
 
                 // Public notes list
-                ListView {
+                ScrollingListView {
                     id: postsView
-                    verticalLayoutDirection: ListView.TopToBottom
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    clip: true
-                    leftMargin: Constants.spacing_m
-                    rightMargin: Constants.spacing_m
-                    spacing: Constants.spacing_m
-                    bottomMargin: 0
+                    leftMargin: 0
+                    rightMargin: 0
 
                     model: AutoListModel {
                         id: postsModel
@@ -196,7 +192,8 @@ Rectangle {
 
                     delegate: Loader {
                         active: modelData !== undefined && modelData !== null
-                        width: postsView.width - postsView.leftMargin - postsView.rightMargin
+                        width: postsView.width - 32
+                        x: 16
                         height: active ? item.implicitHeight : 0
 
                         sourceComponent: PostContent {
@@ -220,55 +217,6 @@ Rectangle {
                                     repostMenu.targetPost = modelData
                                     repostMenu.popup()
                                 }
-                            }
-                        }
-                    }
-
-                    property bool autoScroll: true
-                    property real scrollThreshold: 50  // pixels from bottom
-                    property int lastCount: 0
-
-                    onCountChanged: {
-                        if (count > lastCount && autoScroll) {
-                            scrollToBottom()
-                        }
-                        lastCount = count
-                    }
-
-                    onContentYChanged: {
-                        if (contentHeight > height) {
-                            autoScroll = contentHeight - (contentY + height) < scrollThreshold
-                        }
-                    }
-
-                    function scrollToBottom() {
-                        Qt.callLater(() => {
-                            positionViewAtEnd()
-                            autoScroll = true
-                        })
-                    }
-
-                    Component.onCompleted: {
-                        lastCount = count
-                        scrollToBottom()
-                    }
-
-                    ScrollBar.vertical: ScrollBar {
-                        id: scrollBar
-                        active: true
-                        interactive: true
-                        policy: ScrollBar.AlwaysOn
-
-                        contentItem: Rectangle {
-                            implicitWidth: 6
-                            radius: width / 2
-                            color: scrollBar.pressed ? Material.scrollBarPressedColor :
-                                    scrollBar.hovered ? Material.scrollBarHoveredColor :
-                                                        Material.scrollBarColor
-                            opacity: scrollBar.active ? 1 : 0
-
-                            Behavior on opacity {
-                                NumberAnimation { duration: 150 }
                             }
                         }
                     }
@@ -297,17 +245,10 @@ Rectangle {
                     visible: ctxRelayMgmt.dmRelays.length == 0
                 }
 
-                ListView {
+                ScrollingListView {
                     id: privateMessageListView
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    clip: true
-                    verticalLayoutDirection: ListView.TopToBottom
-                    layoutDirection: Qt.LeftToRight
-                    leftMargin: Constants.spacing_m
-                    rightMargin: Constants.spacing_m
-                    spacing: Constants.spacing_m
-                    bottomMargin: 0
                     visible: ctxRelayMgmt.dmRelays.length > 0
 
                     model: AutoListModel {
@@ -433,55 +374,6 @@ Rectangle {
                                         }
                                     }
                                 }
-                            }
-                        }
-                    }
-
-                    property bool autoScroll: true
-                    property real scrollThreshold: 50
-                    property int lastCount: 0
-
-                    onCountChanged: {
-                        if (count > lastCount && autoScroll) {
-                            scrollToBottom()
-                        }
-                        lastCount = count
-                    }
-
-                    onContentYChanged: {
-                        if (contentHeight > height) {
-                            autoScroll = contentHeight - (contentY + height) < scrollThreshold
-                        }
-                    }
-
-                    function scrollToBottom() {
-                        Qt.callLater(() => {
-                            positionViewAtEnd()
-                            autoScroll = true
-                        })
-                    }
-
-                    Component.onCompleted: {
-                        lastCount = count
-                        scrollToBottom()
-                    }
-
-                    ScrollBar.vertical: ScrollBar {
-                        id: scrollBarPrivate
-                        active: true
-                        interactive: true
-                        policy: ScrollBar.AlwaysOn
-
-                        contentItem: Rectangle {
-                            implicitWidth: 6
-                            radius: width / 2
-                            color: scrollBarPrivate.pressed ? Material.scrollBarPressedColor :
-                                    scrollBarPrivate.hovered ? Material.scrollBarHoveredColor :
-                                                        Material.scrollBarColor
-                            opacity: scrollBarPrivate.active ? 1 : 0
-
-                            Behavior on opacity {
-                                NumberAnimation { duration: 150 }
                             }
                         }
                     }

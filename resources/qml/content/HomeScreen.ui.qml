@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 
+import Components 1.0
 import Dialogs 1.0
 import HsQML.Model 1.0
 import Futr 1.0
@@ -100,5 +101,9 @@ Item {
 
     ShowKeysDialog {
         id: showKeysDialog
+    }
+
+    AlertManager {
+        id: alertManager
     }
 }
