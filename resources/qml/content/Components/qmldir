@@ -1,8 +1,11 @@
 module Components
+AlertManager 1.0 AlertManager.ui.qml
 FutrInput 1.0 FutrInput.ui.qml
 FutrCard 1.0 FutrCard.ui.qml
 MessageInput 1.0 MessageInput.ui.qml
 PostContent 1.0 PostContent.ui.qml
 PostDelegate 1.0 PostDelegate.ui.qml
 ProfilePicture 1.0 ProfilePicture.ui.qml
+PublishAlert 1.0 PublishAlert.ui.qml
 RelayStatusIcon 1.0 RelayStatusIcon.ui.qml
+ScrollingListView 1.0 ScrollingListView.ui.qml

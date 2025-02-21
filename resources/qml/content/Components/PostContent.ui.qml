@@ -24,7 +24,7 @@ Pane {
 
     ColumnLayout {
         width: parent.width
-        spacing: Constants.spacing_s
+        spacing: Constants.spacing_xs
 
         // Main post content
         Text {
@@ -97,7 +97,7 @@ Pane {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
             spacing: Constants.spacing_l
-            Layout.topMargin: Constants.spacing_xs
+            Layout.topMargin: 0
 
             Item { Layout.fillWidth: true }
 
@@ -158,6 +158,7 @@ Pane {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.topMargin: 0
             spacing: Constants.spacing_s
 
             Item { Layout.fillWidth: true }
@@ -167,7 +168,6 @@ Pane {
                 text: post.timestamp || ""
                 font: Constants.smallFontMedium
                 color: Material.secondaryTextColor
-                Layout.topMargin: Constants.spacing_xs
             }
 
             Button {

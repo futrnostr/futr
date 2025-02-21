@@ -39,6 +39,7 @@ data UIReferences = UIReferences
   , dmRelaysObjRef :: Maybe (QML.ObjRef ())
   , generalRelaysObjRef :: Maybe (QML.ObjRef ())
   , tempRelaysObjRef :: Maybe (QML.ObjRef ())
+  , publishStatusObjRef :: Maybe (QML.ObjRef ())
   }
 
 
@@ -89,7 +90,7 @@ initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs Nothing
 
 -- | Initial UI references.
 initialUIRefs :: UIReferences
-initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 -- | Define the effects for QML operations.
