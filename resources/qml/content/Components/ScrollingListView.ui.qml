@@ -12,63 +12,171 @@ ListView {
     rightMargin: Constants.spacing_m
     spacing: Constants.spacing_m
     bottomMargin: 0
-
-    property bool autoScroll: true
-    property real scrollThreshold: 50  // pixels from bottom
-    property int lastContentY: 0
-    property int lastContentHeight: 0
-
     focus: true
     keyNavigationEnabled: true
     keyNavigationWraps: false
 
-    onContentHeightChanged: {
-        // If content height increased and we were at bottom, maintain bottom position
-        if (contentHeight > lastContentHeight && autoScroll) {
-            scrollToBottom()
+    property bool userHeld: false
+
+    function isAtBottom() {
+        return (contentHeight - height - contentY) < 10
+    }
+
+    Timer {
+        id: stableLayoutTimer
+        interval: 300
+        repeat: false
+        onTriggered: {
+            if (!userHeld) {
+                root.forceLayout()
+                Qt.callLater(function() {
+                    if (!userHeld) {
+                        positionViewAtEnd()
+                    }
+                })
+            }
         }
-        lastContentHeight = contentHeight
     }
 
     onContentYChanged: {
-        // Update autoScroll based on user's scroll position
-        if (contentHeight > height) {
-            autoScroll = contentHeight - (contentY + height) < scrollThreshold
+        if (!isAtBottom()) {
+            userHeld = true
+        } else {
+            userHeld = false
         }
-        lastContentY = contentY
     }
 
-    function scrollToBottom() {
-        Qt.callLater(() => {
-            positionViewAtEnd()
-            autoScroll = true  // Ensure autoScroll is enabled after manual scroll
-        })
+    onContentHeightChanged: {
+        if (!userHeld) {
+            stableLayoutTimer.restart()
+        }
     }
 
     Component.onCompleted: {
-        // Initial scroll to bottom when view is created
-        Qt.callLater(() => {
-            scrollToBottom()
+        Qt.callLater(function() {
+            root.forceLayout()
+            Qt.callLater(function() {
+                root.forceLayout()
+                positionViewAtEnd()
+            })
         })
     }
 
-    onModelChanged: {
-        if (model) {
-            scrollToBottom()
-        }
-    }
-
     ScrollBar.vertical: ScrollBar {
+        id: verticalScrollBar
         active: true
         interactive: true
         policy: ScrollBar.AlwaysOn
+        topPadding: topArrow.height
+        bottomPadding: bottomArrow.height
+
+        Rectangle {
+            id: topArrow
+            width: 16
+            height: 16
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            color: topMouseArea.pressed ? Qt.darker(Material.scrollBarColor, 1.2) : Material.scrollBarColor
+            border.color: Qt.darker(Material.scrollBarColor, 1.5)
+            border.width: 1
+            z: 1
+
+            Canvas {
+                anchors.fill: parent
+                anchors.margins: 2
+                onPaint: {
+                    var ctx = getContext("2d");
+                    ctx.fillStyle = Material.foreground;
+                    ctx.beginPath();
+                    ctx.moveTo(width/2, 2);
+                    ctx.lineTo(width-2, height-2);
+                    ctx.lineTo(2, height-2);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+
+            MouseArea {
+                id: topMouseArea
+                anchors.fill: parent
+                onPressed: {
+                    root.flick(0, 800);
+                    scrollTimer.direction = -1;
+                    scrollTimer.start();
+                }
+                onReleased: {
+                    scrollTimer.stop();
+                }
+            }
+        }
+
+        Rectangle {
+            id: bottomArrow
+            width: 16
+            height: 16
+            anchors.bottom: parent.bottom
+            anchors.horizontalCenter: parent.horizontalCenter
+            color: bottomMouseArea.pressed ? Qt.darker(Material.scrollBarColor, 1.2) : Material.scrollBarColor
+            border.color: Qt.darker(Material.scrollBarColor, 1.5)
+            border.width: 1
+            z: 1
+
+            Canvas {
+                anchors.fill: parent
+                anchors.margins: 2
+                onPaint: {
+                    var ctx = getContext("2d");
+                    ctx.fillStyle = Material.foreground;
+                    ctx.beginPath();
+                    ctx.moveTo(2, 2);
+                    ctx.lineTo(width-2, 2);
+                    ctx.lineTo(width/2, height-2);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+
+            MouseArea {
+                id: bottomMouseArea
+                anchors.fill: parent
+                onPressed: {
+                    root.flick(0, -800);
+                    scrollTimer.direction = 1;
+                    scrollTimer.start();
+                }
+                onReleased: {
+                    scrollTimer.stop();
+                }
+            }
+        }
+
+        Timer {
+            id: scrollTimer
+            interval: 50
+            repeat: true
+            property int direction: 0
+            onTriggered: {
+                if (direction < 0) {
+                    root.flick(0, 800);
+                } else {
+                    root.flick(0, -800);
+                }
+            }
+        }
+
+        background: Rectangle {
+            implicitWidth: 16
+            color: Qt.rgba(Material.scrollBarColor.r,
+                           Material.scrollBarColor.g,
+                           Material.scrollBarColor.b, 0.3)
+        }
 
         contentItem: Rectangle {
             implicitWidth: 6
             radius: width / 2
             color: parent.pressed ? Material.scrollBarPressedColor :
                    parent.hovered ? Material.scrollBarHoveredColor :
-                                  Material.scrollBarColor
+                                    Material.scrollBarColor
             opacity: 1
         }
     }

@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y \
     qt5-image-formats-plugins \
     qttools5-dev-tools \
     qtbase5-dev \
+    qtmultimedia5-dev \
+    qml-module-qtmultimedia \
     wget \
     sudo \
     build-essential \

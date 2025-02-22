@@ -22,7 +22,7 @@ Item {
             Layout.preferredHeight: 60
             source: Util.getProfilePicture(mypicture, mynpub)
             fillMode: Image.PreserveAspectCrop
-            
+
             layer.enabled: true
             layer.effect: OpacityMask {
                 maskSource: Rectangle {
@@ -51,11 +51,11 @@ Item {
             Layout.preferredWidth: 40
             Layout.preferredHeight: 40
             flat: true
-            
+
             icon.source: "qrc:/icons/menu.svg"
             icon.width: 24
             icon.height: 24
-            
+
             onClicked: profileMenu.open()
         }
     }

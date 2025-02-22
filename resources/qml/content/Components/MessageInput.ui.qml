@@ -7,18 +7,18 @@ import Futr 1.0
 
 Pane {
     id: root
-    
+
     property string placeholderText: qsTr("Type a message...")
     property string buttonText: qsTr("Send")
-    
+
     signal messageSent(string text)
-    
+
     Layout.fillWidth: true
     Layout.leftMargin: Constants.spacing_m
     Layout.rightMargin: Constants.spacing_m
     Layout.bottomMargin: Constants.spacing_m
     padding: Constants.spacing_m
-    
+
     background: Rectangle {
         color: Material.dialogColor
         radius: 5
@@ -45,7 +45,7 @@ Pane {
             wrapMode: TextArea.Wrap
             font: Constants.fontMedium
             focus: true
-            
+
             Keys.onReturnPressed: function(event) {
                 if (event.modifiers & Qt.ShiftModifier) {
                     event.accepted = false
@@ -63,7 +63,7 @@ Pane {
             implicitWidth: 80
             implicitHeight: 36
             Layout.alignment: Qt.AlignVCenter
-            
+
             onClicked: sendMessage()
         }
     }

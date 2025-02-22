@@ -8,7 +8,7 @@ QtObject {
 
     function getFormattedContent(post) {
         if (!post) return ""
-        
+
         let content = ""
         try {
             if (post.postType === "quote_repost") {

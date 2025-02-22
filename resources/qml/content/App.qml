@@ -6,7 +6,7 @@ import HsQML.Clipboard 1.0
 import Futr 1.0
 
 ApplicationWindow {
-    id: root
+    id: appWindow
     width: Constants.width
     height: Constants.height
     minimumWidth: 920

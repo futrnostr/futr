@@ -67,7 +67,7 @@ Item {
             case "Connected":
                 return qsTr("Connected")
             case "Connecting":
-                return root.connectionRetries > 0 ? 
+                return root.connectionRetries > 0 ?
                     qsTr("Connecting... (Retry %1)").arg(root.connectionRetries) :
                     qsTr("Connecting...")
             case "Disconnected":
