@@ -28,23 +28,93 @@ Pane {
         spacing: Constants.spacing_xs
 
         // Main post content
-        TextEdit {
+        Flow {
             Layout.fillWidth: true
-            text: {
-                let content = (post.content || "").replace(/nostr:(note|nevent|naddr)1[a-zA-Z0-9]+/g, '').trim();
-                content = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');  // Escape any HTML first
-                content = content.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" style="color: ' + Material.accentColor + '">$1</a>');
-                return content;
-            }
             visible: post.postType === "short_text_note" || post.postType === "quote_repost"
-            wrapMode: Text.Wrap
-            color: Material.foreground
-            readOnly: true
-            selectByMouse: true
-            textFormat: TextEdit.RichText
-            onLinkActivated: (link) => Qt.openUrlExternally(link)
+            spacing: 2
+
+            Repeater {
+                model: post.contentParts
+                delegate: Item {
+                    required property var modelData
+                    height: contentLoader.height
+                    width: contentLoader.width
+
+                    Component {
+                        id: textComponent
+                        TextEdit {
+                            text: modelData.length > 1 ? modelData[1].replace(/</g, '&lt;').replace(/>/g, '&gt;') : ""
+                            readOnly: true
+                            selectByMouse: true
+                            color: Material.foreground
+                            wrapMode: Text.Wrap
+                            textFormat: Text.AutoText
+                        }
+                    }
+
+                    Component {
+                        id: urlComponent
+                        TextEdit {
+                            text: modelData.length > 1 ? '<a href="' + modelData[1] + '" style="color: ' + Material.accentColor + '">' + modelData[1] + '</a>' : ""
+                            readOnly: true
+                            selectByMouse: true
+                            color: Material.foreground
+                            wrapMode: Text.Wrap
+                            textFormat: TextEdit.RichText
+                            onLinkActivated: (link) => Qt.openUrlExternally(link)
+                        }
+                    }
+
+                    Component {
+                        id: imageComponent
+                        Image {
+                            source: modelData.length > 1 ? modelData[1] : ""
+                            fillMode: Image.PreserveAspectFit
+                            width: Math.min(root.width - 2 * Constants.spacing_s, sourceSize.width || root.width - 2 * Constants.spacing_s)
+                            height: sourceSize.height > 0 ? width * (sourceSize.height / sourceSize.width) : width
+                            asynchronous: true
+                            Layout.topMargin: Constants.spacing_xs
+                            Layout.bottomMargin: Constants.spacing_xs
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Qt.openUrlExternally(modelData[1])
+                            }
+                        }
+                    }
+
+                    Component {
+                        id: nostrRefComponent
+                        Button {
+                            text: modelData.length > 0 ?
+                                  modelData[0] === "note" || modelData[0] === "nevent" || modelData[0] === "naddr" ? "📝 Note" :
+                                  modelData[0] === "npub" || modelData[0] === "nprofile" ? "👤 Profile" :
+                                  "🔗 Reference"
+                                : "🔗 Reference"
+                        }
+                    }
+
+                    Loader {
+                        id: contentLoader
+                        sourceComponent: {
+                            let type = modelData[0];
+                            if (type === "text") {
+                                return textComponent;
+                            } else if (type === "url") {
+                                return urlComponent;
+                            } else if (type === "image") {
+                                return imageComponent;
+                            } else {
+                                return nostrRefComponent;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
+        // Components moved here
         Repeater {
             model: post.referencedPosts || []
             delegate: Rectangle {
