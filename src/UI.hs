@@ -11,12 +11,14 @@ import Data.Aeson (decode, encode, toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (find, nub)
+import Data.List (find, nub, sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Ord (comparing)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
 import Data.Text (Text, drop, pack, unpack)
+import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent.STM (TQueue)
@@ -27,7 +29,8 @@ import QtQuick
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Prelude hiding (drop)
 import Text.Read (readMaybe)
-import Text.Regex.TDFA
+import Text.Regex.TDFA ((=~), getAllTextMatches)
+import Text.Regex.TDFA.Text ()
 
 import Logging
 import Nostr
@@ -269,6 +272,25 @@ runUI = interpret $ \_ -> \case
                   return $ rumorContent <$> rumor
                 _ -> return $ Just $ content ev
             Nothing -> return Nothing
+          return value,
+
+        defPropertySigRO' "contentParts" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          value <- runE $ getEvent eid >>= \case
+            Just eventWithRelays -> do
+              let ev = event eventWithRelays
+              content' <- case kind ev of
+                GiftWrap -> do
+                  kp <- getKeyPair
+                  sealed <- unwrapGiftWrap ev kp
+                  rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
+                  return $ fromMaybe "" $ rumorContent <$> rumor
+                _ -> return $ content ev
+              let r = parseContentParts content'
+              logDebug $ "content: " <> content'
+              logDebug $ "contentParts: " <> pack (show r)
+              return r
+            Nothing -> return []
           return value,
 
         defPropertySigRO' "timestamp" changeKey' $ \obj -> do
@@ -534,3 +556,56 @@ extractNostrReferences txt =
     let matches = txt =~ ("nostr:(note|nevent)1[a-zA-Z0-9]+" :: Text) :: [[Text]]
         refs = mapMaybe (bech32ToEventId . drop 6 . head) matches  -- drop "nostr:" prefix
     in refs
+
+-- | Parse content into parts (text, images, URLs, and nostr references)
+parseContentParts :: Text -> [[Text]]
+parseContentParts content' =
+    let -- Regular expressions for different patterns
+        imagePattern = "https?://[^\\s]+\\.(jpg|jpeg|png|gif|webp)(\\?[^\\s]*)?" :: Text
+        urlPattern = "https?://[^\\s]+" :: Text
+        nostrPattern = "nostr:(note|nevent|naddr|npub|nprofile)1[a-zA-Z0-9]+" :: Text
+
+        -- Find all URLs first
+        findUrls :: Text -> [(Text, Bool)]  -- (URL, isImage)
+        findUrls text =
+            let allUrls = getAllTextMatches (text =~ urlPattern) :: [Text]
+            in map (\url -> (Text.takeWhile (/= ' ') url, url =~ imagePattern)) allUrls
+
+        -- Process the content
+        processContent :: Text -> [(Text, Bool)] -> [[Text]]
+        processContent remaining [] =
+            -- Keep remaining text as a single part if not empty
+            if Text.null remaining
+            then []
+            else [["text", remaining]]
+
+        processContent remaining ((url, isImage):rest) =
+            let cleanUrl = Text.takeWhile (/= ' ') url
+                urlType = if isImage then "image" else "url"
+                parts = Text.breakOn url remaining
+                beforeUrl = Text.strip $ fst parts
+                afterUrl = Text.drop (Text.length cleanUrl) $ snd parts
+                beforePart = if Text.null beforeUrl
+                            then []
+                            else [["text", beforeUrl]]
+            in beforePart ++ [[urlType, cleanUrl]] ++ processContent afterUrl rest
+
+        -- Process nostr references
+        processNostr :: [[Text]] -> [[Text]]
+        processNostr parts = concatMap processPart parts
+            where
+                processPart [typ, content] =
+                    if typ == "text" && content =~ nostrPattern
+                    then let ref = Text.takeWhile (/= ' ') $ getAllTextMatches (content =~ nostrPattern) !! 0
+                             refType = case Text.take 11 ref of
+                                "nostr:note1" -> "note"
+                                "nostr:nevent1" -> "nevent"
+                                "nostr:npub1" -> "npub"
+                                "nostr:nprofile1" -> "nprofile"
+                                "nostr:naddr1" -> "naddr"
+                                _ -> "text"
+                         in [[refType, ref]]
+                    else [[typ, content]]
+                processPart x = [x]
+
+    in processNostr $ processContent content' $ findUrls content'
