@@ -34,7 +34,7 @@ Rectangle {
         inputPlaceholder: qsTr("Post your reply")
         buttonText: qsTr("Reply")
         isQuoteMode: false
-        
+
         onMessageSubmitted: function(text) {
             comment(targetPost.id, text)
         }

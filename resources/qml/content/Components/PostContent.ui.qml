@@ -3,10 +3,10 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
+import QtMultimedia 5.15
 
 import Components 1.0
 import Futr 1.0
-
 
 Pane {
     id: root
@@ -16,9 +16,9 @@ Pane {
     anchors.rightMargin: Constants.spacing_s
     anchors.left: parent.left
     anchors.leftMargin: 0
-    
+
     required property var post
-    
+
     signal commentClicked()
     signal repostClicked()
 
@@ -34,7 +34,7 @@ Pane {
                 .replace(/\n/g, '<br>')
                 .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
     }
-    
+
     background: Rectangle {
         color: Material.dialogColor
         radius: 10
@@ -104,6 +104,33 @@ Pane {
                                     imageViewerDialog.imageSource = url;
                                     imageViewerDialog.open();
                                 });
+                            }
+                        } else if (type === "video") {
+                            // Create video component
+                            if (!isRefPost) {
+                                let videoComponent = Qt.createComponent("PostVideo.ui.qml");
+                                if (videoComponent.status === Component.Ready) {
+                                    let videoObject = videoComponent.createObject(contentLayout, {
+                                        "source": content,
+                                        "width": contentLayout.width,
+                                        "clickable": true,
+                                        "videoUrl": content
+                                    });
+
+                                    if (videoObject) {
+                                        videoObject.Layout.fillWidth = true;
+                                        videoObject.parent = contentLayout;
+                                        videoObject.fullScreenRequested.connect(function(url) {
+                                            videoObject.pause();
+                                            videoViewerDialog.videoSource = url;
+                                            videoViewerDialog.open();
+                                        });
+                                    } else {
+                                        console.error("Failed to create video object");
+                                    }
+                                } else {
+                                    console.error("Error loading video component:", videoComponent.errorString());
+                                }
                             }
                         } else {
                             // nostr references (note, nevent, etc)
@@ -244,10 +271,35 @@ Pane {
                                                 imageViewerDialog.imageSource = url;
                                                 imageViewerDialog.open();
                                             });
-                                        } else {
-                                            // nostr references (note, nevent, etc)
-                                            let label = type === "note" || type === "nevent" || type === "naddr" ? "📝 Note" : "🔗 Reference";
-                                            htmlText += `<a href="note://${content}" style="color: ${Material.accentColor};">${label}</a>`;
+                                        } else if (type === "video") {
+                                            let videoComponent = Qt.createComponent("PostVideo.ui.qml");
+                                            if (videoComponent.status === Component.Ready) {
+                                                let videoObject = videoComponent.createObject(refContentLayout, {
+                                                    "source": content,
+                                                    "width": refContentLayout.width,
+                                                    "clickable": true,
+                                                    "videoUrl": content
+                                                });
+
+                                                if (videoObject) {
+                                                    videoObject.Layout.fillWidth = true;
+                                                    videoObject.parent = refContentLayout;
+                                                    videoObject.videoClicked.connect(function(url) {
+                                                        console.log("Video clicked in reference post:", url);
+                                                    });
+                                                    videoObject.fullScreenRequested.connect(function(url) {
+                                                        videoObject.pause();
+                                                        videoViewerDialog.videoSource = url;
+                                                        videoViewerDialog.open();
+                                                    });
+                                                } else {
+                                                    console.error("Failed to create video object in reference post");
+                                                }
+                                            } else {
+                                                // nostr references (note, nevent, etc)
+                                                let label = type === "note" || type === "nevent" || type === "naddr" ? "📝 Note" : "🔗 Reference";
+                                                htmlText += `<a href="note://${content}" style="color: ${Material.accentColor};">${label}</a>`;
+                                            }
                                         }
                                     }
 
@@ -436,7 +488,7 @@ Pane {
         property string imageSource: ""
 
         contentItem: Item {
-            id: dialogContent
+            id: imageDialogContent
             anchors.fill: parent
 
             Image {
@@ -447,33 +499,14 @@ Pane {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.topMargin: 20
-                height: parent.height - buttonRow.height - Constants.spacing_m * 2
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: {
-                        if (mouse.button === Qt.RightButton) {
-                            contextMenu.popup()
-                        }
-                    }
-
-                    Menu {
-                        id: contextMenu
-                        MenuItem {
-                            text: "Copy Image URL"
-                            onTriggered: {
-                                clipboard.copyText(imageViewerDialog.imageSource)
-                            }
-                        }
-                    }
-                }
+                height: parent.height - buttonRow.height - Constants.spacing_m * 4
             }
 
             Row {
                 id: buttonRow
                 anchors.bottom: parent.bottom
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottomMargin: Constants.spacing_m
+                anchors.bottomMargin: Constants.spacing_m * 2
                 spacing: Constants.spacing_m
                 height: 80
 
@@ -481,8 +514,10 @@ Pane {
                     text: "Save Image"
                     icon.source: "qrc:/icons/download.svg"
                     onClicked: {
-                        download(imageViewerDialog.imageSource)
-                        saveNotification.setText("Image saved to Downloads folder")
+                        // Connect to the signal first
+                        downloadCompleted.connect(imageDownloadCallback)
+                        // Then call the download function
+                        downloadAsync(imageViewerDialog.imageSource)
                     }
                 }
 
@@ -499,8 +534,8 @@ Pane {
             Rectangle {
                 id: saveNotification
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: buttonRow.top
-                anchors.bottomMargin: Constants.spacing_m
+                anchors.top: fullSizeImage.bottom
+                anchors.topMargin: Constants.spacing_m
                 width: notificationText.width + 40
                 height: 40
                 radius: 20
@@ -531,6 +566,255 @@ Pane {
                     opacity = 1.0
                 }
             }
+        }
+    }
+
+    Dialog {
+        id: videoViewerDialog
+        title: "Video"
+        modal: true
+        standardButtons: Dialog.Close
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(appWindow.width * 0.9, 1000)
+        height: Math.min(appWindow.height * 0.8, 800)
+        padding: 0  // Remove padding to maximize space
+
+        property string videoSource: ""
+
+        contentItem: Item {
+            id: dialogContent
+            anchors.fill: parent
+
+            MediaPlayer {
+                id: fullscreenVideoPlayer
+                source: videoViewerDialog.videoSource
+                autoPlay: true
+            }
+
+            VideoOutput {
+                id: fullscreenVideoOutput
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                // Make sure video doesn't overlap with controls
+                height: parent.height - fullscreenProgressBarBackground.height - fullscreenButtonRow.height - Constants.spacing_m * 4
+                source: fullscreenVideoPlayer
+            }
+
+            // Progress bar for fullscreen video - moved below the video
+            Rectangle {
+                id: fullscreenProgressBarBackground
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: fullscreenVideoOutput.bottom
+                anchors.topMargin: 0
+                height: 10
+                color: "#80000000"
+                z: 10
+
+                Rectangle {
+                    id: fullscreenProgressBar
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: fullscreenVideoPlayer.position > 0 && fullscreenVideoPlayer.duration > 0 ?
+                           parent.width * (fullscreenVideoPlayer.position / fullscreenVideoPlayer.duration) : 0
+                    color: Material.accent
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    anchors.topMargin: -10
+                    anchors.bottomMargin: -10
+                    z: 11
+
+                    onPressed: {
+                        if (fullscreenVideoPlayer.seekable) {
+                            var newPosition = mouseX / width * fullscreenVideoPlayer.duration
+                            fullscreenVideoPlayer.seek(newPosition)
+                        }
+                    }
+
+                    onPositionChanged: {
+                        if (pressed && fullscreenVideoPlayer.seekable) {
+                            var newPosition = Math.max(0, Math.min(mouseX, width)) / width * fullscreenVideoPlayer.duration
+                            fullscreenVideoPlayer.seek(newPosition)
+                        }
+                    }
+                }
+            }
+
+            // Time display for fullscreen - moved next to progress bar
+            Text {
+                id: fullscreenTimeDisplay
+                anchors.left: parent.left
+                anchors.leftMargin: Constants.spacing_m
+                anchors.top: fullscreenProgressBarBackground.bottom
+                anchors.topMargin: Constants.spacing_s
+                color: Material.foreground
+                font.pixelSize: 14
+                z: 10
+                text: {
+                    function formatTime(ms) {
+                        var totalSeconds = Math.floor(ms / 1000);
+                        var minutes = Math.floor(totalSeconds / 60);
+                        var seconds = totalSeconds % 60;
+                        return minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
+                    }
+
+                    return formatTime(fullscreenVideoPlayer.position) + " / " +
+                           formatTime(fullscreenVideoPlayer.duration);
+                }
+            }
+
+            // Play/pause button overlay in center of video
+            Rectangle {
+                anchors.centerIn: fullscreenVideoOutput
+                width: 80
+                height: 80
+                radius: 40
+                color: "#80000000"  // Semi-transparent black
+                visible: fullscreenVideoPlayer.playbackState !== MediaPlayer.PlayingState ||
+                         fullscreenVideoMouseArea.containsMouse
+                opacity: fullscreenVideoPlayer.playbackState === MediaPlayer.PlayingState ?
+                         (fullscreenVideoMouseArea.containsMouse ? 0.8 : 0) : 0.8
+                z: 10
+
+                Behavior on opacity {
+                    NumberAnimation { duration: 200 }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (fullscreenVideoPlayer.playbackState === MediaPlayer.PlayingState) {
+                            fullscreenVideoPlayer.pause()
+                        } else {
+                            fullscreenVideoPlayer.play()
+                        }
+                    }
+                }
+
+                Image {
+                    anchors.centerIn: parent
+                    width: 40
+                    height: 40
+                    source: fullscreenVideoPlayer.playbackState === MediaPlayer.PlayingState
+                            ? "qrc:/icons/pause.svg"
+                            : "qrc:/icons/play_arrow.svg"
+                    fillMode: Image.PreserveAspectFit
+                }
+            }
+
+            // Mouse area for the entire video to show/hide controls
+            MouseArea {
+                id: fullscreenVideoMouseArea
+                anchors.fill: fullscreenVideoOutput
+                hoverEnabled: true
+                onClicked: {
+                    if (fullscreenVideoPlayer.playbackState === MediaPlayer.PlayingState) {
+                        fullscreenVideoPlayer.pause()
+                    } else {
+                        fullscreenVideoPlayer.play()
+                    }
+                }
+            }
+
+            // Button row below the video
+            Row {
+                id: fullscreenButtonRow
+                anchors.top: fullscreenTimeDisplay.bottom
+                anchors.topMargin: Constants.spacing_m
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Constants.spacing_s
+                height: 80
+
+                Button {
+                    text: "Save Video"
+                    icon.source: "qrc:/icons/download.svg"
+                    onClicked: {
+                        // Connect to the signal first
+                        downloadCompleted.connect(videoDownloadCallback)
+                        // Then call the download function
+                        downloadAsync(videoViewerDialog.videoSource)
+                    }
+                }
+
+                Button {
+                    text: "Copy URL"
+                    icon.source: "qrc:/icons/content_copy.svg"
+                    onClicked: {
+                        clipboard.copyText(videoViewerDialog.videoSource)
+                        videoSaveNotification.setText("URL copied to clipboard")
+                    }
+                }
+            }
+
+            Rectangle {
+                id: videoSaveNotification
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: fullscreenTimeDisplay.bottom
+                anchors.topMargin: Constants.spacing_m
+                width: videoNotificationText.width + 40
+                height: 40
+                radius: 20
+                color: Material.accent
+                opacity: 0
+
+                Text {
+                    id: videoNotificationText
+                    anchors.centerIn: parent
+                    text: ""
+                    color: "white"
+                    font.bold: true
+                }
+
+                Behavior on opacity {
+                    NumberAnimation { duration: 300 }
+                }
+
+                Timer {
+                    id: videoCloseTimer
+                    interval: 3000
+                    running: videoSaveNotification.opacity > 0
+                    onTriggered: videoSaveNotification.opacity = 0
+                }
+
+                function setText(message) {
+                    videoNotificationText.text = message
+                    opacity = 1.0
+                }
+            }
+        }
+
+        onClosed: {
+            fullscreenVideoPlayer.stop()
+        }
+    }
+
+    function videoDownloadCallback(success, filePathOrError) {
+        // Disconnect after receiving the result
+        downloadCompleted.disconnect(videoDownloadCallback)
+
+        if (success) {
+            // For success, filePath contains the actual file path
+            videoSaveNotification.setText("Saved to Downloads folder: " + filePathOrError)
+        } else {
+            // For failure, filePath contains the error message
+            videoSaveNotification.setText("Download failed: " + filePathOrError)
+        }
+    }
+
+    function imageDownloadCallback(success, filePathOrError) {
+        // Disconnect after receiving the result
+        downloadCompleted.disconnect(imageDownloadCallback)
+
+        if (success) {
+            // For success, filePath contains the actual file path
+            saveNotification.setText("Saved to Downloads folder: " + filePathOrError)
+        } else {
+            // For failure, filePath contains the error message
+            saveNotification.setText("Download failed: " + filePathOrError)
         }
     }
 }

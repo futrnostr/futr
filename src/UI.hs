@@ -7,7 +7,7 @@ module UI where
 
 import Control.Exception (try, SomeException)
 import Control.Lens ((^.))
-import Control.Monad (filterM)
+import Control.Monad (filterM, void)
 import Control.Monad.Fix (mfix)
 import Data.Aeson (decode, encode, toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
@@ -22,16 +22,18 @@ import Data.Text (Text, drop, pack, unpack)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
+import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (TQueue)
 import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.FileSystem
 import Effectful.State.Static.Shared (get, gets, modify)
 import Effectful.TH
 import QtQuick
 import Graphics.QML hiding (fireSignal, runEngineLoop)
+import Graphics.QML qualified as QML
 import Network.Wreq qualified as Wreq
 import Prelude hiding (drop)
-import System.Directory (getHomeDirectory, createDirectoryIfMissing, doesFileExist)
-import System.FilePath ((</>), takeExtension, dropExtension)
+import System.FilePath ((</>), takeExtension, dropExtension, takeFileName)
 import Text.Read (readMaybe)
 import Text.Regex.TDFA ((=~))
 
@@ -574,26 +576,34 @@ runUI = interpret $ \_ -> \case
               return $ Just profileObj
             _ -> return Nothing,
 
-        defMethod' "download" $ \_ url -> runE $ do
-          homeDir <- liftIO $ getHomeDirectory
-          let downloadDir = homeDir </> "Downloads"
-          liftIO $ createDirectoryIfMissing True downloadDir
-          let baseFileName = fromMaybe "downloaded_file" $
-                            listToMaybe $ reverse $ Text.splitOn "/" $ Text.takeWhileEnd (/= '?') url
-          filePath <- liftIO $ findAvailableFilename downloadDir (unpack baseFileName)
+        defSignal "downloadCompleted" (Proxy :: Proxy DownloadCompleted),
 
-          result <- liftIO $ try $ do
-            r <- Wreq.get (unpack url)
-            let body = r ^. Wreq.responseBody
-            BSL.writeFile filePath body
-            return filePath
+        defMethod' "downloadAsync" $ \obj url -> runE $ do
+          -- Start the download asynchronously
+          void $ async $ do
+            homeDir <- getHomeDirectory
+            let downloadDir = homeDir </> "Downloads"
+            createDirectoryIfMissing True downloadDir
+            let baseFileName = fromMaybe "downloaded_file" $
+                              listToMaybe $ reverse $ Text.splitOn "/" $ Text.takeWhileEnd (/= '?') url
+            filePath <- findAvailableFilename downloadDir (unpack baseFileName)
+            let fileName = takeFileName filePath
 
-          case result of
-            Right path -> do
-              return $ Just $ pack path
-            Left (e :: SomeException) -> do
-              logError $ "Download failed: " <> pack (show e)
-              return Nothing
+            result <- liftIO $ try $ do
+              r <- Wreq.get (unpack url)
+              let body = r ^. Wreq.responseBody
+              BSL.writeFile filePath body
+              return filePath
+
+            -- Fire the signal with the result
+            case result of
+              Right _ -> do
+                liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
+              Left (e :: SomeException) -> do
+                logError $ "Download failed: " <> pack (show e)
+                liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
+
+          return ()
       ]
 
     rootObj <- newObject rootClass ()
@@ -636,8 +646,12 @@ parseContentParts content
                 let startPos = Text.length before
                     fullEntity = extractEntity (Text.drop (Text.length before) text)
                     endPos = startPos + Text.length fullEntity
-                    matchType = if typ == "url" && isImageUrl fullEntity
-                                then "image"
+                    matchType = if typ == "url" then
+                                  if isImageUrl fullEntity
+                                  then "image"
+                                  else if isVideoUrl fullEntity
+                                       then "video"
+                                       else typ
                                 else typ
                 in [(startPos, endPos, matchType)]
             ) positions
@@ -674,6 +688,10 @@ parseContentParts content
     -- Check if URL is an image
     isImageUrl :: Text -> Bool
     isImageUrl url = any (`Text.isSuffixOf` url) [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+
+    -- Check if URL is a video
+    isVideoUrl :: Text -> Bool
+    isVideoUrl url = any (`Text.isSuffixOf` url) [".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v"]
 
     -- Merge overlapping matches
     mergeOverlappingMatches :: [(Int, Int, Text)] -> [(Int, Int, Text)]
@@ -716,7 +734,7 @@ parseContentParts content
     cleanupContentParts (x:xs) = x : cleanupContentParts xs
 
 -- Helper function to find an available filename
-findAvailableFilename :: FilePath -> FilePath -> IO FilePath
+findAvailableFilename :: (FileSystem :> es) => FilePath -> FilePath -> Eff es FilePath
 findAvailableFilename dir baseFileName = do
   let tryPath = dir </> baseFileName
   exists <- doesFileExist tryPath
@@ -724,7 +742,7 @@ findAvailableFilename dir baseFileName = do
     then return tryPath
     else findNextAvailable dir baseFileName 1
   where
-    findNextAvailable :: FilePath -> FilePath -> Int -> IO FilePath
+    findNextAvailable :: (FileSystem :> es) => FilePath -> FilePath -> Int -> Eff es FilePath
     findNextAvailable dir' fileName counter = do
       let ext = takeExtension fileName
           baseName = dropExtension fileName
