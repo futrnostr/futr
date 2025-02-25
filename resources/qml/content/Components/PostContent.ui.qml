@@ -11,12 +11,29 @@ import Futr 1.0
 Pane {
     id: root
     padding: Constants.spacing_s
-    width: parent.width
+    width: parent.width - 2 * Constants.spacing_m
+    anchors.right: parent.right
+    anchors.rightMargin: Constants.spacing_s
+    anchors.left: parent.left
+    anchors.leftMargin: 0
     
     required property var post
     
     signal commentClicked()
     signal repostClicked()
+
+    // HTML escaping utility function
+    function escapeHtml(str) {
+        if (typeof str !== 'string') return '';
+        return str.replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/\r\n|\r/g, '<br>')
+                .replace(/\n/g, '<br>')
+                .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
+    }
     
     background: Rectangle {
         color: Material.dialogColor
@@ -24,149 +41,234 @@ Pane {
     }
 
     ColumnLayout {
-        width: parent.width
+        id: mainColumn
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.rightMargin: 5
         spacing: Constants.spacing_xs
 
         // Main post content
-        Flow {
+        ColumnLayout {
+            id: contentLayout
             Layout.fillWidth: true
+            spacing: Constants.spacing_xs
             visible: post.postType === "short_text_note" || post.postType === "quote_repost"
-            spacing: 2
 
-            Repeater {
-                model: post.contentParts
-                delegate: Item {
-                    required property var modelData
-                    height: contentLoader.height
-                    width: contentLoader.width
+            TextEdit {
+                id: contentTextEdit
+                Layout.fillWidth: true
+                readOnly: true
+                selectByMouse: true
+                wrapMode: Text.Wrap
+                textFormat: Text.RichText
+                color: Material.foreground
 
-                    Component {
-                        id: textComponent
-                        TextEdit {
-                            text: modelData.length > 1 ? modelData[1].replace(/</g, '&lt;').replace(/>/g, '&gt;') : ""
-                            readOnly: true
-                            selectByMouse: true
-                            color: Material.foreground
-                            wrapMode: Text.Wrap
-                            textFormat: Text.AutoText
-                        }
+                Component.onCompleted: {
+                    if (post && post.contentParts) {
+                        // Only process text content here
+                        text = generateHtmlContent(post.contentParts, false);
                     }
+                }
 
-                    Component {
-                        id: urlComponent
-                        TextEdit {
-                            text: modelData.length > 1 ? '<a href="' + modelData[1] + '" style="color: ' + Material.accentColor + '">' + modelData[1] + '</a>' : ""
-                            readOnly: true
-                            selectByMouse: true
-                            color: Material.foreground
-                            wrapMode: Text.Wrap
-                            textFormat: TextEdit.RichText
-                            onLinkActivated: (link) => Qt.openUrlExternally(link)
-                        }
-                    }
+                function generateHtmlContent(parts, isRefPost) {
+                    let htmlText = "";
 
-                    Component {
-                        id: imageComponent
-                        Image {
-                            source: modelData.length > 1 ? modelData[1] : ""
-                            fillMode: Image.PreserveAspectFit
-                            width: Math.min(root.width - 2 * Constants.spacing_s, sourceSize.width || root.width - 2 * Constants.spacing_s)
-                            height: sourceSize.height > 0 ? width * (sourceSize.height / sourceSize.width) : width
-                            asynchronous: true
-                            Layout.topMargin: Constants.spacing_xs
-                            Layout.bottomMargin: Constants.spacing_xs
+                    for (let i = 0; i < parts.length; i++) {
+                        const part = parts[i];
+                        const type = part[0];
+                        const content = part.length > 1 ? part[1] : "";
 
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: Qt.openUrlExternally(modelData[1])
+                        if (type === "text") {
+                            htmlText += escapeHtml(content);
+                        } else if (type === "url") {
+                            htmlText += `<a href="${content}" style="color: ${Material.accentColor};">${escapeHtml(content)}</a>`;
+                        } else if (type === "nprofile" || type === "npub") {
+                            const profile = getProfile(content);
+                            const displayName = profile && (profile.displayName || profile.name) ?
+                                               (profile.displayName || profile.name) :
+                                               content.substring(0, 18) + "...";
+                            htmlText += `<a href="profile://${content}" style="color: ${Material.accentColor};">@${displayName}</a>`;
+                        } else if (type === "image") {
+                            // Create image component with debug logging
+                            if (!isRefPost) {
+                                let imageComponent = Qt.createComponent("PostImage.ui.qml");
+                                let imageObject = imageComponent.createObject(contentLayout, {
+                                    "source": content,
+                                    "width": contentLayout.width,
+                                    "clickable": true,
+                                    "imageUrl": content
+                                });
+                                imageObject.Layout.fillWidth = true;
+                                imageObject.parent = contentLayout;
+                                imageObject.imageClicked.connect(function(url) {
+                                    imageViewerDialog.imageSource = url;
+                                    imageViewerDialog.open();
+                                });
                             }
+                        } else {
+                            // nostr references (note, nevent, etc)
+                            let label = type === "note" || type === "nevent" || type === "naddr" ? "📝 Note" : "🔗 Reference";
+                            htmlText += `<a href="note://${content}" style="color: ${Material.accentColor};">${label}</a>`;
                         }
                     }
 
-                    Component {
-                        id: nostrRefComponent
-                        Button {
-                            text: modelData.length > 0 ?
-                                  modelData[0] === "note" || modelData[0] === "nevent" || modelData[0] === "naddr" ? "📝 Note" :
-                                  modelData[0] === "npub" || modelData[0] === "nprofile" ? "👤 Profile" :
-                                  "🔗 Reference"
-                                : "🔗 Reference"
-                        }
-                    }
+                    return htmlText;
+                }
 
-                    Loader {
-                        id: contentLoader
-                        sourceComponent: {
-                            let type = modelData[0];
-                            if (type === "text") {
-                                return textComponent;
-                            } else if (type === "url") {
-                                return urlComponent;
-                            } else if (type === "image") {
-                                return imageComponent;
-                            } else {
-                                return nostrRefComponent;
-                            }
-                        }
+                onLinkActivated: function(link) {
+                    if (link.startsWith("profile://")) {
+                        // Handle profile navigation
+                        let profileId = link.substring(10);
+                        mainStack.push("ProfileView.qml", { profileId: profileId });
+                    } else if (link.startsWith("note://")) {
+                        // Handle note references
+                        console.log("Note clicked:", link.substring(7));
+                    } else {
+                        // External URLs
+                        Qt.openUrlExternally(link);
                     }
                 }
             }
         }
 
-        // Components moved here
-        Repeater {
-            model: post.referencedPosts || []
-            delegate: Rectangle {
-                visible: true
-                Layout.fillWidth: true
-                color: Qt.rgba(0, 0, 0, 0.1)
-                radius: 8
-                border.width: 1
-                border.color: Material.dividerColor
+        // Referenced post component with simplified content
+        Item {
+            Layout.fillWidth: true
+            Layout.preferredHeight: referencedPostLoader.item ? referencedPostLoader.item.height : 0
+            visible: post.referencedPost !== null &&
+                     (post.postType === "quote_repost" || post.postType === "repost")
 
-                implicitHeight: contentColumn.implicitHeight + 2 * Constants.spacing_m
+            Loader {
+                id: referencedPostLoader
+                width: parent.width
+                anchors.left: parent.left
+                anchors.right: parent.right
+                active: post.referencedPost !== null
+                sourceComponent: Rectangle {
+                    width: parent.width
+                    color: Qt.rgba(0, 0, 0, 0.1)
+                    radius: 8
+                    border.width: 1
+                    border.color: Material.dividerColor
 
-                ColumnLayout {
-                    id: contentColumn
-                    anchors {
-                        fill: parent
-                        margins: Constants.spacing_m
-                    }
-                    spacing: Constants.spacing_s
+                    property var refPost: post.referencedPost
 
-                    // Author info row
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Constants.spacing_m
+                    implicitHeight: contentColumn.implicitHeight + 2 * Constants.spacing_m
 
-                        ProfilePicture {
-                            Layout.preferredWidth: 36
-                            Layout.preferredHeight: 36
-                            imageSource: modelData.author ? Util.getProfilePicture(modelData.author.picture, modelData.author.npub) : ""
+                    ColumnLayout {
+                        id: contentColumn
+                        anchors {
+                            fill: parent
+                            margins: Constants.spacing_m
                         }
+                        spacing: Constants.spacing_s
 
-                        Text {
+                        // Author info row
+                        RowLayout {
                             Layout.fillWidth: true
-                            text: modelData.author ? (modelData.author.displayName || modelData.author.name) : ""
-                            font: Constants.fontMedium
-                            color: Material.foreground
-                            elide: Text.ElideRight
+                            spacing: Constants.spacing_m
+
+                            ProfilePicture {
+                                Layout.preferredWidth: 36
+                                Layout.preferredHeight: 36
+                                imageSource: refPost && refPost.author ?
+                                    Util.getProfilePicture(refPost.author.picture, refPost.author.npub) : ""
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: refPost && refPost.author ?
+                                    (refPost.author.displayName || refPost.author.name) : ""
+                                font: Constants.fontMedium
+                                color: Material.foreground
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                text: refPost ? (refPost.timestamp || "") : ""
+                                font: Constants.smallFontMedium
+                                color: Material.secondaryTextColor
+                            }
                         }
 
-                        Text {
-                            text: modelData.timestamp || ""
-                            font: Constants.smallFontMedium
-                            color: Material.secondaryTextColor
-                        }
-                    }
+                        // Referenced content with proper image handling
+                        ColumnLayout {
+                            id: refContentLayout
+                            Layout.fillWidth: true
+                            spacing: Constants.spacing_xs
 
-                    // Referenced content
-                    Text {
-                        Layout.fillWidth: true
-                        text: (modelData.content || "").replace(/nostr:(note|nevent|naddr)1[a-zA-Z0-9]+/g, '').trim()
-                        wrapMode: Text.Wrap
-                        color: Material.foreground
+                            TextEdit {
+                                id: refContentTextEdit
+                                Layout.fillWidth: true
+                                readOnly: true
+                                selectByMouse: true
+                                wrapMode: Text.Wrap
+                                textFormat: Text.RichText
+                                color: Material.foreground
+
+                                Component.onCompleted: {
+                                    if (refPost && refPost.contentParts) {
+                                        text = generateHtmlContent(refPost.contentParts, true);
+                                    }
+                                }
+
+                                function generateHtmlContent(parts, isRefPost) {
+                                    let htmlText = "";
+
+                                    for (let i = 0; i < parts.length; i++) {
+                                        const part = parts[i];
+                                        const type = part[0];
+                                        const content = part.length > 1 ? part[1] : "";
+
+                                        if (type === "text") {
+                                            htmlText += escapeHtml(content);
+                                        } else if (type === "url") {
+                                            htmlText += `<a href="${content}" style="color: ${Material.accentColor};">${escapeHtml(content)}</a>`;
+                                        } else if (type === "nprofile" || type === "npub") {
+                                            const profile = getProfile(content);
+                                            const displayName = profile && (profile.displayName || profile.name) ?
+                                                               (profile.displayName || profile.name) :
+                                                               content.substring(0, 8) + "...";
+                                            htmlText += `<a href="profile://${content}" style="color: ${Material.accentColor};">@${displayName}</a>`;
+                                        } else if (type === "image") {
+                                            let imageComponent = Qt.createComponent("PostImage.ui.qml");
+                                            let imageObject = imageComponent.createObject(refContentLayout, {
+                                                "source": content,
+                                                "width": refContentLayout.width,
+                                                "clickable": true,
+                                                "imageUrl": content
+                                            });
+                                            imageObject.Layout.fillWidth = true;
+                                            imageObject.parent = refContentLayout;
+                                            imageObject.imageClicked.connect(function(url) {
+                                                imageViewerDialog.imageSource = url;
+                                                imageViewerDialog.open();
+                                            });
+                                        } else {
+                                            // nostr references (note, nevent, etc)
+                                            let label = type === "note" || type === "nevent" || type === "naddr" ? "📝 Note" : "🔗 Reference";
+                                            htmlText += `<a href="note://${content}" style="color: ${Material.accentColor};">${label}</a>`;
+                                        }
+                                    }
+
+                                    return htmlText;
+                                }
+
+                                onLinkActivated: function(link) {
+                                    if (link.startsWith("profile://")) {
+                                        // Handle profile navigation
+                                        let profileId = link.substring(10);
+                                        mainStack.push("ProfileView.qml", { profileId: profileId });
+                                    } else if (link.startsWith("note://")) {
+                                        // Handle note references
+                                        console.log("Note clicked:", link.substring(7));
+                                    } else {
+                                        // External URLs
+                                        Qt.openUrlExternally(link);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -319,6 +421,116 @@ Pane {
         onAccepted: {
             deleteEvent(post.id, reasonField.text)
             reasonField.text = ""
+        }
+    }
+
+    Dialog {
+        id: imageViewerDialog
+        title: "View Image"
+        modal: true
+        standardButtons: Dialog.Close
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(appWindow.width * 0.9, 1000)
+        height: Math.min(appWindow.height * 0.8, 800)
+
+        property string imageSource: ""
+
+        contentItem: Item {
+            id: dialogContent
+            anchors.fill: parent
+
+            Image {
+                id: fullSizeImage
+                source: imageViewerDialog.imageSource
+                fillMode: Image.PreserveAspectFit
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.topMargin: 20
+                height: parent.height - buttonRow.height - Constants.spacing_m * 2
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (mouse.button === Qt.RightButton) {
+                            contextMenu.popup()
+                        }
+                    }
+
+                    Menu {
+                        id: contextMenu
+                        MenuItem {
+                            text: "Copy Image URL"
+                            onTriggered: {
+                                clipboard.copyText(imageViewerDialog.imageSource)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row {
+                id: buttonRow
+                anchors.bottom: parent.bottom
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottomMargin: Constants.spacing_m
+                spacing: Constants.spacing_m
+                height: 80
+
+                Button {
+                    text: "Save Image"
+                    icon.source: "qrc:/icons/download.svg"
+                    onClicked: {
+                        download(imageViewerDialog.imageSource)
+                        saveNotification.setText("Image saved to Downloads folder")
+                    }
+                }
+
+                Button {
+                    text: "Copy URL"
+                    icon.source: "qrc:/icons/content_copy.svg"
+                    onClicked: {
+                        clipboard.copyText(imageViewerDialog.imageSource)
+                        saveNotification.setText("URL copied to clipboard")
+                    }
+                }
+            }
+
+            Rectangle {
+                id: saveNotification
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: buttonRow.top
+                anchors.bottomMargin: Constants.spacing_m
+                width: notificationText.width + 40
+                height: 40
+                radius: 20
+                color: Material.accent
+                opacity: 0
+
+                Text {
+                    id: notificationText
+                    anchors.centerIn: parent
+                    text: ""
+                    color: "white"
+                    font.bold: true
+                }
+
+                Behavior on opacity {
+                    NumberAnimation { duration: 300 }
+                }
+
+                Timer {
+                    id: closeTimer
+                    interval: 3000
+                    running: saveNotification.opacity > 0
+                    onTriggered: saveNotification.opacity = 0
+                }
+
+                function setText(message) {
+                    notificationText.text = message
+                    opacity = 1.0
+                }
+            }
         }
     }
 }
