@@ -7,7 +7,6 @@ import Dialogs 1.0
 import Futr 1.0
 import HsQML.Model 1.0
 
-
 ScrollView {
     Layout.fillWidth: true
     Layout.fillHeight: true

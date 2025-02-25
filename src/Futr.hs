@@ -66,6 +66,13 @@ instance SignalKeyClass LoginStatusChanged where
     type SignalParams LoginStatusChanged = Bool -> Text -> IO ()
 
 
+-- | Signal key class for DownloadCompleted.
+data DownloadCompleted deriving Typeable
+
+instance SignalKeyClass DownloadCompleted where
+    type SignalParams DownloadCompleted = Bool -> Text -> IO ()
+
+
 -- | Search result.
 data SearchResult
   = ProfileResult { npub :: Text, relayUri :: Maybe Text }

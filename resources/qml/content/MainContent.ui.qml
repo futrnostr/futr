@@ -34,7 +34,7 @@ Rectangle {
         inputPlaceholder: qsTr("Post your reply")
         buttonText: qsTr("Reply")
         isQuoteMode: false
-        
+
         onMessageSubmitted: function(text) {
             comment(targetPost.id, text)
         }
@@ -194,7 +194,7 @@ Rectangle {
                         active: modelData !== undefined && modelData !== null
                         width: postsView.width - 32
                         x: 16
-                        height: active ? item.implicitHeight : 0
+                        Layout.preferredHeight: active ? item.implicitHeight : 0
 
                         sourceComponent: PostContent {
                             post: modelData
@@ -263,7 +263,7 @@ Rectangle {
                     delegate: Loader {
                         active: modelData !== undefined && modelData !== null
                         width: privateMessageListView.width - privateMessageListView.leftMargin - privateMessageListView.rightMargin - 15
-                        height: active ? item.height : 0
+                        Layout.preferredHeight: active ? item.implicitHeight : 0
 
                         sourceComponent: Item {
                             property var message: modelData

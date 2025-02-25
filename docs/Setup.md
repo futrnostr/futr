@@ -61,6 +61,8 @@ sudo apt-get install qtdeclarative5-dev \
                      libqt5quick5 \
                      qttools5-dev-tools \
                      qtbase5-dev \
+                     qtmultimedia5-dev \
+                     qml-module-qtmultimedia \
                      qt5-image-formats-plugins \
                      liblmdb-dev
 ```

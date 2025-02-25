@@ -23,7 +23,7 @@ Dialog {
     property bool isQuoteMode: false
 
     signal messageSubmitted(string text)
-    
+
     background: Rectangle {
         color: Material.dialogColor
         radius: 4
@@ -44,7 +44,7 @@ Dialog {
             spacing: 0
             clip: true
             id: scrollView
-            
+
             ColumnLayout {
                 width: scrollView.width - 20
                 Layout.fillWidth: true
@@ -70,9 +70,9 @@ Dialog {
                             Layout.topMargin: Constants.spacing_m
                             Layout.leftMargin: Constants.spacing_m
                             Layout.rightMargin: Constants.spacing_m
-                            
+
                             ProfilePicture {
-                                imageSource: root.targetPost ? 
+                                imageSource: root.targetPost ?
                                     Util.getProfilePicture(root.targetPost.authorPicture || "", root.targetPost.authorNpub || "") : ""
                                 Layout.preferredWidth: 48
                                 Layout.preferredHeight: 48

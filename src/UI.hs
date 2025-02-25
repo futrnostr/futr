@@ -5,29 +5,37 @@
 
 module UI where
 
-import Control.Monad (filterM)
+import Control.Exception (try, SomeException)
+import Control.Lens ((^.))
+import Control.Monad (filterM, void)
 import Control.Monad.Fix (mfix)
 import Data.Aeson (decode, encode, toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (find, nub)
+import Data.List (find, sortBy)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
 import Data.Text (Text, drop, pack, unpack)
+import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
+import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (TQueue)
 import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.FileSystem
 import Effectful.State.Static.Shared (get, gets, modify)
 import Effectful.TH
 import QtQuick
 import Graphics.QML hiding (fireSignal, runEngineLoop)
+import Graphics.QML qualified as QML
+import Network.Wreq qualified as Wreq
 import Prelude hiding (drop)
+import System.FilePath ((</>), takeExtension, dropExtension, takeFileName)
 import Text.Read (readMaybe)
-import Text.Regex.TDFA
+import Text.Regex.TDFA ((=~))
 
 import Logging
 import Nostr
@@ -267,8 +275,29 @@ runUI = interpret $ \_ -> \case
                   sealed <- unwrapGiftWrap ev kp
                   rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
                   return $ rumorContent <$> rumor
+                Repost -> return $ Just ""
                 _ -> return $ Just $ content ev
             Nothing -> return Nothing
+          return value,
+
+        defPropertySigRO' "contentParts" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          value <- runE $ getEvent eid >>= \case
+            Just eventWithRelays -> do
+              let ev = event eventWithRelays
+              content' <- case kind ev of
+                GiftWrap -> do
+                  kp <- getKeyPair
+                  sealed <- unwrapGiftWrap ev kp
+                  rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
+                  return $ fromMaybe "" $ rumorContent <$> rumor
+                Repost -> return ""
+                _ -> return $ content ev
+              let r = parseContentParts content'
+              --logDebug $ "content: " <> content'
+              --logDebug $ "contentParts: " <> pack (show r)
+              return r
+            Nothing -> return []
           return value,
 
         defPropertySigRO' "timestamp" changeKey' $ \obj -> do
@@ -326,21 +355,38 @@ runUI = interpret $ \_ -> \case
                 _ -> return Nothing
             Nothing -> return Nothing,
 
-        -- Referenced posts property
-        defPropertySigRO' "referencedPosts" changeKey' $ \obj -> do
+        -- Referenced post property - returns a single post for quote reposts and reposts
+        defPropertySigRO' "referencedPost" changeKey' $ \obj -> do
           let postId = fromObjRef obj :: EventId
           eventMaybe <- runE $ getEvent postId
           case eventMaybe of
             Just eventWithRelays -> do
               let ev = event eventWithRelays
-                  eTagRefs = [ eid | ("e":eidHex:_) <- tags ev
-                                 , Just eid <- [eventIdFromHex eidHex] ]
-                  qTagRefs = [ eid | ("q":eidHex:_) <- tags ev
-                                 , Just eid <- [eventIdFromHex eidHex] ]
-                  contentRefs = extractNostrReferences (content ev)
-                  allRefs = nub $ eTagRefs ++ qTagRefs ++ contentRefs
-              mapM (newObject postClass') allRefs
-            Nothing -> return [],
+                  isQuoteRepost = kind ev == ShortTextNote &&
+                                  any (\t -> case t of ("q":_) -> True; _ -> False) (tags ev)
+                  isRepost = kind ev == Repost
+
+              if isQuoteRepost || isRepost
+              then do
+                  -- For quote reposts, prefer q-tag reference
+                  let qTagRefs = [ eid | ("q":eidHex:_) <- tags ev
+                                       , Just eid <- [eventIdFromHex eidHex] ]
+                      -- For regular reposts, use e-tag reference
+                      eTagRefs = [ eid | ("e":eidHex:_) <- tags ev
+                                       , Just eid <- [eventIdFromHex eidHex] ]
+                      -- Take the first reference, prioritizing q-tag
+                      firstRef = case qTagRefs of
+                                   (ref:_) -> Just ref
+                                   [] -> case eTagRefs of
+                                           (ref:_) -> Just ref
+                                           [] -> Nothing
+
+                  case firstRef of
+                    Just ref -> Just <$> newObject postClass' ref
+                    Nothing -> return Nothing
+              else
+                  return Nothing
+            Nothing -> return Nothing,
 
         -- Event count properties using the helper
         defPropertySigRO' "repostCount" changeKey' $ \_ -> do
@@ -521,7 +567,43 @@ runUI = interpret $ \_ -> \case
             Just eid -> do
               let eid' = read (unpack eid) :: EventId
               setCurrentPost $ Just eid'
-            Nothing -> setCurrentPost Nothing
+            Nothing -> setCurrentPost Nothing,
+
+        defMethod' "getProfile" $ \_ input -> do
+          case parseNprofileOrNpub input of
+            Just (pk, _) -> do
+              profileObj <- newObject profileClass pk
+              return $ Just profileObj
+            _ -> return Nothing,
+
+        defSignal "downloadCompleted" (Proxy :: Proxy DownloadCompleted),
+
+        defMethod' "downloadAsync" $ \obj url -> runE $ do
+          -- Start the download asynchronously
+          void $ async $ do
+            homeDir <- getHomeDirectory
+            let downloadDir = homeDir </> "Downloads"
+            createDirectoryIfMissing True downloadDir
+            let baseFileName = fromMaybe "downloaded_file" $
+                              listToMaybe $ reverse $ Text.splitOn "/" $ Text.takeWhileEnd (/= '?') url
+            filePath <- findAvailableFilename downloadDir (unpack baseFileName)
+            let fileName = takeFileName filePath
+
+            result <- liftIO $ try $ do
+              r <- Wreq.get (unpack url)
+              let body = r ^. Wreq.responseBody
+              BSL.writeFile filePath body
+              return filePath
+
+            -- Fire the signal with the result
+            case result of
+              Right _ -> do
+                liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
+              Left (e :: SomeException) -> do
+                logError $ "Download failed: " <> pack (show e)
+                liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
+
+          return ()
       ]
 
     rootObj <- newObject rootClass ()
@@ -534,3 +616,139 @@ extractNostrReferences txt =
     let matches = txt =~ ("nostr:(note|nevent)1[a-zA-Z0-9]+" :: Text) :: [[Text]]
         refs = mapMaybe (bech32ToEventId . drop 6 . head) matches  -- drop "nostr:" prefix
     in refs
+
+
+-- | Parse content into parts (text, images, URLs, and nostr references)
+parseContentParts :: Text -> [[Text]]
+parseContentParts content
+    | Text.null content = []
+    | otherwise =
+        let matches = findMatches content
+            sortedMatches = sortBy (\(a,_,_) (b,_,_) -> compare a b) matches
+            mergedMatches = mergeOverlappingMatches sortedMatches
+            -- Post-process the results to clean up newlines before references
+            processedParts = processContentWithMatches content 0 mergedMatches
+        in cleanupContentParts processedParts
+  where
+    -- Find matches for URLs and nostr references
+    findMatches :: Text -> [(Int, Int, Text)]
+    findMatches text =
+        let httpMatches = findPrefixMatches text "http://" "url"
+            httpsMatches = findPrefixMatches text "https://" "url"
+            nostrMatches = findNostrMatches text
+        in httpMatches ++ httpsMatches ++ nostrMatches
+
+    -- Find all occurrences of a prefix and extract the full entity
+    findPrefixMatches :: Text -> Text -> Text -> [(Int, Int, Text)]
+    findPrefixMatches text prefix typ =
+        let positions = Text.breakOnAll prefix text
+        in concatMap (\(before, _) ->
+                let startPos = Text.length before
+                    fullEntity = extractEntity (Text.drop (Text.length before) text)
+                    endPos = startPos + Text.length fullEntity
+                    matchType = if typ == "url" then
+                                  if isImageUrl fullEntity
+                                  then "image"
+                                  else if isVideoUrl fullEntity
+                                       then "video"
+                                       else typ
+                                else typ
+                in [(startPos, endPos, matchType)]
+            ) positions
+
+    -- Find nostr references and categorize them by type
+    findNostrMatches :: Text -> [(Int, Int, Text)]
+    findNostrMatches text =
+        let positions = Text.breakOnAll "nostr:" text
+        in concatMap (\(before, _) ->
+                let startPos = Text.length before
+                    fullEntity = extractEntity (Text.drop (Text.length before) text)
+                    endPos = startPos + Text.length fullEntity
+                    -- Determine the nostr reference type
+                    nostrType = if Text.length fullEntity >= 11
+                                then
+                                    let prefix = Text.take 5 (Text.drop 6 fullEntity) -- after "nostr:"
+                                    in case prefix of
+                                        "note1" -> "note"
+                                        "npub1" -> "npub"
+                                        "nprof" -> "nprofile" -- "nprofile1"
+                                        "neven" -> "nevent"   -- "nevent1"
+                                        "naddr" -> "naddr"
+                                        _ -> "nostr"  -- fallback
+                                else "nostr"  -- too short to determine
+                in [(startPos, endPos, nostrType)]
+            ) positions
+
+    -- Extract a complete entity (URL or nostr reference) from text
+    extractEntity :: Text -> Text
+    extractEntity txt =
+        let validChar c = not (c `elem` (" \t\n\r<>\"'()[]{}" :: String))
+        in Text.takeWhile validChar txt
+
+    -- Check if URL is an image
+    isImageUrl :: Text -> Bool
+    isImageUrl url = any (`Text.isSuffixOf` url) [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+
+    -- Check if URL is a video
+    isVideoUrl :: Text -> Bool
+    isVideoUrl url = any (`Text.isSuffixOf` url) [".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v"]
+
+    -- Merge overlapping matches
+    mergeOverlappingMatches :: [(Int, Int, Text)] -> [(Int, Int, Text)]
+    mergeOverlappingMatches [] = []
+    mergeOverlappingMatches [x] = [x]
+    mergeOverlappingMatches (x@(start1, end1, typ1):y@(start2, end2, _):rest)
+        | start2 < end1 = mergeOverlappingMatches ((start1, max end1 end2, typ1) : rest)
+        | otherwise = x : mergeOverlappingMatches (y:rest)
+
+    -- Process content with matches
+    processContentWithMatches :: Text -> Int -> [(Int, Int, Text)] -> [[Text]]
+    processContentWithMatches text currentPos [] =
+        let remaining = Text.drop currentPos text
+        in if Text.null remaining
+           then []
+           else [["text", remaining]]
+    processContentWithMatches text currentPos ((start, end, typ):rest) =
+        let beforeText = Text.take (start - currentPos) (Text.drop currentPos text)
+            matchText = Text.take (end - start) (Text.drop start text)
+            -- For nostr types, strip the "nostr:" prefix
+            processedMatchText = if typ `elem` ["note", "npub", "nprofile", "nevent", "naddr"]
+                                then Text.drop 6 matchText  -- Remove "nostr:" prefix
+                                else matchText
+            beforePart = if Text.null beforeText then [] else [["text", beforeText]]
+            matchPart = [[typ, processedMatchText]]
+        in beforePart ++ matchPart ++ processContentWithMatches text end rest
+
+    -- Clean up content parts to handle newlines before references
+    cleanupContentParts :: [[Text]] -> [[Text]]
+    cleanupContentParts [] = []
+    cleanupContentParts [x] = [x]
+    cleanupContentParts (["text", txt]:next@[typ, _]:rest)
+        | typ `elem` ["note", "npub", "nprofile", "nevent", "naddr"] && Text.isSuffixOf "\n" txt =
+            -- Remove trailing newline from text before a reference
+            let cleanedText = Text.dropWhileEnd (== '\n') txt
+            in if Text.null cleanedText
+               then next : cleanupContentParts rest
+               else ["text", cleanedText] : next : cleanupContentParts rest
+        | otherwise = ["text", txt] : cleanupContentParts (next:rest)
+    cleanupContentParts (x:xs) = x : cleanupContentParts xs
+
+-- Helper function to find an available filename
+findAvailableFilename :: (FileSystem :> es) => FilePath -> FilePath -> Eff es FilePath
+findAvailableFilename dir baseFileName = do
+  let tryPath = dir </> baseFileName
+  exists <- doesFileExist tryPath
+  if not exists
+    then return tryPath
+    else findNextAvailable dir baseFileName 1
+  where
+    findNextAvailable :: (FileSystem :> es) => FilePath -> FilePath -> Int -> Eff es FilePath
+    findNextAvailable dir' fileName counter = do
+      let ext = takeExtension fileName
+          baseName = dropExtension fileName
+          newName = baseName ++ " (" ++ show counter ++ ")" ++ ext
+          tryPath = dir' </> newName
+      exists <- doesFileExist tryPath
+      if not exists
+        then return tryPath
+        else findNextAvailable dir' fileName (counter + 1)
