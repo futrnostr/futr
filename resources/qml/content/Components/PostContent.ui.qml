@@ -215,6 +215,23 @@ Pane {
                                 Layout.preferredHeight: 36
                                 imageSource: refPost && refPost.author ?
                                     Util.getProfilePicture(refPost.author.picture, refPost.author.npub) : ""
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        setCurrentProfile(refPost.author.npub)
+                                        openChat(refPost.author.npub)
+                                        profileLoader.setSource("../Profile/Profile.ui.qml", {
+                                            "profileData": currentProfile,
+                                            "npub": refPost.author.npub
+                                        })
+                                        chatLoader.setSource("../MainContent.ui.qml", {
+                                            "profileData": currentProfile,
+                                            "npub": refPost.author.npub
+                                        })
+                                    }
+                                }
                             }
 
                             Text {
@@ -224,6 +241,23 @@ Pane {
                                 font: Constants.fontMedium
                                 color: Material.foreground
                                 elide: Text.ElideRight
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        setCurrentProfile(refPost.author.npub)
+                                        openChat(refPost.author.npub)
+                                        profileLoader.setSource("../Profile/Profile.ui.qml", {
+                                            "profileData": currentProfile,
+                                            "npub": refPost.author.npub
+                                        })
+                                        chatLoader.setSource("../MainContent.ui.qml", {
+                                            "profileData": currentProfile,
+                                            "npub": refPost.author.npub
+                                        })
+                                    }
+                                }
                             }
 
                             Text {
