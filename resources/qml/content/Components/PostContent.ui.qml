@@ -155,6 +155,7 @@ Pane {
                             }
                         }
                         setCurrentProfile(profileId)
+                        openChat(profileId)
                         profileLoader.setSource("../Profile/Profile.ui.qml", {
                             "profileData": currentProfile,
                             "npub": profileId
