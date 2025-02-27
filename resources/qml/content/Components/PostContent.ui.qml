@@ -220,7 +220,7 @@ Pane {
                             Text {
                                 Layout.fillWidth: true
                                 text: refPost && refPost.author ?
-                                    (refPost.author.displayName || refPost.author.name) : ""
+                                    (refPost.author.displayName || refPost.author.name || refPost.author.npub) : ""
                                 font: Constants.fontMedium
                                 color: Material.foreground
                                 elide: Text.ElideRight
