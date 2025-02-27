@@ -354,7 +354,24 @@ Pane {
                                     if (link.startsWith("profile://")) {
                                         // Handle profile navigation
                                         let profileId = link.substring(10);
-                                        mainStack.push("ProfileView.qml", { profileId: profileId });
+                                        // Convert nprofile to npub if necessary
+                                        if (profileId.startsWith("nprofile")) {
+                                            profileId = convertNprofileToNpub(profileId);
+                                            if (!profileId) {
+                                                console.error("Failed to convert nprofile to npub");
+                                                return;
+                                            }
+                                        }
+                                        setCurrentProfile(profileId)
+                                        openChat(profileId)
+                                        profileLoader.setSource("../Profile/Profile.ui.qml", {
+                                            "profileData": currentProfile,
+                                            "npub": profileId
+                                        })
+                                        chatLoader.setSource("../MainContent.ui.qml", {
+                                            "profileData": currentProfile,
+                                            "npub": profileId
+                                        })
                                     } else if (link.startsWith("note://")) {
                                         // Handle note references
                                         console.log("Note clicked:", link.substring(7));
