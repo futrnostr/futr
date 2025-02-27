@@ -169,13 +169,12 @@ runFutr = interpret $ \_ -> \case
   Search _ input -> do
     st <- get @AppState
     let myPubKey = keyPairToPubKeyXO <$> keyPair st
-
     if not ("nprofile" `isPrefixOf` input || "npub" `isPrefixOf` input)
       then return NoResult
       else case parseNprofileOrNpub input of
         Nothing -> return NoResult
         Just (pubkey', maybeRelay) 
-          | Just pubkey' == myPubKey -> return NoResult
+          | Just pubkey' == myPubKey -> return $ ProfileResult (pubKeyXOToBech32 pubkey') maybeRelay
           | otherwise -> do
               currentFollows <- maybe [] id <$> traverse getFollows myPubKey
               if any (\f -> pubkey f == pubkey') currentFollows

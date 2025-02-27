@@ -576,6 +576,11 @@ runUI = interpret $ \_ -> \case
               return $ Just profileObj
             _ -> return Nothing,
 
+        defMethod' "convertNprofileToNpub" $ \_ input -> runE $ do
+          case parseNprofileOrNpub input of
+            Just (pk, _) -> return $ Just $ pubKeyXOToBech32 pk
+            _ -> return Nothing,
+
         defSignal "downloadCompleted" (Proxy :: Proxy DownloadCompleted),
 
         defMethod' "downloadAsync" $ \obj url -> runE $ do
@@ -685,11 +690,9 @@ parseContentParts content
         let validChar c = not (c `elem` (" \t\n\r<>\"'()[]{}" :: String))
         in Text.takeWhile validChar txt
 
-    -- Check if URL is an image
     isImageUrl :: Text -> Bool
     isImageUrl url = any (`Text.isSuffixOf` url) [".jpg", ".jpeg", ".png", ".gif", ".webp"]
 
-    -- Check if URL is a video
     isVideoUrl :: Text -> Bool
     isVideoUrl url = any (`Text.isSuffixOf` url) [".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v"]
 
