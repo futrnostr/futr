@@ -54,6 +54,26 @@ Pane {
         anchors.rightMargin: 5
         spacing: Constants.spacing_xs
 
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.bottomMargin: Constants.spacing_xs
+            visible: post.referencedPost !== null &&
+                     (post.postType === "quote_repost" || post.postType === "repost")
+
+            Image {
+                source: "qrc:/icons/repeat.svg"
+                sourceSize.width: 20
+                sourceSize.height: 20
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            Text {
+                text: post.postType === "repost" ? "Reposted" : "Quote Reposted"
+                font: Constants.smallFontMedium
+                color: Material.secondaryTextColor
+            }
+        }
+
         ColumnLayout {
             id: contentLayout
             Layout.fillWidth: true
