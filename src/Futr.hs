@@ -365,7 +365,7 @@ runFutr = interpret $ \_ -> \case
           , kind' = NE.ShortTextNote
           , tags' = [ ["q", eventIdToHex $ eventId event, relayUrl, pubKeyXOToHex $ pubKey event]
                     ]
-          , content' = quote' <> "\n\nnostr:" <> eventToNevent event (Just relayUrl)
+          , content' = quote' <> "\n\nnostr:" <> eventToNevent event [relayUrl]
           }
 
   Comment eid comment' -> do
