@@ -179,8 +179,12 @@ Item {
                                         console.error("Error loading video component:", videoComponent.errorString());
                                     }
                                 } else {
-                                    let label = "🔗 Reference";
-                                    htmlText += `<a href="note://${content}" style="color: ${Material.accentColor};">${label}</a>`;
+                                    let referencedPost = getPost(content);
+                                    let referencedComponent = Qt.createComponent("ReferencedPost.ui.qml");
+                                    let referencedObject = referencedComponent.createObject(refContentLayout, {
+                                        "refPost": referencedPost,
+                                        "width": refContentLayout.width
+                                    });
                                 }
                             }
 
