@@ -16,50 +16,54 @@ ListView {
     keyNavigationEnabled: true
     keyNavigationWraps: false
 
-    property bool userHeld: false
+    property bool shouldBeAtBottom: false
 
-    function isAtBottom() {
-        return (contentHeight - height - contentY) < 10
+    Component.onCompleted: {
+        positionViewAtEnd()
+        shouldBeAtBottom = true
     }
 
-    Timer {
-        id: stableLayoutTimer
-        interval: 300
-        repeat: false
-        onTriggered: {
-            if (!userHeld) {
-                root.forceLayout()
-                Qt.callLater(function() {
-                    if (!userHeld) {
-                        positionViewAtEnd()
-                    }
-                })
-            }
-        }
-    }
-
-    onContentYChanged: {
-        if (!isAtBottom()) {
-            userHeld = true
-        } else {
-            userHeld = false
+    onCountChanged: {
+        if (shouldBeAtBottom) {
+            positionViewAtEnd()
         }
     }
 
     onContentHeightChanged: {
-        if (!userHeld) {
-            stableLayoutTimer.restart()
+        if (shouldBeAtBottom) {
+            positionViewAtEnd()
         }
     }
 
-    Component.onCompleted: {
-        Qt.callLater(function() {
-            root.forceLayout()
-            Qt.callLater(function() {
-                root.forceLayout()
-                positionViewAtEnd()
-            })
-        })
+    onMovementStarted: {
+        console.log("movement started")
+        shouldBeAtBottom = false
+    }
+
+    onMovementEnded: {
+        console.log("movement ended")
+        if (atYEnd) {
+            shouldBeAtBottom = true
+        }
+    }
+
+    onFlickStarted: {
+        console.log("flick started")
+        shouldBeAtBottom = false
+    }
+
+    onFlickEnded: {
+        console.log("flick ended")
+        if (atYEnd) {
+            shouldBeAtBottom = true
+        }
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            shouldBeAtBottom = true
+            positionViewAtEnd()
+        }
     }
 
     ScrollBar.vertical: ScrollBar {
@@ -69,6 +73,24 @@ ListView {
         policy: ScrollBar.AlwaysOn
         topPadding: topArrow.height
         bottomPadding: bottomArrow.height
+
+        onActiveChanged: {
+            if (active) {
+                root.shouldBeAtBottom = false
+            } else {
+                if (root.atYEnd) {
+                    root.shouldBeAtBottom = true
+                }
+            }
+        }
+
+        onPressedChanged: {
+            if (pressed) {
+                root.shouldBeAtBottom = false
+            } else if (root.atYEnd) {
+                root.shouldBeAtBottom = true
+            }
+        }
 
         Rectangle {
             id: topArrow

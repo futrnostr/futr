@@ -211,7 +211,7 @@ runUI = interpret $ \_ -> \case
               let e = event eventWithRelays
               let r = head $ Set.toList $ relays eventWithRelays
               runE $ logDebug $ "nevent: " <> pack (show e)
-              return $ eventToNevent e (Just r)
+              return $ eventToNevent e [r]
             Nothing -> return "",
 
         defPropertySigRO' "raw" changeKey' $ \obj -> do
@@ -259,7 +259,6 @@ runUI = interpret $ \_ -> \case
                         Repost -> "repost"
                         Comment -> "comment"
                         GiftWrap -> "gift_wrap"
-                        DirectMessage -> "direct_message"
                         _ -> "unknown"
                 Nothing -> "unknown"
           return value,
@@ -291,11 +290,17 @@ runUI = interpret $ \_ -> \case
                   sealed <- unwrapGiftWrap ev kp
                   rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
                   return $ fromMaybe "" $ rumorContent <$> rumor
-                Repost -> return ""
+                Repost -> do
+                  let repostedId = listToMaybe [ eid | ("e":eid:_) <- tags ev ]
+                  case repostedId of
+                    Just eid' -> do
+                      let eid'' = read (unpack eid') :: EventId
+                      return $ "nostr:" <> (eventIdToNote eid'')
+                    Nothing -> return ""
                 _ -> return $ content ev
               let r = parseContentParts content'
-              --logDebug $ "content: " <> content'
-              --logDebug $ "contentParts: " <> pack (show r)
+              logDebug $ "content: " <> content'
+              logDebug $ "contentParts: " <> pack (show r)
               return r
             Nothing -> return []
           return value,
@@ -353,39 +358,6 @@ runUI = interpret $ \_ -> \case
               case (parentId, rootId) of
                 (Just p, Just r) | p /= r -> Just <$> newObject postClass' p
                 _ -> return Nothing
-            Nothing -> return Nothing,
-
-        -- Referenced post property - returns a single post for quote reposts and reposts
-        defPropertySigRO' "referencedPost" changeKey' $ \obj -> do
-          let postId = fromObjRef obj :: EventId
-          eventMaybe <- runE $ getEvent postId
-          case eventMaybe of
-            Just eventWithRelays -> do
-              let ev = event eventWithRelays
-                  isQuoteRepost = kind ev == ShortTextNote &&
-                                  any (\t -> case t of ("q":_) -> True; _ -> False) (tags ev)
-                  isRepost = kind ev == Repost
-
-              if isQuoteRepost || isRepost
-              then do
-                  -- For quote reposts, prefer q-tag reference
-                  let qTagRefs = [ eid | ("q":eidHex:_) <- tags ev
-                                       , Just eid <- [eventIdFromHex eidHex] ]
-                      -- For regular reposts, use e-tag reference
-                      eTagRefs = [ eid | ("e":eidHex:_) <- tags ev
-                                       , Just eid <- [eventIdFromHex eidHex] ]
-                      -- Take the first reference, prioritizing q-tag
-                      firstRef = case qTagRefs of
-                                   (ref:_) -> Just ref
-                                   [] -> case eTagRefs of
-                                           (ref:_) -> Just ref
-                                           [] -> Nothing
-
-                  case firstRef of
-                    Just ref -> Just <$> newObject postClass' ref
-                    Nothing -> return Nothing
-              else
-                  return Nothing
             Nothing -> return Nothing,
 
         -- Event count properties using the helper
@@ -574,6 +546,32 @@ runUI = interpret $ \_ -> \case
             Just (pk, _) -> do
               profileObj <- newObject profileClass pk
               return $ Just profileObj
+            _ -> return Nothing,
+
+        -- Get a post from a nostr: reference (note, nevent, naddr)
+        defMethod' "getPost" $ \_ input -> do
+          putStrLn $ "input: " <> unpack input
+          let prefix = Text.takeWhile (/= '1') input
+          putStrLn $ "prefix: " <> unpack prefix
+          case prefix of
+            "note" -> case noteToEventId input of
+              Just eid -> do
+                eventObj <- newObject postClass eid
+                return $ Just eventObj
+              Nothing -> return Nothing
+            "nevent" -> case neventToEvent input of
+              Just (eid, _, _, _) -> do
+                putStrLn $ "nevent: " <> show eid
+                eventObj <- newObject postClass eid
+                return $ Just eventObj
+              Nothing -> do
+                putStrLn $ "nevent: not found"
+                return Nothing
+            "naddr" -> case naddrToEvent input of
+              Just (eid, _, _) -> do
+                eventObj <- newObject postClass eid
+                return $ Just eventObj
+              Nothing -> return Nothing
             _ -> return Nothing,
 
         defMethod' "convertNprofileToNpub" $ \_ input -> runE $ do

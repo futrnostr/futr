@@ -12,6 +12,8 @@ module Nostr.Bech32
     , nrelayToRelay
     , relayToNrelay
     , bech32ToEventId
+    , eventIdToNote
+    , noteToEventId
     ) where
 
 import Codec.Binary.Bech32 qualified as Bech32
@@ -71,27 +73,40 @@ naddrToEvent txt = do
   return (eventId', pubKey', kind')
 
 
+-- | Convert an EventId to note bech32 encoding
+eventIdToNote :: EventId -> T.Text
+eventIdToNote eid = toBech32 "note" (getEventId eid)
+
+
+-- | Decode note bech32 encoding to EventId
+noteToEventId :: T.Text -> Maybe EventId
+noteToEventId txt = do
+    bs <- fromBech32 "note" txt
+    Just (EventId bs)
+
+
 -- | Convert an Event to nevent bech32 encoding
-eventToNevent :: Event -> Maybe RelayURI -> T.Text
-eventToNevent event relayURI' = toBech32 "nevent" $ encodeTLV tlvData
+eventToNevent :: Event -> [RelayURI] -> T.Text
+eventToNevent event relays = toBech32 "nevent" $ encodeTLV tlvData
   where
-    tlvData = filter ((/= 1) . fst) $ -- Remove empty relay slot but maintain order
+    tlvData = 
       [ (0, BSS.toShort $ getEventId $ eventId event)
-      , (1, BSS.toShort $ maybe "" encodeUtf8 relayURI')
-      , (2, BSS.toShort $ exportPubKeyXO $ pubKey event)
+      ] ++ map (\r -> (1, BSS.toShort $ encodeUtf8 r)) relays ++
+      [ (2, BSS.toShort $ exportPubKeyXO $ pubKey event)
       , (3, BSS.toShort $ LBS.toStrict $ runPut $ putWord32be $ fromIntegral $ kindToInt $ kind event)
       ]
 
 
 -- | Decode nevent bech32 encoding to Event components
-neventToEvent :: T.Text -> Maybe (EventId, PubKeyXO, Kind)
+neventToEvent :: T.Text -> Maybe (EventId, [RelayURI], Maybe PubKeyXO, Maybe Kind)
 neventToEvent txt = do
   bs <- fromBech32 "nevent" txt
   let tlvs = decodeTLV bs
   eventId' <- lookup 0 tlvs >>= (Just . EventId . BSS.fromShort)
-  pubKey' <- lookup 2 tlvs >>= (importPubKeyXO . BSS.fromShort)
-  kind' <- lookup 3 tlvs >>= (readMaybe . T.unpack . decodeUtf8 . BSS.fromShort)
-  return (eventId', pubKey', kind')
+  let relays = mapMaybe (\(t, v) -> if t == 1 then Just (decodeUtf8 $ BSS.fromShort v) else Nothing) tlvs
+  let pubKey' = lookup 2 tlvs >>= (importPubKeyXO . BSS.fromShort)
+  let kind' = lookup 3 tlvs >>= (readMaybe . T.unpack . decodeUtf8 . BSS.fromShort)
+  return (eventId', relays, pubKey', kind')
 
 
 -- | Convert a PubKeyXO and list of relays to nprofile bech32 encoding

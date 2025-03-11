@@ -8,6 +8,7 @@ PostImage 1.0 PostImage.ui.qml
 PostVideo 1.0 PostVideo.ui.qml
 ProfilePicture 1.0 ProfilePicture.ui.qml
 PublishAlert 1.0 PublishAlert.ui.qml
+ReferencedPost 1.0 ReferencedPost.ui.qml
 RelayStatusIcon 1.0 RelayStatusIcon.ui.qml
 ScrollingListView 1.0 ScrollingListView.ui.qml
 VideoPlayer 1.0 VideoPlayer.ui.qml
