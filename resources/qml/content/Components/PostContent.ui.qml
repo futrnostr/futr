@@ -98,97 +98,130 @@ Pane {
 
                 function generateHtmlContent(parts) {
                     let htmlText = "";
+                    let hasCurrentText = false;
+
+                    function createTextEdit(text) {
+                        if (!text.trim()) return; // Skip empty text
+
+                        let textObject = Qt.createQmlObject(`
+                            import QtQuick 2.15
+                            import QtQuick.Controls 2.15
+                            import QtQuick.Controls.Material 2.15
+                            import QtQuick.Layouts 1.15
+
+                            TextEdit {
+                                Layout.fillWidth: true
+                                readOnly: true
+                                selectByMouse: true
+                                wrapMode: Text.Wrap
+                                textFormat: Text.RichText
+                                color: Material.foreground
+                                text: "${text.replace(/"/g, '\\"')}"
+                            }
+                        `, contentLayout);
+
+                        textObject.Layout.fillWidth = true;
+                        textObject.parent = contentLayout;
+                        textObject.linkActivated.connect(function(link) {
+                            contentTextEdit.onLinkActivated(link);
+                        });
+                    }
 
                     for (let i = 0; i < parts.length; i++) {
                         const part = parts[i];
                         const type = part[0];
                         const content = part.length > 1 ? part[1] : "";
 
-                        if (type === "text") {
-                            htmlText += escapeHtml(content);
-                        } else if (type === "url") {
-                            htmlText += `<a href="${content}" style="color: ${Material.accentColor};">${escapeHtml(content)}</a>`;
-                        } else if (type === "nprofile" || type === "npub") {
-                            const profile = getProfile(content);
-                            const displayName = profile && (profile.displayName || profile.name) ?
-                                               (profile.displayName || profile.name) :
-                                               content.substring(0, 18) + "...";
-                            htmlText += `<a href="profile://${content}" style="color: ${Material.accentColor};">@${displayName}</a>`;
-                        } else if (type === "image") {
-                            let imageComponent = Qt.createComponent("PostImage.ui.qml");
-                            let imageObject = imageComponent.createObject(contentLayout, {
-                                "source": content,
-                                "width": contentLayout.width,
-                                "clickable": true,
-                                "imageUrl": content
-                            });
-                            imageObject.Layout.fillWidth = true;
-                            imageObject.parent = contentLayout;
-                            imageObject.imageClicked.connect(function(url) {
-                                imageViewerDialog.imageSource = url;
-                                imageViewerDialog.open();
-                            });
-                        } else if (type === "video") {
-                            let videoComponent = Qt.createComponent("PostVideo.ui.qml");
-                            if (videoComponent.status === Component.Ready) {
-                                let videoObject = videoComponent.createObject(contentLayout, {
+                        if (type === "text" || type === "url" || type === "nprofile" || type === "npub") {
+                            hasCurrentText = true;
+
+                            if (type === "text") {
+                                htmlText += escapeHtml(content);
+                            } else if (type === "url") {
+                                htmlText += `<a href="${content}" style="color: ${Material.accentColor};">${escapeHtml(content)}</a>`;
+                            } else if (type === "nprofile" || type === "npub") {
+                                const profile = getProfile(content);
+                                const displayName = profile && (profile.displayName || profile.name) ?
+                                                   (profile.displayName || profile.name) :
+                                                   content.substring(0, 18) + "...";
+                                htmlText += `<a href="profile://${content}" style="color: ${Material.accentColor};">@${displayName}</a>`;
+                            }
+                        } else {
+                            // If we have accumulated text, create a TextEdit before adding non-text content
+                            if (hasCurrentText) {
+                                createTextEdit(htmlText);
+                                htmlText = "";
+                                hasCurrentText = false;
+                            }
+
+                            if (type === "image") {
+                                let imageComponent = Qt.createComponent("PostImage.ui.qml");
+                                let imageObject = imageComponent.createObject(contentLayout, {
                                     "source": content,
                                     "width": contentLayout.width,
                                     "clickable": true,
-                                    "videoUrl": content
+                                    "imageUrl": content
                                 });
-
-                                if (videoObject) {
-                                    videoObject.Layout.fillWidth = true;
-                                    videoObject.parent = contentLayout;
-                                    videoObject.fullScreenRequested.connect(function(url) {
-                                        openFullscreenVideo(url);
+                                imageObject.Layout.fillWidth = true;
+                                imageObject.parent = contentLayout;
+                                imageObject.imageClicked.connect(function(url) {
+                                    imageViewerDialog.imageSource = url;
+                                    imageViewerDialog.open();
+                                });
+                            } else if (type === "video") {
+                                let videoComponent = Qt.createComponent("PostVideo.ui.qml");
+                                if (videoComponent.status === Component.Ready) {
+                                    let videoObject = videoComponent.createObject(contentLayout, {
+                                        "source": content,
+                                        "width": contentLayout.width,
+                                        "clickable": true,
+                                        "videoUrl": content
                                     });
-                                } else {
-                                    console.error("Failed to create video object");
-                                }
-                            } else {
-                                console.error("Error loading video component:", videoComponent.errorString());
-                            }
-                        } else if (type === "note" || type === "nevent" || type === "naddr") {
-                            let post = getPost(content);
-                            console.log("post:", post);
-                            if (post) {
-                                let referencedPostComponent = Qt.createComponent("ReferencedPost.ui.qml");
-                                if (referencedPostComponent.status === Component.Ready) {
-                                    console.log("post:", post);
-                                    console.log("post.id:", post.id);
-                                    console.log("post.content:", post.content);
-                                    console.log("post.contentParts:", post.contentParts);
-                                    console.log("post.author:", post.author);
 
-                                    if (post.author) {
-                                        console.log("post.author.npub:", post.author.npub);
-                                        console.log("post.author.displayName:", post.author.displayName);
-                                        console.log("post.author.name:", post.author.name);
-                                        console.log("post.author.picture:", post.author.picture);
-                                    }
-
-                                    let referencedPostObject = referencedPostComponent.createObject(contentLayout, {
-                                        "refPost": post
-                                    });
-                                    if (referencedPostObject) {
-                                        console.log("ReferencedPost component created successfully.");
-                                        referencedPostObject.Layout.fillWidth = true;
-                                        referencedPostObject.parent = contentLayout;
+                                    if (videoObject) {
+                                        videoObject.Layout.fillWidth = true;
+                                        videoObject.parent = contentLayout;
+                                        videoObject.fullScreenRequested.connect(function(url) {
+                                            openFullscreenVideo(url);
+                                        });
                                     } else {
-                                        console.error("Failed to create ReferencedPost object.");
+                                        console.error("Failed to create video object");
                                     }
                                 } else {
-                                    console.error("Error loading referenced post component:", referencedPostComponent.errorString());
+                                    console.error("Error loading video component:", videoComponent.errorString());
                                 }
-                            } else {
-                                // Display a label indicating the event is not found
-                                let notFoundLabel = Qt.createQmlObject('import QtQuick 2.15; Text { text: "Event not found, we\'re trying to find it."; color: "red"; }', contentLayout);
-                                notFoundLabel.Layout.fillWidth = true;
-                                notFoundLabel.parent = contentLayout;
+                            } else if (type === "note" || type === "nevent" || type === "naddr") {
+                                let post = getPost(content);
+
+                                if (post) {
+                                    let referencedPostComponent = Qt.createComponent("ReferencedPost.ui.qml");
+                                    if (referencedPostComponent.status === Component.Ready) {
+                                        let referencedPostObject = referencedPostComponent.createObject(contentLayout, {
+                                            "refPost": post
+                                        });
+                                        if (referencedPostObject) {
+                                            referencedPostObject.Layout.fillWidth = true;
+                                            referencedPostObject.parent = contentLayout;
+                                        } else {
+                                            console.error("Failed to create ReferencedPost object.");
+                                        }
+                                    } else {
+                                        console.error("Error loading referenced post component:", referencedPostComponent.errorString());
+                                    }
+                                } else {
+                                    // Display a label indicating the event is not found
+                                    let notFoundLabel = Qt.createQmlObject('import QtQuick 2.15; Text { text: "Event not found, we\'re trying to find it."; color: "red"; }', contentLayout);
+                                    notFoundLabel.Layout.fillWidth = true;
+                                    notFoundLabel.parent = contentLayout;
+                                }
                             }
                         }
+                    }
+
+                    // Create the final TextEdit if there's any remaining text
+                    if (hasCurrentText) {
+                        createTextEdit(htmlText);
+                        return ""; // Return empty string since we've already created the TextEdit objects
                     }
 
                     return htmlText;
