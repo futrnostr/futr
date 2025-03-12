@@ -299,8 +299,8 @@ runUI = interpret $ \_ -> \case
                     Nothing -> return ""
                 _ -> return $ content ev
               let r = parseContentParts content'
-              logDebug $ "content: " <> content'
-              logDebug $ "contentParts: " <> pack (show r)
+              --logDebug $ "content: " <> content'
+              --logDebug $ "contentParts: " <> pack (show r)
               return r
             Nothing -> return []
           return value,
@@ -550,10 +550,7 @@ runUI = interpret $ \_ -> \case
 
         -- Get a post from a nostr: reference (note, nevent, naddr)
         defMethod' "getPost" $ \_ input -> do
-          putStrLn $ "input: " <> unpack input
-          let prefix = Text.takeWhile (/= '1') input
-          putStrLn $ "prefix: " <> unpack prefix
-          case prefix of
+          case Text.takeWhile (/= '1') input of
             "note" -> case noteToEventId input of
               Just eid -> do
                 eventObj <- newObject postClass eid
@@ -561,11 +558,9 @@ runUI = interpret $ \_ -> \case
               Nothing -> return Nothing
             "nevent" -> case neventToEvent input of
               Just (eid, _, _, _) -> do
-                putStrLn $ "nevent: " <> show eid
                 eventObj <- newObject postClass eid
                 return $ Just eventObj
               Nothing -> do
-                putStrLn $ "nevent: not found"
                 return Nothing
             "naddr" -> case naddrToEvent input of
               Just (eid, _, _) -> do
@@ -685,7 +680,7 @@ parseContentParts content
     -- Extract a complete entity (URL or nostr reference) from text
     extractEntity :: Text -> Text
     extractEntity txt =
-        let validChar c = not (c `elem` (" \t\n\r<>\"'()[]{}" :: String))
+        let validChar c = not (c `elem` (" \t\n\r<>\"'()[]{},;" :: String))
         in Text.takeWhile validChar txt
 
     isImageUrl :: Text -> Bool
