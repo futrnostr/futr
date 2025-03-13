@@ -28,7 +28,7 @@ import Nostr.Event (EventId, Kind(..))
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Relay (Relay(..), RelayURI, defaultGeneralRelays, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.RelayConnection (RelayConnection, connect, disconnect)
-import Nostr.Subscription 
+import Nostr.Subscription
     ( Subscription
     , giftWrapFilter
     , mentionsFilter
@@ -92,12 +92,12 @@ runInboxModel = interpret $ \_ -> \case
       logInfo "Processing batched metadata updates."
       updateSubscriptions xo
       threadDelay 10000000  -- Relay updates are processed every 10 seconds
-    
+
     modify @RelayPool $ \s -> s
         { updateQueue = updateQueue'
         , updateThread = Just updateThread'
         }
-    
+
 
     if null inboxRelays
       then initializeWithDefaultRelays xo
@@ -234,8 +234,8 @@ continueWithRelays inboxRelays = do
 -- and the function recurses with the pubkeys that still need a connection.
 --
 -- If the available fallback list becomes empty, rebalancing fails.
-rebalanceSubscriptions 
-  :: InboxModelEff es 
+rebalanceSubscriptions
+  :: InboxModelEff es
   => [PubKeyXO]  -- ^ Pubkeys that still need to connect.
   -> [RelayURI]  -- ^ Current available inbox relay URIs.
   -> Eff es ()
@@ -309,7 +309,7 @@ subscribeToProfilesAndPosts relayUri pks = do
 -- 2. Disconnect from relays no longer used by contacts
 -- 3. Update subscription states based on relationship changes
 inboxRelayTopologyFilter :: [PubKeyXO] -> Filter
-inboxRelayTopologyFilter pks = emptyFilter 
+inboxRelayTopologyFilter pks = emptyFilter
     { authors = Just pks
     , kinds = Just [RelayListMetadata, PreferredDMRelays, FollowList, Metadata]
     }
@@ -319,7 +319,7 @@ inboxRelayTopologyFilter pks = emptyFilter
 getSubscriptionTimestamp :: InboxModelEff es => [PubKeyXO] -> [Kind] -> Eff es (Maybe Int)
 getSubscriptionTimestamp pks ks = do
   timestamps <- forM pks $ \pk -> getLatestTimestamp pk ks
-  if null timestamps 
+  if null timestamps
     then return Nothing
     else case catMaybes timestamps of
       [] -> return Nothing

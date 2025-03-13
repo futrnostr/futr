@@ -135,8 +135,8 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
         contextClass <- newClass [
           defPropertySigRO' "dmRelays" changeKey $ \obj -> do
-            runE $ modify @QtQuickState $ \s -> s { 
-              uiRefs = (uiRefs s) { dmRelaysObjRef = Just obj } 
+            runE $ modify @QtQuickState $ \s -> s {
+              uiRefs = (uiRefs s) { dmRelaysObjRef = Just obj }
             }
             appState <- runE $ get @AppState
             case keyPair appState of
@@ -147,8 +147,8 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
                 mapM (\relay -> getPoolObject dmRelayPool relay) relays,
 
           defPropertySigRO' "generalRelays" changeKey $ \obj -> do
-            runE $ modify @QtQuickState $ \s -> s { 
-              uiRefs = (uiRefs s) { generalRelaysObjRef = Just obj } 
+            runE $ modify @QtQuickState $ \s -> s {
+              uiRefs = (uiRefs s) { generalRelaysObjRef = Just obj }
             }
             appState <- runE $ get @AppState
             case keyPair appState of

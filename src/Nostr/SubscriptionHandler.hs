@@ -111,12 +111,12 @@ runSubscriptionHandler = interpret $ \_ -> \case
                                 nextUntil <- atomically $ readTVar nextUntilVar
 
                                 -- Only continue if we got new events in this batch
-                                let shouldPaginate = not (Set.null currentBatch) 
+                                let shouldPaginate = not (Set.null currentBatch)
                                         && maybe True (\l -> seenEventsCount < l) requestedLimit
                                         && isJust nextUntil
 {-
                                 logDebug $ "Pagination check for " <> relayUri' <> " (sub " <> pack (show subId') <> ") - "
-                                        <> "Should paginate: " <> pack (show shouldPaginate) 
+                                        <> "Should paginate: " <> pack (show shouldPaginate)
                                         <> ", Events in batch: " <> pack (show (Set.size currentBatch))
                                         <> ", Total events: " <> pack (show seenEventsCount)
                                         <> ", Requested limit: " <> pack (show requestedLimit)
@@ -164,16 +164,16 @@ runSubscriptionHandler = interpret $ \_ -> \case
 
 
 processQueue :: (SubscriptionHandlerEff es, State RelayPool :> es)
-            => Bool 
-            -> SubscriptionId 
-            -> TQueue (RelayURI, SubscriptionEvent) 
+            => Bool
+            -> SubscriptionId
+            -> TQueue (RelayURI, SubscriptionEvent)
             -> Eff es ()
 processQueue stopOnEOSE subId' queue' = do
     shouldStopVar <- newTVarIO False
     let loop = do
             e <- atomically $ readTQueue queue'
             es <- atomically $ flushTQueue queue'
-        
+
             forM_ (e:es) $ \(relayUri, e') -> do
                 case e' of
                     EventAppeared event' -> handleEvent relayUri event'
@@ -184,7 +184,7 @@ processQueue stopOnEOSE subId' queue' = do
 
             shouldStop <- atomically $ readTVar shouldStopVar
             unless shouldStop loop
-    
+
     loop
 
 
@@ -193,7 +193,7 @@ handleEvent r event' = do
     updates <- if not (validateEvent event')
         then do
             logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
-            
+
             logWarning $ "EventID: " <> if validateEventId event' then "valid" else "invalid"
             logWarning $ "Signature: " <> if verifySignature event' then "valid" else "invalid"
 
@@ -204,7 +204,7 @@ handleEvent r event' = do
 
             logWarning $ "Raw event: " <> pack (show serializedEvent)
             logWarning $ "Event: " <> pack (show event')
-            
+
             pure emptyUpdates
         else do
             --logDebug $ "Seen event: " <> pack (show $ kind event') <> " " <> pack (show $ eventId event') <> " on relay: " <> r

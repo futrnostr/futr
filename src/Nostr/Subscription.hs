@@ -55,7 +55,7 @@ data Subscription :: Effect where
     StopSubscription :: SubscriptionId -> Subscription m ()
     --HandleEvent :: RelayURI -> Event -> Subscription m UIUpdates
     StopAllSubscriptions :: RelayURI -> Subscription m ()
-    
+
 
 type instance DispatchOf Subscription = Dynamic
 
@@ -71,7 +71,7 @@ runSubscription = interpret $ \_ -> \case
         subId' <- generateRandomSubscriptionId
         let sub = newSubscriptionState f queue' r
         registerSubscription r subId' sub f
-   
+
     StopSubscription subId' -> do
         st <- get @RelayPool
 
@@ -214,12 +214,12 @@ mentionsFilter pk ts = emptyFilter
     }
 
 -- | Register a new subscription with the relay pool and optionally start it if the relay is connected
-registerSubscription 
-    :: SubscriptionEff es 
-    => RelayURI 
-    -> SubscriptionId 
-    -> SubscriptionState 
-    -> Filter 
+registerSubscription
+    :: SubscriptionEff es
+    => RelayURI
+    -> SubscriptionId
+    -> SubscriptionState
+    -> Filter
     -> Eff es SubscriptionId
 registerSubscription r subId' sub f = do
     st <- get @RelayPool

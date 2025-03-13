@@ -189,14 +189,14 @@ runKeyMgmt = interpret $ \_ -> \case
       else return ()
 
   UpdateProfile aid profile -> do
-    modify $ \st -> st 
-      { accountMap = Map.adjust (\acc -> acc 
+    modify $ \st -> st
+      { accountMap = Map.adjust (\acc -> acc
           { accountDisplayName = displayName profile
           , accountPicture = picture profile
-          }) aid (accountMap st) 
+          }) aid (accountMap st)
       }
     accounts <- gets accountMap
-    case Map.lookup aid accounts of 
+    case Map.lookup aid accounts of
       Just account -> do
         let npubStr = unpack $ pubKeyXOToBech32 $ accountPubKeyXO account
         dir <- getXdgDirectory XdgData $ "futrnostr/" ++ npubStr

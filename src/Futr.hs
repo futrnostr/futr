@@ -173,7 +173,7 @@ runFutr = interpret $ \_ -> \case
       then return NoResult
       else case parseNprofileOrNpub input of
         Nothing -> return NoResult
-        Just (pubkey', maybeRelay) 
+        Just (pubkey', maybeRelay)
           | Just pubkey' == myPubKey -> return $ ProfileResult (pubKeyXOToBech32 pubkey') maybeRelay
           | otherwise -> do
               currentFollows <- maybe [] id <$> traverse getFollows myPubKey
@@ -328,7 +328,7 @@ runFutr = interpret $ \_ -> \case
                           ]
 
                     authorRelays <- getGeneralRelays (pubKey origEvent)
-                    let authorInboxUris = Set.fromList $ map getUri $ 
+                    let authorInboxUris = Set.fromList $ map getUri $
                           filter isInboxCapable authorRelays
 
                     let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
@@ -392,7 +392,7 @@ runFutr = interpret $ \_ -> \case
                           ]
 
                     authorRelays <- getGeneralRelays (pubKey origEvent)
-                    let authorInboxUris = Set.fromList $ map getUri $ 
+                    let authorInboxUris = Set.fromList $ map getUri $
                           filter isInboxCapable authorRelays
 
                     let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
@@ -420,7 +420,7 @@ runFutr = interpret $ \_ -> \case
 
 -- Helper function to parse nprofile or npub
 parseNprofileOrNpub :: Text -> Maybe (PubKeyXO, Maybe RelayURI)
-parseNprofileOrNpub input = 
+parseNprofileOrNpub input =
   case bech32ToPubKeyXO input of
     Just pubkey' -> Just (pubkey', Nothing)  -- for npub
     Nothing -> case nprofileToPubKeyXO input of
@@ -492,13 +492,13 @@ searchInRelays xo mr = do
             q <- newTQueueIO
             subId' <- subscribe relayUri' (metadataFilter [xo]) q
             -- @todo duplicated from subscription handler, but closes unneeded connections
-            
+
             void $ async $ do
                 shouldStopVar <- newTVarIO False
                 let loop = do
                         e <- atomically $ readTQueue q
                         es <- atomically $ flushTQueue q
-                    
+
                         forM_ (e:es) $ \(relayUri, e') -> do
                             case e' of
                                 EventAppeared event' -> handleEvent relayUri event'
@@ -515,5 +515,5 @@ searchInRelays xo mr = do
 
                         shouldStop <- atomically $ readTVar shouldStopVar
                         unless shouldStop loop
-                
+
                 loop
