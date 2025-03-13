@@ -2,6 +2,7 @@ module Components
 AlertManager 1.0 AlertManager.ui.qml
 FullscreenVideoWindow 1.0 FullscreenVideoWindow.ui.qml
 MessageInput 1.0 MessageInput.ui.qml
+NavigationPane 1.0 NavigationPane.ui.qml
 NotificationToast 1.0 NotificationToast.ui.qml
 PostContent 1.0 PostContent.ui.qml
 PostImage 1.0 PostImage.ui.qml

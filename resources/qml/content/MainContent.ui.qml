@@ -201,13 +201,8 @@ Rectangle {
 
                             onCommentClicked: {
                                 if (modelData) {
-                                    if (modelData.postType === "repost") {
-                                        commentsDialog.targetPost = modelData.referencedPosts[0]
-                                        setCurrentPost(modelData.referencedPosts[0].id)
-                                    } else {
-                                        commentsDialog.targetPost = modelData
-                                        setCurrentPost(modelData.id)
-                                    }
+                                    commentsDialog.targetPost = modelData
+                                    setCurrentPost(modelData.id)
                                     commentsDialog.open()
                                 }
                             }
