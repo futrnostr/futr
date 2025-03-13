@@ -96,7 +96,7 @@ data LmdbStore :: Effect where
     -- Event operations
     PutEvent :: EventWithRelays -> LmdbStore m Bool
     RecordFailedRelay:: RelayURI -> LmdbStore m () -- Int: timestamp
-    
+
     -- Query operations (read-only)
     GetEvent :: EventId -> LmdbStore m (Maybe EventWithRelays)
     GetFollows :: PubKeyXO -> LmdbStore m [Follow]
@@ -141,7 +141,7 @@ runLmdbStore = interpret $ \_ -> \case
                 GiftWrap -> do
                     mSealedEvent <- unwrapGiftWrap (event ev) kp
                     case mSealedEvent of
-                        Just sealedEvent | validateEvent sealedEvent -> 
+                        Just sealedEvent | validateEvent sealedEvent ->
                             case kind sealedEvent of
                                 Seal -> do
                                     mDecryptedRumor <- unwrapSeal sealedEvent kp
@@ -520,11 +520,11 @@ runLmdbStore = interpret $ \_ -> \case
 
 
 -- Helper function for timeline entries within a transaction
-addTimelineEntryTx :: Transaction 'ReadWrite 
+addTimelineEntryTx :: Transaction 'ReadWrite
                    -> Database TimelineKey EventId
-                   -> EventWithRelays 
-                   -> [PubKeyXO] 
-                   -> Int 
+                   -> EventWithRelays
+                   -> [PubKeyXO]
+                   -> Int
                    -> IO ()
 addTimelineEntryTx txn timelineDb' ev pks timestamp = do
     let invertedTimestamp = maxBound - timestamp
@@ -534,7 +534,7 @@ addTimelineEntryTx txn timelineDb' ev pks timestamp = do
 
 
 -- | Default Lmdb settings for JSON-serializable types with better error handling
-defaultJsonSettings :: (Ord k, ToJSON k, FromJSON k, ToJSON v, FromJSON v, Show k, Show v) 
+defaultJsonSettings :: (Ord k, ToJSON k, FromJSON k, ToJSON v, FromJSON v, Show k, Show v)
                    => DatabaseSettings k v
 defaultJsonSettings = makeSettings
     (SortCustom $ CustomSortSafe compare)

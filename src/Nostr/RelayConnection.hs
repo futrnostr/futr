@@ -126,7 +126,7 @@ runRelayConnection = interpret $ \_ -> \case
 connectWithRetry :: RelayConnectionEff es => RelayURI -> Int -> TChan NT.Request -> Eff es Bool
 connectWithRetry r maxRetries requestChan = do
     st <- get @RelayPool
-    
+
     let attempts = maybe 0 connectionAttempts $ Map.lookup r (activeConnections st)
     if attempts >= maxRetries
         then do
@@ -153,7 +153,7 @@ connectWithRetry r maxRetries requestChan = do
 
             let connectAction = case parseURI (T.unpack r) of
                     Just uri -> case uriAuthority uri of
-                        Just auth -> 
+                        Just auth ->
                             let host = uriRegName auth
                                 port = case uriPort auth of
                                     "" -> if "wss://" `T.isPrefixOf` r then 443 else 80
@@ -390,7 +390,7 @@ handleResponse relayURI' r = case r of
                                 -}
                     Nothing -> logError $ "Received OK but no connection found: " <> relayURI'
         return $ emptyUpdates { publishStatusChanged = True }
-        
+
     Notice msg -> do
         modify @RelayPool $ \st ->
             st { activeConnections = Map.adjust

@@ -74,8 +74,8 @@ runUI = interpret $ \_ -> \case
     keyMgmtObj <- runE $ KeyMgmtUI.createUI changeKey'
     relayMgmtObj <- runE $ RelayMgmtUI.createUI changeKey'
 
-    let getProfileEventCount :: (PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent))) 
-                            -> PubKeyXO 
+    let getProfileEventCount :: (PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent)))
+                            -> PubKeyXO
                             -> Eff es Int
         getProfileEventCount subscriber pubkey = do
             return 0 -- @todo implement

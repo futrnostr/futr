@@ -63,7 +63,7 @@ runRelayMgmt = interpret $ \_ -> \case
                         (True, False) -> InboxRelay $ normalizeRelayURI relay'
                         (False, True) -> OutboxRelay $ normalizeRelayURI relay'
                         (False, False) -> error "Unreachable due to guard above"
-                
+
                 existingRelays <- getGeneralRelays pk
                 if relay'' `elem` existingRelays
                     then return False
@@ -84,7 +84,7 @@ runRelayMgmt = interpret $ \_ -> \case
         disconnect r'
         existingRelays <- getGeneralRelays pk
         let rs = filter (\relay -> getUri relay /= r') existingRelays
-        
+
         kp <- getKeyPair
         now <- getCurrentTime
         let unsigned = createRelayListMetadataEvent rs pk now
@@ -142,7 +142,7 @@ runRelayMgmt = interpret $ \_ -> \case
             Just event -> do
                 broadcast event
                 logInfo "Successfully set default general relays"
-            Nothing -> 
+            Nothing ->
                 logError "Failed to sign relay list metadata event"
 
     SetDefaultDMRelays -> do
@@ -164,7 +164,7 @@ runRelayMgmt = interpret $ \_ -> \case
             Just event -> do
                 broadcast event
                 logInfo "Successfully set default DM relays"
-            Nothing -> 
+            Nothing ->
                 logError "Failed to sign preferred DM relays event"
 
 

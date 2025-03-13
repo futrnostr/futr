@@ -89,7 +89,7 @@ noteToEventId txt = do
 eventToNevent :: Event -> [RelayURI] -> T.Text
 eventToNevent event relays = toBech32 "nevent" $ encodeTLV tlvData
   where
-    tlvData = 
+    tlvData =
       [ (0, BSS.toShort $ getEventId $ eventId event)
       ] ++ map (\r -> (1, BSS.toShort $ encodeUtf8 r)) relays ++
       [ (2, BSS.toShort $ exportPubKeyXO $ pubKey event)
@@ -123,8 +123,8 @@ nprofileToPubKeyXO txt = do
   pubKey' <- case lookup 0 tlvs of
                Just pubKeyBS -> importPubKeyXO (BSS.fromShort pubKeyBS)
                Nothing -> Nothing
-  let relays = mapMaybe (\(t, v) -> 
-                 if t == 1 
+  let relays = mapMaybe (\(t, v) ->
+                 if t == 1
                  then pure $ decodeUtf8 $ BSS.fromShort v
                  else Nothing) tlvs
   return (pubKey', relays)

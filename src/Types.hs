@@ -63,7 +63,7 @@ newSubscriptionState f q r = SubscriptionState f q r 0 (maxBound :: Int)
 
 
 -- | Connection errors.
-data ConnectionError 
+data ConnectionError
     = ConnectionFailed Text
     | AuthenticationFailed Text
     | NetworkError Text

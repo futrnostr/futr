@@ -82,16 +82,16 @@ runPublisher =  interpret $ \_ -> \case
             relays' <- getGeneralRelays pk
             return $ filter isInboxCapable relays'
 
-        let allTargetRelays = nub $ 
+        let allTargetRelays = nub $
                 dmRelays ++
                 map getUri outboxCapable ++
                 concatMap (map getUri) followerRelays
 
         initEventPublishStatus (eventId event') allTargetRelays
-        
+
         existingConnections <- getConnectedRelays
         let (existingRelays, newRelays) = partition (`elem` existingConnections) allTargetRelays
-        
+
         forM_ existingRelays $ \r -> writeToChannel event' r
 
         forM_ newRelays $ \r -> async $ do
@@ -134,8 +134,8 @@ runPublisher =  interpret $ \_ -> \case
                 initEventPublishStatus (eventId event') allRelayURIs
 
                 existingConnections <- getConnectedRelays
-                let (existingRelays, newRelays) = partition 
-                        (`elem` existingConnections) 
+                let (existingRelays, newRelays) = partition
+                        (`elem` existingConnections)
                         allRelayURIs
 
                 forM_ existingRelays $ \r -> writeToChannel event' r
