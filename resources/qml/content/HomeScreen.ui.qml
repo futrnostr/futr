@@ -14,17 +14,6 @@ Item {
     width: parent.width
     height: parent.height
 
-    Component.onCompleted: {
-        setCurrentProfile(mynpub)
-        profileLoader.setSource(
-            "Profile/Profile.ui.qml",
-            { 
-                "profileData": currentProfile,
-                "npub": mynpub 
-            }
-        )
-    }
-
     ColumnLayout {
         anchors.fill: parent
         spacing: 10
@@ -35,8 +24,11 @@ Item {
         }
 
         Item {
+            id: mainContainer
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            property bool sidebarExpanded: true
 
             Row {
                 anchors.fill: parent
@@ -44,29 +36,121 @@ Item {
                 anchors.rightMargin: 10
                 spacing: 10
 
-                FollowList {}
-
-                Rectangle {
-                    width: parent.width * 0.4 - (parent.spacing * 2 / 3)
+                // Sidebar container
+                Item {
+                    id: sidebarContainer
+                    width: mainContainer.sidebarExpanded ? parent.width * 0.3 : 80
                     height: parent.height
-                    color: Material.backgroundColor
+                    clip: true
 
-                    Loader {
-                        id: chatLoader
+                    Behavior on width {
+                        NumberAnimation {
+                            duration: 200
+                            easing.type: Easing.InOutQuad
+                        }
+                    }
+
+                    // Background for sidebar
+                    Rectangle {
                         anchors.fill: parent
+                        color: Material.backgroundColor
+                        border.color: Material.dividerColor
+                        border.width: 1
+                        radius: 8
+                    }
+
+                    FollowList {
+                        id: followListElement
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        isCollapsed: !mainContainer.sidebarExpanded
+
+                        Behavior on opacity {
+                            NumberAnimation {
+                                duration: 150
+                                easing.type: Easing.InOutQuad
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        id: toggleButton
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 20
+                        height: 40
+                        color: "transparent"
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.leftMargin: -8
+                            color: toggleMouseArea.containsMouse ?
+                                Qt.rgba(Material.accentColor.r,
+                                       Material.accentColor.g,
+                                       Material.accentColor.b, 0.2) :
+                                Qt.rgba(Material.accentColor.r,
+                                       Material.accentColor.g,
+                                       Material.accentColor.b, 0.1)
+                            radius: 4
+
+                            Behavior on color {
+                                ColorAnimation { duration: 150 }
+                            }
+
+                            // Toggle icon
+                            Text {
+                                anchors.centerIn: parent
+                                text: mainContainer.sidebarExpanded ? "◀" : "▶"
+                                color: Material.foreground
+                                font.pixelSize: 12
+                                opacity: 0.7
+                            }
+                        }
+
+                        MouseArea {
+                            id: toggleMouseArea
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            hoverEnabled: true
+                            onClicked: mainContainer.sidebarExpanded = !mainContainer.sidebarExpanded
+
+                            ToolTip {
+                                visible: parent.containsMouse
+                                text: mainContainer.sidebarExpanded ?
+                                    "Collapse sidebar" :
+                                    "Expand sidebar"
+                                delay: 500
+                            }
+                        }
+                    }
+
+                    Column {
+                        visible: !mainContainer.sidebarExpanded
+                        opacity: mainContainer.sidebarExpanded ? 0 : 1
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 8
+                        spacing: 8
+
+                        Behavior on opacity {
+                            NumberAnimation { duration: 150 }
+                        }
                     }
                 }
 
-                Rectangle {
-                    width: parent.width * 0.3 - (parent.spacing * 2 / 3)
+                NavigationPane {
+                    id: navigationPane
+                    width: mainContainer.sidebarExpanded ?
+                        parent.width * 0.7 - parent.spacing :
+                        parent.width - sidebarContainer.width - parent.spacing
                     height: parent.height
-                    color: Material.backgroundColor
 
-                    Loader {
-                        id: profileLoader
-                        anchors.fill: parent
-                        anchors.rightMargin: 10
-                        anchors.bottomMargin: 5
+                    Behavior on width {
+                        NumberAnimation {
+                            duration: 200
+                            easing.type: Easing.InOutQuad
+                        }
                     }
                 }
             }

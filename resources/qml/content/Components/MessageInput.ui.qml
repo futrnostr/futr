@@ -78,4 +78,4 @@ Pane {
     function clear() {
         messageInput.text = ""
     }
-} 
+}
