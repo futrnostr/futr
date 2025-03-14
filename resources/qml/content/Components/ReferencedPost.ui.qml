@@ -53,16 +53,12 @@ Item {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                setCurrentProfile(refPost.author.npub)
-                                openChat(refPost.author.npub)
-                                profileLoader.setSource("../Profile/Profile.ui.qml", {
-                                    "profileData": currentProfile,
-                                    "npub": refPost.author.npub
-                                })
-                                chatLoader.setSource("../MainContent.ui.qml", {
-                                    "profileData": currentProfile,
-                                    "npub": refPost.author.npub
-                                })
+                                navigationPane.navigateTo(
+                                    "PersonalFeed.ui.qml",
+                                    {
+                                        "npub": refPost.author.npub
+                                    }
+                                )
                             }
                         }
                     }
@@ -79,16 +75,12 @@ Item {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                setCurrentProfile(refPost.author.npub)
-                                openChat(refPost.author.npub)
-                                profileLoader.setSource("../Profile/Profile.ui.qml", {
-                                    "profileData": currentProfile,
-                                    "npub": refPost.author.npub
-                                })
-                                chatLoader.setSource("../MainContent.ui.qml", {
-                                    "profileData": currentProfile,
-                                    "npub": refPost.author.npub
-                                })
+                                navigationPane.navigateTo(
+                                    "PersonalFeed.ui.qml",
+                                    {
+                                        "npub": refPost.author.npub
+                                    }
+                                )
                             }
                         }
                     }
@@ -259,16 +251,12 @@ Item {
                                         return;
                                     }
                                 }
-                                setCurrentProfile(profileId)
-                                openChat(profileId)
-                                profileLoader.setSource("../Profile/Profile.ui.qml", {
-                                    "profileData": currentProfile,
-                                    "npub": profileId
-                                })
-                                chatLoader.setSource("../MainContent.ui.qml", {
-                                    "profileData": currentProfile,
-                                    "npub": profileId
-                                })
+                                navigationPane.navigateTo(
+                                    "PersonalFeed.ui.qml",
+                                    {
+                                        "npub": profileId
+                                    }
+                                )
                             } else if (link.startsWith("note://")) {
                                 console.log("Note clicked:", link.substring(7));
                             } else {

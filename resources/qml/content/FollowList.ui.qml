@@ -182,17 +182,10 @@ Rectangle {
                                 if (modelData === undefined || modelData === null) return;
 
                                 followsView.selectedPubkey = modelData.pubkey
-                                setCurrentProfile(modelData.pubkey)
-                                openChat(modelData.pubkey)
+
                                 navigationPane.navigateTo(
-                                    "../MainContent.ui.qml",
+                                    "PersonalFeed.ui.qml",
                                     {
-                                        "profileData": currentProfile,
-                                        "npub": modelData.pubkey
-                                    },
-                                    "../Profile/Profile.ui.qml",
-                                    {
-                                        "profileData": currentProfile,
                                         "npub": modelData.pubkey
                                     }
                                 );

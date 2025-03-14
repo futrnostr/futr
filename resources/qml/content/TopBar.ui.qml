@@ -108,16 +108,12 @@ Item {
                 var input = searchInput.text.trim()
                 var result = JSON.parse(search(input))
                 if (result && result.npub) {
-                    setCurrentProfile(result.npub)
-                    openChat(result.npub)
-                    profileLoader.setSource("Profile/Profile.ui.qml", {
-                        "profileData": currentProfile,
-                        "npub": result.npub
-                    })
-                    chatLoader.setSource("MainContent.ui.qml", {
-                        "profileData": currentProfile,
-                        "npub": result.npub
-                    })
+                    navigationPane.navigateTo(
+                        "PersonalFeed.ui.qml",
+                        {
+                            "npub": result.npub
+                        }
+                    )
                     searchInput.text = ""
                 }
             }

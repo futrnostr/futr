@@ -36,24 +36,20 @@ ListView {
     }
 
     onMovementStarted: {
-        console.log("movement started")
         shouldBeAtBottom = false
     }
 
     onMovementEnded: {
-        console.log("movement ended")
         if (atYEnd) {
             shouldBeAtBottom = true
         }
     }
 
     onFlickStarted: {
-        console.log("flick started")
         shouldBeAtBottom = false
     }
 
     onFlickEnded: {
-        console.log("flick ended")
         if (atYEnd) {
             shouldBeAtBottom = true
         }

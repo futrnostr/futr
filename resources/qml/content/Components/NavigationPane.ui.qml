@@ -15,47 +15,36 @@ Rectangle {
     property int currentIndex: -1
     property var currentView: null
     property var currentProps: null
-    property var currentSecondaryView: null
-    property var currentSecondaryProps: null
 
     // Direct manipulation function that won't be affected by property bindings
-    function setCurrentState(source, props, secondarySource, secondaryProps) {
+    function setCurrentState(source, props) {
         primaryLoader.setSource(source, props || {});
-        secondaryLoader.setSource(secondarySource || "", secondaryProps || {});
         navigationPane.currentView = source;
         navigationPane.currentProps = props || {};
-        navigationPane.currentSecondaryView = secondarySource || "";
-        navigationPane.currentSecondaryProps = secondaryProps || {};
     }
 
-    function navigateTo(source, properties, secondarySource, secondaryProperties) {
+    function navigateTo(source, properties) {
         if (currentView) {
             historyStack.append({
                 "source": String(currentView),
-                "properties": JSON.stringify(currentProps || {}),
-                "secondarySource": String(currentSecondaryView || ""),
-                "secondaryProperties": JSON.stringify(currentSecondaryProps || {})
+                "properties": JSON.stringify(currentProps || {})
             })
             forwardStack.clear()
         }
-        setCurrentState(source, properties, secondarySource, secondaryProperties);
+        setCurrentState(source, properties);
     }
 
     function navigateBack() {
         if (historyStack.count > 0) {
             forwardStack.append({
                 "source": String(currentView || ""),
-                "properties": JSON.stringify(currentProps || {}),
-                "secondarySource": String(currentSecondaryView || ""),
-                "secondaryProperties": JSON.stringify(currentSecondaryProps || {})
+                "properties": JSON.stringify(currentProps || {})
             })
             var previous = historyStack.get(historyStack.count - 1);
             var prevSource = String(previous.source);
             var prevProps = JSON.parse(previous.properties || "{}");
-            var prevSecondarySource = String(previous.secondarySource || "");
-            var prevSecondaryProps = JSON.parse(previous.secondaryProperties || "{}");
             historyStack.remove(historyStack.count - 1);
-            setCurrentState(prevSource, prevProps, prevSecondarySource, prevSecondaryProps);
+            setCurrentState(prevSource, prevProps);
         }
     }
 
@@ -63,28 +52,15 @@ Rectangle {
         if (forwardStack.count > 0) {
             historyStack.append({
                 "source": String(currentView || ""),
-                "properties": JSON.stringify(currentProps || {}),
-                "secondarySource": String(currentSecondaryView || ""),
-                "secondaryProperties": JSON.stringify(currentSecondaryProps || {})
+                "properties": JSON.stringify(currentProps || {})
             })
             var nextIndex = forwardStack.count - 1;
             var nextItem = forwardStack.get(nextIndex);
             var sourceValue = nextItem.source;
             var propsValue = nextItem.properties;
-            var secondarySourceValue = nextItem.secondarySource;
-            var secondaryPropsValue = nextItem.secondaryProperties;
             forwardStack.remove(nextIndex);
             var nextProps = propsValue ? JSON.parse(propsValue) : {};
-            var nextSecondaryProps = secondaryPropsValue ? JSON.parse(secondaryPropsValue) : {};
-            if (nextProps && nextSecondaryProps) {
-                if (!nextProps.profileData && nextSecondaryProps.profileData) {
-                    nextProps.profileData = nextSecondaryProps.profileData;
-                }
-                if (!nextSecondaryProps.profileData && nextProps.profileData) {
-                    nextSecondaryProps.profileData = nextProps.profileData;
-                }
-            }
-            setCurrentState(sourceValue, nextProps, secondarySourceValue, nextSecondaryProps);
+            setCurrentState(sourceValue, nextProps);
         }
     }
 
@@ -111,8 +87,8 @@ Rectangle {
                     flat: true
                     enabled: historyStack.count > 0
                     onClicked: navigationPane.navigateBack()
-                    implicitWidth: 36
-                    implicitHeight: 36
+                    implicitWidth: 40
+                    implicitHeight: 40
                     padding: 0
                     Layout.alignment: Qt.AlignVCenter
 
@@ -134,8 +110,8 @@ Rectangle {
                     flat: true
                     enabled: forwardStack.count > 0
                     onClicked: navigationPane.navigateForward()
-                    implicitWidth: 36
-                    implicitHeight: 36
+                    implicitWidth: 40
+                    implicitHeight: 40
                     padding: 0
                     Layout.alignment: Qt.AlignVCenter
 
@@ -157,31 +133,10 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            Row {
+            Loader {
+                id: primaryLoader
                 anchors.fill: parent
-                spacing: 10
-
-                Item {
-                    width: parent.width * 0.6
-                    height: parent.height
-
-                    Loader {
-                        id: primaryLoader
-                        anchors.fill: parent
-                        anchors.margins: 10
-                    }
-                }
-
-                Item {
-                    width: parent.width * 0.4
-                    height: parent.height
-
-                    Loader {
-                        id: secondaryLoader
-                        anchors.fill: parent
-                        anchors.margins: 10
-                    }
-                }
+                anchors.margins: 10
             }
         }
     }

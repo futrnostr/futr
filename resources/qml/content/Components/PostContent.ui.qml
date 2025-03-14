@@ -238,16 +238,12 @@ Pane {
                                 return;
                             }
                         }
-                        setCurrentProfile(profileId)
-                        openChat(profileId)
-                        profileLoader.setSource("../Profile/Profile.ui.qml", {
-                            "profileData": currentProfile,
-                            "npub": profileId
-                        })
-                        chatLoader.setSource("../MainContent.ui.qml", {
-                            "profileData": currentProfile,
-                            "npub": profileId
-                        })
+                        navigationPane.navigateTo(
+                            "PersonalFeed.ui.qml",
+                            {
+                                "npub": profileId
+                            }
+                        )
                     } else if (link.startsWith("note://")) {
                         console.log("Note clicked:", link.substring(7));
                     } else {

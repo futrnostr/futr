@@ -1,4 +1,4 @@
-Module Futr
+module Futr
 singleton Constants 1.0 Constants.qml
 singleton ExternalIdentityIcons 1.0 ExternalIdentityIcons.qml
 singleton Util 1.0 Util.qml
