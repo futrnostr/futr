@@ -4,10 +4,11 @@ import Control.Monad (forM_, replicateM)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.Map.Strict qualified as Map
+import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.STM (TQueue, atomically, writeTChan, writeTQueue)
+import Effectful.Concurrent.STM (atomically, newTQueueIO, writeTChan, writeTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
@@ -51,7 +52,7 @@ type SubscriptionEff es =
 
 -- | Subscription effects
 data Subscription :: Effect where
-    Subscribe :: RelayURI -> Filter -> TQueue (RelayURI, SubscriptionEvent) -> Subscription m SubscriptionId
+    Subscribe :: RelayURI -> Filter -> Subscription m SubscriptionId
     StopSubscription :: SubscriptionId -> Subscription m ()
     --HandleEvent :: RelayURI -> Event -> Subscription m UIUpdates
     StopAllSubscriptions :: RelayURI -> Subscription m ()
@@ -67,29 +68,30 @@ runSubscription
   => Eff (Subscription : es) a
   -> Eff es a
 runSubscription = interpret $ \_ -> \case
-    Subscribe r f queue' -> do
+    Subscribe r f -> do
+        q <- newTQueueIO
         subId' <- generateRandomSubscriptionId
-        let sub = newSubscriptionState f queue' r
+        let sub = newSubscriptionState f q r
         registerSubscription r subId' sub f
 
     StopSubscription subId' -> do
         st <- get @RelayPool
 
-        modify @RelayPool $ \s -> s
-            { stoppingSubscriptions = subId' : stoppingSubscriptions s
-            , pendingSubscriptions = Map.delete subId' (pendingSubscriptions s)
-            }
-
         case Map.lookup subId' (subscriptions st) of
             Just subDetails -> do
-                case Map.lookup (relay subDetails) (activeConnections st) of
+                let relayUri = relay subDetails
+                case Map.lookup relayUri (activeConnections st) of
                     Just rd -> atomically $ writeTChan (requestChannel rd) (NT.Close subId')
-                    Nothing -> pure ()
+                    Nothing -> logDebug $ "No active connection found for relay " <> T.pack (show relayUri)
+
+                atomically $ writeTQueue (responseQueue subDetails) (relayUri, SubscriptionClosed "Subscription stopped")
+                modify @RelayPool $ \s -> s { subscriptions = Map.delete subId' (subscriptions s) }
             Nothing -> pure ()
 
         case Map.lookup subId' (pendingSubscriptions st) of
-            Just subDetails ->
+            Just subDetails -> do
                 atomically $ writeTQueue (responseQueue subDetails) (relay subDetails, SubscriptionClosed "Subscription stopped")
+                modify @RelayPool $ \s -> s { pendingSubscriptions = Map.delete subId' (pendingSubscriptions s) }
             Nothing -> pure ()
 
     StopAllSubscriptions relayUri -> do
@@ -100,9 +102,6 @@ runSubscription = interpret $ \_ -> \case
                                 | (subId, subDetails) <- Map.toList (subscriptions st)
                                 , relay subDetails == relayUri
                                 ]
-
-                modify @RelayPool $ \s -> s
-                    { stoppingSubscriptions = relaySubIds ++ stoppingSubscriptions s }
 
                 forM_ relaySubIds $ \subId -> do
                     atomically $ writeTChan (requestChannel rd) (NT.Close subId)

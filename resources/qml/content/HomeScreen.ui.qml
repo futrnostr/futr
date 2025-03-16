@@ -190,4 +190,8 @@ Item {
     AlertManager {
         id: alertManager
     }
+
+    InboxModelStatusAlert {
+        id: inboxModelStatusAlert
+    }
 }

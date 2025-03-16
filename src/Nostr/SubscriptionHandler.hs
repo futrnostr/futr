@@ -16,32 +16,25 @@ import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
 import Prelude hiding (until)
 
--- DEBUG IMPORTS
-import Data.Aeson (encode)
-import Data.ByteString qualified as BS
---import Crypto.Hash.SHA256 qualified as SHA256
-import Nostr.Event (validateEventId, verifySignature)
--- END DEBUG IMPORTS
-
-import QtQuick
 import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
-import Nostr.Event (Event(..), EventId(..), Kind(..), UnsignedEvent(..), validateEvent)
+import Nostr.Event (Event(..), EventId(..), Kind(..), validateEvent)
 import Nostr.Keys (byteStringToHex, keyPairToPubKeyXO)
 import Nostr.Relay (RelayURI)
 import Nostr.Subscription
 import Nostr.Types (Filter(..), SubscriptionId)
 import Nostr.Types qualified as NT
 import Nostr.Util
+import QtQuick
 import Store.Lmdb
 import Types
 
 -- | Subscription effects
 data SubscriptionHandler :: Effect where
-    HandleSubscription :: SubscriptionId -> TQueue (RelayURI, SubscriptionEvent) -> SubscriptionHandler m ()
-    HandleSubscriptionUntilEOSE :: SubscriptionId -> TQueue (RelayURI, SubscriptionEvent) -> SubscriptionHandler m ()
-    HandlePaginationSubscription :: SubscriptionId -> TQueue (RelayURI, SubscriptionEvent) -> SubscriptionHandler m ()
+    HandleSubscription :: SubscriptionId -> SubscriptionHandler m ()
+    HandleSubscriptionUntilEOSE :: SubscriptionId -> SubscriptionHandler m ()
+    HandlePaginationSubscription :: SubscriptionId -> SubscriptionHandler m ()
 
 type instance DispatchOf SubscriptionHandler = Dynamic
 
@@ -65,102 +58,112 @@ runSubscriptionHandler
   => Eff (SubscriptionHandler : es) a
   -> Eff es a
 runSubscriptionHandler = interpret $ \_ -> \case
-    HandleSubscription subId' queue' -> processQueue False subId' queue'
+    HandleSubscription subId' -> do
+        subs <- gets @RelayPool subscriptions
+        case Map.lookup subId' subs of
+            Just sub -> do
+                let q = responseQueue sub
+                processQueue False subId' q
+            Nothing -> do
+                logWarning $ "Subscription " <> pack (show subId') <> " not found"
 
-    HandleSubscriptionUntilEOSE subId' queue' -> processQueue True subId' queue'
+    HandleSubscriptionUntilEOSE subId' -> do
+        subs <- gets @RelayPool subscriptions
+        case Map.lookup subId' subs of
+            Just sub -> do
+                let q = responseQueue sub
+                processQueue True subId' q
+            Nothing -> do
+                logWarning $ "Subscription " <> pack (show subId') <> " not found"
 
-    HandlePaginationSubscription subId' queue' -> do
-        shouldStopVar <- newTVarIO False
-        seenEventsVar <- newTVarIO Set.empty
-        currentBatchVar <- newTVarIO Set.empty
-        nextUntilVar <- newTVarIO Nothing
-        let loop = do
-                e  <- atomically $ readTQueue queue'
-                es <- atomically $ flushTQueue queue'
-                let events = e:es
+    HandlePaginationSubscription subId' -> do
+        subs <- gets @RelayPool subscriptions
+        case Map.lookup subId' subs of
+            Nothing -> do
+                logWarning $ "Subscription " <> pack (show subId') <> " not found"
+            Just sub -> do
+                let q = responseQueue sub
 
-                seenEvents <- atomically $ readTVar seenEventsVar
-                let newEvents = filter (\(_, e') ->
-                        case e' of
-                            EventAppeared evt -> not $ Set.member (getEventId $ eventId evt) seenEvents
-                            _ -> True
-                        ) events
+                shouldStopVar <- newTVarIO False
+                seenEventsVar <- newTVarIO Set.empty
+                currentBatchVar <- newTVarIO Set.empty
+                nextUntilVar <- newTVarIO Nothing
+                let loop = do
+                        e  <- atomically $ readTQueue q
+                        es <- atomically $ flushTQueue q
+                        let events = e:es
 
-                forM_ newEvents $ \(relayUri, e') -> case e' of
-                    EventAppeared event' -> do
-                        handleEvent relayUri event'
-                        atomically $ do
-                            modifyTVar seenEventsVar $ Set.insert (getEventId $ eventId event')
-                            modifyTVar currentBatchVar $ Set.insert (getEventId $ eventId event')
-                            modifyTVar nextUntilVar $ \current -> case current of
-                                Nothing -> Just (createdAt event')
-                                Just t -> Just (min t (createdAt event'))
+                        seenEvents <- atomically $ readTVar seenEventsVar
+                        let newEvents = filter (\(_, e') ->
+                                case e' of
+                                    EventAppeared evt -> not $ Set.member (getEventId $ eventId evt) seenEvents
+                                    _ -> True
+                                ) events
 
-                    SubscriptionEose _ -> do
-                        subs <- gets @RelayPool subscriptions
-                        case Map.lookup subId' subs of
-                            Nothing ->
-                                logWarning $ "Pagination subscription " <> pack (show subId') <> " not found"
-                            Just subInfo -> do
-                                let filter' = subscriptionFilter subInfo
-                                    relayUri' = relay subInfo
-                                    requestedLimit = limit filter'
-                                    seenEventsCount = Set.size seenEvents
+                        forM_ newEvents $ \(relayUri, e') -> case e' of
+                            EventAppeared event' -> do
+                                handleEvent relayUri event'
+                                atomically $ do
+                                    modifyTVar seenEventsVar $ Set.insert (getEventId $ eventId event')
+                                    modifyTVar currentBatchVar $ Set.insert (getEventId $ eventId event')
+                                    modifyTVar nextUntilVar $ \current -> case current of
+                                        Nothing -> Just (createdAt event')
+                                        Just t -> Just (min t (createdAt event'))
 
-                                currentBatch <- atomically $ readTVar currentBatchVar
-                                nextUntil <- atomically $ readTVar nextUntilVar
+                            SubscriptionEose _ -> do
+                                subs' <- gets @RelayPool subscriptions
+                                case Map.lookup subId' subs' of
+                                    Nothing ->
+                                        logWarning $ "Pagination subscription " <> pack (show subId') <> " not found"
+                                    Just subInfo -> do
+                                        let filter' = subscriptionFilter subInfo
+                                            relayUri' = relay subInfo
+                                            requestedLimit = limit filter'
+                                            seenEventsCount = Set.size seenEvents
 
-                                -- Only continue if we got new events in this batch
-                                let shouldPaginate = not (Set.null currentBatch)
-                                        && maybe True (\l -> seenEventsCount < l) requestedLimit
-                                        && isJust nextUntil
-{-
-                                logDebug $ "Pagination check for " <> relayUri' <> " (sub " <> pack (show subId') <> ") - "
-                                        <> "Should paginate: " <> pack (show shouldPaginate)
-                                        <> ", Events in batch: " <> pack (show (Set.size currentBatch))
-                                        <> ", Total events: " <> pack (show seenEventsCount)
-                                        <> ", Requested limit: " <> pack (show requestedLimit)
-                                        <> ", Next until: " <> pack (show nextUntil)
--}
-                                when shouldPaginate $ do
-                                    st <- get @RelayPool
-                                    case Map.lookup relayUri' (activeConnections st) of
-                                        Nothing -> pure ()
+                                        currentBatch <- atomically $ readTVar currentBatchVar
+                                        nextUntil <- atomically $ readTVar nextUntilVar
 
-                                        Just rd -> do
-                                            currentTime <- getCurrentTime
+                                        -- Only continue if we got new events in this batch
+                                        let shouldPaginate = not (Set.null currentBatch)
+                                                && maybe True (\l -> seenEventsCount < l) requestedLimit
+                                                && isJust nextUntil
 
-                                            let channel = requestChannel rd
-                                                adjustedUntil = do
-                                                    n <- nextUntil
-                                                    return $ min n currentTime
+                                        when shouldPaginate $ do
+                                            st <- get @RelayPool
+                                            case Map.lookup relayUri' (activeConnections st) of
+                                                Nothing -> pure ()
 
-                                                newFilter = filter' { until = adjustedUntil }
-{-
-                                            logDebug $ "Paginating subscription " <> pack (show subId')
-                                                    <> " with new until: " <> pack (show adjustedUntil)
--}
-                                            -- Clear current batch cache and nextUntil
-                                            atomically $ do
-                                                writeTVar currentBatchVar Set.empty
-                                                writeTVar nextUntilVar Nothing
+                                                Just rd -> do
+                                                    currentTime <- getCurrentTime
 
-                                            -- Resubscribe with new until
-                                            atomically $ writeTChan channel (NT.Close subId')
-                                            modify @RelayPool $ \st' ->
-                                                st' { subscriptions = Map.insert subId' (subInfo { subscriptionFilter = newFilter }) (subscriptions st') }
-                                            atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' newFilter)
+                                                    let channel = requestChannel rd
+                                                        adjustedUntil = do
+                                                            n <- nextUntil
+                                                            return $ min n currentTime
 
-                    SubscriptionClosed _ -> do
-                        stoppingSubs <- gets @RelayPool stoppingSubscriptions
-                        when (subId' `elem` stoppingSubs) $ do
-                            atomically $ writeTVar shouldStopVar True
-                            modify @RelayPool $ \st ->
-                                st { stoppingSubscriptions = filter (/= subId') (stoppingSubscriptions st) }
+                                                        newFilter = filter' { until = adjustedUntil }
 
-                shouldStop <- atomically $ readTVar shouldStopVar
-                unless shouldStop loop
-        loop
+                                                    -- Clear current batch cache and nextUntil
+                                                    atomically $ do
+                                                        writeTVar currentBatchVar Set.empty
+                                                        writeTVar nextUntilVar Nothing
+
+                                                    -- Resubscribe with new until
+                                                    atomically $ writeTChan channel (NT.Close subId')
+                                                    threadDelay 50000 -- 50ms
+                                                    modify @RelayPool $ \st' ->
+                                                        st' { subscriptions = Map.insert subId' (subInfo { subscriptionFilter = newFilter }) (subscriptions st') }
+                                                    atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' newFilter)
+
+                            SubscriptionClosed _ -> do
+                                atomically $ writeTVar shouldStopVar True
+                                modify @RelayPool $ \st ->
+                                    st { subscriptions = Map.delete subId' (subscriptions st) }
+
+                        shouldStop <- atomically $ readTVar shouldStopVar
+                        unless shouldStop loop
+                loop
 
 
 processQueue :: (SubscriptionHandlerEff es, State RelayPool :> es)
@@ -168,7 +171,7 @@ processQueue :: (SubscriptionHandlerEff es, State RelayPool :> es)
             -> SubscriptionId
             -> TQueue (RelayURI, SubscriptionEvent)
             -> Eff es ()
-processQueue stopOnEOSE subId' queue' = do
+processQueue stopOnEOSE subId' queue' = do   
     shouldStopVar <- newTVarIO False
     let loop = do
             e <- atomically $ readTQueue queue'
@@ -178,13 +181,16 @@ processQueue stopOnEOSE subId' queue' = do
                 case e' of
                     EventAppeared event' -> handleEvent relayUri event'
 
-                    SubscriptionEose _ -> when stopOnEOSE $ stopSubscription subId'
+                    SubscriptionEose _ -> do
+                        when stopOnEOSE $ do
+                            stopSubscription subId'
+                            atomically $ writeTVar shouldStopVar True
 
-                    SubscriptionClosed _ -> atomically $ writeTVar shouldStopVar True
+                    SubscriptionClosed _ -> do
+                        atomically $ writeTVar shouldStopVar True
 
             shouldStop <- atomically $ readTVar shouldStopVar
             unless shouldStop loop
-
     loop
 
 
@@ -193,23 +199,12 @@ handleEvent r event' = do
     updates <- if not (validateEvent event')
         then do
             logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
-
-            logWarning $ "EventID: " <> if validateEventId event' then "valid" else "invalid"
-            logWarning $ "Signature: " <> if verifySignature event' then "valid" else "invalid"
-
-            let unsignedEvent = UnsignedEvent (pubKey event') (createdAt event') (kind event') (tags event') (content event')
-                serializedEvent = BS.toStrict $ encode unsignedEvent
-                --computedId = SHA256.hash serializedEvent
-                --eventId' = getEventId $ eventId event'
-
-            logWarning $ "Raw event: " <> pack (show serializedEvent)
-            logWarning $ "Event: " <> pack (show event')
-
             pure emptyUpdates
         else do
             --logDebug $ "Seen event: " <> pack (show $ kind event') <> " " <> pack (show $ eventId event') <> " on relay: " <> r
             let ev = EventWithRelays event' (Set.singleton r)
             wasUpdated <- putEvent ev
+
             case kind event' of
                 ShortTextNote -> do
                     pure $ emptyUpdates { postsChanged = wasUpdated }

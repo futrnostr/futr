@@ -32,6 +32,7 @@ data SubscriptionEvent
     = EventAppeared Event
     | SubscriptionEose SubscriptionId
     | SubscriptionClosed Text
+    deriving (Show)
 
 
 -- | State for RelayPool handling.
@@ -39,7 +40,6 @@ data RelayPool = RelayPool
     { activeConnections :: Map RelayURI RelayData
     , subscriptions :: Map SubscriptionId SubscriptionState
     , pendingSubscriptions :: Map SubscriptionId SubscriptionState
-    , stoppingSubscriptions :: [SubscriptionId]
     , publishStatus :: Map EventId (Map RelayURI PublishStatus)
     , updateQueue :: TQueue ()
     , updateThread :: Maybe (Async ())
@@ -98,7 +98,6 @@ initialRelayPool = RelayPool
   { activeConnections = Map.empty
   , subscriptions = Map.empty
   , pendingSubscriptions = Map.empty
-  , stoppingSubscriptions = []
   , publishStatus = Map.empty
   , updateQueue = undefined
   , updateThread = Nothing
@@ -130,6 +129,14 @@ data EventWithRelays = EventWithRelays
     } deriving (Show, Generic, ToJSON, FromJSON)
 
 
+data InboxModelState
+  = Stopped
+  | InitialBootstrap    -- ^ Setting up initial relay connections and configuration
+  | SyncingHistoricData -- ^ Downloading and processing historical events
+  | LiveProcessing      -- ^ Bootstrap complete, processing real-time events
+  deriving (Eq, Show)
+
+
 -- | Application state.
 data AppState = AppState
   { keyPair :: Maybe KeyPair
@@ -138,6 +145,7 @@ data AppState = AppState
   , currentProfile :: Maybe PubKeyXO
   , currentPost :: Maybe EventId
   , version :: Text
+  , inboxModelState :: InboxModelState
   }
 
 
@@ -171,4 +179,5 @@ initialState = AppState
   , currentProfile = Nothing
   , currentPost = Nothing
   , version = "v0.2.3-dev"
+  , inboxModelState = Stopped
   }
