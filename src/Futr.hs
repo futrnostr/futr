@@ -17,7 +17,7 @@ import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
-import Effectful.Concurrent.STM (atomically, flushTQueue, newTQueueIO, newTVarIO, readTQueue, readTVar, writeTVar)
+import Effectful.Concurrent.STM (atomically, flushTQueue, newTVarIO, readTQueue, readTVar, writeTVar)
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.Exception (SomeException, try)
 import Effectful.FileSystem
@@ -148,7 +148,6 @@ runFutr = interpret $ \_ -> \case
           logError $ "Account not found: " <> input
           return ()
         Just a -> do
-          logInfo $ "Starting login for account: " <> pack (show $ accountPubKeyXO a)
           let pk = accountPubKeyXO a
 
           dbResult <- try @SomeException $ do
@@ -489,8 +488,11 @@ searchInRelays xo mr = do
 
     forM_ searchRelays $ \relayUri' -> do
         when (Map.member relayUri' conns) $ do
-            q <- newTQueueIO
-            subId' <- subscribe relayUri' (metadataFilter [xo]) q
+            subId' <- subscribe relayUri' (metadataFilter [xo])
+            subs <- gets @RelayPool subscriptions
+            let q = case Map.lookup subId' subs of
+                      Just sub -> responseQueue sub
+                      Nothing -> error $ "Subscription " <> show subId' <> " not found"
             -- @todo duplicated from subscription handler, but closes unneeded connections
 
             void $ async $ do

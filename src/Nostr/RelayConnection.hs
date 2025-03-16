@@ -3,7 +3,7 @@
 module Nostr.RelayConnection where
 
 import Control.Exception (SomeException, try)
-import Control.Monad (forM_, unless, void, when)
+import Control.Monad (forM_, void, when)
 import Data.Aeson (eitherDecode, encode)
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (dropWhileEnd, find)
@@ -310,21 +310,12 @@ handleResponse relayURI' r = case r of
                     Nothing -> logError $ "No subscription found for " <> T.pack (show subId')
             else do
                 st <- get @RelayPool
-                -- Only remove subscription if it's in stoppingSubscriptions
-                stoppingSubs <- gets @RelayPool stoppingSubscriptions
-                when (subId' `elem` stoppingSubs) $ do
-                    -- First enqueue the closed event before removing the subscription
-                    case Map.lookup subId' (subscriptions st) of
-                        Just sd -> do
-                            atomically $ writeTQueue (responseQueue sd) (relayURI', SubscriptionClosed msg)
-                            modify @RelayPool $ \st' ->
-                                st' { subscriptions = Map.delete subId' (subscriptions st')
-                                    , stoppingSubscriptions = filter (/= subId') (stoppingSubscriptions st')
-                                    }
-                        Nothing -> pure ()
-                -- If not in stoppingSubscriptions, just enqueue the event without removing the subscription
-                unless (subId' `elem` stoppingSubs) $
-                    enqueueEvent subId' (SubscriptionClosed msg)
+                case Map.lookup subId' (subscriptions st) of
+                    Just sd -> do
+                        atomically $ writeTQueue (responseQueue sd) (relayURI', SubscriptionClosed msg)
+                        modify @RelayPool $ \st' ->
+                            st' { subscriptions = Map.delete subId' (subscriptions st') }
+                    Nothing -> pure ()
 
         return emptyUpdates
 
@@ -383,7 +374,7 @@ handleResponse relayURI' r = case r of
                                 forM_ pendingEvts $ \evt -> atomically $ writeTChan (requestChannel rd) (NT.SendEvent evt)
                                 forM_ pendingReqs $ \req -> atomically $ writeTChan (requestChannel rd) req
 
-                            _ -> return ()
+                            _ -> pure ()
                                 {-
                                 logDebug $ "Received OK for event " <> T.pack (show eventId')
                                         <> " (accepted: " <> T.pack (show accepted') <> ")"

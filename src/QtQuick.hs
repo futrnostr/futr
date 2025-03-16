@@ -40,6 +40,7 @@ data UIReferences = UIReferences
   , generalRelaysObjRef :: Maybe (QML.ObjRef ())
   , tempRelaysObjRef :: Maybe (QML.ObjRef ())
   , publishStatusObjRef :: Maybe (QML.ObjRef ())
+  , inboxModelStateObjRef :: Maybe (QML.ObjRef ())
   }
 
 
@@ -56,6 +57,7 @@ data UIUpdates = UIUpdates
   , tempRelaysChanged :: Bool
   , publishStatusChanged :: Bool
   , noticesChanged :: Bool
+  , inboxModelStateChanged :: Bool
   } deriving (Eq, Show)
 
 
@@ -71,6 +73,7 @@ instance Semigroup UIUpdates where
     , tempRelaysChanged = tempRelaysChanged a || tempRelaysChanged b
     , publishStatusChanged = publishStatusChanged a || publishStatusChanged b
     , noticesChanged = noticesChanged a || noticesChanged b
+    , inboxModelStateChanged = inboxModelStateChanged a || inboxModelStateChanged b
     }
 
 
@@ -80,7 +83,7 @@ instance Monoid UIUpdates where
 
 -- | Empty UI updates.
 emptyUpdates :: UIUpdates
-emptyUpdates = UIUpdates False False False False False False False False False False
+emptyUpdates = UIUpdates False False False False False False False False False False False
 
 
 -- | Initial effectful QML state.
@@ -90,7 +93,7 @@ initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs Nothing
 
 -- | Initial UI references.
 initialUIRefs :: UIReferences
-initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 -- | Define the effects for QML operations.
@@ -131,6 +134,7 @@ runQtQuick = interpret $ \_ -> \case
                         , (dmRelaysChanged, dmRelaysObjRef)
                         , (generalRelaysChanged, generalRelaysObjRef)
                         , (tempRelaysChanged, tempRelaysObjRef)
+                        , (inboxModelStateChanged, inboxModelStateObjRef)
                         ]
 
           forM_ updates $ \(checkFn, getRef) ->

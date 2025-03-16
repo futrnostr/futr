@@ -23,7 +23,6 @@ import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent.Async (async)
-import Effectful.Concurrent.STM (TQueue)
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.FileSystem
 import Effectful.State.Static.Shared (get, gets, modify)
@@ -45,7 +44,6 @@ import Nostr.Event ( Event(..), EventId(..), Kind(..), Rumor(..)
 import Nostr.Publisher
 import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
-import Nostr.Relay (RelayURI)
 import Nostr.Util
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
@@ -74,11 +72,13 @@ runUI = interpret $ \_ -> \case
     keyMgmtObj <- runE $ KeyMgmtUI.createUI changeKey'
     relayMgmtObj <- runE $ RelayMgmtUI.createUI changeKey'
 
+    {-
     let getProfileEventCount :: (PubKeyXO -> RelayURI -> Eff es (Maybe (TQueue SubscriptionEvent)))
                             -> PubKeyXO
                             -> Eff es Int
         getProfileEventCount subscriber pubkey = do
             return 0 -- @todo implement
+    -}
 
     profileClass <- newClass [
         defPropertySigRO' "id" changeKey' $ \obj -> do
@@ -127,7 +127,7 @@ runUI = interpret $ \_ -> \case
           follows <- runE $ getFollows currentPubKey
           return $ pk `elem` map pubkey follows,
 
-        defPropertySigRO' "followerCount" changeKey' $ \obj -> do
+        defPropertySigRO' "followerCount" changeKey' $ \_ -> do
             return (0 :: Int),
             {-
             st <- runE $ get @AppState
@@ -135,7 +135,7 @@ runUI = interpret $ \_ -> \case
             runE $ getProfileEventCount subscribeToFollowers pk,
             -}
 
-        defPropertySigRO' "followingCount" changeKey' $ \obj -> do
+        defPropertySigRO' "followingCount" changeKey' $ \_ -> do
             return (0 :: Int)
             {-
             st <- runE $ get @AppState
@@ -291,7 +291,7 @@ runUI = interpret $ \_ -> \case
                   rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
                   return $ fromMaybe "" $ rumorContent <$> rumor
                 Repost -> do
-                  let repostedId = listToMaybe [ eid | ("e":eid:_) <- tags ev ]
+                  let repostedId = listToMaybe [ eidStr | ("e":eidStr:_) <- tags ev ]
                   case repostedId of
                     Just eid' -> do
                       let eid'' = read (unpack eid') :: EventId
@@ -367,8 +367,8 @@ runUI = interpret $ \_ -> \case
 
         defPropertySigRO' "comments" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { currentPostCommentsObjRef = Just obj } }
-          let postId = fromObjRef obj :: EventId
-          commentIds <- runE $ getCommentIds postId
+          let eid = fromObjRef obj :: EventId
+          commentIds <- runE $ getCommentIds eid
           mapM (newObject postClass') commentIds
       ]
 
@@ -440,6 +440,11 @@ runUI = interpret $ \_ -> \case
               profile <- runE $ getProfile $ keyPairToPubKeyXO kp
               return $ fromMaybe "" $ picture profile
             Nothing -> return "",
+
+        defPropertySigRO' "inboxModelState" changeKey' $ \obj -> do
+          runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { inboxModelStateObjRef = Just obj } }
+          st <- runE $ get @AppState
+          return $ pack $ show $ inboxModelState st,
 
         defSignal "loginStatusChanged" (Proxy :: Proxy LoginStatusChanged),
 
