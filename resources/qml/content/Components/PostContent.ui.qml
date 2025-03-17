@@ -165,8 +165,12 @@ Pane {
                                 imageObject.Layout.fillWidth = true;
                                 imageObject.parent = contentLayout;
                                 imageObject.imageClicked.connect(function(url) {
-                                    imageViewerDialog.imageSource = url;
-                                    imageViewerDialog.open();
+                                    navigationPane.navigateTo(
+                                        "ImageViewer.ui.qml",
+                                        {
+                                            "imageSource": url
+                                        }
+                                    )
                                 });
                             } else if (type === "video") {
                                 let videoComponent = Qt.createComponent("PostVideo.ui.qml");
@@ -403,62 +407,6 @@ Pane {
         }
     }
 
-    Dialog {
-        id: imageViewerDialog
-        title: "View Image"
-        modal: true
-        standardButtons: Dialog.Close
-        anchors.centerIn: Overlay.overlay
-        width: Math.min(appWindow.width * 0.9, 1000)
-        height: Math.min(appWindow.height * 0.8, 800)
-
-        property string imageSource: ""
-
-        contentItem: Item {
-            id: imageDialogContent
-            anchors.fill: parent
-
-            Image {
-                id: fullSizeImage
-                source: imageViewerDialog.imageSource
-                fillMode: Image.PreserveAspectFit
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.topMargin: 20
-                height: parent.height - buttonRow.height - Constants.spacing_m * 4
-            }
-
-            Row {
-                id: buttonRow
-                anchors.bottom: parent.bottom
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottomMargin: Constants.spacing_m * 2
-                spacing: Constants.spacing_m
-                height: 80
-
-                Button {
-                    text: "Save Image"
-                    icon.source: "qrc:/icons/download.svg"
-                    onClicked: {
-                        downloadCompleted.connect(imageDownloadCallback)
-                        downloadAsync(imageViewerDialog.imageSource)
-                        saveNotification.show("Image download started")
-                    }
-                }
-
-                Button {
-                    text: "Copy URL"
-                    icon.source: "qrc:/icons/content_copy.svg"
-                    onClicked: {
-                        clipboard.copyText(imageViewerDialog.imageSource)
-                        saveNotification.show("URL copied to clipboard")
-                    }
-                }
-            }
-        }
-    }
-
     function openFullscreenVideo(videoUrl) {
         var component = Qt.createComponent("FullscreenVideoWindow.ui.qml");
         if (component.status === Component.Ready) {
@@ -481,15 +429,5 @@ Pane {
 
     function videoDownloadCallback(success, filePathOrError) {
         downloadCompleted.disconnect(videoDownloadCallback)
-    }
-
-    function imageDownloadCallback(success, filePathOrError) {
-        downloadCompleted.disconnect(imageDownloadCallback)
-
-        if (success) {
-            saveNotification.show("Saved to Downloads folder: " + filePathOrError)
-        } else {
-            saveNotification.show("Download failed: " + filePathOrError)
-        }
     }
 }

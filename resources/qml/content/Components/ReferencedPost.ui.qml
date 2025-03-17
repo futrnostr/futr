@@ -182,8 +182,12 @@ Item {
                                         imageObject.Layout.fillWidth = true;
                                         imageObject.parent = refContentLayout;
                                         imageObject.imageClicked.connect(function(url) {
-                                            imageViewerDialog.imageSource = url;
-                                            imageViewerDialog.open();
+                                            navigationPane.navigateTo(
+                                                "ImageViewer.ui.qml",
+                                                {
+                                                    "imageSource": url
+                                                }
+                                            )
                                         });
                                     } else if (type === "video") {
                                         let videoComponent = Qt.createComponent("PostVideo.ui.qml");
