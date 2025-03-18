@@ -14,7 +14,7 @@ Rectangle {
     opacity: inboxModelState !== undefined ? 1 : 0
     width: Math.min(parent.width * 0.7, 350)
     height: inboxStatusLayout.implicitHeight + 16
-    radius: Constants.radius_s
+    radius: Constants.radius_m
 
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.top: parent.top

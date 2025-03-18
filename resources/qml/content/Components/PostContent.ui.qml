@@ -53,14 +53,6 @@ Pane {
         }
     }
 
-    NotificationToast {
-        id: saveNotification
-        parent: Overlay.overlay
-        x: (Overlay.overlay.width - width) / 2
-        y: Overlay.overlay.height - height - 100
-        z: 999999
-    }
-
     ColumnLayout {
         id: mainColumn
         anchors.left: parent.left

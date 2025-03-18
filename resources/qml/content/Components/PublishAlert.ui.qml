@@ -14,7 +14,7 @@ Rectangle {
     property int timeout: 5000 // 5 seconds
 
     height: layout.implicitHeight + 16
-    radius: Constants.radius_s
+    radius: Constants.radius_m
 
     color: Qt.rgba(Material.backgroundColor.r, Material.backgroundColor.g, Material.backgroundColor.b, 0.8)
 
@@ -22,7 +22,7 @@ Rectangle {
         id: layout
         anchors.fill: parent
         anchors.margins: 8
-        spacing: Constants.radius_s
+        spacing: Constants.radius_m
 
         RowLayout {
             Layout.fillWidth: true

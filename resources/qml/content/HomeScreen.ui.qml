@@ -91,7 +91,7 @@ Item {
                                 Qt.rgba(Material.accentColor.r,
                                        Material.accentColor.g,
                                        Material.accentColor.b, 0.1)
-                            radius: Constants.radius_s
+                            radius: Constants.radius_m
 
                             Behavior on color {
                                 ColorAnimation { duration: 150 }
@@ -193,5 +193,17 @@ Item {
 
     InboxModelStatusAlert {
         id: inboxModelStatusAlert
+    }
+
+    NotificationToast {
+        id: notification
+        z: 999
+
+        // Center horizontally in the parent
+        anchors.horizontalCenter: parent.horizontalCenter
+
+        // Position from the top
+        anchors.top: parent.top
+        anchors.topMargin: 80
     }
 }

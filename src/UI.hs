@@ -36,6 +36,7 @@ import System.FilePath ((</>), takeExtension, dropExtension, takeFileName)
 import Text.Read (readMaybe)
 import Text.Regex.TDFA ((=~))
 
+import KeyMgmt (AccountId(..), updateProfile)
 import Logging
 import Nostr
 import Nostr.Bech32
@@ -485,16 +486,18 @@ runUI = interpret $ \_ -> \case
 
         defMethod' "setCurrentProfile" $ \_ npub' -> runE $ setCurrentProfile npub',
 
-        defMethod' "saveProfile" $ \_ input -> do
+        defMethod' "saveProfile" $ \_ input -> runE $ do
           let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
-          n <- runE getCurrentTime
-          kp <- runE getKeyPair
+          n <- getCurrentTime
+          kp <- getKeyPair
           let unsigned = createMetadata profile (keyPairToPubKeyXO kp) n
-          signedMaybe <- runE $ signEvent unsigned kp
+          signedMaybe <- signEvent unsigned kp
           case signedMaybe of
             Just signed -> do
-              runE $ broadcast signed
-            Nothing -> runE $ logWarning "Failed to sign profile update event",
+              broadcast signed
+              let aid = AccountId $ pubKeyXOToBech32 (keyPairToPubKeyXO kp)
+              updateProfile aid profile
+            Nothing -> logWarning "Failed to sign profile update event",
 
         defPropertySigRO' "followList" changeKey' $ \obj -> do
           runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }

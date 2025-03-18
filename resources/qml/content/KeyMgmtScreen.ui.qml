@@ -73,7 +73,7 @@ Rectangle {
                     color: Material.backgroundColor
                     border.color: Material.dividerColor
                     border.width: 1
-                    radius: Constants.radius_s
+                    radius: Constants.radius_m
 
                     ColumnLayout {
                         id: welcomeColumn

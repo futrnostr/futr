@@ -8,7 +8,7 @@ import Futr 1.0
 
 Rectangle {
     color: Material.backgroundColor
-    radius: Constants.radius_s
+    radius: Constants.radius_m
     width: 400
     border.color: Material.dividerColor
     border.width: 1
@@ -89,11 +89,10 @@ Rectangle {
                 visible: npub === mynpub
 
                 onClicked: {
-                    setCurrentProfile(mynpub)
-                    profileLoader.setSource(
-                        "EditProfile.ui.qml",
-                        { "profileData": currentProfile }
-                    )
+                    navigationPane.navigateTo("PersonalFeed.ui.qml", {
+                        "npub": mynpub,
+                        "editMode": true
+                    })
                 }
             }
 

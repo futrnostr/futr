@@ -9,13 +9,14 @@ import Futr 1.0
 Rectangle {
     id: editMyProfile
     color: Material.backgroundColor
-    radius: Constants.radius_s
+    radius: Constants.radius_m
     width: 400
     implicitHeight: content.implicitHeight + 20
     border.color: Material.dividerColor
     border.width: 1
 
     property var profileData
+    property var npub
     property var labelWidth: 100
 
     ColumnLayout {
@@ -35,11 +36,7 @@ Rectangle {
                 Layout.alignment: Qt.AlignLeft
 
                 onClicked: {
-                    setCurrentProfile(mynpub)
-                    profileLoader.setSource(
-                        "Profile.ui.qml",
-                        { "profileData": currentProfile, "npub": mynpub }
-                    )
+                    navigationPane.navigateBack()
                 }
             }
 
@@ -269,6 +266,10 @@ Rectangle {
                         twitterProof: twitterProofField.text,
                         telegramProof: telegramProofField.text
                     }))
+                    navigationPane.navigateTo("PersonalFeed.ui.qml", {
+                        npub: editMyProfile.npub,
+                        editMode: false
+                    })
                 }
             }
         }

@@ -266,13 +266,6 @@ Item {
         return videoMouseArea.isMouseInControls()
     }
 
-    NotificationToast {
-        id: notification
-        x: (videoPlayerContainer.width - width) / 2
-        y: videoPlayerContainer.height - height - 100
-        z: 999
-    }
-
     function videoDownloadCallback(success, filePathOrError) {
         downloadCompleted.disconnect(videoDownloadCallback)
 

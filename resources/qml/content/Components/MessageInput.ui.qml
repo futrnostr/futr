@@ -18,7 +18,7 @@ Pane {
 
     background: Rectangle {
         color: Material.dialogColor
-        radius: Constants.radius_s
+        radius: Constants.radius_m
         border.color: Material.dividerColor
         border.width: 1
     }

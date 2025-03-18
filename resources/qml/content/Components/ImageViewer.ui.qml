@@ -39,7 +39,7 @@ Item {
                 onClicked: {
                     downloadCompleted.connect(imageDownloadCallback)
                     downloadAsync(root.imageSource)
-                    saveNotification.show("Image download started")
+                    notification.show("Image download started")
                 }
             }
 
@@ -48,7 +48,7 @@ Item {
                 icon.source: "qrc:/icons/content_copy.svg"
                 onClicked: {
                     clipboard.copyText(root.imageSource)
-                    saveNotification.show("URL copied to clipboard")
+                    notification.show("URL copied to clipboard")
                 }
             }
 
@@ -96,21 +96,13 @@ Item {
         }
     }
 
-    NotificationToast {
-        id: saveNotification
-        parent: Overlay.overlay
-        x: (Overlay.overlay.width - width) / 2
-        y: Overlay.overlay.height - height - 100
-        z: 999999
-    }
-
     function imageDownloadCallback(success, filePathOrError) {
         downloadCompleted.disconnect(imageDownloadCallback)
 
         if (success) {
-            saveNotification.show("Saved to Downloads folder: " + filePathOrError)
+            notification.show("Saved to Downloads folder: " + filePathOrError)
         } else {
-            saveNotification.show("Download failed: " + filePathOrError)
+            notification.show("Download failed: " + filePathOrError)
         }
     }
 }

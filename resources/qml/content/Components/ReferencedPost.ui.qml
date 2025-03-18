@@ -24,7 +24,7 @@ Item {
         sourceComponent: Rectangle {
             width: parent.width
             color: Qt.rgba(0, 0, 0, 0.1)
-            radius: Constants.radius_s
+            radius: Constants.radius_m
             border.width: 1
             border.color: Material.dividerColor
 

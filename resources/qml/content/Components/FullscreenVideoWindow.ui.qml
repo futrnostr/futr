@@ -18,7 +18,7 @@ Window {
     property string videoUrl: ""
 
     NotificationToast {
-        id: notification
+        id: videoNotification
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 100
@@ -31,7 +31,7 @@ Window {
         isFullscreen: true
 
         onShowNotification: function(message) {
-            notification.show(message)
+            videoNotification.show(message)
         }
 
         Component.onCompleted: {

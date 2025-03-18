@@ -11,7 +11,7 @@ import HsQML.Model 1.0
 Rectangle {
     id: chat
     color: Material.backgroundColor
-    radius: Constants.radius_s
+    radius: Constants.radius_m
     border.color: Material.dividerColor
     border.width: 1
 
@@ -176,6 +176,7 @@ Rectangle {
                     Layout.fillHeight: true
                     leftMargin: 0
                     rightMargin: 2 * Constants.spacing_xs + 10
+                    spacing: Constants.spacing_s
 
                     model: AutoListModel {
                         id: postsModel
@@ -194,8 +195,6 @@ Rectangle {
                         sourceComponent: PostContent {
                             post: modelData
                             width: parent.width
-                            //anchors.left: parent.left
-//                            anchors.leftMargin: 0
 
                             onCommentClicked: {
                                 if (modelData) {
@@ -291,7 +290,7 @@ Rectangle {
 
                                     background: Rectangle {
                                         color: message ? (message.author.npub == mynpub ? Material.accentColor : Material.dividerColor) : Material.dividerColor
-                                        radius: Constants.radius_s
+                                        radius: Constants.radius_m
                                     }
 
                                     ColumnLayout {

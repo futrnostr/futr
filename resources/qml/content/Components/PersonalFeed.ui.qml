@@ -11,11 +11,14 @@ RowLayout {
 
     required property var npub
 
+    property var editMode: false
+
     Component.onCompleted: {
         setCurrentProfile(npub) // @todo setCurrentProfile and openChat should be one call maybe?
         openChat(npub)          //       investigate further
         chat.profileData = currentProfile
         profile.profileData = currentProfile
+        profileEdit.profileData = currentProfile
     }
 
     Rectangle {
@@ -43,6 +46,15 @@ RowLayout {
         Profile {
             id: profile
             anchors.fill: parent
+            visible: !personalFeed.editMode
+
+            npub: personalFeed.npub
+        }
+
+        EditProfile {
+            id: profileEdit
+            anchors.fill: parent
+            visible: personalFeed.editMode
 
             npub: personalFeed.npub
         }
