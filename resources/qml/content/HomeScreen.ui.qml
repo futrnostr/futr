@@ -56,7 +56,7 @@ Item {
                         color: Material.backgroundColor
                         border.color: Material.dividerColor
                         border.width: 1
-                        radius: 8
+                        radius: Constants.radius_m
                     }
 
                     FollowList {
@@ -91,7 +91,7 @@ Item {
                                 Qt.rgba(Material.accentColor.r,
                                        Material.accentColor.g,
                                        Material.accentColor.b, 0.1)
-                            radius: 4
+                            radius: Constants.radius_s
 
                             Behavior on color {
                                 ColorAnimation { duration: 150 }

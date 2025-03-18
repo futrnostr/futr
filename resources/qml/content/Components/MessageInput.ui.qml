@@ -14,14 +14,11 @@ Pane {
     signal messageSent(string text)
 
     Layout.fillWidth: true
-    Layout.leftMargin: Constants.spacing_m
-    Layout.rightMargin: Constants.spacing_m
-    Layout.bottomMargin: Constants.spacing_m
-    padding: Constants.spacing_m
+    Layout.margins: Constants.spacing_xs
 
     background: Rectangle {
         color: Material.dialogColor
-        radius: 5
+        radius: Constants.radius_s
         border.color: Material.dividerColor
         border.width: 1
     }

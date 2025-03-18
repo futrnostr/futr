@@ -360,6 +360,33 @@ runUI = interpret $ \_ -> \case
                 _ -> return Nothing
             Nothing -> return Nothing,
 
+        -- Returns the post that was reposted, nothing otherwise
+        defPropertySigRO' "referencedPost" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays | kind (event eventWithRelays) == Repost -> do
+              let tags' = tags (event eventWithRelays)
+                  repostedId = listToMaybe [eidStr | ("e":eidStr:_) <- tags']
+              case repostedId of
+                Just eidStr -> do
+                  let eid' = read (unpack eidStr) :: EventId
+                  postObj <- newObject postClass' eid'
+                  return $ Just postObj
+                Nothing -> return Nothing
+            _ -> return Nothing,
+
+        -- Returns the event id of the original post that was reposted, nothing otherwise
+        defPropertySigRO' "referencedPostId" changeKey' $ \obj -> do
+          let eid = fromObjRef obj :: EventId
+          eventMaybe <- runE $ getEvent eid
+          case eventMaybe of
+            Just eventWithRelays | kind (event eventWithRelays) == Repost -> do
+              let tags' = tags (event eventWithRelays)
+                  repostedId = listToMaybe [eidStr | ("e":eidStr:_) <- tags']
+              return repostedId
+            _ -> return Nothing,
+
         -- Event count properties using the helper
         defPropertySigRO' "repostCount" changeKey' $ \_ -> do
             return (0 :: Int),

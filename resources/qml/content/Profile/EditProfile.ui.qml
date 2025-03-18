@@ -9,7 +9,7 @@ import Futr 1.0
 Rectangle {
     id: editMyProfile
     color: Material.backgroundColor
-    radius: 5
+    radius: Constants.radius_s
     width: 400
     implicitHeight: content.implicitHeight + 20
     border.color: Material.dividerColor

@@ -10,7 +10,7 @@ import Futr 1.0
 Rectangle {
     id: root
     color: Material.backgroundColor
-    radius: 8
+    radius: Constants.radius_s
 
     property bool isCollapsed: false
 

@@ -8,7 +8,7 @@ import Futr 1.0
 
 Rectangle {
     color: Material.backgroundColor
-    radius: 5
+    radius: Constants.radius_s
     width: 400
     border.color: Material.dividerColor
     border.width: 1

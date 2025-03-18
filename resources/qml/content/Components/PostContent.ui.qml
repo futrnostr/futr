@@ -10,17 +10,14 @@ import Futr 1.0
 
 Pane {
     id: root
-    padding: Constants.spacing_s
-    width: parent.width - 2 * Constants.spacing_m
-    anchors.right: parent.right
-    anchors.rightMargin: Constants.spacing_s
-    anchors.left: parent.left
-    anchors.leftMargin: 0
+    //padding: Constants.spacing_s
 
     required property var post
+    property bool clickable: true
 
     signal commentClicked()
     signal repostClicked()
+    signal postClicked()
 
     function escapeHtml(str) {
         if (typeof str !== 'string') return '';
@@ -35,8 +32,25 @@ Pane {
     }
 
     background: Rectangle {
+        id: backgroundRect
         color: Material.dialogColor
-        radius: 10
+        radius: Constants.radius_m
+
+        MouseArea {
+            id: postClickArea
+            anchors.fill: parent
+            enabled: root.clickable
+            propagateComposedEvents: true
+
+            onPressed: {
+                console.log("Pressed")
+                if (!mouse.wasHeld) {
+                    console.log("Post clicked")
+                    root.postClicked()
+                }
+                mouse.accepted = false;
+            }
+        }
     }
 
     NotificationToast {
@@ -51,14 +65,13 @@ Pane {
         id: mainColumn
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.rightMargin: 5
-        spacing: Constants.spacing_xs
+        anchors.rightMargin: Constants.spacing_xs
+        spacing: 0
 
         RowLayout {
             Layout.fillWidth: true
             Layout.bottomMargin: Constants.spacing_xs
-            visible: post.referencedPost !== null &&
-                     (post.postType === "quote_repost" || post.postType === "repost")
+            visible: post.postType === "quote_repost" || post.postType === "repost"
 
             Image {
                 source: "qrc:/icons/repeat.svg"
@@ -77,161 +90,51 @@ Pane {
         ColumnLayout {
             id: contentLayout
             Layout.fillWidth: true
-            spacing: Constants.spacing_xs
+            spacing: 0
             visible: post.postType === "short_text_note" || post.postType === "quote_repost" || post.postType === "repost"
 
-            TextEdit {
-                id: contentTextEdit
-                Layout.fillWidth: true
-                Layout.leftMargin: Constants.spacing_xs
-                readOnly: true
-                selectByMouse: true
-                wrapMode: Text.Wrap
-                textFormat: Text.RichText
-                color: Material.foreground
-
-                Component.onCompleted: {
-                    if (post) {
-                        contentTextEdit.text = generateHtmlContent(post.contentParts);
-                    }
+            Component.onCompleted: {
+                if (post) {
+                    generateHtmlContent(post.contentParts);
                 }
+            }
 
-                function generateHtmlContent(parts) {
-                    let htmlText = "";
-                    let hasCurrentText = false;
+            function generateHtmlContent(parts) {
+                let htmlText = "";
+                let hasCurrentText = true;
 
-                    function createTextEdit(text) {
-                        if (!text.trim()) return; // Skip empty text
+                function createTextEdit(text) {
+                    if (!text.trim()) return; // Skip empty text
 
-                        let textObject = Qt.createQmlObject(`
-                            import QtQuick 2.15
-                            import QtQuick.Controls 2.15
-                            import QtQuick.Controls.Material 2.15
-                            import QtQuick.Layouts 1.15
+                    let textObject = Qt.createQmlObject(`
+                        import QtQuick 2.15
+                        import QtQuick.Controls 2.15
+                        import QtQuick.Controls.Material 2.15
+                        import QtQuick.Layouts 1.15
 
-                            TextEdit {
-                                Layout.fillWidth: true
-                                readOnly: true
-                                selectByMouse: true
-                                wrapMode: Text.Wrap
-                                textFormat: Text.RichText
-                                color: Material.foreground
-                                text: "${text.replace(/"/g, '\\"')}"
-                            }
-                        `, contentLayout);
+                        import Futr 1.0
 
-                        textObject.Layout.fillWidth = true;
-                        textObject.parent = contentLayout;
-                        textObject.linkActivated.connect(function(link) {
-                            contentTextEdit.onLinkActivated(link);
-                        });
-                    }
-
-                    for (let i = 0; i < parts.length; i++) {
-                        const part = parts[i];
-                        const type = part[0];
-                        const content = part.length > 1 ? part[1] : "";
-
-                        if (type === "text" || type === "url" || type === "nprofile" || type === "npub") {
-                            hasCurrentText = true;
-
-                            if (type === "text") {
-                                htmlText += escapeHtml(content);
-                            } else if (type === "url") {
-                                htmlText += `<a href="${content}" style="color: ${Material.accentColor};">${escapeHtml(content)}</a>`;
-                            } else if (type === "nprofile" || type === "npub") {
-                                const profile = getProfile(content);
-                                const displayName = profile && (profile.displayName || profile.name) ?
-                                                   (profile.displayName || profile.name) :
-                                                   content.substring(0, 18) + "...";
-                                htmlText += `<a href="profile://${content}" style="color: ${Material.accentColor};">@${displayName}</a>`;
-                            }
-                        } else {
-                            // If we have accumulated text, create a TextEdit before adding non-text content
-                            if (hasCurrentText) {
-                                createTextEdit(htmlText);
-                                htmlText = "";
-                                hasCurrentText = false;
-                            }
-
-                            if (type === "image") {
-                                let imageComponent = Qt.createComponent("PostImage.ui.qml");
-                                let imageObject = imageComponent.createObject(contentLayout, {
-                                    "source": content,
-                                    "width": contentLayout.width,
-                                    "clickable": true,
-                                    "imageUrl": content
-                                });
-                                imageObject.Layout.fillWidth = true;
-                                imageObject.parent = contentLayout;
-                                imageObject.imageClicked.connect(function(url) {
-                                    navigationPane.navigateTo(
-                                        "ImageViewer.ui.qml",
-                                        {
-                                            "imageSource": url
-                                        }
-                                    )
-                                });
-                            } else if (type === "video") {
-                                let videoComponent = Qt.createComponent("PostVideo.ui.qml");
-                                if (videoComponent.status === Component.Ready) {
-                                    let videoObject = videoComponent.createObject(contentLayout, {
-                                        "source": content,
-                                        "width": contentLayout.width,
-                                        "clickable": true,
-                                        "videoUrl": content
-                                    });
-
-                                    if (videoObject) {
-                                        videoObject.Layout.fillWidth = true;
-                                        videoObject.parent = contentLayout;
-                                        videoObject.fullScreenRequested.connect(function(url) {
-                                            openFullscreenVideo(url);
-                                        });
-                                    } else {
-                                        console.error("Failed to create video object");
-                                    }
-                                } else {
-                                    console.error("Error loading video component:", videoComponent.errorString());
-                                }
-                            } else if (type === "note" || type === "nevent" || type === "naddr") {
-                                let post = getPost(content);
-
-                                if (post) {
-                                    let referencedPostComponent = Qt.createComponent("ReferencedPost.ui.qml");
-                                    if (referencedPostComponent.status === Component.Ready) {
-                                        let referencedPostObject = referencedPostComponent.createObject(contentLayout, {
-                                            "refPost": post
-                                        });
-                                        if (referencedPostObject) {
-                                            referencedPostObject.Layout.fillWidth = true;
-                                            referencedPostObject.parent = contentLayout;
-                                        } else {
-                                            console.error("Failed to create ReferencedPost object.");
-                                        }
-                                    } else {
-                                        console.error("Error loading referenced post component:", referencedPostComponent.errorString());
-                                    }
-                                } else {
-                                    // Display a label indicating the event is not found
-                                    let notFoundLabel = Qt.createQmlObject('import QtQuick 2.15; Text { text: "Event not found, we\'re trying to find it."; color: "red"; }', contentLayout);
-                                    notFoundLabel.Layout.fillWidth = true;
-                                    notFoundLabel.parent = contentLayout;
-                                }
-                            }
+                        TextEdit {
+                            Layout.fillWidth: true
+                            Layout.topMargin: Constants.spacing_xs
+                            Layout.bottomMargin: Constants.spacing_xs
+                            readOnly: true
+                            selectByMouse: true
+                            wrapMode: Text.Wrap
+                            textFormat: Text.RichText
+                            color: Material.foreground
+                            text: "${text.replace(/"/g, '\\"')}"
                         }
-                    }
+                    `, contentLayout);
 
-                    // Create the final TextEdit if there's any remaining text
-                    if (hasCurrentText) {
-                        createTextEdit(htmlText);
-                        return ""; // Return empty string since we've already created the TextEdit objects
-                    }
-
-                    return htmlText;
+                    textObject.Layout.fillWidth = true;
+                    textObject.parent = contentLayout;
+                    textObject.linkActivated.connect(function(link) {
+                        onLinkActivated(link);
+                    });
                 }
 
-                onLinkActivated: function(link) {
+                function onLinkActivated(link) {
                     if (link.startsWith("profile://")) {
                         let profileId = link.substring(10);
                         // Convert nprofile to npub if necessary
@@ -254,6 +157,106 @@ Pane {
                         Qt.openUrlExternally(link);
                     }
                 }
+
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    const type = part[0];
+                    const content = part.length > 1 ? part[1] : "";
+
+                    if (type === "text" || type === "url" || type === "nprofile" || type === "npub") {
+                        hasCurrentText = true;
+
+                        if (type === "text") {
+                            htmlText += escapeHtml(content);
+                        } else if (type === "url") {
+                            htmlText += `<a href="${content}" style="color: ${Material.accentColor};">${escapeHtml(content)}</a>`;
+                        } else if (type === "nprofile" || type === "npub") {
+                            const profile = getProfile(content);
+                            const displayName = profile && (profile.displayName || profile.name) ?
+                                               (profile.displayName || profile.name) :
+                                               content.substring(0, 18) + "...";
+                            htmlText += `<a href="profile://${content}" style="color: ${Material.accentColor};">@${displayName}</a>`;
+                        }
+                    } else {
+                        // If we have accumulated text, create a TextEdit before adding non-text content
+                        if (hasCurrentText) {
+                            createTextEdit(htmlText);
+                            htmlText = "";
+                            hasCurrentText = false;
+                        }
+
+                        if (type === "image") {
+                            let imageComponent = Qt.createComponent("PostImage.ui.qml");
+                            let imageObject = imageComponent.createObject(contentLayout, {
+                                "source": content,
+                                //"width": contentLayout.width,
+                                "clickable": true,
+                                "imageUrl": content
+                            });
+                            imageObject.Layout.fillWidth = true;
+                            imageObject.parent = contentLayout;
+                            imageObject.imageClicked.connect(function(url) {
+                                navigationPane.navigateTo(
+                                    "ImageViewer.ui.qml",
+                                    {
+                                        "imageSource": url
+                                    }
+                                )
+                            });
+                        } else if (type === "video") {
+                            let videoComponent = Qt.createComponent("PostVideo.ui.qml");
+                            if (videoComponent.status === Component.Ready) {
+                                let videoObject = videoComponent.createObject(contentLayout, {
+                                    "source": content,
+                                    //"width": contentLayout.width,
+                                    "clickable": true,
+                                    "videoUrl": content
+                                });
+
+                                if (videoObject) {
+                                    videoObject.Layout.fillWidth = true;
+                                    videoObject.parent = contentLayout;
+                                    videoObject.fullScreenRequested.connect(function(url) {
+                                        openFullscreenVideo(url);
+                                    });
+                                } else {
+                                    console.error("Failed to create video object");
+                                }
+                            } else {
+                                console.error("Error loading video component:", videoComponent.errorString());
+                            }
+                        } else if (type === "note" || type === "nevent" || type === "naddr") {
+                            let post = getPost(content);
+
+                            if (post) {
+                                let referencedPostComponent = Qt.createComponent("ReferencedPost.ui.qml");
+                                if (referencedPostComponent.status === Component.Ready) {
+                                    let referencedPostObject = referencedPostComponent.createObject(contentLayout, {
+                                        "refPost": post
+                                    });
+                                    if (referencedPostObject) {
+                                        referencedPostObject.Layout.fillWidth = true;
+                                        referencedPostObject.parent = contentLayout;
+                                    } else {
+                                        console.error("Failed to create ReferencedPost object.");
+                                    }
+                                } else {
+                                    console.error("Error loading referenced post component:", referencedPostComponent.errorString());
+                                }
+                            } else {
+                                // Display a label indicating the event is not found
+                                let notFoundLabel = Qt.createQmlObject('import QtQuick 2.15; Text { text: "Event not found, we\'re trying to find it."; color: "red"; }', contentLayout);
+                                notFoundLabel.Layout.fillWidth = true;
+                                notFoundLabel.parent = contentLayout;
+                            }
+                        }
+                    }
+                }
+
+                // Create the final TextEdit if there's any remaining text
+                if (hasCurrentText) {
+                    createTextEdit(htmlText);
+                }
             }
         }
 
@@ -263,6 +266,7 @@ Pane {
             Layout.alignment: Qt.AlignHCenter
             spacing: Constants.spacing_l
             Layout.topMargin: 0
+            Layout.bottomMargin: 0
 
             Item { Layout.fillWidth: true }
 
@@ -324,7 +328,7 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 0
-            spacing: Constants.spacing_s
+            Layout.bottomMargin: 0
 
             Item { Layout.fillWidth: true }
 
@@ -340,7 +344,9 @@ Pane {
                 icon.source: "qrc:/icons/menu.svg"
                 icon.width: 20
                 icon.height: 20
-                implicitWidth: 36
+                implicitWidth: 28
+                implicitHeight: 28
+                padding: 4
                 Layout.alignment: Qt.AlignRight
                 onClicked: postMenu.open()
 

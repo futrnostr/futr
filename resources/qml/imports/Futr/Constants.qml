@@ -6,6 +6,11 @@ QtObject {
     readonly property int width: 1280
     readonly property int height: 720
 
+    // Radius
+    readonly property int radius_s: 4
+    readonly property int radius_m: 8
+    readonly property int radius_l: 16
+
     // Spacing
     readonly property int spacing_xs: 4
     readonly property int spacing_s: 8

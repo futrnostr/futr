@@ -37,7 +37,7 @@ ScrollView {
             height: 60
             color: mouseHover ? Material.accentColor : Material.backgroundColor
             border.color: Material.dividerColor
-            radius: 5
+            radius: Constants.radius_s
             width: ListView.view.width
 
             RowLayout {

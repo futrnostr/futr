@@ -9,7 +9,7 @@ import Futr 1.0
 Rectangle {
     id: root
     color: Material.backgroundColor
-    radius: 5
+    radius: Constants.radius_s
     border.color: Material.dividerColor
     border.width: 1
 
@@ -20,7 +20,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 10
-        spacing: 10
+        spacing: Constants.spacing_s
 
         Text {
             Layout.fillWidth: true

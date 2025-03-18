@@ -11,13 +11,13 @@ import HsQML.Model 1.0
 Rectangle {
     id: chat
     color: Material.backgroundColor
-    radius: 5
+    radius: Constants.radius_s
     border.color: Material.dividerColor
     border.width: 1
 
     property string npub: ""
     property var profileData
-
+/*
     PostDialog {
         id: quoteReplyDialog
         inputPlaceholder: qsTr("Add a quote...")
@@ -43,7 +43,7 @@ Rectangle {
             setCurrentPost(null)
         }
     }
-
+*/
     Menu {
         id: repostMenu
         property var targetPost: null
@@ -52,7 +52,7 @@ Rectangle {
             text: qsTr("Repost")
             onTriggered: {
                 if (repostMenu.targetPost.postType == "repost") {
-                    repost(repostMenu.targetPost.referencedPosts[0].id, text)
+                    repost(repostMenu.targetPost.referencedPostId, text)
                 } else {
                     repost(repostMenu.targetPost.id, text)
                 }
@@ -65,7 +65,7 @@ Rectangle {
                 quoteReplyDialog.targetPost = repostMenu.targetPost
 
                 if (repostMenu.targetPost.postType == "repost") {
-                    quoteReplyDialog.targetPost = repostMenu.targetPost.referencedPosts[0]
+                    quoteReplyDialog.targetPost = repostMenu.targetPost.referencedPostId
                 } else {
                     quoteReplyDialog.targetPost = repostMenu.targetPost
                 }
@@ -79,13 +79,11 @@ Rectangle {
         id: mainContentArea
         anchors.fill: parent
         anchors.margins: Constants.spacing_xs
-        spacing: Constants.spacing_m
 
         TabBar {
             id: chatTypeSelector
             Layout.fillWidth: true
-            Layout.preferredHeight: 48
-            Layout.topMargin: Constants.spacing_xs
+            Layout.preferredHeight: 42
             contentWidth: width
 
             TabButton {
@@ -165,13 +163,11 @@ Rectangle {
         StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.topMargin: Constants.spacing_m
             currentIndex: chatTypeSelector.currentIndex
 
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: Constants.spacing_m
 
                 // Public notes list
                 ScrollingListView {
@@ -179,7 +175,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     leftMargin: 0
-                    rightMargin: 0
+                    rightMargin: 2 * Constants.spacing_xs + 10
 
                     model: AutoListModel {
                         id: postsModel
@@ -192,25 +188,33 @@ Rectangle {
 
                     delegate: Loader {
                         active: modelData !== undefined && modelData !== null
-                        width: postsView.width - 32
-                        x: 16
+                        width: postsView.width - postsView.rightMargin
                         Layout.preferredHeight: active ? item.implicitHeight : 0
 
                         sourceComponent: PostContent {
                             post: modelData
+                            width: parent.width
+                            //anchors.left: parent.left
+//                            anchors.leftMargin: 0
 
                             onCommentClicked: {
                                 if (modelData) {
-                                    commentsDialog.targetPost = modelData
-                                    setCurrentPost(modelData.id)
-                                    commentsDialog.open()
+                                    //commentsDialog.targetPost = modelData
+                                    //setCurrentPost(modelData.id)
+                                    //commentsDialog.open()
                                 }
                             }
 
                             onRepostClicked: {
                                 if (modelData) {
-                                    repostMenu.targetPost = modelData
-                                    repostMenu.popup()
+                                    //repostMenu.targetPost = modelData
+                                    //repostMenu.popup()
+                                }
+                            }
+
+                            onPostClicked: {
+                                if (modelData) {
+                                    navigationPane.navigateTo("PostDetails.ui.qml", { post: modelData })
                                 }
                             }
                         }
@@ -225,6 +229,10 @@ Rectangle {
                     onMessageSent: function(text) {
                         sendShortTextNote(text)
                     }
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 0
+                    Layout.rightMargin: 0
+                    Layout.bottomMargin: 0
                 }
             }
 
@@ -232,7 +240,7 @@ Rectangle {
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: Constants.spacing_m
+                spacing: Constants.spacing_s
 
                 DMRelays {
                     Layout.fillWidth: true
@@ -257,18 +265,18 @@ Rectangle {
 
                     delegate: Loader {
                         active: modelData !== undefined && modelData !== null
-                        width: privateMessageListView.width - privateMessageListView.leftMargin - privateMessageListView.rightMargin - 15
+                        width: privateMessageListView.width - privateMessageListView.leftMargin - privateMessageListView.rightMargin - 8
                         Layout.preferredHeight: active ? item.implicitHeight : 0
 
                         sourceComponent: Item {
                             property var message: modelData
-                            height: privateRowLayout.height + 8
+                            height: privateRowLayout.height + Constants.spacing_xs
 
                             RowLayout {
                                 id: privateRowLayout
                                 width: parent.width
-                                spacing: Constants.spacing_m
-                                y: Constants.spacing_m
+                                spacing: Constants.spacing_xs
+                                y: Constants.spacing_s
                                 layoutDirection: message ? (message.author.npub == mynpub ? Qt.RightToLeft : Qt.LeftToRight) : Qt.LeftToRight
 
                                 ProfilePicture {
@@ -278,16 +286,15 @@ Rectangle {
                                 Pane {
                                     Layout.fillWidth: true
                                     Layout.maximumWidth: parent.width * 0.7
-                                    Layout.rightMargin: message ? (message.author.npub == mynpub ? 0 : Constants.spacing_m) : Constants.spacing_m
-                                    Layout.leftMargin: message ? Constants.spacing_m : 0
-                                    padding: Constants.spacing_m
+                                    Layout.rightMargin: message ? (message.author.npub == mynpub ? 0 : Constants.spacing_s) : Constants.spacing_s
+                                    Layout.leftMargin: message ? Constants.spacing_s : 0
+
                                     background: Rectangle {
                                         color: message ? (message.author.npub == mynpub ? Material.accentColor : Material.dividerColor) : Material.dividerColor
-                                        radius: 10
+                                        radius: Constants.radius_s
                                     }
 
                                     ColumnLayout {
-                                        spacing: Constants.spacing_s
                                         width: parent.width
 
                                         Text {
@@ -299,7 +306,6 @@ Rectangle {
 
                                         RowLayout {
                                             Layout.fillWidth: true
-                                            spacing: Constants.spacing_s
 
                                             Item {
                                                 Layout.fillWidth: true
@@ -320,7 +326,9 @@ Rectangle {
                                                 icon.source: "qrc:/icons/menu.svg"
                                                 icon.width: 20
                                                 icon.height: 20
-                                                implicitWidth: 36
+                                                implicitWidth: 28
+                                                implicitHeight: 28
+                                                padding: 4
                                                 Layout.alignment: Qt.AlignRight
                                                 onClicked: postMenu.open()
 
@@ -381,6 +389,10 @@ Rectangle {
                     onMessageSent: function(text) {
                         sendPrivateMessage(text)
                     }
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 0
+                    Layout.rightMargin: 0
+                    Layout.bottomMargin: 0
                 }
             }
         }
@@ -401,7 +413,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: errorText.height + 2 * Constants.spacing_m
+        height: errorText.height + 2 * Constants.spacing_s
         color: Material.color(Material.Red)
         visible: false
         z: 1000

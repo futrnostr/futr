@@ -19,7 +19,7 @@ Dialog {
         color: Material.dialogColor
         border.color: Material.dividerColor
         border.width: 2
-        radius: 10
+        radius: Constants.radius_m
 
         ColumnLayout {
             anchors.fill: parent

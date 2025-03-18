@@ -34,7 +34,7 @@ Item {
         width: parent.width
         height: Math.min(width * 9/16, root.maxHeight)
         color: "black"
-        radius: 8
+        radius: Constants.radius_m
 
         VideoPlayer {
             id: videoPlayer

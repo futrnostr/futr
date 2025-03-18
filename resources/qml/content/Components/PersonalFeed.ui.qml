@@ -8,7 +8,6 @@ import Profile 1.0
 RowLayout {
     id: personalFeed
     anchors.fill: parent
-    spacing: 10
 
     required property var npub
 
@@ -20,7 +19,7 @@ RowLayout {
     }
 
     Rectangle {
-        Layout.preferredWidth: parent.width * 0.4
+        Layout.preferredWidth: parent.width * 0.6
         Layout.fillHeight: true
         Layout.fillWidth: true
         Layout.preferredHeight: parent.height
@@ -29,15 +28,13 @@ RowLayout {
         Chat {
             id: chat
             anchors.fill: parent
-            anchors.rightMargin: 10
-            anchors.bottomMargin: 5
 
             npub: personalFeed.npub
         }
     }
 
     Rectangle {
-        Layout.preferredWidth: parent.width * 0.3
+        Layout.preferredWidth: parent.width * 0.4
         Layout.fillHeight: true
         Layout.fillWidth: true
         Layout.preferredHeight: parent.height

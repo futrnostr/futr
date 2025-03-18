@@ -19,7 +19,7 @@ Rectangle {
         anchors.fill: parent
         anchors.leftMargin: 10
         anchors.rightMargin: 10
-        spacing: 10
+        spacing: Constants.radius_m
 
         Image {
             Layout.leftMargin: 10

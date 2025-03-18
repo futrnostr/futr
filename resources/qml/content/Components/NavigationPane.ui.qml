@@ -136,7 +136,7 @@ Rectangle {
             Loader {
                 id: primaryLoader
                 anchors.fill: parent
-                anchors.margins: 10
+                anchors.topMargin: 8
             }
         }
     }
