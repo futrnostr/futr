@@ -7,7 +7,6 @@ import Profile 1.0
 
 RowLayout {
     id: personalFeed
-    anchors.fill: parent
 
     required property var npub
 

@@ -13,6 +13,7 @@ Rectangle {
     radius: Constants.radius_m
 
     property bool isCollapsed: false
+    property var stackView: null
 
     ColumnLayout {
         anchors.fill: parent
@@ -180,15 +181,9 @@ Rectangle {
 
                             onClicked: {
                                 if (modelData === undefined || modelData === null) return;
-
                                 followsView.selectedPubkey = modelData.pubkey
 
-                                navigationPane.navigateTo(
-                                    "PersonalFeed.ui.qml",
-                                    {
-                                        "npub": modelData.pubkey
-                                    }
-                                );
+                                stackView.replace(personalFeedComponent, {"npub": modelData.pubkey});
                             }
                         }
                     }

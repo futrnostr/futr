@@ -89,10 +89,8 @@ Rectangle {
                 visible: npub === mynpub
 
                 onClicked: {
-                    navigationPane.navigateTo("PersonalFeed.ui.qml", {
-                        "npub": mynpub,
-                        "editMode": true
-                    })
+                    personalFeed.editMode = true
+                    //stackView.push(personalFeedComponent, {"npub": mynpub, "editMode": true})
                 }
             }
 
@@ -106,8 +104,10 @@ Rectangle {
                 onClicked: {
                     if (profileData.isFollow) {
                         unfollow(npub)
+                        //setCurrentProfile(npub)
                     } else {
                         follow(npub)
+                        //setCurrentProfile(npub)
                     }
                 }
             }

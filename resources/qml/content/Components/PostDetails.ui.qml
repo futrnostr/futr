@@ -8,39 +8,70 @@ import Components 1.0
 import Futr 1.0
 import HsQML.Model 1.0
 
-Rectangle {
+Page {
     id: root
-    width: parent.width
-    height: parent.height
 
     property var post: null
 
+    header: ToolBar {
+        RowLayout {
+            anchors.fill: parent
+
+            Button {
+                icon.source: "qrc:/icons/arrow_back.svg"
+                icon.width: 24
+                icon.height: 24
+                flat: true
+                onClicked: stackView.pop()
+
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Back")
+                ToolTip.delay: 500
+            }
+
+            Label {
+                text: qsTr("Post Details")
+                elide: Label.ElideRight
+                horizontalAlignment: Qt.AlignHCenter
+                verticalAlignment: Qt.AlignVCenter
+                Layout.fillWidth: true
+            }
+
+            Item { width: 48; height: 48 }
+        }
+    }
+
     ScrollView {
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        spacing: 0
+        anchors.fill: parent
+        anchors.bottomMargin: replyInput.height
         clip: true
         id: scrollView
 
         ColumnLayout {
-            width: scrollView.width - 20
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            width: scrollView.width
+            spacing: Constants.spacing_xs
 
             PostContent {
                 post: root.post
                 Layout.fillWidth: true
+                Layout.topMargin: Constants.spacing_xs
+                Layout.leftMargin: 0
+                Layout.rightMargin: Constants.spacing_m
             }
 
             Label {
                 text: qsTr("Seen on Relays")
                 color: Material.foreground
+                Layout.leftMargin: 0
+                font: Constants.fontMedium
             }
 
             Repeater {
                 model: post ? post.relays : []
                 delegate: ColumnLayout {
                     Layout.fillWidth: true
+                    Layout.leftMargin: 0
+                    Layout.rightMargin: Constants.spacing_m
                     spacing: Constants.spacing_s
 
                     Text {
@@ -59,12 +90,21 @@ Rectangle {
                 }
             }
 
+            Label {
+                text: qsTr("Comments")
+                color: Material.foreground
+                Layout.leftMargin: Constants.spacing_m
+                font: Constants.fontMedium
+                visible: commentsModel.count > 0
+            }
+
             // Comments sections
             ScrollingListView {
                 id: commentsView
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                width: scrollView.width - 20
+                Layout.preferredHeight: Math.min(contentHeight, 1000)
+                Layout.leftMargin: Constants.spacing_m
+                Layout.rightMargin: Constants.spacing_m
 
                 model: AutoListModel {
                     id: commentsModel
@@ -83,29 +123,30 @@ Rectangle {
                     sourceComponent: PostContent {
                         post: modelData
                         Layout.fillWidth: true
-                        Layout.leftMargin: Constants.spacing_m
-                        Layout.rightMargin: Constants.spacing_m
                     }
                 }
             }
 
             Item {
                 Layout.fillHeight: true
+                height: 20 // Minimum space at the bottom
             }
+        }
+    }
 
-            MessageInput {
-                id: replyInput
-                width: scrollView.width - 20
-                Layout.margins: 0
-                spacing: 0
-                Layout.fillWidth: true
-                placeholderText: "Send..." // root.inputPlaceholder
-                buttonText: "Send" // root.buttonText
+    MessageInput {
+        id: replyInput
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: implicitHeight
+        placeholderText: qsTr("Reply to post...")
+        buttonText: qsTr("Send")
 
-                onMessageSent: function(text) {
-                    root.messageSubmitted(text)
-                    root.close()
-                }
+        onMessageSent: function(text) {
+            if (root.post && root.post.id) {
+                sendReply(root.post.id, text)
+                text = ""
             }
         }
     }

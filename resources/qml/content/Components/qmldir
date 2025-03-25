@@ -6,7 +6,6 @@ FullscreenVideoWindow 1.0 FullscreenVideoWindow.ui.qml
 ImageViewer 1.0 ImageViewer.ui.qml
 InboxModelStatusAlert 1.0 InboxModelStatusAlert.ui.qml
 MessageInput 1.0 MessageInput.ui.qml
-NavigationPane 1.0 NavigationPane.ui.qml
 NotificationToast 1.0 NotificationToast.ui.qml
 PersonalFeed 1.0 PersonalFeed.ui.qml
 PostContent 1.0 PostContent.ui.qml
@@ -15,7 +14,6 @@ PostImage 1.0 PostImage.ui.qml
 PostVideo 1.0 PostVideo.ui.qml
 ProfilePicture 1.0 ProfilePicture.ui.qml
 PublishAlert 1.0 PublishAlert.ui.qml
-ReferencedPost 1.0 ReferencedPost.ui.qml
 RelayStatusIcon 1.0 RelayStatusIcon.ui.qml
 ScrollingListView 1.0 ScrollingListView.ui.qml
 VideoPlayer 1.0 VideoPlayer.ui.qml

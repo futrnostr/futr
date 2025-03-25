@@ -56,6 +56,7 @@ Window {
     Component.onDestruction: {
         if (fullscreenVideoPlayer) {
             fullscreenVideoPlayer.stop()
+            fullscreenVideoPlayer.source = ""
         }
     }
 }

@@ -17,7 +17,7 @@ Rectangle {
 
     property string npub: ""
     property var profileData
-/*
+
     PostDialog {
         id: quoteReplyDialog
         inputPlaceholder: qsTr("Add a quote...")
@@ -29,21 +29,6 @@ Rectangle {
         }
     }
 
-    PostDialog {
-        id: commentsDialog
-        inputPlaceholder: qsTr("Post your reply")
-        buttonText: qsTr("Reply")
-        isQuoteMode: false
-
-        onMessageSubmitted: function(text) {
-            comment(targetPost.id, text)
-        }
-
-        onRejected: {
-            setCurrentPost(null)
-        }
-    }
-*/
     Menu {
         id: repostMenu
         property var targetPost: null
@@ -188,9 +173,14 @@ Rectangle {
                     }
 
                     delegate: Loader {
+                        id: postContentLoader
                         active: modelData !== undefined && modelData !== null
                         width: postsView.width - postsView.rightMargin
                         Layout.preferredHeight: active ? item.implicitHeight : 0
+
+                        Component.onDestruction: {
+                            postContentLoader.active = false; // Deactivate loader on destruction
+                        }
 
                         sourceComponent: PostContent {
                             post: modelData
@@ -206,14 +196,14 @@ Rectangle {
 
                             onRepostClicked: {
                                 if (modelData) {
-                                    //repostMenu.targetPost = modelData
-                                    //repostMenu.popup()
+                                    repostMenu.targetPost = modelData
+                                    repostMenu.popup()
                                 }
                             }
 
                             onPostClicked: {
                                 if (modelData) {
-                                    navigationPane.navigateTo("PostDetails.ui.qml", { post: modelData })
+                                    stackView.push(postDetailsComponent, { post: modelData })
                                 }
                             }
                         }

@@ -49,7 +49,7 @@ import Nostr.Util
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb (TimelineType(..), getCommentIds, getEvent, getFollows, getProfile, getTimelineIds)
+import Store.Lmdb (LmdbStore, TimelineType(..), getCommentIds, getEvent, getFollows, getProfile, getTimelineIds)
 import TimeFormatter
 import Types
 
@@ -299,7 +299,7 @@ runUI = interpret $ \_ -> \case
                       return $ "nostr:" <> (eventIdToNote eid'')
                     Nothing -> return ""
                 _ -> return $ content ev
-              let r = parseContentParts content'
+              r <- parseContentParts content'
               --logDebug $ "content: " <> content'
               --logDebug $ "contentParts: " <> pack (show r)
               return r
@@ -584,25 +584,16 @@ runUI = interpret $ \_ -> \case
             _ -> return Nothing,
 
         -- Get a post from a nostr: reference (note, nevent, naddr)
-        defMethod' "getPost" $ \_ input -> do
+        defMethod' "getPost" $ \_ input -> runE $ do
+          let fetchByType parseFunc = case parseFunc input of
+                  Just eid -> fetchEventObject postClass eid
+                  Nothing -> return Nothing
+
           case Text.takeWhile (/= '1') input of
-            "note" -> case noteToEventId input of
-              Just eid -> do
-                eventObj <- newObject postClass eid
-                return $ Just eventObj
-              Nothing -> return Nothing
-            "nevent" -> case neventToEvent input of
-              Just (eid, _, _, _) -> do
-                eventObj <- newObject postClass eid
-                return $ Just eventObj
-              Nothing -> do
-                return Nothing
-            "naddr" -> case naddrToEvent input of
-              Just (eid, _, _) -> do
-                eventObj <- newObject postClass eid
-                return $ Just eventObj
-              Nothing -> return Nothing
-            _ -> return Nothing,
+              "note"  -> fetchByType noteToEventId
+              "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
+              "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
+              _ -> return Nothing,
 
         defMethod' "convertNprofileToNpub" $ \_ input -> runE $ do
           case parseNprofileOrNpub input of
@@ -652,16 +643,16 @@ extractNostrReferences txt =
 
 
 -- | Parse content into parts (text, images, URLs, and nostr references)
-parseContentParts :: Text -> [[Text]]
+parseContentParts :: (LmdbStore :> es) => Text -> Eff es [[Text]]
 parseContentParts content
-    | Text.null content = []
-    | otherwise =
+    | Text.null content = pure []
+    | otherwise = do
         let matches = findMatches content
             sortedMatches = sortBy (\(a,_,_) (b,_,_) -> compare a b) matches
             mergedMatches = mergeOverlappingMatches sortedMatches
-            -- Post-process the results to clean up newlines before references
-            processedParts = processContentWithMatches content 0 mergedMatches
-        in cleanupContentParts processedParts
+
+        rawParts <- processContentWithMatchesM content 0 mergedMatches
+        pure $ mergeAdjacentTextParts rawParts
   where
     -- Find matches for URLs and nostr references
     findMatches :: Text -> [(Int, Int, Text)]
@@ -680,11 +671,13 @@ parseContentParts content
                     fullEntity = extractEntity (Text.drop (Text.length before) text)
                     endPos = startPos + Text.length fullEntity
                     matchType = if typ == "url" then
-                                  if isImageUrl fullEntity
-                                  then "image"
-                                  else if isVideoUrl fullEntity
-                                       then "video"
-                                       else typ
+                                  if shouldRenderAsMedia fullEntity then
+                                    if isImageUrl fullEntity
+                                    then "image"
+                                    else if isVideoUrl fullEntity
+                                         then "video"
+                                         else typ
+                                  else "embed-url"
                                 else typ
                 in [(startPos, endPos, matchType)]
             ) positions
@@ -703,16 +696,16 @@ parseContentParts content
                                     let prefix = Text.take 5 (Text.drop 6 fullEntity) -- after "nostr:"
                                     in case prefix of
                                         "note1" -> "note"
-                                        "npub1" -> "npub"
-                                        "nprof" -> "nprofile" -- "nprofile1"
-                                        "neven" -> "nevent"   -- "nevent1"
+                                        "npub1" -> "embed-npub"
+                                        "nprof" -> "embed-nprofile"
+                                        "neven" -> "nevent"
                                         "naddr" -> "naddr"
-                                        _ -> "nostr"  -- fallback
-                                else "nostr"  -- too short to determine
+                                        _ -> "nostr"
+                                else "nostr"
                 in [(startPos, endPos, nostrType)]
             ) positions
 
-    -- Extract a complete entity (URL or nostr reference) from text
+    -- Extract a complete entity from text
     extractEntity :: Text -> Text
     extractEntity txt =
         let validChar c = not (c `elem` (" \t\n\r<>\"'()[]{},;" :: String))
@@ -724,6 +717,9 @@ parseContentParts content
     isVideoUrl :: Text -> Bool
     isVideoUrl url = any (`Text.isSuffixOf` url) [".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v"]
 
+    shouldRenderAsMedia :: Text -> Bool
+    shouldRenderAsMedia url = isImageUrl url || isVideoUrl url
+
     -- Merge overlapping matches
     mergeOverlappingMatches :: [(Int, Int, Text)] -> [(Int, Int, Text)]
     mergeOverlappingMatches [] = []
@@ -732,37 +728,88 @@ parseContentParts content
         | start2 < end1 = mergeOverlappingMatches ((start1, max end1 end2, typ1) : rest)
         | otherwise = x : mergeOverlappingMatches (y:rest)
 
-    -- Process content with matches
-    processContentWithMatches :: Text -> Int -> [(Int, Int, Text)] -> [[Text]]
-    processContentWithMatches text currentPos [] =
+    -- Effectful version of processContentWithMatches that can use GetProfile
+    processContentWithMatchesM :: (LmdbStore :> es) => Text -> Int -> [(Int, Int, Text)] -> Eff es [[Text]]
+    processContentWithMatchesM text currentPos [] = do
         let remaining = Text.drop currentPos text
-        in if Text.null remaining
-           then []
-           else [["text", remaining]]
-    processContentWithMatches text currentPos ((start, end, typ):rest) =
+        pure $ if Text.null remaining
+               then []
+               else [["text", replaceNewlines remaining]]
+
+    processContentWithMatchesM text currentPos ((start, end, typ):rest) = do
         let beforeText = Text.take (start - currentPos) (Text.drop currentPos text)
             matchText = Text.take (end - start) (Text.drop start text)
-            -- For nostr types, strip the "nostr:" prefix
-            processedMatchText = if typ `elem` ["note", "npub", "nprofile", "nevent", "naddr"]
-                                then Text.drop 6 matchText  -- Remove "nostr:" prefix
+            -- Remove "nostr:" prefix for nostr types
+            processedMatchText = if "nostr:" `Text.isPrefixOf` matchText && 
+                                   typ `elem` ["note", "embed-npub", "embed-nprofile", "nevent", "naddr"]
+                                then Text.drop 6 matchText
                                 else matchText
-            beforePart = if Text.null beforeText then [] else [["text", beforeText]]
-            matchPart = [[typ, processedMatchText]]
-        in beforePart ++ matchPart ++ processContentWithMatches text end rest
 
-    -- Clean up content parts to handle newlines before references
-    cleanupContentParts :: [[Text]] -> [[Text]]
-    cleanupContentParts [] = []
-    cleanupContentParts [x] = [x]
-    cleanupContentParts (["text", txt]:next@[typ, _]:rest)
-        | typ `elem` ["note", "npub", "nprofile", "nevent", "naddr"] && Text.isSuffixOf "\n" txt =
-            -- Remove trailing newline from text before a reference
-            let cleanedText = Text.dropWhileEnd (== '\n') txt
-            in if Text.null cleanedText
-               then next : cleanupContentParts rest
-               else ["text", cleanedText] : next : cleanupContentParts rest
-        | otherwise = ["text", txt] : cleanupContentParts (next:rest)
-    cleanupContentParts (x:xs) = x : cleanupContentParts xs
+        beforePart <- if Text.null beforeText 
+                      then pure []
+                      else pure [["text", replaceNewlines beforeText]]
+
+        -- Handle match part based on type
+        matchPart <- case typ of
+            "embed-npub" -> do
+                case bech32ToPubKeyXO processedMatchText of
+                    Just pubKey -> do
+                        profile <- getProfile pubKey
+                        let displayName = fromMaybe (Text.take 8 processedMatchText <> "...") $ 
+                                          getDisplayName profile
+                            html = "<a href=\"profile://" <> processedMatchText <> 
+                                   "\" style=\"color: #9C27B0\">@" <> displayName <> "</a>"
+                        pure [["text", html]]
+                    Nothing -> 
+                        pure [["text", processedMatchText]]  -- Invalid npub
+
+            "embed-nprofile" -> do
+                case nprofileToPubKeyXO processedMatchText of
+                    Just (pubKey, _) -> do
+                        profile <- getProfile pubKey
+                        let displayName = fromMaybe (Text.take 8 processedMatchText <> "...") $ 
+                                          getDisplayName profile
+                            html = "<a href=\"profile://" <> processedMatchText <> 
+                                   "\" style=\"color: #9C27B0\">@" <> displayName <> "</a>"
+                        pure [["text", html]]
+                    Nothing ->
+                        pure [["text", processedMatchText]]  -- Invalid nprofile
+
+            "embed-url" -> do
+                let html = "<a href=\"" <> processedMatchText <> 
+                           "\" style=\"color: #9C27B0\">" <> processedMatchText <> "</a>"
+                pure [["text", html]]
+
+            _ -> pure [[typ, processedMatchText]]  -- All other types as regular components
+
+        -- Process the rest of the content
+        restParts <- processContentWithMatchesM text end rest
+        pure $ beforePart ++ matchPart ++ restParts
+
+    -- Helper to get display name from profile
+    getDisplayName :: Profile -> Maybe Text
+    getDisplayName profile =
+        -- Use displayName or name, whichever is available
+        case displayName profile of
+            Just dn | not (Text.null dn) -> Just dn
+            _ -> case name profile of
+                   Just n | not (Text.null n) -> Just n
+                   _ -> Nothing
+
+    -- Merge adjacent text parts - non-effectful
+    mergeAdjacentTextParts :: [[Text]] -> [[Text]]
+    mergeAdjacentTextParts [] = []
+    mergeAdjacentTextParts [x] = [x]
+    mergeAdjacentTextParts (part1:part2:rest) =
+        case (part1, part2) of
+            (["text", content1], ["text", content2]) ->
+                -- Merge adjacent text parts
+                mergeAdjacentTextParts ([["text", content1 <> content2]] ++ rest)
+            _ -> part1 : mergeAdjacentTextParts (part2:rest)
+
+    -- Helper to replace newlines with HTML breaks
+    replaceNewlines :: Text -> Text
+    replaceNewlines = Text.replace "\n" "<br>"
 
 -- Helper function to find an available filename
 findAvailableFilename :: (FileSystem :> es) => FilePath -> FilePath -> Eff es FilePath
@@ -783,3 +830,13 @@ findAvailableFilename dir baseFileName = do
       if not exists
         then return tryPath
         else findNextAvailable dir' fileName (counter + 1)
+
+-- Helper function to fetch and create an event object
+fetchEventObject :: (FutrEff es, Futr :> es) => Class EventId -> EventId -> Eff es (Maybe (ObjRef EventId))
+fetchEventObject postClass' eid = do
+    eventMaybe <- getEvent eid
+    case eventMaybe of
+        Just _ -> do
+            obj <- liftIO (newObject postClass' eid)  
+            return (Just obj)
+        Nothing -> return Nothing
