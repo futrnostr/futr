@@ -107,14 +107,11 @@ Item {
             onClicked: {
                 var input = searchInput.text.trim()
                 var result = JSON.parse(search(input))
+                console.log("Search result npub:", result.npub)
                 if (result && result.npub) {
-                    navigationPane.navigateTo(
-                        "PersonalFeed.ui.qml",
-                        {
-                            "npub": result.npub
-                        }
-                    )
                     searchInput.text = ""
+                    stackView.replace(personalFeedComponent, {"npub": result.npub})
+                    console.log("Navigated to PersonalFeed.ui.qml with npub:", result.npub)
                 }
             }
         }

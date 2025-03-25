@@ -36,7 +36,7 @@ Rectangle {
                 Layout.alignment: Qt.AlignLeft
 
                 onClicked: {
-                    navigationPane.navigateBack()
+                    personalFeed.editMode = false
                 }
             }
 
@@ -266,10 +266,7 @@ Rectangle {
                         twitterProof: twitterProofField.text,
                         telegramProof: telegramProofField.text
                     }))
-                    navigationPane.navigateTo("PersonalFeed.ui.qml", {
-                        npub: editMyProfile.npub,
-                        editMode: false
-                    })
+                    personalFeed.editMode = false
                 }
             }
         }

@@ -36,7 +36,6 @@ Item {
                 anchors.rightMargin: 10
                 spacing: 10
 
-                // Sidebar container
                 Item {
                     id: sidebarContainer
                     width: mainContainer.sidebarExpanded ? parent.width * 0.3 : 80
@@ -50,7 +49,6 @@ Item {
                         }
                     }
 
-                    // Background for sidebar
                     Rectangle {
                         anchors.fill: parent
                         color: Material.backgroundColor
@@ -64,6 +62,7 @@ Item {
                         anchors.fill: parent
                         anchors.margins: 10
                         isCollapsed: !mainContainer.sidebarExpanded
+                        stackView: stackView
 
                         Behavior on opacity {
                             NumberAnimation {
@@ -97,7 +96,6 @@ Item {
                                 ColorAnimation { duration: 150 }
                             }
 
-                            // Toggle icon
                             Text {
                                 anchors.centerIn: parent
                                 text: mainContainer.sidebarExpanded ? "◀" : "▶"
@@ -139,18 +137,44 @@ Item {
                     }
                 }
 
-                NavigationPane {
-                    id: navigationPane
+                StackView {
+                    id: stackView
+
                     width: mainContainer.sidebarExpanded ?
                         parent.width * 0.7 - parent.spacing :
                         parent.width - sidebarContainer.width - parent.spacing
                     height: parent.height
 
-                    Behavior on width {
-                        NumberAnimation {
-                            duration: 200
-                            easing.type: Easing.InOutQuad
-                        }
+                    focus: true
+                    Keys.onReleased: if (event.key === Qt.Key_Back && stackView.depth > 1) {
+                        stackView.pop();
+                        event.accepted = true;
+                    }
+
+                    initialItem: personalFeedComponent
+                }
+
+                Component {
+                    id: personalFeedComponent
+
+                    PersonalFeed {
+                        npub: mynpub
+                    }
+                }
+
+                Component {
+                    id: postDetailsComponent
+
+                    PostDetails {
+                        post: null
+                    }
+                }
+
+                Component {
+                    id: imageViewerComponent
+
+                    ImageViewer {
+                        imageSource: ""
                     }
                 }
             }

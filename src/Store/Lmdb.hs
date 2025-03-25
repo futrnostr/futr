@@ -232,19 +232,14 @@ runLmdbStore = interpret $ \_ -> \case
                           -- Extract event IDs from e-tags
                           [eid | ("e":eidHex:_) <- tags (event ev)
                                , Just eid <- [eventIdFromHex eidHex]]
-                          -- -- Extract event IDs from a-tags (replaceable events) - TODO
-                          -- ++ [aid | ["a", coordStr] <- tags (event ev)
-                          --         , Just aid <- [parseCoordinate coordStr]]
-                          -- where
-                          --   parseCoordinate :: Text -> Maybe EventId
-                          --   parseCoordinate coord = case Text.splitOn ":" coord of
-                          --     [kind, pubkey, dTag] -> Nothing  -- TODO: Implement coordinate parsing
-                          --     _ -> Nothing
                     res <- forM eventIdsToDelete $ \eid -> do
                         mEvent <- Map.lookup' (readonly txn) (eventDb currentState) eid
                         case mEvent of
                             Just deletedEv -> do
-                                let key = (pubKey $ event deletedEv, createdAt $ event deletedEv)
+                                let timestamp = createdAt $ event deletedEv
+                                    invertedTimestamp = maxBound - timestamp
+                                    author' = pubKey $ event deletedEv
+                                    key = (author', invertedTimestamp)
                                     timelineDb = case kind (event deletedEv) of
                                         ShortTextNote -> Just $ postTimelineDb currentState
                                         Repost -> Just $ postTimelineDb currentState
