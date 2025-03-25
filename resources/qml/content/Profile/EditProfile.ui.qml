@@ -19,6 +19,20 @@ Rectangle {
     property var npub
     property var labelWidth: 100
 
+    onVisibleChanged: {
+        if (visible) {
+            displayNameField.text = profileData.displayName || ""
+            nameField.text = profileData.name || ""
+            aboutMeField.text = profileData.about || ""
+            avatarUrlField.text = profileData.picture || ""
+            bannerUrlField.text = profileData.banner || ""
+            nip05Field.text = profileData.nip05 || ""
+            githubProofField.text = profileData.githubProof || ""
+            twitterProofField.text = profileData.twitterProof || ""
+            telegramProofField.text = profileData.telegramProof || ""
+        }
+    }
+
     ColumnLayout {
         id: content
         anchors.fill: parent
