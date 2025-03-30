@@ -322,6 +322,8 @@ subscribeToProfilesAndPosts :: InboxModelEff es
 subscribeToProfilesAndPosts relayUri pks timestampMap = do
     -- Subscribe to profiles - Metadata generally doesn't need timestamp filtering
     let profileFilter = profilesFilter pks
+    --logDebug $ "Subscribing to profiles for " <> pack (show pks) <> " on relay " <> relayUri
+    --logDebug $ "Profile filter: " <> pack (show profileFilter)
     subId' <- subscribe relayUri profileFilter
     void $ async $ handlePaginationSubscription subId'
 

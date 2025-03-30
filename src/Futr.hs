@@ -44,14 +44,15 @@ import Nostr.Event ( Event(..), EventId, UnsignedEvent(..)
                    , createRepost, createRumor, createShortTextNote, eventIdToHex
                    )
 import Nostr.Event qualified as NE
+import Nostr.EventHandler (EventHandler, handleEvent)
 import Nostr.InboxModel (InboxModel, awaitAtLeastOneConnected, startInboxModel, stopInboxModel, subscribeToCommentsFor, unsubscribeToCommentsFor)
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, pubKeyXOToHex, secKeyToKeyPair)
 import Nostr.Publisher
 import Nostr.Relay (RelayURI, getUri, isInboxCapable, isValidRelayURI)
 import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Subscription
-import Nostr.SubscriptionHandler
 import Nostr.Util
+import Presentation.Classes (Classes)
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
@@ -117,6 +118,7 @@ type FutrEff es =
   ( State AppState :> es
   , State LmdbState :> es
   , LmdbStore :> es
+  , EventHandler :> es
   , KeyMgmt :> es
   , KeyMgmtUI :> es
   , RelayMgmtUI :> es
@@ -130,6 +132,7 @@ type FutrEff es =
   , State RelayPool :> es
   , State QtQuickState :> es
   , QtQuick :> es
+  , Classes :> es
   , Logging :> es
   , IOE :> es
   , FileSystem :> es
@@ -503,7 +506,7 @@ searchInRelays xo mr = do
 
                         forM_ (e:es) $ \(relayUri, e') -> do
                             case e' of
-                                EventAppeared event' -> handleEvent relayUri event'
+                                EventAppeared event' -> handleEvent (Just relayUri) event'
 
                                 SubscriptionEose _ -> do
                                   stopSubscription subId'

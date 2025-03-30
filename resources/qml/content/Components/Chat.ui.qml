@@ -259,6 +259,12 @@ Rectangle {
 
                         sourceComponent: Item {
                             property var message: modelData
+                            property var author: message ? getProfile(message.authorId) : null
+
+                            onMessageChanged: {
+                                author = message ? getProfile(message.authorId) : null
+                            }
+
                             height: privateRowLayout.height + Constants.spacing_xs
 
                             RowLayout {
@@ -266,20 +272,20 @@ Rectangle {
                                 width: parent.width
                                 spacing: Constants.spacing_xs
                                 y: Constants.spacing_s
-                                layoutDirection: message ? (message.author.npub == mynpub ? Qt.RightToLeft : Qt.LeftToRight) : Qt.LeftToRight
+                                layoutDirection: author ? (author.npub == mynpub ? Qt.RightToLeft : Qt.LeftToRight) : Qt.LeftToRight
 
                                 ProfilePicture {
-                                    imageSource: message ? Util.getProfilePicture(message.author.picture, message.author.npub) : ""
+                                    imageSource: author ? Util.getProfilePicture(author.picture, author.npub) : ""
                                 }
 
                                 Pane {
                                     Layout.fillWidth: true
                                     Layout.maximumWidth: parent.width * 0.7
-                                    Layout.rightMargin: message ? (message.author.npub == mynpub ? 0 : Constants.spacing_s) : Constants.spacing_s
-                                    Layout.leftMargin: message ? Constants.spacing_s : 0
+                                    Layout.rightMargin: author ? (author.npub == mynpub ? 0 : Constants.spacing_s) : Constants.spacing_s
+                                    Layout.leftMargin: author ? Constants.spacing_s : 0
 
                                     background: Rectangle {
-                                        color: message ? (message.author.npub == mynpub ? Material.accentColor : Material.dividerColor) : Material.dividerColor
+                                        color: author ? (author.npub == mynpub ? Material.accentColor : Material.dividerColor) : Material.dividerColor
                                         radius: Constants.radius_m
                                     }
 
@@ -298,16 +304,16 @@ Rectangle {
 
                                             Item {
                                                 Layout.fillWidth: true
-                                                visible: message.author.npub === mynpub
+                                                visible: author.npub === mynpub
                                             }
 
                                             Text {
-                                                Layout.alignment: message ? (message.author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
+                                                Layout.alignment: author ? (author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
                                                 text: message ? message.timestamp : ""
                                                 font: Constants.smallFontMedium
                                                 color: Material.secondaryTextColor
                                                 Layout.topMargin: Constants.spacing_xs
-                                                visible: message.author.npub === mynpub
+                                                visible: author.npub === mynpub
                                             }
 
                                             Button {
@@ -351,17 +357,17 @@ Rectangle {
                                             }
 
                                             Text {
-                                                Layout.alignment: message ? (message.author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
+                                                Layout.alignment: author ? (author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
                                                 text: message ? message.timestamp : ""
                                                 font: Constants.smallFontMedium
                                                 color: Material.secondaryTextColor
                                                 Layout.topMargin: Constants.spacing_xs
-                                                visible: message.author.npub !== mynpub
+                                                visible: author.npub !== mynpub
                                             }
 
                                             Item {
                                                 Layout.fillWidth: true
-                                                visible: message.author.npub !== mynpub
+                                                visible: author.npub !== mynpub
                                             }
                                         }
                                     }
