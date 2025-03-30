@@ -38,6 +38,7 @@ executable futr
         Nostr.Encryption
         Nostr.Encryption.Internal
         Nostr.Event
+        Nostr.EventHandler
         Nostr.InboxModel
         Nostr.Keys
         Nostr.Profile
@@ -48,13 +49,14 @@ executable futr
         Nostr.SubscriptionHandler
         Nostr.Types
         Nostr.Util
+        Presentation.Classes
+        Presentation.HomeScreen
         Presentation.KeyMgmtUI
         Presentation.RelayMgmtUI
         RelayMgmt
         Store.Lmdb
         Types
         TimeFormatter
-        UI
 
     default-language: Haskell2010
     extra-libraries:  secp256k1, lmdb

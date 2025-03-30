@@ -4,7 +4,6 @@ import Control.Monad (forM_, replicateM)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.Map.Strict qualified as Map
-import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8)
 import Effectful
 import Effectful.Concurrent
@@ -82,7 +81,7 @@ runSubscription = interpret $ \_ -> \case
                 let relayUri = relay subDetails
                 case Map.lookup relayUri (activeConnections st) of
                     Just rd -> atomically $ writeTChan (requestChannel rd) (NT.Close subId')
-                    Nothing -> logDebug $ "No active connection found for relay " <> T.pack (show relayUri)
+                    Nothing -> pure ()
 
                 atomically $ writeTQueue (responseQueue subDetails) (relayUri, SubscriptionClosed "Subscription stopped")
                 modify @RelayPool $ \s -> s { subscriptions = Map.delete subId' (subscriptions s) }

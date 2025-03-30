@@ -18,6 +18,7 @@ import Nostr.Event (Event(..), EventId)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Relay (RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.RelayConnection
+import Nostr.EventHandler (EventHandler, handleEvent)
 import Nostr.Types (Request(..))
 import Nostr.Util
 import QtQuick
@@ -51,6 +52,7 @@ type PublisherEff es =
   ( State AppState :> es
   , State RelayPool :> es
   , LmdbStore :> es
+  , EventHandler :> es
   , RelayConnection :> es
   , QtQuick :> es
   , Concurrent :> es
@@ -66,7 +68,8 @@ runPublisher
   -> Eff es a
 runPublisher =  interpret $ \_ -> \case
     Broadcast event' -> do
-        void $ putEvent $ EventWithRelays event' Set.empty
+        handleEvent Nothing event'
+        --void $ putEvent $ EventWithRelays event' Set.empty
 
         kp <- getKeyPair
         let xo = keyPairToPubKeyXO kp
@@ -104,7 +107,8 @@ runPublisher =  interpret $ \_ -> \case
                     updateEventRelayStatus (eventId event') r (Failure "Relay server unreachable")
 
     PublishToOutbox event' -> do
-        void $ putEvent $ EventWithRelays event' Set.empty
+        handleEvent Nothing event'
+        --void $ putEvent $ EventWithRelays event' Set.empty
 
         kp <- getKeyPair
         let pk = keyPairToPubKeyXO kp
@@ -117,12 +121,13 @@ runPublisher =  interpret $ \_ -> \case
         forM_ outboxCapableURIs $ \r -> writeToChannel event' r
 
     PublishToRelay event' relayUri' -> do
-        void $ putEvent $ EventWithRelays event' $ Set.empty
+        --void $ putEvent $ EventWithRelays event' $ Set.empty
+        handleEvent Nothing event'
         updateEventRelayStatus (eventId event') relayUri' Publishing
         writeToChannel event' relayUri'
 
     PublishGiftWrap event' senderPk recipientPk -> do
-        void $ putEvent $ EventWithRelays event' Set.empty
+        handleEvent Nothing event'
         dmRelayList <- getDMRelays senderPk
         recipientDMRelays <- getDMRelays recipientPk
 

@@ -229,7 +229,8 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
             Left _ -> return ()  -- Exit the loop on error
             Right msg' -> case eitherDecode msg' of
                 Right response -> do
-                    void $ handleResponse r response
+                    updates <- handleResponse r response
+                    notify updates
                     receiveLoop conn'
                 Left err -> do
                     logError $ "Could not decode server response from " <> r <> ": " <> T.pack err
@@ -375,11 +376,8 @@ handleResponse relayURI' r = case r of
                                 forM_ pendingReqs $ \req -> atomically $ writeTChan (requestChannel rd) req
 
                             _ -> pure ()
-                                {-
-                                logDebug $ "Received OK for event " <> T.pack (show eventId')
-                                        <> " (accepted: " <> T.pack (show accepted') <> ")"
-                                -}
                     Nothing -> logError $ "Received OK but no connection found: " <> relayURI'
+
         return $ emptyUpdates { publishStatusChanged = True }
 
     Notice msg -> do
@@ -422,7 +420,7 @@ handleResponse relayURI' r = case r of
             st <- get @RelayPool
             case Map.lookup subId' (subscriptions st) of
                 Just sd -> atomically $ writeTQueue (responseQueue sd) (relayURI', event')
-                Nothing -> logError $ "No response queue for subscription found: " <> T.pack (show subId')
+                Nothing -> pure () --logError $ "No response queue for subscription found: " <> T.pack (show subId')
 
 
 -- | Handle authentication required.

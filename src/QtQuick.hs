@@ -5,6 +5,9 @@
 module QtQuick where
 
 import Control.Monad (forever, forM_, void, when)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Text (Text, pack)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
@@ -25,14 +28,14 @@ data QtQuickState = QtQuickState
   { signalKey :: Maybe (QML.SignalKey (IO ()))
   , rootObjRef :: Maybe (QML.ObjRef ())
   , uiRefs :: UIReferences
+  , propertyMap :: PropertyMap
   , queue :: Maybe (TQueue UIUpdates)
   }
 
 
 -- | UI object references grouped together
 data UIReferences = UIReferences
-  { profileObjRef :: Maybe (QML.ObjRef PubKeyXO)
-  , followsObjRef :: Maybe (QML.ObjRef ())
+  { followsObjRef :: Maybe (QML.ObjRef ())
   , postsObjRef :: Maybe (QML.ObjRef ())
   , currentPostCommentsObjRef :: Maybe (QML.ObjRef EventId)
   , privateMessagesObjRef :: Maybe (QML.ObjRef ())
@@ -43,6 +46,11 @@ data UIReferences = UIReferences
   , inboxModelStateObjRef :: Maybe (QML.ObjRef ())
   }
 
+
+data PropertyMap = PropertyMap
+  { profileObjRefs :: Map PubKeyXO [QML.WeakObjRef PubKeyXO]
+  , postObjRefs :: Map EventId [QML.WeakObjRef EventId]
+  }
 
 
 -- | UI updates
@@ -88,12 +96,12 @@ emptyUpdates = UIUpdates False False False False False False False False False F
 
 -- | Initial effectful QML state.
 initialQtQuickState :: QtQuickState
-initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs Nothing
+initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs (PropertyMap Map.empty Map.empty) Nothing
 
 
 -- | Initial UI references.
 initialUIRefs :: UIReferences
-initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+initialUIRefs = UIReferences Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 -- | Define the effects for QML operations.
@@ -119,30 +127,32 @@ runQtQuick
 runQtQuick = interpret $ \_ -> \case
     RunEngineLoop config changeKey ctx -> do
         q <- newTQueueIO
-        put $ QtQuickState (Just changeKey) (Just ctx) initialUIRefs (Just q)
+        put $ QtQuickState (Just changeKey) (Just ctx) initialUIRefs (PropertyMap Map.empty Map.empty) (Just q)
         void $ async $ forever $ do
           uiUpdates <- atomically $ readTQueue q
           moreUpdates <- atomically $ flushTQueue q
           let combinedUpdates = uiUpdates <> mconcat moreUpdates
-
           refs <- gets uiRefs
-          -- Define update checks and their corresponding refs
-          let updates = [ -- followsChanged is not used, profileObjRef is handled separately
-                          (myFollowsChanged, followsObjRef)
+          let updates = [ (myFollowsChanged, followsObjRef)
                         , (postsChanged, postsObjRef)
                         , (privateMessagesChanged, privateMessagesObjRef)
                         , (dmRelaysChanged, dmRelaysObjRef)
                         , (generalRelaysChanged, generalRelaysObjRef)
                         , (tempRelaysChanged, tempRelaysObjRef)
                         , (inboxModelStateChanged, inboxModelStateObjRef)
+                        , (publishStatusChanged, publishStatusObjRef)
                         ]
 
           forM_ updates $ \(checkFn, getRef) ->
             when (checkFn combinedUpdates) $
               forM_ (getRef refs) (liftIO . QML.fireSignal changeKey)
 
-          when (profilesChanged combinedUpdates) $
-            forM_ (profileObjRef refs) (liftIO . QML.fireSignal changeKey)
+          when (profilesChanged combinedUpdates) $ do
+            pmap <- gets @QtQuickState propertyMap
+            let allWeakRefs = concat $ Map.elems $ profileObjRefs pmap
+            forM_ allWeakRefs $ \weakRef -> do
+              objRef <- liftIO $ QML.fromWeakObjRef weakRef
+              liftIO $ QML.fireSignal changeKey objRef
 
           threadDelay 200000  -- 0.2 second delay for UI updates
 
