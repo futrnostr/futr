@@ -1,9 +1,8 @@
 module Nostr.Publisher where
 
-import Control.Monad (forM, forM_, void)
+import Control.Monad (forM, forM_)
 import Data.List (nub, partition)
 import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
 import Data.Text (Text)
 import Effectful
 import Effectful.Concurrent (Concurrent, threadDelay)
@@ -22,8 +21,8 @@ import Nostr.EventHandler (EventHandler, handleEvent)
 import Nostr.Types (Request(..))
 import Nostr.Util
 import QtQuick
-import Store.Lmdb (LmdbStore, getFollows, getDMRelays, getGeneralRelays, putEvent)
-import Types ( AppState(..), ConnectionState(..), EventWithRelays(..), Follow(..)
+import Store.Lmdb (LmdbStore, getFollows, getDMRelays, getGeneralRelays)
+import Types ( AppState(..), ConnectionState(..), Follow(..)
              , PublishStatus(..), RelayData(..), RelayPool(..) )
 
 

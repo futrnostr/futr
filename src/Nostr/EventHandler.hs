@@ -1,18 +1,16 @@
 module Nostr.EventHandler where
 
-import Control.Monad (forM_, unless, when)
+import Control.Monad (when)
 import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy (fromStrict)
-import Data.Map.Strict qualified as Map
-import Data.Maybe (isJust)
 import Data.Set qualified as Set
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTVarIO, readTQueue, readTVar, writeTChan, writeTQueue, writeTVar, modifyTVar)
+import Effectful.Concurrent.STM (atomically, writeTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, get, gets, modify)
+import Effectful.State.Static.Shared (State, gets)
 import Effectful.TH
 import Prelude hiding (until)
 
@@ -22,8 +20,6 @@ import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Event (Event(..), EventId(..), Kind(..), validateEvent)
 import Nostr.Keys (byteStringToHex, keyPairToPubKeyXO)
 import Nostr.Relay (RelayURI)
-import Nostr.Types (Filter(..), SubscriptionId)
-import Nostr.Types qualified as NT
 import Nostr.Util
 import QtQuick
 import Store.Lmdb
