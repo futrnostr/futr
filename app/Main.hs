@@ -7,9 +7,9 @@ import Effectful.State.Static.Shared (State, evalState)
 import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
-import QtQuick
+
 import Futr (runFutr)
-import KeyMgmt (KeyMgmtState(..), initialState, runKeyMgmt)
+import KeyMgmt (KeyMgmtState(..), initialKeyMgmtState, runKeyMgmt)
 import Logging (runLoggingStdout)
 import Nostr
 import Nostr.EventHandler (runEventHandler)
@@ -23,10 +23,10 @@ import Presentation.Classes (runClasses)
 import Presentation.HomeScreen (createUI,runHomeScreen)
 import Presentation.KeyMgmtUI (runKeyMgmtUI)
 import Presentation.RelayMgmtUI (runRelayMgmtUI)
+import QtQuick
 import RelayMgmt (runRelayMgmt)
 import Store.Lmdb (LmdbState, initialLmdbState, runLmdbStore)
-import Types (AppState(..), RelayPool(..))
-import Types qualified as Types
+import Types (AppState(..), RelayPool(..), initialState, initialRelayPool)
 
 
 -- | Main function for the app.
@@ -41,7 +41,6 @@ main = do
         . runLoggingStdout
         . runConcurrent
         . withInitialState
-        . evalState initialQtQuickState
         . runQtQuick
         . runFileSystem
         . runUtil
@@ -83,7 +82,8 @@ main = do
 
 -- | Initialize the state for the app.
 withInitialState
-    :: Eff ( State RelayPool
+    :: Eff ( State QtQuickState
+           : State RelayPool
            : State KeyMgmtState
            : State AppState
            : State LmdbState
@@ -91,6 +91,7 @@ withInitialState
     -> Eff es a
 withInitialState
     = evalState initialLmdbState
-    . evalState Types.initialState
-    . evalState KeyMgmt.initialState
-    . evalState Types.initialRelayPool
+    . evalState initialState
+    . evalState initialKeyMgmtState
+    . evalState initialRelayPool
+    . evalState initialQtQuickState

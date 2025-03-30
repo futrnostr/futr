@@ -73,8 +73,8 @@ data KeyMgmtState = KeyMgmtState
 
 
 -- | Initial Key Management State.
-initialState :: KeyMgmtState
-initialState =
+initialKeyMgmtState :: KeyMgmtState
+initialKeyMgmtState =
   KeyMgmtState
     { accountMap = Map.empty,
       accountPool = Nothing,
