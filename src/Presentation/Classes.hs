@@ -5,6 +5,7 @@ import Data.Aeson (toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
+import Data.Char (isSpace)
 import Data.List (find, sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, listToMaybe)
@@ -501,7 +502,7 @@ parseContentParts contentText
         let remaining = Text.drop currentPos text
         pure $ if Text.null remaining
                then []
-               else [["text", replaceNewlines remaining]]
+               else [["text", replaceNewlines (trim remaining)]]
 
     processContentWithMatchesM text currentPos ((start, end, typ):rest) = do
         let beforeText = Text.take (start - currentPos) (Text.drop currentPos text)
@@ -514,7 +515,7 @@ parseContentParts contentText
 
         beforePart <- if Text.null beforeText
                       then pure []
-                      else pure [["text", replaceNewlines beforeText]]
+                      else pure [["text", replaceNewlines (trim beforeText)]]
 
         -- Handle match part based on type
         matchPart <- case typ of
@@ -577,6 +578,10 @@ parseContentParts contentText
     -- Helper to replace newlines with HTML breaks
     replaceNewlines :: Text -> Text
     replaceNewlines = Text.replace "\n" "<br>"
+
+    -- Helper to trim all whitespace from beginning and end of text
+    trim :: Text -> Text
+    trim = Text.dropWhile isSpace . Text.dropWhileEnd isSpace
 
 -- Helper function to find an available filename
 findAvailableFilename :: (FileSystem :> es) => FilePath -> FilePath -> Eff es FilePath

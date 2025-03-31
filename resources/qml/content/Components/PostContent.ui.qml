@@ -15,10 +15,17 @@ Pane {
     required property var post
     property bool clickable: true
     property bool isRefPost: false
+    property var author: null
 
     signal commentClicked()
     signal repostClicked()
     signal postClicked()
+
+    Component.onCompleted: {
+        if (post && post.authorId) {
+            author = getProfile(post.authorId)
+        }
+    }
 
     padding: Constants.spacing_s
 
@@ -32,6 +39,8 @@ Pane {
             anchors.fill: parent
             enabled: root.clickable
             propagateComposedEvents: true
+            cursorShape: Qt.PointingHandCursor
+            z: -1
 
             onPressed: {
                 if (!mouse.wasHeld) {
@@ -68,6 +77,85 @@ Pane {
             }
         }
 
+        RowLayout {
+            Layout.fillWidth: true
+            visible: isRefPost
+
+            Rectangle {
+                Layout.preferredWidth: root.isCollapsed ? 30 : 34
+                Layout.preferredHeight: Layout.preferredWidth
+                Layout.alignment: Qt.AlignVCenter
+                radius: width/2
+                color: Material.backgroundColor
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+
+                    onClicked: {
+                        stackView.replace(personalFeedComponent, {"npub": author.npub})
+                    }
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        source: author ? Util.getProfilePicture(author.picture, author.pubkey) : ""
+                        smooth: true
+                        fillMode: Image.PreserveAspectCrop
+                        layer.enabled: true
+                        layer.effect: OpacityMask {
+                            maskSource: Rectangle {
+                                width: 30
+                                height: 30
+                                radius: width/2
+                            }
+                        }
+                    }
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: 2
+
+                Item {
+                    Layout.fillHeight: true
+                    Layout.fillWidth: true
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+
+                        onClicked: {
+                            stackView.replace(personalFeedComponent, {"npub": author.npub})
+                        }
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.bottom: parent.verticalCenter
+                        font: Constants.font
+                        text: author ? (author.displayName || author.name || "") : ""
+                        elide: Text.ElideRight
+                        width: parent.width
+                        color: Material.primaryTextColor
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.top: parent.verticalCenter
+                        text: author ? author.npub : ""
+                        font.pixelSize: Constants.font.pixelSize * 0.8
+                        elide: Text.ElideRight
+                        width: parent.width
+                        color: Material.secondaryTextColor
+                    }
+                }
+            }
+        }
+
+
         ColumnLayout {
             id: contentLayout
             Layout.fillWidth: true
@@ -79,7 +167,8 @@ Pane {
                 delegate: Loader {
                     id: contentLoader
                     Layout.fillWidth: true
-                    Layout.fillHeight: false
+                    Layout.preferredHeight: item ? item.implicitHeight : 0
+                    Layout.bottomMargin: Constants.spacing_xs
 
                     property string contentValue: modelData[1]
 
@@ -182,7 +271,6 @@ Pane {
                 property string value: ""
 
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.isRefPost ? Math.min(width * 0.5625, 200) : Math.min(width * 0.5625, 400)
                 clickable: true
                 videoUrl: value
 
@@ -200,7 +288,9 @@ Pane {
                 property string value: ""
 
                 Layout.fillWidth: true
-                implicitHeight: contentRectangle.implicitHeight + 20
+                Layout.topMargin: 0
+                Layout.bottomMargin: 0
+                implicitHeight: contentRectangle.implicitHeight
 
                 onValueChanged: {
                     if (value) {
@@ -227,7 +317,7 @@ Pane {
                                        (referencedContentLoader.item ? referencedContentLoader.item.implicitHeight + 20 : 100)
                         color: Material.backgroundColor
                         radius: Constants.radius_m
-                        clip: true
+                        clip: false
 
                         BusyIndicator {
                             id: loadingIndicator
@@ -285,15 +375,22 @@ Pane {
                             onLoaded: {
                                 if (item) {
                                     item.postClicked.connect(function() {
-                                        stackView.push("PostDetails.ui.qml", {"post": referencedPost});
+                                        stackView.push("PostDetails.ui.qml", {
+                                            "post": referencedPost,
+                                            "clickable": true,
+                                            "isRefPost": true
+                                        });
                                     });
                                 }
                             }
 
                             onHeightChanged: {
                                 if (item && visible) {
-                                    contentRectangle.implicitHeight = item.implicitHeight + 20;
-                                    referencedPostContainer.implicitHeight = contentRectangle.implicitHeight + 20;
+                                    var newHeight = item.implicitHeight + 20;
+                                    if (newHeight > contentRectangle.implicitHeight) {
+                                        contentRectangle.implicitHeight = newHeight;
+                                        referencedPostContainer.implicitHeight = newHeight + 20;
+                                    }
                                 }
                             }
                         }
