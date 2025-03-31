@@ -90,7 +90,6 @@ Rectangle {
 
                 onClicked: {
                     personalFeed.editMode = true
-                    //stackView.push(personalFeedComponent, {"npub": mynpub, "editMode": true})
                 }
             }
 

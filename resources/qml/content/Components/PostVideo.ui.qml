@@ -62,17 +62,14 @@ Item {
                         mediaObject.metaData.resolution &&
                         mediaObject.metaData.resolution.height > 0 &&
                         mediaObject.metaData.resolution.width > 0) {
-                        var aspectRatio = mediaObject.metaData.resolution.height / mediaObject.metaData.resolution.width
-                        var maxAspectRatio = 2.0
-                        var minAspectRatio = 0.5
-                        aspectRatio = Math.max(minAspectRatio, Math.min(aspectRatio, maxAspectRatio))
-                        videoContainer.height = Math.min(videoContainer.width * aspectRatio, root.maxHeight)
+                        var aspectRatio = mediaObject.metaData.resolution.width / mediaObject.metaData.resolution.height
+                        var calculatedHeight = videoContainer.width / aspectRatio
+                        videoContainer.height = Math.min(calculatedHeight, root.maxHeight)
                     }
                 }
             }
 
             onShowNotification: function(message) {
-                console.log("PostVideo: Forwarding notification:", message)
                 root.showNotification(message)
             }
         }
