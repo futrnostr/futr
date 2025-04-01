@@ -16,7 +16,7 @@ import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, cancel, forConcurrently)
 import Effectful.Concurrent.STM
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, get, put, modify)
+import Effectful.State.Static.Shared (State, get, gets, put, modify)
 import Effectful.TH
 
 import Logging
@@ -37,7 +37,7 @@ import Nostr.Subscription
     , commentsFilter
     )
 import Nostr.SubscriptionHandler
-import Nostr.Types (Filter(..), emptyFilter)
+import Nostr.Types (Filter(..), SubscriptionId, emptyFilter)
 import Nostr.Util
 import QtQuick (QtQuick, UIUpdates(..), emptyUpdates, notify)
 import RelayMgmt
@@ -52,6 +52,7 @@ data InboxModel :: Effect where
   StartInboxModel :: InboxModel m ()
   StopInboxModel :: InboxModel m ()
   AwaitAtLeastOneConnected :: InboxModel m Bool
+  SubscribeToProfilesAndPostsFor :: PubKeyXO -> InboxModel m [SubscriptionId]
   SubscribeToCommentsFor :: EventId -> InboxModel m ()
   UnsubscribeToCommentsFor :: EventId -> InboxModel m ()
 
@@ -136,6 +137,41 @@ runInboxModel = interpret $ \_ -> \case
 
   AwaitAtLeastOneConnected -> awaitAtLeastOneConnected'
 
+  SubscribeToProfilesAndPostsFor xo -> do
+      kp <- getKeyPair
+      let myXO = keyPairToPubKeyXO kp
+      conns <- gets @RelayPool activeConnections
+
+      let connectedRelays = Map.keys $ Map.filter (\rd -> connectionState rd == Connected) conns
+      let bootstrapFilter = inboxRelayTopologyFilter [xo]
+
+      -- Handle bootstrap subscriptions - we don't collect these IDs since they're already terminated
+      forM_ connectedRelays $ \r -> do
+          subId' <- subscribe r bootstrapFilter
+          void $ handleSubscriptionUntilEOSE subId'
+
+      ownInboxRelayURIs <- map getUri <$> getGeneralRelays myXO
+      followRelayMap <- buildRelayPubkeyMap [xo] ownInboxRelayURIs
+      pubkeyTimestamps <- getPubkeyTimestamps [xo]
+
+      let currentConnections = Map.keysSet $ Map.filter (\rd -> connectionState rd == Connected) conns
+
+      forM_ (Map.toList followRelayMap) $ \(relayUri, _) -> do
+          let alreadyConnected = relayUri `Set.member` currentConnections
+          unless alreadyConnected $ do
+              void $ connect relayUri
+
+      allSubIds <- fmap concat $ forM (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
+          st <- get @RelayPool
+          let isConnected = case Map.lookup relayUri (activeConnections st) of
+                              Just rd -> connectionState rd == Connected
+                              Nothing -> False
+          if isConnected
+              then subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
+              else return []
+
+      return allSubIds
+
   SubscribeToCommentsFor eid -> do
     pool <- get @RelayPool
     let activeRelays = Map.keys $ activeConnections pool
@@ -212,7 +248,7 @@ initializeWithDefaultRelays xo = do
 -- Returns a map from pubkey to (profileTimestamp, postsTimestamp)
 getPubkeyTimestamps :: InboxModelEff es => [PubKeyXO] -> Eff es (Map.Map PubKeyXO (Maybe Int, Maybe Int))
 getPubkeyTimestamps pubkeys = Map.fromList <$> forM pubkeys \pk -> do
-    profileTs <- getLatestTimestamp pk [Metadata]
+    profileTs <- getLatestTimestamp pk [RelayListMetadata, PreferredDMRelays, FollowList, Metadata]
     postsTs <- getLatestTimestamp pk [ShortTextNote, Repost, EventDeletion]
     return (pk, (profileTs, postsTs))
 
@@ -249,7 +285,7 @@ continueWithRelays inboxRelays = do
   connectedRelays <- forConcurrently (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
     connected <- connect relayUri
     if connected
-      then subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
+      then void $ subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
       else recordFailedRelay relayUri
     return (relayUri, connected)
 
@@ -281,7 +317,7 @@ rebalanceSubscriptions pubkeys availableInboxURIs = do
   newResults <- forConcurrently (Map.toList newRelayMap) $ \(relayUri, pkList) -> do
       connected <- connect relayUri
       if connected
-        then subscribeToProfilesAndPosts relayUri pkList pubkeyTimestamps
+        then void $ subscribeToProfilesAndPosts relayUri pkList pubkeyTimestamps
         else recordFailedRelay relayUri
       return (relayUri, connected)
   let failedRelays    = [ relayUri | (relayUri, connected) <- newResults, not connected ]
@@ -318,7 +354,7 @@ subscribeToProfilesAndPosts :: InboxModelEff es
                             => RelayURI
                             -> [PubKeyXO]
                             -> Map.Map PubKeyXO (Maybe Int, Maybe Int)  -- Map of (profileTs, postsTs)
-                            -> Eff es ()
+                            -> Eff es [SubscriptionId]
 subscribeToProfilesAndPosts relayUri pks timestampMap = do
     -- Subscribe to profiles - Metadata generally doesn't need timestamp filtering
     let profileFilter = profilesFilter pks
@@ -335,6 +371,9 @@ subscribeToProfilesAndPosts relayUri pks timestampMap = do
     let postsFilter = userPostsFilter pks effectivePostsTimestamp Nothing
     subId'' <- subscribe relayUri postsFilter
     void $ async $ handlePaginationSubscription subId''
+
+    -- Return both subscription IDs
+    return [subId', subId'']
 
 
 -- | Creates a filter to track changes in the relay network topology of contacts.
@@ -458,7 +497,7 @@ updateGeneralSubscriptions xo = do
                   then pure True
                   else connect relayUri
     if connected
-      then subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
+      then void $ subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
       else do
         recordFailedRelay relayUri
         rebalanceSubscriptions pubkeys ownInboxRelayURIs
@@ -473,7 +512,7 @@ updateGeneralSubscriptions xo = do
                   then pure True
                   else connect relayUri
     if connected
-      then subscribeToProfilesAndPosts relayUri newPubkeys pubkeyTimestamps
+      then void $ subscribeToProfilesAndPosts relayUri newPubkeys pubkeyTimestamps
       else do
         recordFailedRelay relayUri
         rebalanceSubscriptions newPubkeys ownInboxRelayURIs

@@ -103,10 +103,8 @@ Rectangle {
                 onClicked: {
                     if (profileData.isFollow) {
                         unfollow(npub)
-                        //setCurrentProfile(npub)
                     } else {
                         follow(npub)
-                        //setCurrentProfile(npub)
                     }
                 }
             }

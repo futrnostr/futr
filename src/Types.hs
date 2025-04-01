@@ -141,8 +141,7 @@ data InboxModelState
 data AppState = AppState
   { keyPair :: Maybe KeyPair
   , currentScreen :: AppScreen -- @todo remove maybe?
-  , currentContact :: (Maybe PubKeyXO, Maybe SubscriptionId)
-  , currentProfile :: Maybe PubKeyXO
+  , currentProfile :: Maybe (PubKeyXO, [SubscriptionId])
   , currentPost :: Maybe EventId
   , version :: Text
   , inboxModelState :: InboxModelState
@@ -175,7 +174,6 @@ initialState :: AppState
 initialState = AppState
   { keyPair = Nothing
   , currentScreen = KeyMgmt
-  , currentContact = (Nothing, Nothing)
   , currentProfile = Nothing
   , currentPost = Nothing
   , version = "v0.2.3-dev"

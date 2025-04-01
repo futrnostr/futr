@@ -13,8 +13,7 @@ RowLayout {
     property var editMode: false
 
     Component.onCompleted: {
-        setCurrentProfile(npub) // @todo setCurrentProfile and openChat should be one call maybe?
-        openChat(npub)          //       investigate further
+        loadFeed(npub)
         chat.profileData = currentProfile
         profile.profileData = currentProfile
         profileEdit.profileData = currentProfile
