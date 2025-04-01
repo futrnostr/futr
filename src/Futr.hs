@@ -45,7 +45,9 @@ import Nostr.Event ( Event(..), EventId, UnsignedEvent(..)
                    )
 import Nostr.Event qualified as NE
 import Nostr.EventHandler (EventHandler, handleEvent)
-import Nostr.InboxModel (InboxModel, awaitAtLeastOneConnected, startInboxModel, stopInboxModel, subscribeToCommentsFor, unsubscribeToCommentsFor)
+import Nostr.InboxModel ( InboxModel, awaitAtLeastOneConnected, startInboxModel
+                        , stopInboxModel, subscribeToProfilesAndPostsFor
+                        , subscribeToCommentsFor, unsubscribeToCommentsFor )
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, pubKeyXOToHex, secKeyToKeyPair)
 import Nostr.Publisher
 import Nostr.Relay (RelayURI, getUri, isInboxCapable, isValidRelayURI)
@@ -92,11 +94,10 @@ instance ToJSON SearchResult where
 data Futr :: Effect where
   Login :: ObjRef () -> Text -> Futr m ()
   Search :: ObjRef () -> Text -> Futr m SearchResult
-  SetCurrentProfile :: Text -> Futr m ()
   SetCurrentPost :: Maybe EventId -> Futr m ()
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
-  OpenChat :: PubKeyXO -> Futr m ()
+  LoadFeed :: PubKeyXO -> Futr m ()
   SendPrivateMessage :: Text -> Futr m ()
   SendShortTextNote :: Text -> Futr m ()
   Logout :: ObjRef () -> Futr m ()
@@ -185,15 +186,6 @@ runFutr = interpret $ \_ -> \case
                   searchInRelays pubkey' maybeRelay
                   return $ ProfileResult (pubKeyXOToBech32 pubkey') maybeRelay
 
-  SetCurrentProfile npub' -> do
-    case bech32ToPubKeyXO npub' of
-      Just pk -> do
-        modify @AppState $ \st -> st { currentProfile = Just pk }
-        notify $ emptyUpdates { profilesChanged = True }
-      Nothing -> do
-        logError $ "Invalid npub, cannot set current profile: " <> npub'
-        return ()
-
   SetCurrentPost eid -> do
     previousPost <- gets @AppState currentPost
 
@@ -234,20 +226,22 @@ runFutr = interpret $ \_ -> \case
             notify $ emptyUpdates { myFollowsChanged = True }
         Nothing -> return ()
 
-  OpenChat pubKeyXO -> do
+  LoadFeed pk -> do
     st <- get @AppState
 
-    case currentContact st of
-      (Just _, Just subId') -> stopSubscription subId'
+    case currentProfile st of
+      Just (_, subIds) -> forM_ subIds $ \subId' -> stopSubscription subId'
       _ -> return ()
 
-    modify $ \st' -> st' { currentContact = (Just pubKeyXO, Nothing) }
-    notify $ emptyUpdates { privateMessagesChanged = True }
+    modify @AppState $ \st' -> st' { currentProfile = Just (pk, []) }
+    subIds <- subscribeToProfilesAndPostsFor pk
+    modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
+    notify $ emptyUpdates { profilesChanged = True, privateMessagesChanged = True }
 
   SendPrivateMessage input -> do
     st <- get @AppState
-    case (keyPair st, currentContact st) of
-      (Just kp, (Just recipient, _)) -> do
+    case (keyPair st, currentProfile st) of
+      (Just kp, Just (recipient, _)) -> do
         now <- getCurrentTime
         let senderPubKeyXO = keyPairToPubKeyXO kp
             allRecipients = nub [senderPubKeyXO, recipient]
@@ -270,7 +264,7 @@ runFutr = interpret $ \_ -> \case
         notify $ emptyUpdates { privateMessagesChanged = True }
 
       (Nothing, _) -> logError "No key pair found"
-      (_, (Nothing, _)) -> logError "No current chat recipient"
+      (_, Nothing) -> logError "No current chat recipient"
 
   SendShortTextNote input -> do
     kp <- getKeyPair

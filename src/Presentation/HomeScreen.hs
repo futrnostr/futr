@@ -90,7 +90,7 @@ runHomeScreen = interpret $ \_ -> \case
         defPropertyConst' "currentProfile" (\_ -> do
           mp <- runE $ gets @AppState currentProfile
           case mp of
-            Just pk -> do
+            Just (pk, _) -> do
               profileObj <- getPoolObject profilesPool pk
               return $ Just profileObj
             Nothing -> return Nothing),
@@ -136,8 +136,6 @@ runHomeScreen = interpret $ \_ -> \case
           res <- search obj input
           return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
 
-        defMethod' "setCurrentProfile" $ \_ npub' -> runE $ setCurrentProfile npub',
-
         defMethod' "saveProfile" $ \_ input -> runE $ do
           let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
           n <- getCurrentTime
@@ -164,8 +162,8 @@ runHomeScreen = interpret $ \_ -> \case
         defPropertySigRO' "posts" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { postsObjRef = Just obj } }
           st <- runE $ get @AppState
-          case fst (currentContact st) of
-            Just recipient -> do
+          case currentProfile st of
+            Just (recipient, _) -> do
                 postIds <- runE $ getTimelineIds PostTimeline recipient 1000
                 mapM (getPoolObject postsPool) postIds
             Nothing -> return [],
@@ -173,8 +171,8 @@ runHomeScreen = interpret $ \_ -> \case
         defPropertySigRO' "privateMessages" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { privateMessagesObjRef = Just obj } }
           st <- runE $ get @AppState
-          case fst (currentContact st) of
-            Just recipient -> do
+          case currentProfile st of
+            Just (recipient, _) -> do
                 messageIds <- runE $ getTimelineIds ChatTimeline recipient 1000
                 mapM (getPoolObject chatPool) messageIds
             Nothing -> return [],
@@ -197,9 +195,9 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "unfollow" $ \_ npubText -> runE $ unfollowProfile npubText,
 
-        defMethod' "openChat" $ \_ npubText -> runE $ do
+        defMethod' "loadFeed" $ \_ npubText -> runE $ do
             let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
-            openChat pubKeyXO,
+            loadFeed pubKeyXO,
 
         defMethod' "sendPrivateMessage" $ \_ input -> runE $ sendPrivateMessage input, -- NIP-17 private direct message
 
