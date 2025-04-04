@@ -4,18 +4,20 @@ import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
 import QtMultimedia 5.15
-import QtGraphicalEffects 1.15
 
 import Components 1.0
 import Futr 1.0
+import Profile 1.0
 
 Pane {
     id: root
 
     required property var post
+    required property string currentUser
+
     property bool clickable: true
     property bool isRefPost: false
-    property var author: null
+    property var author
 
     signal commentClicked()
     signal repostClicked()
@@ -25,6 +27,12 @@ Pane {
         if (post && post.authorId) {
             author = getProfile(post.authorId)
         }
+        console.log("post loaded")
+    }
+
+    Component.onDestruction: {
+        author = null
+        console.log("post destroyed")
     }
 
     padding: Constants.spacing_s
@@ -93,23 +101,16 @@ Pane {
                     cursorShape: Qt.PointingHandCursor
 
                     onClicked: {
+                        console.log("stack view depth: ", stackView.depth)
                         stackView.replace(personalFeedComponent, {"npub": author.npub})
+                        console.log("stack new view depth: ", stackView.depth)
                     }
 
                     Image {
                         anchors.fill: parent
-                        anchors.margins: 2
+                        anchors.margins: Constants.spacing_xs
                         source: author ? Util.getProfilePicture(author.picture, author.pubkey) : ""
-                        smooth: true
                         fillMode: Image.PreserveAspectCrop
-                        layer.enabled: true
-                        layer.effect: OpacityMask {
-                            maskSource: Rectangle {
-                                width: 30
-                                height: 30
-                                radius: width/2
-                            }
-                        }
                     }
                 }
             }
@@ -128,7 +129,9 @@ Pane {
                         cursorShape: Qt.PointingHandCursor
 
                         onClicked: {
+                            console.log("stack view depth: ", stackView.depth)
                             stackView.replace(personalFeedComponent, {"npub": author.npub})
+                            console.log("stack new view depth: ", stackView.depth)
                         }
                     }
 
@@ -172,6 +175,8 @@ Pane {
 
                     property string contentValue: modelData[1]
 
+                    active: modelData !== undefined && modelData !== null
+
                     sourceComponent: {
                         let type = modelData[0];
 
@@ -198,6 +203,13 @@ Pane {
                                 console.warn("data: ", item)
                                 console.warn("modelData: ", modelData)
                             }
+                        }
+                    }
+
+                    onActiveChanged: {
+                        if (!active) {
+                            // Perform any additional cleanup if necessary
+                            console.log("Component unloaded");
                         }
                     }
                 }
@@ -235,7 +247,9 @@ Pane {
                                 }
                             }
 
+                            console.log("stack view depth: ", stackView.depth)
                             stackView.replace(personalFeedComponent, {"npub": profileId})
+                            console.log("stack new view depth: ", stackView.depth)
                         } else if (link.startsWith("note://")) {
                             console.log("Note clicked:", link.substring(7));
                         } else {
@@ -307,6 +321,11 @@ Pane {
                     }
                 }
 
+                Component.onDestruction: {
+                    referencedContentLoader.referencedPost = null
+                    console.log("referencedPostContainer destroyed")
+                }
+
                 ColumnLayout {
                     anchors.fill: parent
 
@@ -367,7 +386,8 @@ Pane {
                                     setSource("PostContent.ui.qml", {
                                         "post": referencedPost,
                                         "clickable": true,
-                                        isRefPost: true
+                                        "isRefPost": true,
+                                        "currentUser": root.currentUser
                                     });
                                 }
                             }
@@ -378,7 +398,8 @@ Pane {
                                         stackView.push("PostDetails.ui.qml", {
                                             "post": referencedPost,
                                             "clickable": true,
-                                            "isRefPost": true
+                                            "isRefPost": true,
+                                            "currentUser": root.currentUser
                                         });
                                     });
                                 }
@@ -458,7 +479,7 @@ Pane {
                 implicitHeight: 36
                 padding: 8
                 icon.color: Material.secondaryTextColor
-                visible: mynpub == npub
+                visible: currentUser == post.authorId
 
                 onClicked: deleteDialog.open()
             }

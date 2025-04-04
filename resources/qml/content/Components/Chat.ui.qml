@@ -7,6 +7,7 @@ import Components 1.0
 import Dialogs 1.0
 import Futr 1.0
 import HsQML.Model 1.0
+import Profile 1.0
 
 Rectangle {
     id: chat
@@ -16,13 +17,18 @@ Rectangle {
     border.width: 1
 
     property string npub: ""
-    property var profileData
+    required property string currentUser
+
+    Component.onDestruction: {
+        console.log("chat destroyed")
+    }
 
     PostDialog {
         id: quoteReplyDialog
         inputPlaceholder: qsTr("Add a quote...")
         buttonText: qsTr("Quote")
         isQuoteMode: true
+        currentUser: chat.currentUser
 
         onMessageSubmitted: function(text) {
             quoteRepost(targetPost.id, text)
@@ -110,7 +116,7 @@ Rectangle {
             TabButton {
                 id: privateTab
                 implicitWidth: chatTypeSelector.width / 2
-                text: npub === mynpub ? qsTr("Messages to myself") : qsTr("Private Chat")
+                text: npub === currentUser ? qsTr("Messages to myself") : qsTr("Private Chat")
 
                 background: Rectangle {
                     color: parent.down || parent.checked ? Material.primaryColor : "transparent"
@@ -185,6 +191,7 @@ Rectangle {
                         sourceComponent: PostContent {
                             post: modelData
                             width: parent.width
+                            currentUser: chat.currentUser
 
                             onCommentClicked: {
                                 if (modelData) {
@@ -213,11 +220,12 @@ Rectangle {
                 // Input area for new public notes (at the bottom)
                 MessageInput {
                     placeholderText: qsTr("What's on your mind?")
-                    visible: mynpub == npub
+                    visible: currentUser == npub
                     buttonText: qsTr("Post")
                     onMessageSent: function(text) {
                         sendShortTextNote(text)
                     }
+                    currentUser: chat.currentUser
                     Layout.fillWidth: true
                     Layout.leftMargin: 0
                     Layout.rightMargin: 0
@@ -237,145 +245,151 @@ Rectangle {
                     visible: ctxRelayMgmt.dmRelays.length == 0
                 }
 
-                ScrollingListView {
-                    id: privateMessageListView
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    visible: ctxRelayMgmt.dmRelays.length > 0
+                // ScrollingListView {
+                //     id: privateMessageListView
+                //     Layout.fillWidth: true
+                //     Layout.fillHeight: true
+                //     visible: ctxRelayMgmt.dmRelays.length > 0
 
-                    model: AutoListModel {
-                        id: messagesModel
-                        source: privateMessages
-                        mode: AutoListModel.ByKey
-                        equalityTest: function (oldItem, newItem) {
-                            return oldItem.id === newItem.id
-                        }
-                    }
+                //     model: AutoListModel {
+                //         id: messagesModel
+                //         source: privateMessages
+                //         mode: AutoListModel.ByKey
+                //         equalityTest: function (oldItem, newItem) {
+                //             return oldItem.id === newItem.id
+                //         }
+                //     }
 
-                    delegate: Loader {
-                        active: modelData !== undefined && modelData !== null
-                        width: privateMessageListView.width - privateMessageListView.leftMargin - privateMessageListView.rightMargin - 8
-                        Layout.preferredHeight: active ? item.implicitHeight : 0
+                //     delegate: Loader {
+                //         active: modelData !== undefined && modelData !== null
+                //         width: privateMessageListView.width - privateMessageListView.leftMargin - privateMessageListView.rightMargin - 8
+                //         Layout.preferredHeight: active ? item.implicitHeight : 0
 
-                        sourceComponent: Item {
-                            property var message: modelData
-                            property var author: message ? getProfile(message.authorId) : null
+                //         sourceComponent: Item {
+                //             property var message: modelData
+                //             property var author: message ? getProfile(message.authorId) : null
 
-                            onMessageChanged: {
-                                author = message ? getProfile(message.authorId) : null
-                            }
+                //             onMessageChanged: {
+                //                 //author = message ? getProfile(message.authorId) : null
+                //                 author = {
+                //                     "npub": message.authorId,
+                //                     "displayName": "Test User",
+                //                     "name": "Test User",
+                //                     "picture": "https://example.com/test-user.png"
+                //                 }
+                //             }
 
-                            height: privateRowLayout.height + Constants.spacing_xs
+                //             height: privateRowLayout.height + Constants.spacing_xs
 
-                            RowLayout {
-                                id: privateRowLayout
-                                width: parent.width
-                                spacing: Constants.spacing_xs
-                                y: Constants.spacing_s
-                                layoutDirection: author ? (author.npub == mynpub ? Qt.RightToLeft : Qt.LeftToRight) : Qt.LeftToRight
+                //             RowLayout {
+                //                 id: privateRowLayout
+                //                 width: parent.width
+                //                 spacing: Constants.spacing_xs
+                //                 y: Constants.spacing_s
+                //                 layoutDirection: author ? (author.npub == currentUser ? Qt.RightToLeft : Qt.LeftToRight) : Qt.LeftToRight
 
-                                ProfilePicture {
-                                    imageSource: author ? Util.getProfilePicture(author.picture, author.npub) : ""
-                                }
+                //                 ProfilePicture {
+                //                     imageSource: author ? Util.getProfilePicture(author.picture, author.npub) : ""
+                //                 }
 
-                                Pane {
-                                    Layout.fillWidth: true
-                                    Layout.maximumWidth: parent.width * 0.7
-                                    Layout.rightMargin: author ? (author.npub == mynpub ? 0 : Constants.spacing_s) : Constants.spacing_s
-                                    Layout.leftMargin: author ? Constants.spacing_s : 0
+                //                 Pane {
+                //                     Layout.fillWidth: true
+                //                     Layout.maximumWidth: parent.width * 0.7
+                //                     Layout.rightMargin: author ? (author.npub == currentUser ? 0 : Constants.spacing_s) : Constants.spacing_s
+                //                     Layout.leftMargin: author ? Constants.spacing_s : 0
 
-                                    background: Rectangle {
-                                        color: author ? (author.npub == mynpub ? Material.accentColor : Material.dividerColor) : Material.dividerColor
-                                        radius: Constants.radius_m
-                                    }
+                //                     background: Rectangle {
+                //                         color: author ? (author.npub == currentUser ? Material.accentColor : Material.dividerColor) : Material.dividerColor
+                //                         radius: Constants.radius_m
+                //                     }
 
-                                    ColumnLayout {
-                                        width: parent.width
+                //                     ColumnLayout {
+                //                         width: parent.width
 
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: message ? message.content : ""
-                                            wrapMode: Text.Wrap
-                                            color: Material.foreground
-                                        }
+                //                         Text {
+                //                             Layout.fillWidth: true
+                //                             text: message ? message.content : ""
+                //                             wrapMode: Text.Wrap
+                //                             color: Material.foreground
+                //                         }
 
-                                        RowLayout {
-                                            Layout.fillWidth: true
+                //                         RowLayout {
+                //                             Layout.fillWidth: true
 
-                                            Item {
-                                                Layout.fillWidth: true
-                                                visible: author.npub === mynpub
-                                            }
+                //                             Item {
+                //                                 Layout.fillWidth: true
+                //                                 visible: author.npub === currentUser
+                //                             }
 
-                                            Text {
-                                                Layout.alignment: author ? (author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
-                                                text: message ? message.timestamp : ""
-                                                font: Constants.smallFontMedium
-                                                color: Material.secondaryTextColor
-                                                Layout.topMargin: Constants.spacing_xs
-                                                visible: author.npub === mynpub
-                                            }
+                //                             Text {
+                //                                 Layout.alignment: author ? (author.npub == currentUser ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
+                //                                 text: message ? message.timestamp : ""
+                //                                 font: Constants.smallFontMedium
+                //                                 color: Material.secondaryTextColor
+                //                                 Layout.topMargin: Constants.spacing_xs
+                //                                 visible: author.npub === currentUser
+                //                             }
 
-                                            Button {
-                                                flat: true
-                                                icon.source: "qrc:/icons/menu.svg"
-                                                icon.width: 20
-                                                icon.height: 20
-                                                implicitWidth: 28
-                                                implicitHeight: 28
-                                                padding: 4
-                                                Layout.alignment: Qt.AlignRight
-                                                onClicked: postMenu.open()
+                //                             Button {
+                //                                 flat: true
+                //                                 icon.source: "qrc:/icons/menu.svg"
+                //                                 icon.width: 20
+                //                                 icon.height: 20
+                //                                 implicitWidth: 28
+                //                                 implicitHeight: 28
+                //                                 padding: 4
+                //                                 Layout.alignment: Qt.AlignRight
+                //                                 onClicked: postMenu.open()
 
-                                                Menu {
-                                                    id: postMenu
-                                                    y: parent.height
+                //                                 Menu {
+                //                                     id: postMenu
+                //                                     y: parent.height
 
-                                                    MenuItem {
-                                                        text: qsTr("Copy Event ID")
-                                                        onTriggered: {
-                                                            clipboard.copyText(modelData.nevent)
-                                                        }
-                                                    }
+                //                                     MenuItem {
+                //                                         text: qsTr("Copy Event ID")
+                //                                         onTriggered: {
+                //                                             clipboard.copyText(modelData.nevent)
+                //                                         }
+                //                                     }
 
-                                                    MenuItem {
-                                                        text: qsTr("Show Event JSON")
-                                                        onTriggered: {
-                                                            eventJsonDialog.targetPost = modelData
-                                                            eventJsonDialog.open()
-                                                        }
-                                                    }
+                //                                     MenuItem {
+                //                                         text: qsTr("Show Event JSON")
+                //                                         onTriggered: {
+                //                                             eventJsonDialog.targetPost = modelData
+                //                                             eventJsonDialog.open()
+                //                                         }
+                //                                     }
 
-                                                    MenuItem {
-                                                        text: qsTr("Seen on Relays")
-                                                        onTriggered: {
-                                                            seenOnRelaysDialog.targetPost = modelData
-                                                            seenOnRelaysDialog.open()
-                                                        }
-                                                    }
-                                                }
-                                            }
+                //                                     MenuItem {
+                //                                         text: qsTr("Seen on Relays")
+                //                                         onTriggered: {
+                //                                             seenOnRelaysDialog.targetPost = modelData
+                //                                             seenOnRelaysDialog.open()
+                //                                         }
+                //                                     }
+                //                                 }
+                //                             }
 
-                                            Text {
-                                                Layout.alignment: author ? (author.npub == mynpub ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
-                                                text: message ? message.timestamp : ""
-                                                font: Constants.smallFontMedium
-                                                color: Material.secondaryTextColor
-                                                Layout.topMargin: Constants.spacing_xs
-                                                visible: author.npub !== mynpub
-                                            }
+                //                             Text {
+                //                                 Layout.alignment: author ? (author.npub == currentUser ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
+                //                                 text: message ? message.timestamp : ""
+                //                                 font: Constants.smallFontMedium
+                //                                 color: Material.secondaryTextColor
+                //                                 Layout.topMargin: Constants.spacing_xs
+                //                                 visible: author.npub !== currentUser
+                //                             }
 
-                                            Item {
-                                                Layout.fillWidth: true
-                                                visible: author.npub !== mynpub
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                //                             Item {
+                //                                 Layout.fillWidth: true
+                //                                 visible: author.npub !== currentUser
+                //                             }
+                //                         }
+                //                     }
+                //                 }
+                //             }
+                //         }
+                //     }
+                // }
 
                 // Private Messages Input
                 MessageInput {
@@ -384,6 +398,7 @@ Rectangle {
                     onMessageSent: function(text) {
                         sendPrivateMessage(text)
                     }
+                    currentUser: chat.currentUser
                     Layout.fillWidth: true
                     Layout.leftMargin: 0
                     Layout.rightMargin: 0

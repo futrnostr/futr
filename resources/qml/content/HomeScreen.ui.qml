@@ -61,9 +61,10 @@ Item {
                         id: followListElement
                         anchors.fill: parent
                         anchors.margins: 10
+
                         isCollapsed: !mainContainer.sidebarExpanded
                         stackView: stackView
-
+                        currentUser: mynpub
                         Behavior on opacity {
                             NumberAnimation {
                                 duration: 150
@@ -167,6 +168,7 @@ Item {
 
                     PostDetails {
                         post: null
+                        currentUser: mynpub
                     }
                 }
 
@@ -217,6 +219,7 @@ Item {
 
     InboxModelStatusAlert {
         id: inboxModelStatusAlert
+        currentState: inboxModelState
     }
 
     NotificationToast {

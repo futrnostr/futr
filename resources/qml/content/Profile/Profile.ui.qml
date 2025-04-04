@@ -15,6 +15,15 @@ Rectangle {
 
     property var profileData
     property var npub
+    required property var currentUser
+
+    Component.onCompleted: {
+        profileData = getProfile(npub)
+    }
+
+    Component.onDestruction: {
+        profileData = null
+    }
 
     ColumnLayout {
         id: content
@@ -34,7 +43,6 @@ Rectangle {
                 width: parent.width
                 height: 80
                 fillMode: Image.PreserveAspectCrop
-                clip: true
             }
         }
 
@@ -54,7 +62,6 @@ Rectangle {
                     source: Util.getProfilePicture(profileData.picture, npub)
                     anchors.fill: parent
                     fillMode: Image.PreserveAspectCrop
-                    clip: true
                 }
             }
 
@@ -86,7 +93,7 @@ Rectangle {
 
             EditButton {
                 id: editButton
-                visible: npub === mynpub
+                visible: npub === currentUser
 
                 onClicked: {
                     personalFeed.editMode = true
@@ -94,7 +101,7 @@ Rectangle {
             }
 
             Button {
-                visible: npub !== mynpub
+                visible: npub !== currentUser
                 text: profileData.isFollow ? qsTr("Unfollow") : qsTr("Follow")
                 font: Constants.font
                 highlighted: true

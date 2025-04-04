@@ -9,33 +9,35 @@ RowLayout {
     id: personalFeed
 
     required property var npub
-
     property var editMode: false
 
     Component.onCompleted: {
         loadFeed(npub)
-        chat.profileData = currentProfile
-        profile.profileData = currentProfile
-        profileEdit.profileData = currentProfile
+    }
+
+    Component.onDestruction: {
+        gc()
+        console.log("personalFeed destroyed")
     }
 
     Rectangle {
-        Layout.preferredWidth: parent.width * 0.6
+        Layout.preferredWidth: 60
         Layout.fillHeight: true
         Layout.fillWidth: true
         Layout.preferredHeight: parent.height
         color: Material.backgroundColor
 
-        Chat {
-            id: chat
-            anchors.fill: parent
+        // Chat {
+        //     id: chat
+        //     anchors.fill: parent
 
-            npub: personalFeed.npub
-        }
+        //     npub: personalFeed.npub
+        //     currentUser: mynpub
+        // }
     }
 
     Rectangle {
-        Layout.preferredWidth: parent.width * 0.4
+        Layout.preferredWidth: 40
         Layout.fillHeight: true
         Layout.fillWidth: true
         Layout.preferredHeight: parent.height
@@ -47,6 +49,7 @@ RowLayout {
             visible: !personalFeed.editMode
 
             npub: personalFeed.npub
+            currentUser: mynpub
         }
 
         EditProfile {

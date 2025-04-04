@@ -2,10 +2,10 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
-import QtGraphicalEffects 1.15
 
 import HsQML.Model 1.0
 import Futr 1.0
+import Profile 1.0
 
 Rectangle {
     id: root
@@ -14,6 +14,7 @@ Rectangle {
 
     property bool isCollapsed: false
     property var stackView: null
+    property string currentUser: ""
 
     ColumnLayout {
         anchors.fill: parent
@@ -27,40 +28,38 @@ Rectangle {
         }
 
         // Follows list
-        Rectangle {
+        ListView {
+            id: followsView
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: "transparent"
+            spacing: Constants.spacing_xs
 
-            ListView {
-                id: followsView
-                anchors.fill: parent
-                clip: true
-                spacing: root.isCollapsed ? 4 : 5
-                property string selectedPubkey: ""
+            property string selectedPubkey: ""
 
-                model: AutoListModel {
-                    id: followsModel
-                    source: followList
-                    mode: AutoListModel.ByKeyNoReorder
-                    keyFunction: function(item) {
-                        return item ? item.pubkey : ""
-                    }
+            model: AutoListModel {
+                id: followsModel
+                source: followList
+                mode: AutoListModel.ByKey
+                equalityTest: function (oldItem, newItem) {
+                    return oldItem.pubkey === newItem.pubkey
+                        && oldItem.petname === newItem.petname
+                        && oldItem.displayName === newItem.displayName
+                        && oldItem.name === newItem.name
+                        && oldItem.picture === newItem.picture
                 }
+            }
 
-                cacheBuffer: 200
-                reuseItems: true
+            ScrollBar.vertical: ScrollBar {
+                active: true
+                policy: ScrollBar.AlwaysOn
+            }
 
-                ScrollBar.vertical: ScrollBar {
-                    active: true
-                    policy: ScrollBar.AlwaysOn
-                }
-
-                delegate: Loader {
-                    id: delegateLoader
-                    width: followsView.width - followsView.ScrollBar.vertical.width
-                    height: active && item && visible ? (root.isCollapsed ? 34 : 54) : 0
-                    active: modelData !== undefined && modelData !== null
+            delegate: Component {
+                Rectangle {
+                    id: followItem
+                    property bool mouseHover: false
+                    height: visible ? (root.isCollapsed ? 34 : 54) : 0
+                    width: followsView.width
                     visible: {
                         if (!modelData) return false;
                         if (followListFilter.filterText === "") return true;
@@ -70,125 +69,92 @@ Rectangle {
                         var name = modelData.name || "";
                         var pubkey = modelData.pubkey || "";
                         return pubkey.toLowerCase().includes(searchText) ||
-                               displayName.toLowerCase().includes(searchText) ||
-                               petname.toLowerCase().includes(searchText) ||
-                               name.toLowerCase().includes(searchText);
+                            displayName.toLowerCase().includes(searchText) ||
+                            petname.toLowerCase().includes(searchText) ||
+                            name.toLowerCase().includes(searchText);
                     }
 
-                    sourceComponent: Rectangle {
-                        id: followItem
-                        property bool mouseHover: false
-                        height: delegateLoader.visible ? (root.isCollapsed ? 34 : 54) : 0
-                        width: parent.width
-                        visible: delegateLoader.visible
-                        color: {
-                            if (mouseHover) return Qt.rgba(Material.accentColor.r, Material.accentColor.g, Material.accentColor.b, 0.2);
-                            if (modelData && modelData.pubkey === followsView.selectedPubkey)
-                                return Qt.rgba(Material.accentColor.r, Material.accentColor.g, Material.accentColor.b, 0.15);
-                            if (modelData && modelData.pubkey === mynpub)
-                                return Qt.rgba(Material.primaryColor.r, Material.primaryColor.g, Material.primaryColor.b, 0.1);
-                            return "transparent";
-                        }
-                        radius: root.isCollapsed ? height/2 : 6
+                    color: {
+                        if (mouseHover) return Qt.rgba(Material.accentColor.r, Material.accentColor.g, Material.accentColor.b, 0.2);
+                        if (modelData && modelData.pubkey === followsView.selectedPubkey)
+                            return Qt.rgba(Material.accentColor.r, Material.accentColor.g, Material.accentColor.b, 0.15);
+                        if (modelData && modelData.pubkey === currentUser)
+                            return Qt.rgba(Material.primaryColor.r, Material.primaryColor.g, Material.primaryColor.b, 0.1);
+                        return "transparent";
+                    }
 
-                        Behavior on color {
-                            ColorAnimation { duration: 150 }
-                        }
+                    radius: Constants.radius_m
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: root.isCollapsed ? 2 : 7
-                            spacing: root.isCollapsed ? 0 : 8
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: root.isCollapsed ? 2 : 7
+                        spacing: root.isCollapsed ? 0 : 8
 
-                            Rectangle {
-                                Layout.preferredWidth: root.isCollapsed ? 30 : 34
-                                Layout.preferredHeight: Layout.preferredWidth
-                                Layout.alignment: Qt.AlignVCenter
-                                radius: width/2
-                                color: Material.backgroundColor
-
-                                Image {
-                                    anchors.fill: parent
-                                    anchors.margins: 2
-                                    source: Util.getProfilePicture(modelData.picture, modelData.pubkey)
-                                    smooth: true
-                                    fillMode: Image.PreserveAspectCrop
-                                    layer.enabled: true
-                                    layer.effect: OpacityMask {
-                                        maskSource: Rectangle {
-                                            width: 30
-                                            height: 30
-                                            radius: width/2
-                                        }
-                                    }
-                                }
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 3
-                                visible: !root.isCollapsed
-
-                                Text {
-                                    text: modelData.petname || modelData.displayName || modelData.name || modelData.pubkey
-                                    font: Constants.font
-                                    color: Material.primaryTextColor
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                    visible: modelData !== undefined
-                                        && modelData !== null
-                                        && modelData.pubkey !== mynpub
-                                }
-
-                                Text {
-                                    text: modelData.name || modelData.pubkey
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                    font: Constants.smallFont
-                                    color: Material.secondaryTextColor
-                                    visible: modelData !== undefined
-                                        && modelData !== null
-                                        && modelData.pubkey !== mynpub
-                                        && (modelData.displayName !== "" || modelData.name !== "")
-                                }
-
-                                Text {
-                                    text: "Myself"
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                    font: Constants.smallFont
-                                    color: Material.secondaryTextColor
-                                    visible: modelData !== undefined
-                                        && modelData !== null
-                                        && modelData.pubkey === mynpub
-                                }
-                            }
+                        ProfilePicture {
+                            imageSource: Util.getProfilePicture(modelData.picture, modelData.pubkey)
                         }
 
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 3
+                            visible: !root.isCollapsed
 
-                            onEntered: followItem.mouseHover = true
-                            onExited: followItem.mouseHover = false
-
-                            ToolTip {
-                                visible: parent.containsMouse && root.isCollapsed
+                            Text {
                                 text: modelData.petname || modelData.displayName || modelData.name || modelData.pubkey
-                                delay: 500
+                                font: Constants.font
+                                color: Material.primaryTextColor
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                visible: modelData !== undefined && modelData !== null && modelData.pubkey !== currentUser
                             }
 
-                            onClicked: {
-                                if (modelData === undefined || modelData === null) return;
-                                followsView.selectedPubkey = modelData.pubkey
-
-                                stackView.replace(personalFeedComponent, {"npub": modelData.pubkey});
+                            Text {
+                                text: modelData.name || modelData.pubkey
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                font: Constants.smallFont
+                                color: Material.secondaryTextColor
+                                visible: modelData !== undefined && modelData !== null
+                                        && modelData.pubkey !== currentUser
+                                        && (modelData.displayName !== "" || modelData.name !== "")
                             }
+
+                            Text {
+                                text: "Myself"
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                font: Constants.smallFont
+                                color: Material.secondaryTextColor
+                                visible: modelData !== undefined && modelData !== null && modelData.pubkey === currentUser
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+
+                        onEntered: followItem.mouseHover = true
+                        onExited: followItem.mouseHover = false
+
+                        ToolTip {
+                            visible: parent.containsMouse && root.isCollapsed
+                            text: modelData.petname || modelData.displayName || modelData.name || modelData.pubkey
+                            delay: 500
+                        }
+
+                        onClicked: {
+                            if (modelData === undefined || modelData === null) return;
+                            followsView.selectedPubkey = modelData.pubkey
+                            console.log("stack view depth: ", stackView.depth)
+                            stackView.replace(personalFeedComponent, {"npub": modelData.pubkey});
+                            console.log("stack new view depth: ", stackView.depth)
                         }
                     }
                 }
             }
+
         }
     }
 }

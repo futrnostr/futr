@@ -227,16 +227,26 @@ runFutr = interpret $ \_ -> \case
         Nothing -> return ()
 
   LoadFeed pk -> do
+    logDebug $ "Loading feed for " <> pack (show pk)
     st <- get @AppState
 
     case currentProfile st of
       Just (_, subIds) -> forM_ subIds $ \subId' -> stopSubscription subId'
       _ -> return ()
 
+    logDebug $ "Subscription stopped"
+
     modify @AppState $ \st' -> st' { currentProfile = Just (pk, []) }
-    subIds <- subscribeToProfilesAndPostsFor pk
-    modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
-    notify $ emptyUpdates { profilesChanged = True, privateMessagesChanged = True }
+    logDebug $ "Current profile set"
+    notify $ emptyUpdates { profilesChanged = True, postsChanged = True, privateMessagesChanged = True }
+
+    void $ async $ do
+      subIds <- subscribeToProfilesAndPostsFor pk
+      logDebug $ "Subscriptions started"
+      modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
+      logDebug $ "Subscriptions set"
+      notify $ emptyUpdates { profilesChanged = True, postsChanged = True, privateMessagesChanged = True }
+      logDebug $ "Feed loaded"
 
   SendPrivateMessage input -> do
     st <- get @AppState

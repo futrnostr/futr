@@ -2,14 +2,17 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
+
 import Components 1.0
 import Futr 1.0
+import Profile 1.0
 
 Pane {
     id: root
 
     property string placeholderText: qsTr("Type a message...")
     property string buttonText: qsTr("Send")
+    property string currentUser: ""
 
     signal messageSent(string text)
 
@@ -28,10 +31,7 @@ Pane {
         spacing: Constants.spacing_m
 
         ProfilePicture {
-            imageSource: Util.getProfilePicture(mypicture, mynpub)
-            Layout.preferredWidth: 36
-            Layout.preferredHeight: 36
-            Layout.alignment: Qt.AlignVCenter
+            imageSource: Util.getProfilePicture(mypicture, currentUser)
         }
 
         TextArea {

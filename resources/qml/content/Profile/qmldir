@@ -2,3 +2,4 @@ module Profile
 EditProfile 1.0 EditProfile.ui.qml
 ExternalIdentity 1.0 ExternalIdentity.ui.qml
 Profile 1.0 Profile.ui.qml
+ProfilePicture 1.0 ProfilePicture.ui.qml
