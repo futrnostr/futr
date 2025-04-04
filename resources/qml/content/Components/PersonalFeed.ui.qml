@@ -16,7 +16,6 @@ RowLayout {
     }
 
     Component.onDestruction: {
-        gc()
         console.log("personalFeed destroyed")
     }
 
@@ -27,13 +26,13 @@ RowLayout {
         Layout.preferredHeight: parent.height
         color: Material.backgroundColor
 
-        // Chat {
-        //     id: chat
-        //     anchors.fill: parent
+        Chat {
+            id: chat
+            anchors.fill: parent
 
-        //     npub: personalFeed.npub
-        //     currentUser: mynpub
-        // }
+            npub: personalFeed.npub
+            currentUser: mynpub
+        }
     }
 
     Rectangle {

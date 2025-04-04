@@ -21,10 +21,6 @@ Rectangle {
         profileData = getProfile(npub)
     }
 
-    Component.onDestruction: {
-        profileData = null
-    }
-
     ColumnLayout {
         id: content
         anchors.top: parent.top

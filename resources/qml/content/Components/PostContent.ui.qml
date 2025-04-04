@@ -31,7 +31,6 @@ Pane {
     }
 
     Component.onDestruction: {
-        author = null
         console.log("post destroyed")
     }
 
@@ -322,7 +321,6 @@ Pane {
                 }
 
                 Component.onDestruction: {
-                    referencedContentLoader.referencedPost = null
                     console.log("referencedPostContainer destroyed")
                 }
 

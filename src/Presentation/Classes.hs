@@ -29,7 +29,7 @@ import Nostr.Event (Event(..), EventId(..), Kind(..), Rumor(..), eventIdFromHex)
 import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.Util (Util, getCurrentTime, getKeyPair)
-import QtQuick (QtQuick, PropertyMap(..), QtQuickState(..), UIReferences(..))
+import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..))
 import Store.Lmdb (LmdbStore, getCommentIds, getEvent, getFollows, getProfile)
 import TimeFormatter
 import Types (AppState(..), EventWithRelays(..), Follow(..), PublishStatus(..), RelayPool(..))
@@ -79,43 +79,43 @@ runClasses = interpret $ \_ -> \case
 
             defPropertySigRO' "name" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk obj
+                runE $ storeProfileObjRef pk "name" obj
                 profile <- runE $ getProfile pk
                 return $ name profile,
 
             defPropertySigRO' "displayName" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk obj
+                runE $ storeProfileObjRef pk "displayName" obj
                 profile <- runE $ getProfile pk
                 return $ displayName profile,
 
             defPropertySigRO' "about" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk obj
+                runE $ storeProfileObjRef pk "about" obj
                 profile <- runE $ getProfile pk
                 return $ about profile,
 
             defPropertySigRO' "picture" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk obj
+                runE $ storeProfileObjRef pk "picture" obj
                 profile <- runE $ getProfile pk
                 return $ picture profile,
 
             defPropertySigRO' "nip05" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk obj
+                runE $ storeProfileObjRef pk "nip05" obj
                 profile <- runE $ getProfile pk
                 return $ nip05 profile,
 
             defPropertySigRO' "banner" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk obj
+                runE $ storeProfileObjRef pk "banner" obj
                 profile <- runE $ getProfile pk
                 return $ banner profile,
 
             defPropertySigRO' "isFollow" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk obj
+                runE $ storeProfileObjRef pk "isFollow" obj
                 kp <- runE getKeyPair
                 let currentPubKey = keyPairToPubKeyXO kp
                 follows <- runE $ getFollows currentPubKey
@@ -191,7 +191,7 @@ runClasses = interpret $ \_ -> \case
 
             defPropertySigRO' "relays" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
-              runE $ storePostObjRef eid obj
+              runE $ storePostObjRef eid "relays" obj
               eventMaybe <- runE $ getEvent eid
               case eventMaybe of
                 Just eventWithRelays -> do
@@ -317,7 +317,7 @@ runClasses = interpret $ \_ -> \case
 
             defPropertySigRO' "comments" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
-              runE $ storePostObjRef eid obj
+              runE $ storePostObjRef eid "comments" obj
               runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { currentPostCommentsObjRef = Just obj } }
               commentIds <- runE $ getCommentIds eid
               mapM (newObject postClass') commentIds
@@ -372,13 +372,17 @@ runClasses = interpret $ \_ -> \case
           ]
 
 -- | Store a profile object reference in the property map
-storeProfileObjRef :: ClassesEff es => PubKeyXO -> ObjRef PubKeyXO -> Eff es ()
-storeProfileObjRef pk obj = withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
+storeProfileObjRef :: ClassesEff es => PubKeyXO -> PropertyName -> ObjRef PubKeyXO -> Eff es ()
+storeProfileObjRef pk propName obj = withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
     weakObjRef <- toWeakObjRef obj
 
     runE $ modify @QtQuickState $ \st ->
         let currentMap = profileObjRefs (propertyMap st)
-            updatedMap = Map.insertWith (++) pk [weakObjRef] currentMap
+            updatedMap = Map.alter (Just . maybe 
+                                         (Map.singleton propName weakObjRef)
+                                         (Map.insert propName weakObjRef)) 
+                                 pk 
+                                 currentMap
         in st { propertyMap = (propertyMap st) { profileObjRefs = updatedMap } }
 
     finalizer <- newObjFinaliser $ \_ -> do
@@ -391,13 +395,17 @@ storeProfileObjRef pk obj = withEffToIO (ConcUnlift Persistent Unlimited) $ \run
     addObjFinaliser finalizer obj
 
 -- | Store a post object reference in the property map
-storePostObjRef :: ClassesEff es => EventId -> ObjRef EventId -> Eff es ()
-storePostObjRef evId obj = withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
+storePostObjRef :: ClassesEff es => EventId -> PropertyName -> ObjRef EventId -> Eff es ()
+storePostObjRef evId propName obj = withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
     weakObjRef <- toWeakObjRef obj
 
     runE $ modify @QtQuickState $ \st ->
         let currentMap = postObjRefs (propertyMap st)
-            updatedMap = Map.insertWith (++) evId [weakObjRef] currentMap
+            updatedMap = Map.alter (Just . maybe 
+                                         (Map.singleton propName weakObjRef)
+                                         (Map.insert propName weakObjRef)) 
+                                 evId 
+                                 currentMap
         in st { propertyMap = (propertyMap st) { postObjRefs = updatedMap } }
 
     finalizer <- newObjFinaliser $ \_ -> do

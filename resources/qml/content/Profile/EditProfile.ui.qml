@@ -23,10 +23,6 @@ Rectangle {
         profileData = getProfile(npub)
     }
 
-    Component.onDestruction: {
-        profileData = null
-    }
-
     onVisibleChanged: {
         if (visible) {
             displayNameField.text = profileData.displayName || ""

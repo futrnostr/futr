@@ -7,6 +7,8 @@ module QtQuick where
 import Control.Monad (forever, forM_, void, when)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Text (Text)
+import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
@@ -46,9 +48,12 @@ data UIReferences = UIReferences
   }
 
 
+type PropertyName = Text
+
+
 data PropertyMap = PropertyMap
-  { profileObjRefs :: Map PubKeyXO [QML.WeakObjRef PubKeyXO]
-  , postObjRefs :: Map EventId [QML.WeakObjRef EventId]
+  { profileObjRefs :: Map PubKeyXO (Map PropertyName (QML.WeakObjRef PubKeyXO))
+  , postObjRefs :: Map EventId (Map PropertyName (QML.WeakObjRef EventId))
   }
 
 
@@ -148,13 +153,27 @@ runQtQuick = interpret $ \_ -> \case
 
           when (profilesChanged combinedUpdates) $ do
             pmap <- gets @QtQuickState propertyMap
-            let allWeakRefs = concat $ Map.elems $ profileObjRefs pmap
-            forM_ allWeakRefs $ \weakRef -> do
+            let allProfileWeakRefs = concatMap Map.elems $ Map.elems $ profileObjRefs pmap
+            logDebug $ "Updating " <> T.pack (show (length allProfileWeakRefs)) <> " profile objects"
+            forM_ allProfileWeakRefs $ \weakRef -> do
               objRef <- liftIO $ QML.fromWeakObjRef weakRef
               liftIO $ QML.fireSignal changeKey objRef
-              -- case objRef of
-              --   Just obj -> liftIO $ QML.fireSignal changeKey obj
-              --   Nothing -> logError "No object reference available"
+
+          when (postsChanged combinedUpdates) $ do
+            pmap <- gets @QtQuickState propertyMap
+            let allPostWeakRefs = concatMap Map.elems $ Map.elems $ postObjRefs pmap
+            logDebug $ "Updating " <> T.pack (show (length allPostWeakRefs)) <> " post objects"
+            forM_ allPostWeakRefs $ \weakRef -> do
+              objRef <- liftIO $ QML.fromWeakObjRef weakRef
+              liftIO $ QML.fireSignal changeKey objRef
+
+          pmap <- gets @QtQuickState propertyMap
+          let allProfileWeakRefs = concatMap Map.elems $ Map.elems $ profileObjRefs pmap
+          logDebug $ "Having " <> T.pack (show (length allProfileWeakRefs)) <> " profile objects"
+
+          pmap <- gets @QtQuickState propertyMap
+          let allPostWeakRefs = concatMap Map.elems $ Map.elems $ postObjRefs pmap
+          logDebug $ "Having " <> T.pack (show (length allPostWeakRefs)) <> " post objects"
 
           threadDelay 200000  -- 0.2 second delay for UI updates
 
