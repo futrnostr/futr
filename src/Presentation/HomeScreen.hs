@@ -79,15 +79,23 @@ runHomeScreen = interpret $ \_ -> \case
 
     rootClass <- newClass [
         defPropertyConst' "version" (\_ -> do
+          runE $ logDebug $ "Getting property: version"
           st <- runE $ get @AppState
           return $ version st
         ),
 
-        defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
+        defPropertyConst' "ctxKeyMgmt" (\_ -> do
+          runE $ logDebug $ "Getting property: ctxKeyMgmt"
+          return keyMgmtObj
+        ),
 
-        defPropertyConst' "ctxRelayMgmt" (\_ -> return relayMgmtObj),
+        defPropertyConst' "ctxRelayMgmt" (\_ -> do
+          runE $ logDebug $ "Getting property: ctxRelayMgmt"
+          return relayMgmtObj
+        ),
 
         defPropertyConst' "currentProfile" (\_ -> do
+          runE $ logDebug $ "Getting property: currentProfile"
           mp <- runE $ gets @AppState currentProfile
           case mp of
             Just (pk, _) -> do
@@ -97,9 +105,11 @@ runHomeScreen = interpret $ \_ -> \case
 
         defPropertySigRW' "currentScreen" changeKey'
             (\_ -> do
+              runE $ logDebug $ "Getting property: currentScreen"
               st <- runE $ get @AppState
               return $ pack $ show $ currentScreen st)
             (\obj newScreen -> do
+                runE $ logDebug $ "Setting property: currentScreen = " <> newScreen
                 case readMaybe (unpack newScreen) :: Maybe AppScreen of
                     Just s -> do
                         runE $ do
@@ -108,12 +118,14 @@ runHomeScreen = interpret $ \_ -> \case
                     Nothing -> return ()),
 
         defPropertySigRO' "mynpub" changeKey' $ \_ -> do
+          runE $ logDebug $ "Getting property: mynpub"
           st <- runE $ get @AppState
           return $ case keyPair st of
             Just kp -> pubKeyXOToBech32 $ keyPairToPubKeyXO kp
             Nothing -> "",
 
         defPropertySigRO' "mypicture" changeKey' $ \_ -> do
+          runE $ logDebug $ "Getting property: mypicture"
           st <- runE $ get @AppState
           case keyPair st of
             Just kp -> do
@@ -122,34 +134,44 @@ runHomeScreen = interpret $ \_ -> \case
             Nothing -> return "",
 
         defPropertySigRO' "inboxModelState" changeKey' $ \obj -> do
+          runE $ logDebug $ "Getting property: inboxModelState"
           runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { inboxModelStateObjRef = Just obj } }
           st <- runE $ get @AppState
           return $ pack $ show $ inboxModelState st,
 
         defSignal "loginStatusChanged" (Proxy :: Proxy LoginStatusChanged),
 
-        defMethod' "login" $ \obj input -> runE $ login obj input,
+        defMethod' "login" $ \obj input -> do
+          runE $ logDebug $ "Called method: login with input: " <> input
+          runE $ login obj input,
 
-        defMethod' "logout" $ \obj -> runE $ logout obj,
+        defMethod' "logout" $ \obj -> do
+          runE $ logDebug $ "Called method: logout"
+          runE $ logout obj,
 
-        defMethod' "search" $ \obj input -> runE $ do
-          res <- search obj input
-          return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
+        defMethod' "search" $ \obj input -> do
+          runE $ logDebug $ "Called method: search with input: " <> input
+          runE $ do
+            res <- search obj input
+            return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
 
-        defMethod' "saveProfile" $ \_ input -> runE $ do
-          let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
-          n <- getCurrentTime
-          kp <- getKeyPair
-          let unsigned = createMetadata profile (keyPairToPubKeyXO kp) n
-          signedMaybe <- signEvent unsigned kp
-          case signedMaybe of
-            Just signed -> do
-              broadcast signed
-              let aid = AccountId $ pubKeyXOToBech32 (keyPairToPubKeyXO kp)
-              updateProfile aid profile
-            Nothing -> logWarning "Failed to sign profile update event",
+        defMethod' "saveProfile" $ \_ input -> do
+          runE $ logDebug $ "Called method: saveProfile"
+          runE $ do
+            let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
+            n <- getCurrentTime
+            kp <- getKeyPair
+            let unsigned = createMetadata profile (keyPairToPubKeyXO kp) n
+            signedMaybe <- signEvent unsigned kp
+            case signedMaybe of
+              Just signed -> do
+                broadcast signed
+                let aid = AccountId $ pubKeyXOToBech32 (keyPairToPubKeyXO kp)
+                updateProfile aid profile
+              Nothing -> logWarning "Failed to sign profile update event",
 
         defPropertySigRO' "followList" changeKey' $ \obj -> do
+          runE $ logDebug $ "Getting property: followList"
           runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
           st <- runE $ get @AppState
           case keyPair st of
@@ -160,6 +182,7 @@ runHomeScreen = interpret $ \_ -> \case
             _ -> return [],
 
         defPropertySigRO' "posts" changeKey' $ \obj -> do
+          runE $ logDebug $ "Getting property: posts"
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { postsObjRef = Just obj } }
           st <- runE $ get @AppState
           case currentProfile st of
@@ -169,6 +192,7 @@ runHomeScreen = interpret $ \_ -> \case
             Nothing -> return [],
 
         defPropertySigRO' "privateMessages" changeKey' $ \obj -> do
+          runE $ logDebug $ "Getting property: privateMessages"
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { privateMessagesObjRef = Just obj } }
           st <- runE $ get @AppState
           case currentProfile st of
@@ -178,6 +202,7 @@ runHomeScreen = interpret $ \_ -> \case
             Nothing -> return [],
 
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
+            runE $ logDebug $ "Getting property: publishStatuses"
             runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
             st <- runE $ get @RelayPool
             now <- runE getCurrentTime
@@ -191,94 +216,120 @@ runHomeScreen = interpret $ \_ -> \case
                     Nothing -> return False) (Map.keys statusMap)
             mapM (getPoolObject publishStatusPool) recentEids,
 
-        defMethod' "follow" $ \_ npubText -> runE $ followProfile npubText,
+        defMethod' "follow" $ \_ npubText -> do
+          runE $ logDebug $ "Called method: follow with npub: " <> npubText
+          runE $ followProfile npubText,
 
-        defMethod' "unfollow" $ \_ npubText -> runE $ unfollowProfile npubText,
+        defMethod' "unfollow" $ \_ npubText -> do
+          runE $ logDebug $ "Called method: unfollow with npub: " <> npubText
+          runE $ unfollowProfile npubText,
 
-        defMethod' "loadFeed" $ \_ npubText -> runE $ do
-            let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
-            loadFeed pubKeyXO,
+        defMethod' "loadFeed" $ \_ npubText -> do
+          runE $ logDebug $ "Called method: loadFeed with npub: " <> npubText
+          runE $ do
+              let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
+              loadFeed pubKeyXO,
 
-        defMethod' "sendPrivateMessage" $ \_ input -> runE $ sendPrivateMessage input, -- NIP-17 private direct message
+        defMethod' "sendPrivateMessage" $ \_ input -> do
+          runE $ logDebug $ "Called method: sendPrivateMessage"
+          runE $ sendPrivateMessage input,
 
-        defMethod' "sendShortTextNote" $ \_ input -> runE $ sendShortTextNote input, -- NIP-01 short text note
+        defMethod' "sendShortTextNote" $ \_ input -> do
+          runE $ logDebug $ "Called method: sendShortTextNote"
+          runE $ sendShortTextNote input,
 
-        defMethod' "repost" $ \_ eid -> runE $ do -- NIP-18 repost
-          let eid' = read (unpack eid) :: EventId
-          repost eid',
+        defMethod' "repost" $ \_ eid -> do
+          runE $ logDebug $ "Called method: repost with eid: " <> eid
+          runE $ do
+            let eid' = read (unpack eid) :: EventId
+            repost eid',
 
-        defMethod' "quoteRepost" $ \_ eid quote -> runE $ do -- NIP-18 quote repost
-          let eid' = read (unpack eid) :: EventId
-          quoteRepost eid' quote,
+        defMethod' "quoteRepost" $ \_ eid quote -> do
+          runE $ logDebug $ "Called method: quoteRepost with eid: " <> eid
+          runE $ do
+            let eid' = read (unpack eid) :: EventId
+            quoteRepost eid' quote,
 
-        defMethod' "comment" $ \_ eid input -> runE $ do -- NIP-22 comment
-          let eid' = read (unpack eid) :: EventId
-          comment eid' input,
+        defMethod' "comment" $ \_ eid input -> do
+          runE $ logDebug $ "Called method: comment on eid: " <> eid
+          runE $ do
+            let eid' = read (unpack eid) :: EventId
+            comment eid' input,
 
-        defMethod' "deleteEvent" $ \_ eid input -> runE $ do -- NIP-09 delete post
-          let eid' = read (unpack eid) :: EventId
-          deleteEvent eid' input,
+        defMethod' "deleteEvent" $ \_ eid input -> do
+          runE $ logDebug $ "Called method: deleteEvent for eid: " <> eid
+          runE $ do
+            let eid' = read (unpack eid) :: EventId
+            deleteEvent eid' input,
 
-        defMethod' "setCurrentPost" $ \_ meid -> runE $ do
-          case meid of
-            Just eid -> do
-              let eid' = read (unpack eid) :: EventId
-              setCurrentPost $ Just eid'
-            Nothing -> setCurrentPost Nothing,
+        defMethod' "setCurrentPost" $ \_ meid -> do
+          runE $ logDebug $ "Called method: setCurrentPost with eid: " <> maybe "Nothing" id meid
+          runE $ do
+            case meid of
+              Just eid -> do
+                let eid' = read (unpack eid) :: EventId
+                setCurrentPost $ Just eid'
+              Nothing -> setCurrentPost Nothing,
 
         defMethod' "getProfile" $ \_ input -> do
-          case parseNprofileOrNpub input of
+          result <- case parseNprofileOrNpub input of
             Just (pk, _) -> do
               profileObj <- getPoolObject profilesPool pk
-              --runE $ logDebug $ "Get profile: "
+              --profileObj <- newObject profileClass' pk
               return $ Just profileObj
-            _ -> return Nothing,
+            _ -> return Nothing
+          return result,
 
-        -- Get a post from a nostr: reference (note, nevent, naddr)
-        defMethod' "getPost" $ \_ input -> runE $ do
-          let fetchByType parseFunc = case parseFunc input of
-                  Just eid -> fetchEventObject postsPool eid
-                  Nothing -> return Nothing
+        defMethod' "getPost" $ \_ input -> do
+          runE $ logDebug $ "Called method: getPost with input: " <> input
+          runE $ do
+            let fetchByType parseFunc = case parseFunc input of
+                    Just eid -> fetchEventObject postsPool eid
+                    Nothing -> return Nothing
 
-          case Text.takeWhile (/= '1') input of
-              "note"  -> fetchByType noteToEventId
-              "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
-              "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
+            case Text.takeWhile (/= '1') input of
+                "note"  -> fetchByType noteToEventId
+                "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
+                "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
+                _ -> return Nothing,
+
+        defMethod' "convertNprofileToNpub" $ \_ input -> do
+          runE $ logDebug $ "Called method: convertNprofileToNpub with input: " <> input
+          runE $ do
+            case parseNprofileOrNpub input of
+              Just (pk, _) -> return $ Just $ pubKeyXOToBech32 pk
               _ -> return Nothing,
-
-        defMethod' "convertNprofileToNpub" $ \_ input -> runE $ do
-          case parseNprofileOrNpub input of
-            Just (pk, _) -> return $ Just $ pubKeyXOToBech32 pk
-            _ -> return Nothing,
 
         defSignal "downloadCompleted" (Proxy :: Proxy DownloadCompleted),
 
-        defMethod' "downloadAsync" $ \obj url -> runE $ do
-          -- Start the download asynchronously
-          void $ async $ do
-            homeDir <- getHomeDirectory
-            let downloadDir = homeDir </> "Downloads"
-            createDirectoryIfMissing True downloadDir
-            let baseFileName = fromMaybe "downloaded_file" $
-                              listToMaybe $ reverse $ Text.splitOn "/" $ Text.takeWhileEnd (/= '?') url
-            filePath <- findAvailableFilename downloadDir (unpack baseFileName)
-            let fileName = takeFileName filePath
+        defMethod' "downloadAsync" $ \obj url -> do
+          runE $ logDebug $ "Called method: downloadAsync with url: " <> url
+          runE $ do
+            -- Start the download asynchronously
+            void $ async $ do
+              homeDir <- getHomeDirectory
+              let downloadDir = homeDir </> "Downloads"
+              createDirectoryIfMissing True downloadDir
+              let baseFileName = fromMaybe "downloaded_file" $
+                                listToMaybe $ reverse $ Text.splitOn "/" $ Text.takeWhileEnd (/= '?') url
+              filePath <- findAvailableFilename downloadDir (unpack baseFileName)
+              let fileName = takeFileName filePath
 
-            result <- liftIO $ try $ do
-              r <- Wreq.get (unpack url)
-              let body = r ^. Wreq.responseBody
-              BSL.writeFile filePath body
-              return filePath
+              result <- liftIO $ try $ do
+                r <- Wreq.get (unpack url)
+                let body = r ^. Wreq.responseBody
+                BSL.writeFile filePath body
+                return filePath
 
-            -- Fire the signal with the result
-            case result of
-              Right _ -> do
-                liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
-              Left (e :: SomeException) -> do
-                logError $ "Download failed: " <> pack (show e)
-                liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
+              -- Fire the signal with the result
+              case result of
+                Right _ -> do
+                  liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
+                Left (e :: SomeException) -> do
+                  logError $ "Download failed: " <> pack (show e)
+                  liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
 
-          return ()
+            return ()
       ]
 
     rootObj <- newObject rootClass ()

@@ -10,7 +10,6 @@ Rectangle {
     Layout.topMargin: 0
     radius: width / 2
     color: Material.dividerColor
-    clip: true
 
     property string imageSource
 
@@ -19,5 +18,6 @@ Rectangle {
         source: parent.imageSource
         smooth: true
         fillMode: Image.PreserveAspectCrop
+        layer.enabled: true
     }
 }

@@ -20,7 +20,7 @@ Dialog {
     property string inputPlaceholder: qsTr("Post your reply")
     property string buttonText: qsTr("Reply")
     property bool isQuoteMode: false
-
+    required property string currentUser
     signal messageSubmitted(string text)
 
     background: Rectangle {
@@ -61,6 +61,7 @@ Dialog {
                         anchors.fill: parent
                         anchors.margins: Constants.spacing_xs
                         post: root.targetPost
+                        currentUser: "root.currentUser"
                     }                
                 }
             }
@@ -71,6 +72,7 @@ Dialog {
             Layout.fillWidth: true
             placeholderText: root.inputPlaceholder
             buttonText: root.buttonText
+            currentUser: root.currentUser
 
             onMessageSent: function(text) {
                 root.messageSubmitted(text)

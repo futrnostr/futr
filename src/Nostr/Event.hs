@@ -137,7 +137,7 @@ data Rumor = Rumor
 
 -- | Converts an 'EventId' to its string representation.
 instance Show EventId where
-  showsPrec _ = shows . B16.encode . getEventId
+  showsPrec _ eid = showString "EventId: " . shows (B16.encode $ getEventId eid)
 
 
 -- | Reads an 'EventId' from its string representation.

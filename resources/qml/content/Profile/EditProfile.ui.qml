@@ -16,8 +16,16 @@ Rectangle {
     border.width: 1
 
     property var profileData
-    property var npub
+    required property var npub
     property var labelWidth: 100
+
+    Component.onCompleted: {
+        profileData = getProfile(npub)
+    }
+
+    Component.onDestruction: {
+        profileData = null
+    }
 
     onVisibleChanged: {
         if (visible) {

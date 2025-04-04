@@ -152,6 +152,9 @@ runQtQuick = interpret $ \_ -> \case
             forM_ allWeakRefs $ \weakRef -> do
               objRef <- liftIO $ QML.fromWeakObjRef weakRef
               liftIO $ QML.fireSignal changeKey objRef
+              -- case objRef of
+              --   Just obj -> liftIO $ QML.fireSignal changeKey obj
+              --   Nothing -> logError "No object reference available"
 
           threadDelay 200000  -- 0.2 second delay for UI updates
 

@@ -2,7 +2,6 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
-import QtGraphicalEffects 1.15
 
 import Futr 1.0
 
@@ -22,15 +21,6 @@ Item {
             Layout.preferredHeight: 60
             source: Util.getProfilePicture(mypicture, mynpub)
             fillMode: Image.PreserveAspectCrop
-
-            layer.enabled: true
-            layer.effect: OpacityMask {
-                maskSource: Rectangle {
-                    width: profilePicture.width
-                    height: profilePicture.height
-                    radius: width / 2
-                }
-            }
         }
 
         Button {
@@ -110,7 +100,9 @@ Item {
 
                 if (result && result.npub) {
                     searchInput.text = ""
+                    console.log("stack view depth: ", stackView.depth)
                     stackView.replace(personalFeedComponent, {"npub": result.npub})
+                    console.log("stack new view depth: ", stackView.depth)
                 }
             }
         }

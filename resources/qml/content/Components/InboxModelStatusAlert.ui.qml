@@ -8,10 +8,11 @@ import Futr 1.0
 
 Rectangle {
     id: inboxStatusAlert
-    property int liveProcessingTimeout: 1500
 
-    visible: inboxModelState !== undefined && opacity > 0
-    opacity: inboxModelState !== undefined ? 1 : 0
+    property int liveProcessingTimeout: 1500
+    required property string currentState
+
+    opacity: currentState !== undefined ? 1 : 0
     width: Math.min(parent.width * 0.7, 350)
     height: inboxStatusLayout.implicitHeight + 16
     radius: Constants.radius_m
@@ -21,9 +22,9 @@ Rectangle {
     anchors.topMargin: 16
 
     color: {
-        if (inboxModelState === "Stopped") {
+        if (currentState === "Stopped") {
             return Material.color(Material.Red, Material.LightShade);
-        } else if (inboxModelState === "LiveProcessing") {
+        } else if (currentState === "LiveProcessing") {
             return Material.color(Material.Green, Material.LightShade);
         } else {
             return Material.color(Material.Blue, Material.LightShade);
@@ -42,9 +43,9 @@ Rectangle {
 
             Image {
                 source: {
-                    if (inboxModelState === "LiveProcessing") {
+                    if (currentState === "LiveProcessing") {
                         return "qrc:/icons/check.svg";
-                    } else if (inboxModelState === "Stopped") {
+                    } else if (currentState === "Stopped") {
                         return "qrc:/icons/error.svg";
                     } else {
                         return "qrc:/icons/sync.svg";
@@ -57,9 +58,9 @@ Rectangle {
                     anchors.fill: parent
                     source: parent
                     color: {
-                        if (inboxModelState === "Stopped") {
+                        if (currentState === "Stopped") {
                             return Material.color(Material.Red);
-                        } else if (inboxModelState === "LiveProcessing") {
+                        } else if (currentState === "LiveProcessing") {
                             return Material.color(Material.Green);
                         } else {
                             return Material.color(Material.Blue);
@@ -70,22 +71,22 @@ Rectangle {
 
             Text {
                 text: {
-                    if (inboxModelState === "Stopped") {
+                    if (currentState === "Stopped") {
                         return "Inbox Model Stopped";
-                    } else if (inboxModelState === "InitialBootstrap") {
+                    } else if (currentState === "InitialBootstrap") {
                         return "Bootrapping...";
-                    } else if (inboxModelState === "SyncingHistoricData") {
+                    } else if (currentState === "SyncingHistoricData") {
                         return "Downloading events from relays...";
-                    } else if (inboxModelState === "LiveProcessing") {
+                    } else if (currentState === "LiveProcessing") {
                         return "Live Processing";
                     } else {
                         return "Unknown relay status";
                     }
                 }
                 color: {
-                    if (inboxModelState === "Stopped") {
+                    if (currentState === "Stopped") {
                         return Material.color(Material.Red);
-                    } else if (inboxModelState === "LiveProcessing") {
+                    } else if (currentState === "LiveProcessing") {
                         return Material.color(Material.Green);
                     } else {
                         return Material.color(Material.Blue);
@@ -114,9 +115,9 @@ Rectangle {
                 icon.height: 36
 
                 icon.color: {
-                    if (inboxModelState === "Stopped") {
+                    if (currentState === "Stopped") {
                         return Material.color(Material.Red, Material.Shade800);
-                    } else if (inboxModelState === "LiveProcessing") {
+                    } else if (currentState === "LiveProcessing") {
                         return Material.color(Material.Green, Material.Shade800);
                     } else {
                         return Material.color(Material.Blue, Material.Shade800);
@@ -167,7 +168,7 @@ Rectangle {
     }
 
     onVisibleChanged: {
-        if (visible && inboxModelState === "LiveProcessing") {
+        if (visible && currentState === "LiveProcessing") {
             hideInboxStatusTimer.restart()
         }
     }
@@ -176,7 +177,7 @@ Rectangle {
         states: [
             State {
                 name: "liveProcessingState"
-                when: inboxModelState === "LiveProcessing"
+                when: currentState === "LiveProcessing"
                 StateChangeScript {
                     script: {
                         hideInboxStatusTimer.restart()
@@ -187,7 +188,7 @@ Rectangle {
     }
 
     Component.onCompleted: {
-        if (inboxModelState === "LiveProcessing") {
+        if (currentState === "LiveProcessing") {
             hideInboxStatusTimer.start()
         }
     }

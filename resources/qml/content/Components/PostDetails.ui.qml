@@ -12,6 +12,7 @@ Page {
     id: root
 
     property var post: null
+    required property string currentUser
 
     header: ToolBar {
         RowLayout {
@@ -53,6 +54,7 @@ Page {
 
             PostContent {
                 post: root.post
+                currentUser: root.currentUser
                 Layout.fillWidth: true
                 Layout.topMargin: Constants.spacing_xs
                 Layout.leftMargin: 0
@@ -122,6 +124,7 @@ Page {
 
                     sourceComponent: PostContent {
                         post: modelData
+                        currentUser: root.currentUser
                         Layout.fillWidth: true
                     }
                 }
@@ -142,6 +145,7 @@ Page {
         height: implicitHeight
         placeholderText: qsTr("Reply to post...")
         buttonText: qsTr("Send")
+        currentUser: root.currentUser
 
         onMessageSent: function(text) {
             if (root.post && root.post.id) {

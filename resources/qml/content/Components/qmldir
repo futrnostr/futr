@@ -12,7 +12,6 @@ PostContent 1.0 PostContent.ui.qml
 PostDetails 1.0 PostDetails.ui.qml
 PostImage 1.0 PostImage.ui.qml
 PostVideo 1.0 PostVideo.ui.qml
-ProfilePicture 1.0 ProfilePicture.ui.qml
 PublishAlert 1.0 PublishAlert.ui.qml
 RelayStatusIcon 1.0 RelayStatusIcon.ui.qml
 ScrollingListView 1.0 ScrollingListView.ui.qml
