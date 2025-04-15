@@ -19,7 +19,7 @@ Column {
                 "publishStatus": status,
                 "width": root.width
             })
-            // Remove the alert when it's hidden
+
             alert.onVisibleChanged.connect(function() {
                 if (!alert.visible) {
                     alert.destroy()

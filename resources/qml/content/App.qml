@@ -17,6 +17,7 @@ ApplicationWindow {
 
     property bool isDarkTheme: true
     property color accentColor: "#9C27B0"
+    property string activeScreen: currentScreen
 
     Material.theme: isDarkTheme ? Material.Dark : Material.Light
     Material.accent: accentColor
@@ -30,14 +31,12 @@ ApplicationWindow {
         id: screenLoader
         anchors.fill: parent
         source: {
-            if (currentScreen === "Home") {
-                return "HomeScreen.ui.qml";
-            } else if (currentScreen === "KeyMgmt") {
-                return "KeyMgmtScreen.ui.qml";
-            } else {
-                return "";
+            switch (activeScreen) {
+                case "Home": return "HomeScreen.ui.qml";
+                case "KeyMgmt": return "KeyMgmtScreen.ui.qml";
+                default: return "";
             }
         }
-        active: currentScreen === "Home" || currentScreen === "KeyMgmt"
+        active: activeScreen === "Home" || activeScreen === "KeyMgmt"
     }
 }

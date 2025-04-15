@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y \
     libtool \
     pkg-config \
     qtdeclarative5-dev \
+    qml-module-qtquick-controls2 \
     libqt5quick5 \
     libgflags-dev \
     libsnappy-dev \

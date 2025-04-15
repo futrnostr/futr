@@ -50,7 +50,7 @@ ScrollView {
                     Layout.preferredWidth: 40
                     Layout.preferredHeight: 40
                     Layout.alignment: Qt.AlignVCenter
-                    smooth: true
+                    cache: false
                     fillMode: Image.PreserveAspectCrop
 
                     MouseArea {

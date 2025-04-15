@@ -23,6 +23,10 @@ Rectangle {
         profileData = getProfile(npub)
     }
 
+    Component.onDestruction: {
+        profileData = null
+    }
+
     onVisibleChanged: {
         if (visible) {
             displayNameField.text = profileData.displayName || ""
@@ -92,7 +96,7 @@ Rectangle {
                     id: displayNameField
                     placeholderText: "Display Name"
                     Layout.fillWidth: true
-                    text: profileData.displayName
+                    text: profileData !== null ? profileData.displayName : ""
                 }
             }
 
@@ -106,7 +110,7 @@ Rectangle {
                     id: nameField
                     placeholderText: "Name"
                     Layout.fillWidth: true
-                    text: profileData.name
+                    text: profileData !== null ? profileData.name : ""
                 }
             }
 
@@ -122,7 +126,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 70
                     wrapMode: TextEdit.Wrap
-                    text: profileData.about
+                    text: profileData !== null ? profileData.about : ""
                 }
             }
 
@@ -136,7 +140,7 @@ Rectangle {
                     id: avatarUrlField
                     placeholderText: "Avatar URL"
                     Layout.fillWidth: true
-                    text: profileData.picture
+                    text: profileData !== null ? profileData.picture : ""
                 }
             }
 
@@ -150,7 +154,7 @@ Rectangle {
                     id: bannerUrlField
                     placeholderText: "Banner URL"
                     Layout.fillWidth: true
-                    text: profileData.banner
+                    text: profileData !== null ? profileData.banner : ""
                 }
             }
 
@@ -164,7 +168,7 @@ Rectangle {
                     id: nip05Field
                     placeholderText: "NIP05 Address"
                     Layout.fillWidth: true
-                    text: profileData.nip05
+                    text: profileData !== null ? profileData.nip05 : ""
                 }
             }
 
@@ -219,7 +223,7 @@ Rectangle {
             ColumnLayout {
                 id: proofFields
                 visible: false
-
+/*
                 RowLayout {
                     spacing: 5
                     Label {
@@ -230,7 +234,7 @@ Rectangle {
                         id: githubProofField
                         placeholderText: "GitHub Proof"
                         Layout.fillWidth: true
-                        text: profileData.githubProof ?? ""
+                        text: profileData !== null ? profileData.githubProof : ""
                     }
                 }
 
@@ -244,7 +248,7 @@ Rectangle {
                         id: twitterProofField
                         placeholderText: "Twitter Proof"
                         Layout.fillWidth: true
-                        text: profileData.twitterProof ?? ""
+                        text: profileData !== null ? profileData.twitterProof : ""
                     }
                 }
 
@@ -258,9 +262,10 @@ Rectangle {
                         id: telegramProofField
                         placeholderText: "Telegram Proof"
                         Layout.fillWidth: true
-                        text: profileData.telegramProof ?? ""
+                        text: profileData !== null ? profileData.telegramProof : ""
                     }
                 }
+                */
             }
         }
 
@@ -279,10 +284,10 @@ Rectangle {
                         about: aboutMeField.text,
                         picture: avatarUrlField.text,
                         banner: bannerUrlField.text,
-                        nip05: nip05Field.text,
+                        nip05: nip05Field.text   /*,
                         githubProof: githubProofField.text,
                         twitterProof: twitterProofField.text,
-                        telegramProof: telegramProofField.text
+                        telegramProof: telegramProofField.text */
                     }))
                     personalFeed.editMode = false
                 }

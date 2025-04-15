@@ -7,6 +7,8 @@ import Futr 1.0
 
 Item {
     id: topBar
+    required property string currentUserPicture
+    required property string currentUser
 
     RowLayout {
         id: controlsLayout
@@ -19,8 +21,9 @@ Item {
             id: profilePicture
             Layout.preferredWidth: 60
             Layout.preferredHeight: 60
-            source: Util.getProfilePicture(mypicture, mynpub)
+            source: Util.getProfilePicture(currentUserPicture, currentUser)
             fillMode: Image.PreserveAspectCrop
+            cache: false
         }
 
         Button {
@@ -100,9 +103,7 @@ Item {
 
                 if (result && result.npub) {
                     searchInput.text = ""
-                    console.log("stack view depth: ", stackView.depth)
-                    stackView.replace(personalFeedComponent, {"npub": result.npub})
-                    console.log("stack new view depth: ", stackView.depth)
+                    personalFeed.npub = modelData.pubkey
                 }
             }
         }

@@ -241,11 +241,9 @@ runFutr = interpret $ \_ -> \case
     notify $ emptyUpdates { profilesChanged = True, postsChanged = True, privateMessagesChanged = True }
 
     void $ async $ do
+      -- @todo: do this only for non-contacts!
       subIds <- subscribeToProfilesAndPostsFor pk
-      logDebug $ "Subscriptions started"
       modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
-      logDebug $ "Subscriptions set"
-      notify $ emptyUpdates { profilesChanged = True, postsChanged = True, privateMessagesChanged = True }
       logDebug $ "Feed loaded"
 
   SendPrivateMessage input -> do

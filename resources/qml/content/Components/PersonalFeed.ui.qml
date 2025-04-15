@@ -9,14 +9,16 @@ RowLayout {
     id: personalFeed
 
     required property var npub
+    required property var currentUser
+    required property var currentUserPicture
     property var editMode: false
 
     Component.onCompleted: {
         loadFeed(npub)
     }
 
-    Component.onDestruction: {
-        console.log("personalFeed destroyed")
+    onNpubChanged: {
+        loadFeed(npub)
     }
 
     Rectangle {
@@ -31,7 +33,8 @@ RowLayout {
             anchors.fill: parent
 
             npub: personalFeed.npub
-            currentUser: mynpub
+            currentUser: personalFeed.currentUser
+            currentUserPicture: personalFeed.currentUserPicture
         }
     }
 
@@ -48,7 +51,7 @@ RowLayout {
             visible: !personalFeed.editMode
 
             npub: personalFeed.npub
-            currentUser: mynpub
+            currentUser: personalFeed.currentUser
         }
 
         EditProfile {

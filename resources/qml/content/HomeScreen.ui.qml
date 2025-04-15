@@ -14,6 +14,9 @@ Item {
     width: parent.width
     height: parent.height
 
+    property string currentUserNpub: mynpub
+    property string currentUserPicture: mypicture
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 10
@@ -21,6 +24,8 @@ Item {
         TopBar {
             Layout.fillWidth: true
             height: 80
+            currentUser: homeScreen.currentUserNpub
+            currentUserPicture: homeScreen.currentUserPicture
         }
 
         Item {
@@ -64,7 +69,10 @@ Item {
 
                         isCollapsed: !mainContainer.sidebarExpanded
                         stackView: stackView
-                        currentUser: mynpub
+                        currentUser: homeScreen.currentUserNpub
+                        currentUserPicture: homeScreen.currentUserPicture
+                        personalFeed: personalFeed
+
                         Behavior on opacity {
                             NumberAnimation {
                                 duration: 150
@@ -152,14 +160,11 @@ Item {
                         event.accepted = true;
                     }
 
-                    initialItem: personalFeedComponent
-                }
-
-                Component {
-                    id: personalFeedComponent
-
-                    PersonalFeed {
-                        npub: mynpub
+                    initialItem: PersonalFeed {
+                        id: personalFeed
+                        npub: homeScreen.currentUserNpub
+                        currentUser: homeScreen.currentUserNpub
+                        currentUserPicture: homeScreen.currentUserPicture
                     }
                 }
 
@@ -168,7 +173,8 @@ Item {
 
                     PostDetails {
                         post: null
-                        currentUser: mynpub
+                        currentUser: homeScreen.currentUserNpub
+                        currentUserPicture: homeScreen.currentUserPicture
                     }
                 }
 
@@ -226,10 +232,7 @@ Item {
         id: notification
         z: 999
 
-        // Center horizontally in the parent
         anchors.horizontalCenter: parent.horizontalCenter
-
-        // Position from the top
         anchors.top: parent.top
         anchors.topMargin: 80
     }

@@ -21,6 +21,7 @@ Dialog {
     property string buttonText: qsTr("Reply")
     property bool isQuoteMode: false
     required property string currentUser
+    required property string currentUserPicture
     signal messageSubmitted(string text)
 
     background: Rectangle {
@@ -73,6 +74,7 @@ Dialog {
             placeholderText: root.inputPlaceholder
             buttonText: root.buttonText
             currentUser: root.currentUser
+            currentUserPicture: root.currentUserPicture
 
             onMessageSent: function(text) {
                 root.messageSubmitted(text)

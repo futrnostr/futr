@@ -12,26 +12,79 @@ import Profile 1.0
 Pane {
     id: root
 
-    required property var post
-    required property string currentUser
-
-    property bool clickable: true
+    property var post
+    property string currentUser
     property bool isRefPost: false
     property var author
+
+    property var componentMap: {
+        "text": "PostContent/TextComponent.ui.qml",
+        "image": "PostContent/PostImage.ui.qml",
+        "video": "PostContent/PostVideo.ui.qml",
+        "note": "PostContent/ReferencedPost.ui.qml",
+        "nevent": "PostContent/ReferencedPost.ui.qml",
+        "naddr": "PostContent/ReferencedPost.ui.qml",
+    }
 
     signal commentClicked()
     signal repostClicked()
     signal postClicked()
 
     Component.onCompleted: {
-        if (post && post.authorId) {
+        if (!post) {
+            console.warn("Post is undefined")
+            return
+        }
+
+        if (post.authorId) {
             author = getProfile(post.authorId)
         }
-        console.log("post loaded")
+
+        if (!post.contentParts) {
+            console.warn("Post contentParts is undefined for post:", post.id)
+            return
+        }
+
+        let parts = post.contentParts
+
+        for (var i = 0; i < parts.length; i++) {
+            var type = parts[i][0]
+            var value = parts[i][1]
+
+            var component = Qt.createComponent(componentMap[type])
+
+            if (component.status === Component.Ready) {
+                let args = {}
+                if (componentMap[type] === "PostContent/ReferencedPost.ui.qml") {
+                    args = {
+                        "value": value,
+                        "Layout.fillWidth": true,
+                        "currentUser": currentUser,
+                        "parent": contentLayout,
+                    }
+                } else {
+                    args = {
+                        "value": value,
+                        "Layout.fillWidth": true,
+                        "parent": contentLayout,
+                    }
+                }
+                var item = component.createObject(contentLayout, args)
+                if (item === null) {
+                    console.error("Failed to create object for", value)
+                }
+            } else {
+                console.error("Failed to load component:", component.errorString())
+            }
+        }
     }
 
     Component.onDestruction: {
-        console.log("post destroyed")
+        author = null
+
+        for(let i = contentLayout.children.length - 1; i >= 0; i--) {
+            contentLayout.children[i].destroy()
+        }
     }
 
     padding: Constants.spacing_s
@@ -44,7 +97,7 @@ Pane {
         MouseArea {
             id: postClickArea
             anchors.fill: parent
-            enabled: root.clickable
+            enabled: true
             propagateComposedEvents: true
             cursorShape: Qt.PointingHandCursor
             z: -1
@@ -68,7 +121,7 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             Layout.bottomMargin: Constants.spacing_xs
-            visible: post.postType === "quote_repost" || post.postType === "repost"
+            visible: post != null && post != undefined && (post.postType === "quote_repost" || post.postType === "repost")
 
             Image {
                 source: "qrc:/icons/repeat.svg"
@@ -78,7 +131,7 @@ Pane {
             }
 
             Text {
-                text: post.postType === "repost" ? qsTr("Reposted") : qsTr("Quote Reposted")
+                text: post && post.postType === "repost" ? qsTr("Reposted") : qsTr("Quote Reposted")
                 font: Constants.smallFontMedium
                 color: Material.secondaryTextColor
             }
@@ -100,9 +153,7 @@ Pane {
                     cursorShape: Qt.PointingHandCursor
 
                     onClicked: {
-                        console.log("stack view depth: ", stackView.depth)
-                        stackView.replace(personalFeedComponent, {"npub": author.npub})
-                        console.log("stack new view depth: ", stackView.depth)
+                        personalFeed.npub = author.npub
                     }
 
                     Image {
@@ -110,6 +161,7 @@ Pane {
                         anchors.margins: Constants.spacing_xs
                         source: author ? Util.getProfilePicture(author.picture, author.pubkey) : ""
                         fillMode: Image.PreserveAspectCrop
+                        cache: false
                     }
                 }
             }
@@ -128,9 +180,7 @@ Pane {
                         cursorShape: Qt.PointingHandCursor
 
                         onClicked: {
-                            console.log("stack view depth: ", stackView.depth)
-                            stackView.replace(personalFeedComponent, {"npub": author.npub})
-                            console.log("stack new view depth: ", stackView.depth)
+                            personalFeed.npub = author.npub
                         }
                     }
 
@@ -161,261 +211,8 @@ Pane {
         ColumnLayout {
             id: contentLayout
             Layout.fillWidth: true
+            Layout.bottomMargin: Constants.spacing_xs
             spacing: 0
-
-            Repeater {
-                model: post.contentParts
-
-                delegate: Loader {
-                    id: contentLoader
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: item ? item.implicitHeight : 0
-                    Layout.bottomMargin: Constants.spacing_xs
-
-                    property string contentValue: modelData[1]
-
-                    active: modelData !== undefined && modelData !== null
-
-                    sourceComponent: {
-                        let type = modelData[0];
-
-                        if (type === "text") {
-                            return textComponent;
-                        } else if (type === "image") {
-                            return imageComponent;
-                        } else if (type === "video") {
-                            return videoComponent;
-                        } else if (type === "note" || type === "nevent" || type === "naddr") {
-                            return referencedPostComponent;
-                        } else {
-                            console.warn("Unknown content type:", type);
-                            return null;
-                        }
-                    }
-
-                    onLoaded: {
-                        if (item) {
-                            if (item.hasOwnProperty("value")) {
-                                item.value = contentValue;
-                            } else {
-                                console.warn("Component doesn't have 'value' property");
-                                console.warn("data: ", item)
-                                console.warn("modelData: ", modelData)
-                            }
-                        }
-                    }
-
-                    onActiveChanged: {
-                        if (!active) {
-                            // Perform any additional cleanup if necessary
-                            console.log("Component unloaded");
-                        }
-                    }
-                }
-            }
-        }
-
-        Component {
-            id: textComponent
-
-            TextEdit {
-                property string value: ""
-
-                Layout.fillWidth: true
-                Layout.topMargin: Constants.spacing_xs
-                Layout.bottomMargin: Constants.spacing_xs
-                readOnly: true
-                selectByMouse: true
-                wrapMode: Text.Wrap
-                textFormat: Text.RichText
-                color: Material.foreground
-                text: value
-
-                onLinkActivated: function(link) {
-                    if (!link) return;
-
-                    try {
-                        if (link.startsWith("profile://")) {
-                            let profileId = link.substring(10);
-
-                            if (profileId.startsWith("nprofile")) {
-                                profileId = convertNprofileToNpub(profileId);
-                                if (!profileId) {
-                                    console.error("Failed to convert nprofile to npub");
-                                    return;
-                                }
-                            }
-
-                            console.log("stack view depth: ", stackView.depth)
-                            stackView.replace(personalFeedComponent, {"npub": profileId})
-                            console.log("stack new view depth: ", stackView.depth)
-                        } else if (link.startsWith("note://")) {
-                            console.log("Note clicked:", link.substring(7));
-                        } else {
-                            Qt.openUrlExternally(link);
-                        }
-                    } catch (e) {
-                        console.error("Error handling link activation:", e);
-                    }
-                }
-            }
-        }
-
-        Component {
-            id: imageComponent
-
-            PostImage {
-                property string value: ""
-
-                Layout.fillWidth: true
-                clickable: true
-                imageUrl: value
-
-                onImageClicked: function(url) {
-                    stackView.push("ImageViewer.ui.qml", {"imageSource": url})
-                }
-            }
-        }
-
-        Component {
-            id: videoComponent
-
-            PostVideo {
-                property string value: ""
-
-                Layout.fillWidth: true
-                clickable: true
-                videoUrl: value
-
-                onFullScreenRequested: function(url) {
-                    openFullscreenVideo(url)
-                }
-            }
-        }
-
-        Component {
-            id: referencedPostComponent
-
-            Item {
-                id: referencedPostContainer
-                property string value: ""
-
-                Layout.fillWidth: true
-                Layout.topMargin: 0
-                Layout.bottomMargin: 0
-                implicitHeight: contentRectangle.implicitHeight
-
-                onValueChanged: {
-                    if (value) {
-                        let referencedPost = getPost(value);
-
-                        if (referencedPost) {
-                            referencedContentLoader.referencedPost = referencedPost;
-                            referencedContentLoader.visible = true;
-                            loadingIndicator.visible = false;
-                        } else {
-                            referencedContentLoader.visible = false;
-                            loadingIndicator.visible = true;
-                        }
-                    }
-                }
-
-                Component.onDestruction: {
-                    console.log("referencedPostContainer destroyed")
-                }
-
-                ColumnLayout {
-                    anchors.fill: parent
-
-                    Rectangle {
-                        id: contentRectangle
-                        Layout.fillWidth: true
-                        implicitHeight: loadingIndicator.visible ? loadingContainer.height : 
-                                       (referencedContentLoader.item ? referencedContentLoader.item.implicitHeight + 20 : 100)
-                        color: Material.backgroundColor
-                        radius: Constants.radius_m
-                        clip: false
-
-                        BusyIndicator {
-                            id: loadingIndicator
-                            anchors.centerIn: parent
-                            visible: true
-                        }
-
-                        Rectangle {
-                            id: loadingContainer
-                            visible: loadingIndicator.visible
-                            height: 100
-                            width: parent.width
-                            color: Material.dialogColor
-                            radius: Constants.radius_m
-                            border.color: Material.backgroundColor
-                            border.width: Constants.spacing_xs
-                            anchors.fill: parent
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: Constants.spacing_m
-
-                                BusyIndicator {
-                                    Layout.alignment: Qt.AlignVCenter
-                                    running: true
-                                }
-
-                                Text {
-                                    Layout.alignment: Qt.AlignLeft
-                                    Layout.fillWidth: true
-                                    text: qsTr("Event not found. Trying to find it for you...")
-                                    font: Constants.smallFontMedium
-                                    color: Material.secondaryTextColor
-                                }
-                            }
-                        }
-
-                        Loader {
-                            id: referencedContentLoader
-                            anchors.fill: parent
-                            anchors.margins: Constants.spacing_xs
-                            visible: false
-                            property var referencedPost: null
-
-                            onReferencedPostChanged: {
-                                if (referencedPost) {
-                                    setSource("PostContent.ui.qml", {
-                                        "post": referencedPost,
-                                        "clickable": true,
-                                        "isRefPost": true,
-                                        "currentUser": root.currentUser
-                                    });
-                                }
-                            }
-
-                            onLoaded: {
-                                if (item) {
-                                    item.postClicked.connect(function() {
-                                        stackView.push("PostDetails.ui.qml", {
-                                            "post": referencedPost,
-                                            "clickable": true,
-                                            "isRefPost": true,
-                                            "currentUser": root.currentUser
-                                        });
-                                    });
-                                }
-                            }
-
-                            onHeightChanged: {
-                                if (item && visible) {
-                                    var newHeight = item.implicitHeight + 20;
-                                    if (newHeight > contentRectangle.implicitHeight) {
-                                        contentRectangle.implicitHeight = newHeight;
-                                        referencedPostContainer.implicitHeight = newHeight + 20;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         // Main post actions
@@ -440,12 +237,12 @@ Pane {
                     implicitWidth: 36
                     implicitHeight: 36
                     padding: 8
-                    icon.color: post.comments.length > 0 ? Material.primary : Material.secondaryTextColor
+                    icon.color: post && post.comments && post.comments.length > 0 ? Material.primary : Material.secondaryTextColor
                     onClicked: commentClicked()
                 }
                 Text {
-                    text: post.comments.length || "0"
-                    color: post.comments.length > 0 ? Material.primary : Material.secondaryTextColor
+                    text: post && post.comments ? post.comments.length : "0"
+                    color: post && post.comments && post.comments.length > 0 ? Material.primary : Material.secondaryTextColor
                 }
             }
 
@@ -459,12 +256,12 @@ Pane {
                     implicitWidth: 36
                     implicitHeight: 36
                     padding: 8
-                    icon.color: post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
+                    icon.color: post && post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
                     onClicked: repostClicked()
                 }
                 Text {
-                    text: post.repostCount || "0"
-                    color: post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
+                    text: post ? post.repostCount : "0"
+                    color: post && post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
                 }
             }
 
@@ -477,7 +274,7 @@ Pane {
                 implicitHeight: 36
                 padding: 8
                 icon.color: Material.secondaryTextColor
-                visible: currentUser == post.authorId
+                visible: post != null && post != undefined && currentUser == post.authorId
 
                 onClicked: deleteDialog.open()
             }
@@ -495,7 +292,7 @@ Pane {
 
             Text {
                 Layout.alignment: Qt.AlignRight
-                text: post.timestamp || ""
+                text: post ? post.timestamp : ""
                 font: Constants.smallFontMedium
                 color: Material.secondaryTextColor
             }

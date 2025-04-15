@@ -18,6 +18,6 @@ Rectangle {
         source: parent.imageSource
         smooth: true
         fillMode: Image.PreserveAspectCrop
-        layer.enabled: true
+        cache: true
     }
 }
