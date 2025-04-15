@@ -58,6 +58,7 @@ ghcup set cabal 3.10.3.0
 
 ```bash
 sudo apt-get install qtdeclarative5-dev \
+                     qml-module-qtquick-controls2 \
                      libqt5quick5 \
                      qttools5-dev-tools \
                      qtbase5-dev \

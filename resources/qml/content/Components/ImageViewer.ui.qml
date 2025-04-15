@@ -5,13 +5,41 @@ import QtQuick.Layouts 1.15
 
 import Futr 1.0
 
-Item {
+Page {
     id: root
     width: parent.width
     height: parent.height
 
     required property string imageSource
     property bool showOriginalSize: false
+
+    header: ToolBar {
+        RowLayout {
+            anchors.fill: parent
+
+            Button {
+                icon.source: "qrc:/icons/arrow_back.svg"
+                icon.width: 24
+                icon.height: 24
+                flat: true
+                onClicked: stackView.pop()
+
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Back")
+                ToolTip.delay: 500
+            }
+
+            Label {
+                text: qsTr("Image Viewer")
+                elide: Label.ElideRight
+                horizontalAlignment: Qt.AlignHCenter
+                verticalAlignment: Qt.AlignVCenter
+                Layout.fillWidth: true
+            }
+
+            Item { width: 48; height: 48 }
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -86,10 +114,12 @@ Item {
                     Image {
                         id: image
                         source: root.imageSource
+                        asynchronous: true
                         width: root.showOriginalSize ? sourceSize.width : flickable.width
                         height: root.showOriginalSize ? sourceSize.height : flickable.height
                         fillMode: root.showOriginalSize ? Image.Pad : Image.PreserveAspectFit
                         anchors.centerIn: parent
+                        cache: false
                     }
                 }
             }

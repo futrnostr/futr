@@ -9,16 +9,38 @@ Item {
     property bool controlsVisible: true
     property string videoSource: ""
     property alias videoUrl: videoPlayerContainer.videoSource
+    property bool isDownloading: false
 
     signal fullScreenRequested()
     signal saveVideoRequested()
     signal copyUrlRequested()
     signal showNotification(string message)
 
+    Component.onDestruction: {
+        cleanupMediaPlayer()
+    }
+
+    onVideoSourceChanged: {
+        cleanupMediaPlayer()
+        if (videoSource !== "") {
+            mediaPlayer.source = videoSource
+        }
+    }
+
     MediaPlayer {
         id: mediaPlayer
         source: videoSource
         autoPlay: false
+        autoLoad: false
+
+        onStatusChanged: {
+            if (status === MediaPlayer.EndOfMedia || 
+                status === MediaPlayer.InvalidMedia ||
+                status === MediaPlayer.NoMedia)
+            {
+                cleanupMediaPlayer()
+            }
+        }
     }
 
     VideoOutput {
@@ -82,6 +104,7 @@ Item {
                     ? "qrc:/icons/pause.svg"
                     : "qrc:/icons/play_arrow.svg"
             fillMode: Image.PreserveAspectFit
+            cache: false
         }
     }
 
@@ -227,11 +250,8 @@ Item {
                 icon.source: "qrc:/icons/download.svg"
                 ToolTip.visible: hovered
                 ToolTip.text: "Save Video"
-                onClicked: {
-                    downloadCompleted.connect(videoDownloadCallback)
-                    downloadAsync(videoPlayerContainer.videoSource)
-                    notification.show("Video download started")
-                }
+                enabled: !isDownloading
+                onClicked: initiateDownload()
             }
 
             Button {
@@ -266,13 +286,32 @@ Item {
         return videoMouseArea.isMouseInControls()
     }
 
+    function cleanupMediaPlayer() {
+        if (mediaPlayer) {
+            mediaPlayer.stop()
+            mediaPlayer.source = ""
+        }
+    }
+
     function videoDownloadCallback(success, filePathOrError) {
-        downloadCompleted.disconnect(videoDownloadCallback)
+        if (downloadCompleted.connected) {
+            downloadCompleted.disconnect(videoDownloadCallback)
+        }
+        isDownloading = false
 
         if (success) {
             notification.show("Saved to Downloads folder: " + filePathOrError)
         } else {
             notification.show("Download failed: " + filePathOrError)
+        }
+    }
+
+    function initiateDownload() {
+        if (!isDownloading && videoSource) {
+            isDownloading = true
+            downloadCompleted.connect(videoDownloadCallback)
+            downloadAsync(videoSource)
+            notification.show("Video download started")
         }
     }
 }

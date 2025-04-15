@@ -36,6 +36,10 @@ main = do
     setEnv "QT_LOGGING_RULES" "qt.qml.connections=false"
     setEnv "QT_ENABLE_HIGHDPI_SCALING" "1"
     setEnv "QT_QUICK_CONTROLS_STYLE" "Material"
+    
+    -- setEnv "QTQML_DEBUG_LOADING" "1"
+    -- setEnv "QML_DEBUGGER" "1"
+    -- setEnv "QT_QML_DEBUG" "1" 
 
     runEff
         . runLoggingStdout
@@ -75,10 +79,13 @@ main = do
                         , "qrc:/qml/imports"
                     ]
                     , QML.iconPath = Just ":/icons/nostr-purple.png"
+                    --, QML.engineConfigDebugging = True
                     }
 
-            runEngineLoop config changeKey ctx
+            --liftIO $ QML.setQtFlag QML.QtEnableQMLDebug True
 
+            runEngineLoop config changeKey ctx
+            
 
 -- | Initialize the state for the app.
 withInitialState

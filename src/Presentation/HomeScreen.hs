@@ -79,23 +79,23 @@ runHomeScreen = interpret $ \_ -> \case
 
     rootClass <- newClass [
         defPropertyConst' "version" (\_ -> do
-          runE $ logDebug $ "Getting property: version"
+          runE $ logDebug "Getting version"
           st <- runE $ get @AppState
           return $ version st
         ),
 
         defPropertyConst' "ctxKeyMgmt" (\_ -> do
-          runE $ logDebug $ "Getting property: ctxKeyMgmt"
+          runE $ logDebug "Getting ctxKeyMgmt"
           return keyMgmtObj
         ),
 
         defPropertyConst' "ctxRelayMgmt" (\_ -> do
-          runE $ logDebug $ "Getting property: ctxRelayMgmt"
+          runE $ logDebug "Getting ctxRelayMgmt"
           return relayMgmtObj
         ),
 
         defPropertyConst' "currentProfile" (\_ -> do
-          runE $ logDebug $ "Getting property: currentProfile"
+          runE $ logDebug "Getting currentProfile"
           mp <- runE $ gets @AppState currentProfile
           case mp of
             Just (pk, _) -> do
@@ -105,7 +105,7 @@ runHomeScreen = interpret $ \_ -> \case
 
         defPropertySigRW' "currentScreen" changeKey'
             (\_ -> do
-              runE $ logDebug $ "Getting property: currentScreen"
+              runE $ logDebug "Getting currentScreen"
               st <- runE $ get @AppState
               return $ pack $ show $ currentScreen st)
             (\obj newScreen -> do
@@ -118,14 +118,14 @@ runHomeScreen = interpret $ \_ -> \case
                     Nothing -> return ()),
 
         defPropertySigRO' "mynpub" changeKey' $ \_ -> do
-          runE $ logDebug $ "Getting property: mynpub"
+          runE $ logDebug "Getting mynpub"
           st <- runE $ get @AppState
           return $ case keyPair st of
             Just kp -> pubKeyXOToBech32 $ keyPairToPubKeyXO kp
             Nothing -> "",
 
         defPropertySigRO' "mypicture" changeKey' $ \_ -> do
-          runE $ logDebug $ "Getting property: mypicture"
+          runE $ logDebug "Getting mypicture"
           st <- runE $ get @AppState
           case keyPair st of
             Just kp -> do
@@ -134,7 +134,7 @@ runHomeScreen = interpret $ \_ -> \case
             Nothing -> return "",
 
         defPropertySigRO' "inboxModelState" changeKey' $ \obj -> do
-          runE $ logDebug $ "Getting property: inboxModelState"
+          runE $ logDebug "Getting inboxModelState"
           runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { inboxModelStateObjRef = Just obj } }
           st <- runE $ get @AppState
           return $ pack $ show $ inboxModelState st,
@@ -171,7 +171,6 @@ runHomeScreen = interpret $ \_ -> \case
               Nothing -> logWarning "Failed to sign profile update event",
 
         defPropertySigRO' "followList" changeKey' $ \obj -> do
-          runE $ logDebug $ "Getting property: followList"
           runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
           st <- runE $ get @AppState
           case keyPair st of
@@ -182,7 +181,7 @@ runHomeScreen = interpret $ \_ -> \case
             _ -> return [],
 
         defPropertySigRO' "posts" changeKey' $ \obj -> do
-          runE $ logDebug $ "Getting property: posts"
+          runE $ logDebug "Reading posts property"
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { postsObjRef = Just obj } }
           st <- runE $ get @AppState
           case currentProfile st of
@@ -192,7 +191,6 @@ runHomeScreen = interpret $ \_ -> \case
             Nothing -> return [],
 
         defPropertySigRO' "privateMessages" changeKey' $ \obj -> do
-          runE $ logDebug $ "Getting property: privateMessages"
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { privateMessagesObjRef = Just obj } }
           st <- runE $ get @AppState
           case currentProfile st of
@@ -202,7 +200,6 @@ runHomeScreen = interpret $ \_ -> \case
             Nothing -> return [],
 
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
-            runE $ logDebug $ "Getting property: publishStatuses"
             runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
             st <- runE $ get @RelayPool
             now <- runE getCurrentTime

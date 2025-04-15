@@ -13,6 +13,7 @@ Page {
 
     property var post: null
     required property string currentUser
+    required property string currentUserPicture
 
     header: ToolBar {
         RowLayout {
@@ -132,7 +133,7 @@ Page {
 
             Item {
                 Layout.fillHeight: true
-                height: 20 // Minimum space at the bottom
+                height: 20
             }
         }
     }
@@ -146,6 +147,7 @@ Page {
         placeholderText: qsTr("Reply to post...")
         buttonText: qsTr("Send")
         currentUser: root.currentUser
+        currentUserPicture: root.currentUserPicture
 
         onMessageSent: function(text) {
             if (root.post && root.post.id) {

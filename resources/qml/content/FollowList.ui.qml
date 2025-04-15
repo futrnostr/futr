@@ -15,6 +15,8 @@ Rectangle {
     property bool isCollapsed: false
     property var stackView: null
     property string currentUser: ""
+    property string currentUserPicture: ""
+    required property var personalFeed
 
     ColumnLayout {
         anchors.fill: parent
@@ -147,14 +149,11 @@ Rectangle {
                         onClicked: {
                             if (modelData === undefined || modelData === null) return;
                             followsView.selectedPubkey = modelData.pubkey
-                            console.log("stack view depth: ", stackView.depth)
-                            stackView.replace(personalFeedComponent, {"npub": modelData.pubkey});
-                            console.log("stack new view depth: ", stackView.depth)
+                            personalFeed.npub = modelData.pubkey
                         }
                     }
                 }
             }
-
         }
     }
 }

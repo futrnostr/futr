@@ -16,11 +16,15 @@ Rectangle {
     border.color: Material.dividerColor
     border.width: 1
 
-    property string npub: ""
+    required property string npub
     required property string currentUser
+    required property string currentUserPicture
 
-    Component.onDestruction: {
-        console.log("chat destroyed")
+    onNpubChanged: {
+        postsView.shouldBeAtBottom = true
+        privateMessageListView.shouldBeAtBottom = true
+        console.log("Npub changed on chat start")
+        ///console.log("Npub changed on chat end")
     }
 
     PostDialog {
@@ -29,6 +33,7 @@ Rectangle {
         buttonText: qsTr("Quote")
         isQuoteMode: true
         currentUser: chat.currentUser
+        currentUserPicture: chat.currentUserPicture
 
         onMessageSubmitted: function(text) {
             quoteRepost(targetPost.id, text)
@@ -174,44 +179,41 @@ Rectangle {
                         source: posts
                         mode: AutoListModel.ByKey
                         equalityTest: function (oldItem, newItem) {
-                            return oldItem.id === newItem.id
+                            return oldItem.id == newItem.id
+                                && oldItem.relays == newItem.relays
+                                && oldItem.comments == newItem.comments
                         }
                     }
 
-                    delegate: Loader {
-                        id: postContentLoader
-                        active: modelData !== undefined && modelData !== null
-                        width: postsView.width - postsView.rightMargin
-                        Layout.preferredHeight: active ? item.implicitHeight : 0
+                    delegate: PostContent {
+                        width: ListView.view.width - postsView.rightMargin
+                        post: modelData
+                        currentUser: chat.currentUser
 
-                        Component.onDestruction: {
-                            postContentLoader.active = false; // Deactivate loader on destruction
+                        Component.onCompleted: {
+                            if (post) {
+                                console.log("PostContent completed for post:", post.id)
+                            }
                         }
 
-                        sourceComponent: PostContent {
-                            post: modelData
-                            width: parent.width
-                            currentUser: chat.currentUser
-
-                            onCommentClicked: {
-                                if (modelData) {
-                                    //commentsDialog.targetPost = modelData
-                                    //setCurrentPost(modelData.id)
-                                    //commentsDialog.open()
-                                }
+                        onCommentClicked: {
+                            if (post) {
+                                //commentsDialog.targetPost = post
+                                //setCurrentPost(post.id)
+                                //commentsDialog.open()
                             }
+                        }
 
-                            onRepostClicked: {
-                                if (modelData) {
-                                    repostMenu.targetPost = modelData
-                                    repostMenu.popup()
-                                }
+                        onRepostClicked: {
+                            if (post) {
+                                repostMenu.targetPost = post
+                                repostMenu.popup()
                             }
+                        }
 
-                            onPostClicked: {
-                                if (modelData) {
-                                    stackView.push(postDetailsComponent, { post: modelData })
-                                }
+                        onPostClicked: {
+                            if (post) {
+                                stackView.push(postDetailsComponent, { post: post })
                             }
                         }
                     }
@@ -226,6 +228,7 @@ Rectangle {
                         sendShortTextNote(text)
                     }
                     currentUser: chat.currentUser
+                    currentUserPicture: chat.currentUserPicture
                     Layout.fillWidth: true
                     Layout.leftMargin: 0
                     Layout.rightMargin: 0
@@ -267,16 +270,16 @@ Rectangle {
 
                         sourceComponent: Item {
                             property var message: modelData
-                            property var author: message ? getProfile(message.authorId) : null
+                            property var author: null
 
-                            onMessageChanged: {
-                                //author = message ? getProfile(message.authorId) : null
-                                author = {
-                                    "npub": message.authorId,
-                                    "displayName": "Test User",
-                                    "name": "Test User",
-                                    "picture": "https://example.com/test-user.png"
+                            Component.onCompleted: {
+                                if (message) {
+                                    author = getProfile(message.authorId)
                                 }
+                            }
+
+                            Component.onDestruction: {
+                                author = null
                             }
 
                             height: privateRowLayout.height + Constants.spacing_xs
@@ -318,7 +321,7 @@ Rectangle {
 
                                             Item {
                                                 Layout.fillWidth: true
-                                                visible: author.npub === currentUser
+                                                visible: author ? author.npub === currentUser : false
                                             }
 
                                             Text {
@@ -327,7 +330,7 @@ Rectangle {
                                                 font: Constants.smallFontMedium
                                                 color: Material.secondaryTextColor
                                                 Layout.topMargin: Constants.spacing_xs
-                                                visible: author.npub === currentUser
+                                                visible: author ? author.npub === currentUser : false
                                             }
 
                                             Button {
@@ -376,12 +379,12 @@ Rectangle {
                                                 font: Constants.smallFontMedium
                                                 color: Material.secondaryTextColor
                                                 Layout.topMargin: Constants.spacing_xs
-                                                visible: author.npub !== currentUser
+                                                visible: author ? author.npub !== currentUser : false
                                             }
 
                                             Item {
                                                 Layout.fillWidth: true
-                                                visible: author.npub !== currentUser
+                                                visible: author ? author.npub !== currentUser : false
                                             }
                                         }
                                     }
@@ -399,6 +402,7 @@ Rectangle {
                         sendPrivateMessage(text)
                     }
                     currentUser: chat.currentUser
+                    currentUserPicture: chat.currentUserPicture
                     Layout.fillWidth: true
                     Layout.leftMargin: 0
                     Layout.rightMargin: 0
@@ -464,7 +468,7 @@ Rectangle {
             PropertyChanges { target: mainContentArea; opacity: 1.0 }
         }
     ]
-
+/*
     transitions: [
         Transition {
             from: "*"; to: "*"
@@ -475,7 +479,7 @@ Rectangle {
             }
         }
     ]
-
+*/
     EventJSONDialog {
         id: eventJsonDialog
     }

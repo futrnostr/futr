@@ -13,12 +13,22 @@ Rectangle {
     border.color: Material.dividerColor
     border.width: 1
 
-    property var profileData
-    property var npub
-    required property var currentUser
+    property var profileData: null
+    property string npub
+    required property string currentUser
 
     Component.onCompleted: {
         profileData = getProfile(npub)
+    }
+
+    onNpubChanged: {
+        profileData = getProfile(npub)
+    }
+
+    Component.onDestruction: {
+        profileImage.source = ""
+        profileData = null
+        currentUser = null
     }
 
     ColumnLayout {
@@ -35,10 +45,11 @@ Rectangle {
             visible: profileData !== null && profileData.banner !== null && profileData.banner !== ""
 
             Image {
-                source: profileData.banner ?? ""
+                source: profileData !== null ? (profileData.banner ?? "") : ""
                 width: parent.width
                 height: 80
                 fillMode: Image.PreserveAspectCrop
+                cache: false
             }
         }
 
@@ -55,9 +66,10 @@ Rectangle {
 
                 Image {
                     id: profileImage
-                    source: Util.getProfilePicture(profileData.picture, npub)
+                    source: profileData !== null ? Util.getProfilePicture(profileData.picture, npub) : ""
                     anchors.fill: parent
                     fillMode: Image.PreserveAspectCrop
+                    cache: false
                 }
             }
 
@@ -67,7 +79,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: profileData.displayName || profileData.name || npub
+                    text: profileData !== null ? profileData.displayName || profileData.name || npub : ""
                     font: Constants.largeFont
                     color: Material.primaryTextColor
                     elide: Text.ElideRight
@@ -75,10 +87,10 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: profileData.name || ""
+                    text: profileData !== null ? profileData.name || "" : ""
                     font: Constants.font
                     color: Material.primaryTextColor
-                    visible: profileData.displayName
+                    visible: profileData !== null && profileData.displayName
                     elide: Text.ElideRight
                 }
             }
@@ -98,12 +110,16 @@ Rectangle {
 
             Button {
                 visible: npub !== currentUser
-                text: profileData.isFollow ? qsTr("Unfollow") : qsTr("Follow")
+                text: profileData !== null ? (profileData.isFollow ? qsTr("Unfollow") : qsTr("Follow")) : ""
                 font: Constants.font
                 highlighted: true
                 Material.background: Material.primary
 
                 onClicked: {
+                    if (profileData === null) {
+                        return
+                    }
+
                     if (profileData.isFollow) {
                         unfollow(npub)
                     } else {
@@ -148,36 +164,37 @@ Rectangle {
             }
 
             Text {
-                text: profileData.about ?? ""
+                text: profileData !== null ? profileData.about : ""
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
                 font: Constants.font
                 color: Material.primaryTextColor
             }
-
+/*
             ExternalIdentity {
                 Layout.fillWidth: true
                 icon: ExternalIdentityIcons.github
-                link: profileData.githubLink ?? ""
-                proof: profileData.githubProof ?? ""
-                value: profileData.githubUsername ?? ""
+                link: profileData !== null ? profileData.githubLink : ""
+                proof: profileData !== null ? profileData.githubProof : ""
+                value: profileData !== null ? profileData.githubUsername : ""
             }
 
             ExternalIdentity {
                 Layout.fillWidth: true
                 icon: ExternalIdentityIcons.telegram
-                link: profileData.telegramLink ?? ""
-                proof: profileData.telegramProof ?? ""
-                value: profileData.telegramUsername ?? ""
+                link: profileData !== null ? profileData.telegramLink : ""
+                proof: profileData !== null ? profileData.telegramProof : ""
+                value: profileData !== null ? profileData.telegramUsername : ""
             }
 
             ExternalIdentity {
                 Layout.fillWidth: true
                 icon: ExternalIdentityIcons.x_twitter
-                link: profileData.twitterLink ?? ""
-                proof: profileData.twitterProof ?? ""
-                value: profileData.twitterUsername ?? ""
+                link: profileData !== null ? profileData.twitterLink : ""
+                proof: profileData !== null ? profileData.twitterProof : ""
+                value: profileData !== null ? profileData.twitterUsername : ""
             }
+*/
         }
     }
 }

@@ -8,7 +8,6 @@ import Control.Monad (forever, forM_, void, when)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
-import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
@@ -135,6 +134,7 @@ runQtQuick = interpret $ \_ -> \case
         void $ async $ forever $ do
           uiUpdates <- atomically $ readTQueue q
           moreUpdates <- atomically $ flushTQueue q
+          logDebug "uiUpdates"
           let combinedUpdates = uiUpdates <> mconcat moreUpdates
           refs <- gets uiRefs
           let updates = [ (myFollowsChanged, followsObjRef)
@@ -151,10 +151,11 @@ runQtQuick = interpret $ \_ -> \case
             when (checkFn combinedUpdates) $
               forM_ (getRef refs) (liftIO . QML.fireSignal changeKey)
 
+          -- @todo: trigger more specific signals for each pubkey instead of just the whole list
           when (profilesChanged combinedUpdates) $ do
             pmap <- gets @QtQuickState propertyMap
             let allProfileWeakRefs = concatMap Map.elems $ Map.elems $ profileObjRefs pmap
-            logDebug $ "Updating " <> T.pack (show (length allProfileWeakRefs)) <> " profile objects"
+            --logDebug $ "Updating " <> T.pack (show (length allProfileWeakRefs)) <> " profile objects"
             forM_ allProfileWeakRefs $ \weakRef -> do
               objRef <- liftIO $ QML.fromWeakObjRef weakRef
               liftIO $ QML.fireSignal changeKey objRef
@@ -162,20 +163,12 @@ runQtQuick = interpret $ \_ -> \case
           when (postsChanged combinedUpdates) $ do
             pmap <- gets @QtQuickState propertyMap
             let allPostWeakRefs = concatMap Map.elems $ Map.elems $ postObjRefs pmap
-            logDebug $ "Updating " <> T.pack (show (length allPostWeakRefs)) <> " post objects"
+            --logDebug $ "Updating " <> T.pack (show (length allPostWeakRefs)) <> " post objects"
             forM_ allPostWeakRefs $ \weakRef -> do
               objRef <- liftIO $ QML.fromWeakObjRef weakRef
               liftIO $ QML.fireSignal changeKey objRef
 
-          pmap <- gets @QtQuickState propertyMap
-          let allProfileWeakRefs = concatMap Map.elems $ Map.elems $ profileObjRefs pmap
-          logDebug $ "Having " <> T.pack (show (length allProfileWeakRefs)) <> " profile objects"
-
-          pmap <- gets @QtQuickState propertyMap
-          let allPostWeakRefs = concatMap Map.elems $ Map.elems $ postObjRefs pmap
-          logDebug $ "Having " <> T.pack (show (length allPostWeakRefs)) <> " post objects"
-
-          threadDelay 200000  -- 0.2 second delay for UI updates
+          threadDelay 1200000  -- 0.2 second delay for UI updates
 
         liftIO $ QML.runEngineLoop config
 
@@ -184,7 +177,9 @@ runQtQuick = interpret $ \_ -> \case
     FireSignal obj -> do
         st <- get
         case signalKey st of
-          Just key -> liftIO $ QML.fireSignal key obj
+          Just key -> do
+            logDebug "fire signal"
+            liftIO $ QML.fireSignal key obj
           Nothing -> logError "No signal key available"
 
     NotifyRelayStatus -> do
