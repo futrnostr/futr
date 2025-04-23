@@ -21,8 +21,11 @@ Rectangle {
     required property string currentUserPicture
 
     onNpubChanged: {
-        postsView.shouldBeAtBottom = true
-        privateMessageListView.shouldBeAtBottom = true
+        if (chatTypeSelector.currentIndex === 0) {
+            postsView.shouldBeAtBottom = true
+        } else {
+            privateMessageListView.shouldBeAtBottom = true
+        }
         console.log("Npub changed on chat start")
         ///console.log("Npub changed on chat end")
     }
@@ -155,17 +158,18 @@ Rectangle {
             }
         }
 
-        // Stack Layout to switch between public/private views
-        StackLayout {
+        Loader {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: chatTypeSelector.currentIndex
+            sourceComponent: chatTypeSelector.currentIndex === 0 ? publicNotesComponent : privateChatComponent
+        }
 
+        Component {
+            id: publicNotesComponent
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                // Public notes list
                 ScrollingListView {
                     id: postsView
                     Layout.fillWidth: true
@@ -189,12 +193,7 @@ Rectangle {
                         width: ListView.view.width - postsView.rightMargin
                         post: modelData
                         currentUser: chat.currentUser
-
-                        Component.onCompleted: {
-                            if (post) {
-                                console.log("PostContent completed for post:", post.id)
-                            }
-                        }
+                        Layout.minimumHeight: 100
 
                         onCommentClicked: {
                             if (post) {
@@ -219,7 +218,6 @@ Rectangle {
                     }
                 }
 
-                // Input area for new public notes (at the bottom)
                 MessageInput {
                     placeholderText: qsTr("What's on your mind?")
                     visible: currentUser == npub
@@ -235,8 +233,10 @@ Rectangle {
                     Layout.bottomMargin: 0
                 }
             }
+        }
 
-            // Private Chat View
+        Component {
+            id: privateChatComponent
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -252,6 +252,9 @@ Rectangle {
                     id: privateMessageListView
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    leftMargin: 0
+                    rightMargin: 2 * Constants.spacing_xs + 10
+                    spacing: Constants.spacing_s
                     visible: ctxRelayMgmt.dmRelays.length > 0
 
                     model: AutoListModel {
@@ -263,138 +266,36 @@ Rectangle {
                         }
                     }
 
-                    delegate: Loader {
-                        active: modelData !== undefined && modelData !== null
-                        width: privateMessageListView.width - privateMessageListView.leftMargin - privateMessageListView.rightMargin - 8
-                        Layout.preferredHeight: active ? item.implicitHeight : 0
+                    delegate: RowLayout {
+                        width: ListView.view.width - privateMessageListView.rightMargin
 
-                        sourceComponent: Item {
-                            property var message: modelData
-                            property var author: null
+                        property var author: modelData ? getProfile(modelData.authorId) : null
 
-                            Component.onCompleted: {
-                                if (message) {
-                                    author = getProfile(message.authorId)
-                                }
-                            }
+                        ProfilePicture {
+                            imageSource: author ? Util.getProfilePicture(author.picture, author.npub) : ""
+                            Layout.preferredWidth: 34
+                            Layout.preferredHeight: 34
+                            visible: author && author.npub != chat.currentUser
+                        }
 
-                            Component.onDestruction: {
-                                author = null
-                            }
+                        PostContent {
+                            post: modelData
+                            currentUser: chat.currentUser
+                            privateChatMode: true
+                            Layout.fillWidth: true
+                            Layout.leftMargin: author && author.npub == chat.currentUser ? 75 : 0
+                            Layout.rightMargin: author && author.npub != chat.currentUser ? 75 : 0
+                        }
 
-                            height: privateRowLayout.height + Constants.spacing_xs
-
-                            RowLayout {
-                                id: privateRowLayout
-                                width: parent.width
-                                spacing: Constants.spacing_xs
-                                y: Constants.spacing_s
-                                layoutDirection: author ? (author.npub == currentUser ? Qt.RightToLeft : Qt.LeftToRight) : Qt.LeftToRight
-
-                                ProfilePicture {
-                                    imageSource: author ? Util.getProfilePicture(author.picture, author.npub) : ""
-                                }
-
-                                Pane {
-                                    Layout.fillWidth: true
-                                    Layout.maximumWidth: parent.width * 0.7
-                                    Layout.rightMargin: author ? (author.npub == currentUser ? 0 : Constants.spacing_s) : Constants.spacing_s
-                                    Layout.leftMargin: author ? Constants.spacing_s : 0
-
-                                    background: Rectangle {
-                                        color: author ? (author.npub == currentUser ? Material.accentColor : Material.dividerColor) : Material.dividerColor
-                                        radius: Constants.radius_m
-                                    }
-
-                                    ColumnLayout {
-                                        width: parent.width
-
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: message ? message.content : ""
-                                            wrapMode: Text.Wrap
-                                            color: Material.foreground
-                                        }
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-
-                                            Item {
-                                                Layout.fillWidth: true
-                                                visible: author ? author.npub === currentUser : false
-                                            }
-
-                                            Text {
-                                                Layout.alignment: author ? (author.npub == currentUser ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
-                                                text: message ? message.timestamp : ""
-                                                font: Constants.smallFontMedium
-                                                color: Material.secondaryTextColor
-                                                Layout.topMargin: Constants.spacing_xs
-                                                visible: author ? author.npub === currentUser : false
-                                            }
-
-                                            Button {
-                                                flat: true
-                                                icon.source: "qrc:/icons/menu.svg"
-                                                icon.width: 20
-                                                icon.height: 20
-                                                implicitWidth: 28
-                                                implicitHeight: 28
-                                                padding: 4
-                                                Layout.alignment: Qt.AlignRight
-                                                onClicked: postMenu.open()
-
-                                                Menu {
-                                                    id: postMenu
-                                                    y: parent.height
-
-                                                    MenuItem {
-                                                        text: qsTr("Copy Event ID")
-                                                        onTriggered: {
-                                                            clipboard.copyText(modelData.nevent)
-                                                        }
-                                                    }
-
-                                                    MenuItem {
-                                                        text: qsTr("Show Event JSON")
-                                                        onTriggered: {
-                                                            eventJsonDialog.targetPost = modelData
-                                                            eventJsonDialog.open()
-                                                        }
-                                                    }
-
-                                                    MenuItem {
-                                                        text: qsTr("Seen on Relays")
-                                                        onTriggered: {
-                                                            seenOnRelaysDialog.targetPost = modelData
-                                                            seenOnRelaysDialog.open()
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            Text {
-                                                Layout.alignment: author ? (author.npub == currentUser ? Qt.AlignRight : Qt.AlignLeft) : Qt.AlignLeft
-                                                text: message ? message.timestamp : ""
-                                                font: Constants.smallFontMedium
-                                                color: Material.secondaryTextColor
-                                                Layout.topMargin: Constants.spacing_xs
-                                                visible: author ? author.npub !== currentUser : false
-                                            }
-
-                                            Item {
-                                                Layout.fillWidth: true
-                                                visible: author ? author.npub !== currentUser : false
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        ProfilePicture {
+                            imageSource: author ? Util.getProfilePicture(author.picture, author.npub) : ""
+                            Layout.preferredWidth: 34
+                            Layout.preferredHeight: 34
+                            visible: author && author.npub == chat.currentUser
                         }
                     }
                 }
 
-                // Private Messages Input
                 MessageInput {
                     placeholderText: qsTr("Type a message...")
                     buttonText: qsTr("Send")

@@ -79,23 +79,19 @@ runHomeScreen = interpret $ \_ -> \case
 
     rootClass <- newClass [
         defPropertyConst' "version" (\_ -> do
-          runE $ logDebug "Getting version"
           st <- runE $ get @AppState
           return $ version st
         ),
 
         defPropertyConst' "ctxKeyMgmt" (\_ -> do
-          runE $ logDebug "Getting ctxKeyMgmt"
           return keyMgmtObj
         ),
 
         defPropertyConst' "ctxRelayMgmt" (\_ -> do
-          runE $ logDebug "Getting ctxRelayMgmt"
           return relayMgmtObj
         ),
 
         defPropertyConst' "currentProfile" (\_ -> do
-          runE $ logDebug "Getting currentProfile"
           mp <- runE $ gets @AppState currentProfile
           case mp of
             Just (pk, _) -> do
@@ -105,7 +101,6 @@ runHomeScreen = interpret $ \_ -> \case
 
         defPropertySigRW' "currentScreen" changeKey'
             (\_ -> do
-              runE $ logDebug "Getting currentScreen"
               st <- runE $ get @AppState
               return $ pack $ show $ currentScreen st)
             (\obj newScreen -> do
@@ -118,14 +113,12 @@ runHomeScreen = interpret $ \_ -> \case
                     Nothing -> return ()),
 
         defPropertySigRO' "mynpub" changeKey' $ \_ -> do
-          runE $ logDebug "Getting mynpub"
           st <- runE $ get @AppState
           return $ case keyPair st of
             Just kp -> pubKeyXOToBech32 $ keyPairToPubKeyXO kp
             Nothing -> "",
 
         defPropertySigRO' "mypicture" changeKey' $ \_ -> do
-          runE $ logDebug "Getting mypicture"
           st <- runE $ get @AppState
           case keyPair st of
             Just kp -> do
@@ -134,7 +127,6 @@ runHomeScreen = interpret $ \_ -> \case
             Nothing -> return "",
 
         defPropertySigRO' "inboxModelState" changeKey' $ \obj -> do
-          runE $ logDebug "Getting inboxModelState"
           runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { inboxModelStateObjRef = Just obj } }
           st <- runE $ get @AppState
           return $ pack $ show $ inboxModelState st,
@@ -142,21 +134,17 @@ runHomeScreen = interpret $ \_ -> \case
         defSignal "loginStatusChanged" (Proxy :: Proxy LoginStatusChanged),
 
         defMethod' "login" $ \obj input -> do
-          runE $ logDebug $ "Called method: login with input: " <> input
           runE $ login obj input,
 
         defMethod' "logout" $ \obj -> do
-          runE $ logDebug $ "Called method: logout"
           runE $ logout obj,
 
         defMethod' "search" $ \obj input -> do
-          runE $ logDebug $ "Called method: search with input: " <> input
           runE $ do
             res <- search obj input
             return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
 
         defMethod' "saveProfile" $ \_ input -> do
-          runE $ logDebug $ "Called method: saveProfile"
           runE $ do
             let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
             n <- getCurrentTime
@@ -181,7 +169,6 @@ runHomeScreen = interpret $ \_ -> \case
             _ -> return [],
 
         defPropertySigRO' "posts" changeKey' $ \obj -> do
-          runE $ logDebug "Reading posts property"
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { postsObjRef = Just obj } }
           st <- runE $ get @AppState
           case currentProfile st of
@@ -214,53 +201,43 @@ runHomeScreen = interpret $ \_ -> \case
             mapM (getPoolObject publishStatusPool) recentEids,
 
         defMethod' "follow" $ \_ npubText -> do
-          runE $ logDebug $ "Called method: follow with npub: " <> npubText
           runE $ followProfile npubText,
 
         defMethod' "unfollow" $ \_ npubText -> do
-          runE $ logDebug $ "Called method: unfollow with npub: " <> npubText
           runE $ unfollowProfile npubText,
 
         defMethod' "loadFeed" $ \_ npubText -> do
-          runE $ logDebug $ "Called method: loadFeed with npub: " <> npubText
           runE $ do
               let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
               loadFeed pubKeyXO,
 
         defMethod' "sendPrivateMessage" $ \_ input -> do
-          runE $ logDebug $ "Called method: sendPrivateMessage"
           runE $ sendPrivateMessage input,
 
         defMethod' "sendShortTextNote" $ \_ input -> do
-          runE $ logDebug $ "Called method: sendShortTextNote"
           runE $ sendShortTextNote input,
 
         defMethod' "repost" $ \_ eid -> do
-          runE $ logDebug $ "Called method: repost with eid: " <> eid
           runE $ do
             let eid' = read (unpack eid) :: EventId
             repost eid',
 
         defMethod' "quoteRepost" $ \_ eid quote -> do
-          runE $ logDebug $ "Called method: quoteRepost with eid: " <> eid
           runE $ do
             let eid' = read (unpack eid) :: EventId
             quoteRepost eid' quote,
 
         defMethod' "comment" $ \_ eid input -> do
-          runE $ logDebug $ "Called method: comment on eid: " <> eid
           runE $ do
             let eid' = read (unpack eid) :: EventId
             comment eid' input,
 
         defMethod' "deleteEvent" $ \_ eid input -> do
-          runE $ logDebug $ "Called method: deleteEvent for eid: " <> eid
           runE $ do
             let eid' = read (unpack eid) :: EventId
             deleteEvent eid' input,
 
         defMethod' "setCurrentPost" $ \_ meid -> do
-          runE $ logDebug $ "Called method: setCurrentPost with eid: " <> maybe "Nothing" id meid
           runE $ do
             case meid of
               Just eid -> do
@@ -278,7 +255,6 @@ runHomeScreen = interpret $ \_ -> \case
           return result,
 
         defMethod' "getPost" $ \_ input -> do
-          runE $ logDebug $ "Called method: getPost with input: " <> input
           runE $ do
             let fetchByType parseFunc = case parseFunc input of
                     Just eid -> fetchEventObject postsPool eid
@@ -291,7 +267,6 @@ runHomeScreen = interpret $ \_ -> \case
                 _ -> return Nothing,
 
         defMethod' "convertNprofileToNpub" $ \_ input -> do
-          runE $ logDebug $ "Called method: convertNprofileToNpub with input: " <> input
           runE $ do
             case parseNprofileOrNpub input of
               Just (pk, _) -> return $ Just $ pubKeyXOToBech32 pk
@@ -300,7 +275,6 @@ runHomeScreen = interpret $ \_ -> \case
         defSignal "downloadCompleted" (Proxy :: Proxy DownloadCompleted),
 
         defMethod' "downloadAsync" $ \obj url -> do
-          runE $ logDebug $ "Called method: downloadAsync with url: " <> url
           runE $ do
             -- Start the download asynchronously
             void $ async $ do

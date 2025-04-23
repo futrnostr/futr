@@ -24,7 +24,7 @@ Rectangle {
 
     Component.onCompleted: {
         if (value) {
-            //cachedPost = getPost(value)
+            cachedPost = getPost(value)
 
             if (cachedPost) {
                 referencedPostContent.post = cachedPost
@@ -92,7 +92,7 @@ Rectangle {
 
     Timer {
         id: heightUpdateTimer
-        interval: 10
+        interval: 16
         running: false
         repeat: false
         onTriggered: {

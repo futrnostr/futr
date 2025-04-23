@@ -134,7 +134,6 @@ runQtQuick = interpret $ \_ -> \case
         void $ async $ forever $ do
           uiUpdates <- atomically $ readTQueue q
           moreUpdates <- atomically $ flushTQueue q
-          logDebug "uiUpdates"
           let combinedUpdates = uiUpdates <> mconcat moreUpdates
           refs <- gets uiRefs
           let updates = [ (myFollowsChanged, followsObjRef)

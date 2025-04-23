@@ -16,6 +16,7 @@ Pane {
     property string currentUser
     property bool isRefPost: false
     property var author
+    property bool privateChatMode: false
 
     property var componentMap: {
         "text": "PostContent/TextComponent.ui.qml",
@@ -29,6 +30,8 @@ Pane {
     signal commentClicked()
     signal repostClicked()
     signal postClicked()
+
+    padding: Constants.spacing_s
 
     Component.onCompleted: {
         if (!post) {
@@ -61,6 +64,7 @@ Pane {
                         "Layout.fillWidth": true,
                         "currentUser": currentUser,
                         "parent": contentLayout,
+                        "Layout.minimumHeight": 100,
                     }
                 } else {
                     args = {
@@ -87,11 +91,9 @@ Pane {
         }
     }
 
-    padding: Constants.spacing_s
-
     background: Rectangle {
         id: backgroundRect
-        color: Material.dialogColor
+        color: privateChatMode && author && author.npub == currentUser ? Material.accentColor : Material.dialogColor
         radius: Constants.radius_m
 
         MouseArea {
@@ -223,7 +225,7 @@ Pane {
             Layout.topMargin: 0
             Layout.bottomMargin: 0
             Layout.preferredHeight: 36
-            visible: !isRefPost
+            visible: !isRefPost && !privateChatMode
 
             Item { Layout.fillWidth: true }
 
