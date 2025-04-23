@@ -26,7 +26,6 @@ Rectangle {
     }
 
     Component.onDestruction: {
-        profileImage.source = ""
         profileData = null
         currentUser = null
     }
@@ -59,18 +58,10 @@ Rectangle {
             Layout.leftMargin: 10
             Layout.rightMargin: 10
 
-            Rectangle {
-                width: 60
-                height: 60
-                color: Material.backgroundColor
-
-                Image {
-                    id: profileImage
-                    source: profileData !== null ? Util.getProfilePicture(profileData.picture, npub) : ""
-                    anchors.fill: parent
-                    fillMode: Image.PreserveAspectCrop
-                    cache: false
-                }
+            ProfilePicture {
+                imageSource: profileData !== null ? Util.getProfilePicture(profileData.picture, npub) : ""
+                Layout.preferredWidth: 60
+                Layout.preferredHeight: 60
             }
 
             ColumnLayout {

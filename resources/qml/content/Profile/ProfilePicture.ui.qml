@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
+import QtGraphicalEffects 1.15
 
 Rectangle {
     Layout.preferredWidth: 36
@@ -10,14 +11,29 @@ Rectangle {
     Layout.topMargin: 0
     radius: width / 2
     color: Material.dividerColor
+    clip: true
 
     property string imageSource
 
     Image {
+        id: profileImage
         anchors.fill: parent
         source: parent.imageSource
         smooth: true
         fillMode: Image.PreserveAspectCrop
-        cache: true
+        cache: false
+
+        layer.enabled: true
+        layer.effect: OpacityMask {
+            maskSource: Item {
+                width: profileImage.width
+                height: profileImage.height
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: width / 2
+                }
+            }
+        }
     }
 }
