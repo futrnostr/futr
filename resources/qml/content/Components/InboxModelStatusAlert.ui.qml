@@ -17,6 +17,8 @@ Rectangle {
     height: inboxStatusLayout.implicitHeight + 16
     radius: Constants.radius_m
 
+    z: opacity > 0 ? 10 : -1
+
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.top: parent.top
     anchors.topMargin: 16

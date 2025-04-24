@@ -103,7 +103,7 @@ Item {
 
                 if (result && result.npub) {
                     searchInput.text = ""
-                    personalFeed.npub = modelData.pubkey
+                    personalFeed.npub = result.npub
                 }
             }
         }
