@@ -35,17 +35,11 @@ Pane {
 
     Component.onCompleted: {
         if (!post) {
-            console.warn("Post is undefined")
             return
         }
 
         if (post.authorId) {
             author = getProfile(post.authorId)
-        }
-
-        if (!post.contentParts) {
-            console.warn("Post contentParts is undefined for post:", post.id)
-            return
         }
 
         let parts = post.contentParts
