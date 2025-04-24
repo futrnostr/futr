@@ -354,19 +354,25 @@ runClasses = interpret $ \_ -> \case
                     then return $ Just Follow { pubkey = pubKeyXO, petName = Nothing }
                     else return Nothing
                 Nothing -> return Nothing
-              accessor st followData
+              accessor obj followData
 
         newClass [
             followProp "pubkey" $ \_ -> return . maybe "" (pubKeyXOToBech32 . pubkey),
             followProp "petname" $ \_ -> return . maybe "" (fromMaybe "" . petName),
-            followProp "displayName" $ \_ -> maybe (return "") (\follow -> do
-                profile <- runE $ getProfile (pubkey follow)
+            followProp "displayName" $ \obj -> maybe (return "") (\follow -> do
+                let pk = pubkey follow
+                runE $ storeProfileObjRef pk "displayName" obj
+                profile <- runE $ getProfile pk
                 return $ fromMaybe "" (displayName profile)),
-            followProp "name" $ \_ -> maybe (return "") (\follow -> do
-                profile <- runE $ getProfile (pubkey follow)
+            followProp "name" $ \obj -> maybe (return "") (\follow -> do
+                let pk = pubkey follow
+                runE $ storeProfileObjRef pk "name" obj
+                profile <- runE $ getProfile pk
                 return $ fromMaybe "" (name profile)),
-            followProp "picture" $ \_ -> maybe (return "") (\follow -> do
-                profile <- runE $ getProfile (pubkey follow)
+            followProp "picture" $ \obj -> maybe (return "") (\follow -> do
+                let pk = pubkey follow
+                runE $ storeProfileObjRef pk "picture" obj
+                profile <- runE $ getProfile pk
                 return $ fromMaybe "" (picture profile))
           ]
 
