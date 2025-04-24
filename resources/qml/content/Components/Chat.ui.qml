@@ -21,13 +21,14 @@ Rectangle {
     required property string currentUserPicture
 
     onNpubChanged: {
-        if (chatTypeSelector.currentIndex === 0) {
-            postsView.shouldBeAtBottom = true
-        } else {
-            privateMessageListView.shouldBeAtBottom = true
-        }
-        console.log("Npub changed on chat start")
-        ///console.log("Npub changed on chat end")
+        chatTypeSelector.currentIndex = 0
+
+        Qt.callLater(function() {
+            var publicChat = mainContentArea.children[1].item
+            if (publicChat && publicChat.postsView) {
+                publicChat.postsView.shouldBeAtBottom = true
+            }
+        })
     }
 
     PostDialog {

@@ -31,7 +31,7 @@ Pane {
     signal repostClicked()
     signal postClicked()
 
-    padding: Constants.spacing_s
+    padding: Constants.spacing_xs
 
     Component.onCompleted: {
         if (!post) {
@@ -288,7 +288,6 @@ Pane {
             Layout.fillWidth: true
             Layout.topMargin: 0
             Layout.bottomMargin: 0
-            Layout.preferredHeight: 28
 
             Item { Layout.fillWidth: true }
 
