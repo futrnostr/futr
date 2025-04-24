@@ -227,24 +227,23 @@ runFutr = interpret $ \_ -> \case
         Nothing -> return ()
 
   LoadFeed pk -> do
-    logDebug $ "Loading feed for " <> pack (show pk)
     st <- get @AppState
 
     case currentProfile st of
       Just (_, subIds) -> forM_ subIds $ \subId' -> stopSubscription subId'
       _ -> return ()
 
-    logDebug $ "Subscription stopped"
-
     modify @AppState $ \st' -> st' { currentProfile = Just (pk, []) }
-    logDebug $ "Current profile set"
     notify $ emptyUpdates { profilesChanged = True, postsChanged = True, privateMessagesChanged = True }
 
     void $ async $ do
-      -- @todo: do this only for non-contacts!
-      subIds <- subscribeToProfilesAndPostsFor pk
-      modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
-      logDebug $ "Feed loaded"
+      kp <- getKeyPair
+      let mypk = keyPairToPubKeyXO kp
+      follows <- getFollows mypk
+
+      when (not (pk `elem` map pubkey follows)) $ do
+        subIds <- subscribeToProfilesAndPostsFor pk
+        modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
 
   SendPrivateMessage input -> do
     st <- get @AppState
