@@ -195,8 +195,8 @@ runHomeScreen = interpret $ \_ -> \case
             recentEids <- filterM (\eid -> do
                 eventMaybe <- runE $ getEvent eid
                 case eventMaybe of
-                    Just eventWithRelays ->
-                        return $ createdAt (event eventWithRelays) + 10 > now
+                    Just event ->
+                        return $ createdAt event  + 10 > now
                     Nothing -> return False) (Map.keys statusMap)
             mapM (getPoolObject publishStatusPool) recentEids,
 

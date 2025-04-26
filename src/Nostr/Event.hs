@@ -478,18 +478,19 @@ createFollowList contacts xo t =
       [fromMaybe "" maybeAlias]  -- petname/alias
 
 
--- | Create a delete event.
-createEventDeletion :: [EventId] -> Text -> PubKeyXO -> Int -> UnsignedEvent
-createEventDeletion eids reason xo t =
+-- | Create a delete event according to NIP-09.
+createEventDeletion :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
+createEventDeletion event reason xo t =
   UnsignedEvent
     { pubKey' = xo
     , createdAt' = t
     , kind' = EventDeletion
-    , tags' = toDelete
+    , tags' = toDelete ++ kTags
     , content' = reason
     }
   where
-    toDelete = map (\eid -> ["e", eventIdToHex eid]) eids
+    toDelete = [["e", eventIdToHex $ eventId event]]
+    kTags = [["k", pack $ show $ kindToInt $ kind event]]
 
 
 createRelayListMetadataEvent :: [Relay] -> PubKeyXO -> Int -> UnsignedEvent
@@ -683,3 +684,25 @@ decodeHex str =
   case B16.decode $ cs str of
     Right bs -> Just bs
     Left _   -> Nothing
+
+
+-- | Check if a short text note is a comment.
+isComment :: Event -> Bool
+isComment e = kind e == ShortTextNote && hasETags (tags e)
+  where
+    hasETags :: [Tag] -> Bool
+    hasETags = any isETag
+
+    isETag :: Tag -> Bool
+    isETag ("e":_) = True
+    isETag _ = False
+
+
+-- | Extract pubkeys from p-tags in the tags list
+getAllPubKeysFromPTags :: [Tag] -> [PubKeyXO]
+getAllPubKeysFromPTags = concatMap extractPubKey
+  where
+    extractPubKey ("p":pubkeyHex:_) = case pubKeyXOFromHex pubkeyHex of
+        Just pk -> [pk]
+        Nothing -> []
+    extractPubKey _ = []

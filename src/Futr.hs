@@ -59,7 +59,7 @@ import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
 import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
-                  , getEvent, getFollows, getGeneralRelays )
+                  , getEvent, getEventRelays, getFollows, getGeneralRelays )
 import Types
 
 -- | Signal key class for LoginStatusChanged.
@@ -316,7 +316,8 @@ runFutr = interpret $ \_ -> \case
         mEvent <- getEvent eid
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just EventWithRelays{event, relays} -> do
+          Just event -> do
+            relays <- getEventRelays eid
             let e = createRepost event (Set.findMin relays) (keyPairToPubKeyXO kp) now
             signed <- signEvent e kp
             case signed of
@@ -324,7 +325,8 @@ runFutr = interpret $ \_ -> \case
                 publishToOutbox s
                 mEventAndRelays <- getEvent eid
                 case mEventAndRelays of
-                  Just EventWithRelays{event = origEvent, relays = relaySet} -> do
+                  Just origEvent -> do
+                    relaySet <- getEventRelays eid
                     let eventRelayUris = Set.fromList $
                           [ uri | ("r":uri:_) <- tags origEvent
                           , isValidRelayURI uri
@@ -351,7 +353,8 @@ runFutr = interpret $ \_ -> \case
         mEvent <- getEvent eid
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just EventWithRelays{event, relays} -> do
+          Just event -> do
+            relays <- getEventRelays $ eventId event
             let q = createQuoteRepost event (Set.findMin relays) quote (keyPairToPubKeyXO kp) now
             signed <- signEvent q kp
             case signed of
@@ -381,14 +384,15 @@ runFutr = interpret $ \_ -> \case
         case mEvent of
           Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
           Just ev -> do
-            let c = createComment (event ev) comment' (keyPairToPubKeyXO kp) now
+            let c = createComment ev comment' (keyPairToPubKeyXO kp) now
             signed <- signEvent c kp
             case signed of
               Just s -> do
                 publishToOutbox s
                 mEventAndRelays <- getEvent eid
                 case mEventAndRelays of
-                  Just EventWithRelays{event = origEvent, relays = relaySet} -> do
+                  Just origEvent -> do
+                    relaySet <- getEventRelays eid
                     let eventRelayUris = Set.fromList $
                           [ uri | ("r":uri:_) <- tags origEvent
                           , isValidRelayURI uri
@@ -407,18 +411,19 @@ runFutr = interpret $ \_ -> \case
               Nothing -> logError "Failed to sign comment"
 
   Futr.DeleteEvent eid reason -> do
-    st <- get @AppState
-    case keyPair st of
-      Nothing -> logError "No keypair found"
-      Just kp -> do
-        now <- getCurrentTime
-        let deletion = createEventDeletion [eid] reason (keyPairToPubKeyXO kp) now
-        signed <- signEvent deletion kp
-        case signed of
-          Just s -> do
-            publishToOutbox s
-            notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
-          Nothing -> logError "Failed to sign event deletion"
+      kp <- getKeyPair
+      now <- getCurrentTime
+      mEvent <- getEvent eid
+      case mEvent of
+          Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
+          Just ev -> do
+              let deletion = createEventDeletion ev reason (keyPairToPubKeyXO kp) now
+              signed <- signEvent deletion kp
+              case signed of
+                  Nothing -> logError "Failed to sign event deletion"
+                  Just s -> do
+                      publishToOutbox s
+                      notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
 
 
 -- Helper function to parse nprofile or npub

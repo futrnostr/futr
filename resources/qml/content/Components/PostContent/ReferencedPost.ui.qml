@@ -65,7 +65,7 @@ Rectangle {
             }
         }
     }
-    
+
     PostContent {
         id: referencedPostContent
         post: referencedPostContainer.post

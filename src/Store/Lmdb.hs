@@ -12,12 +12,14 @@ module Store.Lmdb
     ( LmdbStore(..)
     , LmdbState(..)
     , TimelineType(..)
+    , PutEventResult(..)
     , initialLmdbState
     , initializeLmdbState
     , runLmdbStore
     , putEvent
     , recordFailedRelay
     , getEvent
+    , getEventRelays
     , getFollows
     , getProfile
     , getTimelineIds
@@ -29,13 +31,14 @@ module Store.Lmdb
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_, when, unless)
 import Data.Aeson (ToJSON, FromJSON, encode, decode, eitherDecode)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Cache.LRU qualified as LRU
 import Data.List (sort)
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isNothing, listToMaybe)
 import Data.Set qualified as Set
+import Data.Set (Set)
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
 import Effectful.Dispatch.Dynamic
@@ -50,13 +53,13 @@ import Pipes.Prelude qualified as Pipes
 import Pipes ((>->))
 
 import Logging
-import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..), Rumor(..), Tag
-                   , eventIdFromHex, validateEvent, unwrapGiftWrap, unwrapSeal )
+import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..), Rumor(..)
+                   , eventIdFromHex, getAllPubKeysFromPTags, validateEvent, unwrapGiftWrap, unwrapSeal )
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, pubKeyXOFromHex)
 import Nostr.Profile (Profile, emptyProfile)
 import Nostr.Relay (Relay(..), RelayURI, isValidRelayURI)
 import Nostr.Util
-import Types (EventWithRelays(..), Follow(..))
+import Types (Follow(..))
 
 
 -- | Timeline types
@@ -70,7 +73,8 @@ type TimelineKey = (PubKeyXO, Int)
 data LmdbState = LmdbState
     { lmdbLock :: MVar ()
     , lmdbEnv :: Environment ReadWrite
-    , eventDb :: Database EventId EventWithRelays
+    , eventDb :: Database EventId Event
+    , eventRelaysDb :: Database EventId (Set RelayURI)
     , profileDb :: Database PubKeyXO (Profile, Int)
     , postTimelineDb :: Database (PubKeyXO, Int) EventId
     , chatTimelineDb :: Database (PubKeyXO, Int) EventId
@@ -80,7 +84,8 @@ data LmdbState = LmdbState
     , latestTimestampDb :: Database (PubKeyXO, Kind) Int
     , commentDb :: Database EventId [EventId]
     , failedRelaysDb :: Database RelayURI Int
-    , eventCache :: LRU.LRU EventId EventWithRelays
+    , eventCache :: LRU.LRU EventId Event
+    , eventRelaysCache :: LRU.LRU EventId (Set RelayURI)
     , profileCache :: LRU.LRU PubKeyXO Profile
     , followsCache :: LRU.LRU PubKeyXO [Follow]
     , timelineCache :: LRU.LRU (TimelineType, PubKeyXO, Int) [EventId]
@@ -91,14 +96,21 @@ data LmdbState = LmdbState
     } deriving (Generic)
 
 
+-- | Result of putting an event in the database
+data PutEventResult = PutEventResult
+    { eventIsNew :: Bool           -- ^ True if the event was new
+    , relaysUpdated :: Bool        -- ^ True if relay list was updated
+    } deriving (Show, Eq)
+
 -- | LmdbStore operations
 data LmdbStore :: Effect where
     -- Event operations
-    PutEvent :: EventWithRelays -> LmdbStore m Bool
+    PutEvent :: Event -> Maybe RelayURI -> LmdbStore m PutEventResult
     RecordFailedRelay:: RelayURI -> LmdbStore m () -- Int: timestamp
 
     -- Query operations (read-only)
-    GetEvent :: EventId -> LmdbStore m (Maybe EventWithRelays)
+    GetEvent :: EventId -> LmdbStore m (Maybe Event)
+    GetEventRelays :: EventId -> LmdbStore m (Set RelayURI)
     GetFollows :: PubKeyXO -> LmdbStore m [Follow]
     GetProfile :: PubKeyXO -> LmdbStore m Profile
     GetTimelineIds :: TimelineType -> PubKeyXO -> Int -> LmdbStore m [EventId]
@@ -125,249 +137,289 @@ runLmdbStore = interpret $ \_ -> \case
         liftIO $ withTransaction (lmdbEnv st) $ \txn ->
             Map.repsert' txn (failedRelaysDb st) relayUri ts
 
-    PutEvent ev -> do
-        let author = pubKey $ event ev
-            eventKind = kind $ event ev
-            eventTimestamp = createdAt $ event ev
+    PutEvent ev relayUri -> do
+        let author = pubKey ev
+            eventKind = kind ev
+            eventTimestamp = createdAt ev
+            eventId' = eventId ev
 
         currentState <- get @LmdbState
         kp <- getKeyPair
-        wasUpdated <- withEffToIO (ConcUnlift Persistent Unlimited) $ \runE ->
+
+        -- Check if the event already exists
+        existingEvent <- getEventDirectFromDb eventId'
+
+        result <- withEffToIO (ConcUnlift Persistent Unlimited) $ \runE ->
           liftIO $ withMVar (lmdbLock currentState) $ \_ ->
           withTransaction (lmdbEnv currentState) $ \txn -> do
-            Map.repsert' txn (eventDb currentState) (eventId $ event ev) ev
+            let isNewEvent = case existingEvent of
+                  Nothing -> True
+                  Just _ -> False
 
-            case eventKind of
-                GiftWrap -> do
-                    mSealedEvent <- unwrapGiftWrap (event ev) kp
-                    case mSealedEvent of
-                        Just sealedEvent | validateEvent sealedEvent ->
-                            case kind sealedEvent of
-                                Seal -> do
-                                    mDecryptedRumor <- unwrapSeal sealedEvent kp
-                                    case mDecryptedRumor of
-                                        Just decryptedRumor
-                                            | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
-                                                let tags' = rumorTags decryptedRumor
-                                                    pListPks = getAllPubKeysFromPTags tags'
-                                                    participants = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
-                                                      then sort pListPks
-                                                      else filter (/= keyPairToPubKeyXO kp)
-                                                           (rumorPubKey decryptedRumor : sort pListPks)
+            -- Always store the event itself
+            when isNewEvent $ do
+              Map.repsert' txn (eventDb currentState) eventId' ev
 
-                                                addTimelineEntryTx txn (chatTimelineDb currentState) ev participants (rumorCreatedAt decryptedRumor)
-                                                runE $ modify @LmdbState $ \s -> s
-                                                    { timelineCache = foldr (\p cache ->
-                                                        removeAuthorTimelineEntries ChatTimeline p cache)
-                                                        (timelineCache s)
-                                                        participants
-                                                    }
+            -- Update relay list if we have a relay URI
+            relaysWereUpdated <- case relayUri of
+              Nothing -> return (False, Set.empty)
+              Just uri -> do
+                existingRelays <- Map.lookup' (readonly txn) (eventRelaysDb currentState) eventId'
+                let newRelays = Set.singleton uri
+                    combinedRelays = case existingRelays of
+                      Just existing -> Set.union existing newRelays
+                      Nothing -> newRelays
+                    hasNewRelays = case existingRelays of
+                      Just existing -> not $ existing == combinedRelays
+                      Nothing -> True
 
-                                                pure True
-                                        _ -> pure False
-                                _ -> pure False
-                        _ -> pure False
+                when hasNewRelays $ do
+                  Map.repsert' txn (eventRelaysDb currentState) eventId' combinedRelays
 
-                ShortTextNote -> do
-                    let threadRefs = [ (eid, marker)
-                                   | ("e":eidHex:rest) <- tags (event ev)
-                                   , Just eid <- [eventIdFromHex eidHex]
-                                   , let marker = case drop 1 rest of
-                                           ("root":_) -> Just Root
-                                           ("reply":_) -> Just Reply
-                                           _ -> Nothing
-                                   ]
+                -- Store combinedRelays in the function context for later use with the cache
+                return (hasNewRelays, combinedRelays)
 
-                    let isReply = not $ null threadRefs
+            let (hasNewRelays, combinedRelays) = relaysWereUpdated
 
-                    madeChanges <- if isReply
-                        then pure False
-                        else do
-                            addTimelineEntryTx txn (postTimelineDb currentState) ev [author] eventTimestamp
-                            runE $ modify @LmdbState $ \s -> s
-                                { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
-                            pure True
+            -- Process based on event kind if the event is new
+            wasProcessed <- if not isNewEvent then return False else case eventKind of
+                    GiftWrap -> do
+                        mSealedEvent <- unwrapGiftWrap ev kp
+                        case mSealedEvent of
+                            Just sealedEvent | validateEvent sealedEvent ->
+                                case kind sealedEvent of
+                                    Seal -> do
+                                        mDecryptedRumor <- unwrapSeal sealedEvent kp
+                                        case mDecryptedRumor of
+                                            Just decryptedRumor
+                                                | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
+                                                    let tags' = rumorTags decryptedRumor
+                                                        pListPks = getAllPubKeysFromPTags tags'
+                                                        participants = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
+                                                        then sort pListPks
+                                                        else filter (/= keyPairToPubKeyXO kp)
+                                                            (rumorPubKey decryptedRumor : sort pListPks)
 
-                    commentChanges <- fmap or $ forM threadRefs $ \(parentId, _) -> do
-                        existing <- Map.lookup' (readonly txn) (commentDb currentState) parentId
-                        let comments = maybe [] id existing
-                            newEventId = eventId $ event ev
-                        if newEventId `elem` comments
-                            then pure False
-                            else do
-                                Map.repsert' txn (commentDb currentState) parentId (newEventId : comments)
-                                runE $ modify @LmdbState $ \s -> s
-                                    { commentCache = fst $ LRU.delete parentId (commentCache s) }
-                                pure True
+                                                    addTimelineEntryTx txn (chatTimelineDb currentState) eventId' participants (rumorCreatedAt decryptedRumor)
+                                                    runE $ modify @LmdbState $ \s -> s
+                                                        { timelineCache = foldr (\p cache ->
+                                                            removeAuthorTimelineEntries ChatTimeline p cache)
+                                                            (timelineCache s)
+                                                            participants
+                                                        }
+                                                    return True -- Successfully processed
+                                            _ -> return False -- Failed to decrypt rumor
+                                    _ -> return False -- Not a Seal
+                            _ -> return False -- Not a valid sealed event
 
-                    pure (madeChanges || commentChanges)
-
-                Repost -> do
-                    let mEventTag = [ (eid, fromMaybe "" relay)
-                                    | ("e":eidHex:rest) <- tags (event ev)
+                    ShortTextNote -> do
+                        let threadRefs = [ (eid, marker)
+                                    | ("e":eidHex:rest) <- tags ev
                                     , Just eid <- [eventIdFromHex eidHex]
-                                    , let relay = listToMaybe rest
-                                    ]
-                        mPubkeyTag = [ pk
-                                   | ("p":pkHex:_) <- tags (event ev)
-                                   , Just pk <- [pubKeyXOFromHex pkHex] ]
-                        mOriginalEvent = eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev)
-                    case (mEventTag, mOriginalEvent) of
-                        ((_, relay):_, Right originalEvent)
-                            -- Validate it's a repost of kind 1 for kind 6
-                            | kind (event ev) == Repost && kind originalEvent == ShortTextNote
-                            -- Validate pubkey if provided
-                            && (null mPubkeyTag || head mPubkeyTag == pubKey originalEvent)
-                            && validateEvent originalEvent -> do
-                                Map.repsert' txn (eventDb currentState) (eventId originalEvent)
-                                    (EventWithRelays originalEvent (Set.singleton relay))
-                                addTimelineEntryTx txn (postTimelineDb currentState) ev [author] eventTimestamp
-                                runE $ modify @LmdbState $ \s -> s
-                                    { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
-                                pure True
-                        _ -> pure False
-
-                EventDeletion -> do
-                    let eventIdsToDelete =
-                          -- Extract event IDs from e-tags
-                          [eid | ("e":eidHex:_) <- tags (event ev)
-                               , Just eid <- [eventIdFromHex eidHex]]
-                    res <- forM eventIdsToDelete $ \eid -> do
-                        mEvent <- Map.lookup' (readonly txn) (eventDb currentState) eid
-                        case mEvent of
-                            Just deletedEv -> do
-                                let timestamp = createdAt $ event deletedEv
-                                    invertedTimestamp = maxBound - timestamp
-                                    author' = pubKey $ event deletedEv
-                                    key = (author', invertedTimestamp)
-                                    timelineDb = case kind (event deletedEv) of
-                                        ShortTextNote -> Just $ postTimelineDb currentState
-                                        Repost -> Just $ postTimelineDb currentState
-                                        GiftWrap -> Just $ chatTimelineDb currentState
-                                        _ -> Nothing
-
-                                result <- case timelineDb of
-                                    Just db -> do
-                                        Map.delete' txn db key
-                                        Map.delete' txn (eventDb currentState) eid
-                                        pure True
-                                    Nothing -> pure False
-
-                                runE $ modify @LmdbState $ \s -> s
-                                    { eventCache = fst $ LRU.delete eid (eventCache s)
-                                    , timelineCache =
-                                        removeAuthorTimelineEntries PostTimeline author $
-                                        removeAuthorTimelineEntries ChatTimeline author (timelineCache s)
-                                    }
-
-                                pure result
-
-                            Nothing -> pure False
-
-                    pure $ any id res
-
-                Metadata -> do
-                    case eitherDecode (fromStrict $ encodeUtf8 $ content $ event ev) of
-                        Right profile -> do
-                            existingProfile <- Map.lookup' (readonly txn) (profileDb currentState) author
-                            case existingProfile of
-                                Just (_, existingTs) ->
-                                    if eventTimestamp > existingTs then do
-                                        Map.repsert' txn (profileDb currentState) author (profile, eventTimestamp)
-                                        updateState
-                                        pure True
-                                    else pure False
-                                Nothing -> do
-                                    Map.repsert' txn (profileDb currentState) author (profile, eventTimestamp)
-                                    updateState
-                                    pure True
-                        Left _ -> pure False
-                    where
-                        updateState = runE $ modify @LmdbState $ \s -> s
-                            { profileCache = fst $ LRU.delete author (profileCache s) }
-
-                FollowList -> do
-                    let followList' = [ Follow pk petname
-                                    | ("p":pkHex:rest) <- tags (event ev)
-                                    , Just pk <- [pubKeyXOFromHex pkHex]
-                                    , let petname = case drop 1 rest of
-                                            (_:name:_) -> Just name  -- Skip relay URL, get petname
+                                    , let marker = case drop 1 rest of
+                                            ("root":_) -> Just Root
+                                            ("reply":_) -> Just Reply
                                             _ -> Nothing
                                     ]
-                    existingTimestamp' <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
-                    case existingTimestamp' of
-                        Just existingTs ->
-                            if eventTimestamp > existingTs then do
-                                Map.repsert' txn (followsDb currentState) author followList'
-                                updateState
-                                pure True
-                            else do
-                                pure False
-                        Nothing -> do
-                            Map.repsert' txn (followsDb currentState) author followList'
-                            updateState
-                            pure True
-                    where
-                        updateState = runE $  modify @LmdbState $ \s -> s
-                            { followsCache = fst $ LRU.delete author (followsCache s) }
 
-                PreferredDMRelays -> do
-                    let validRelayTags = [ uri
-                                       | ("relay":uri:_) <- tags (event ev)
-                                       , isValidRelayURI uri
-                                       ]
-                    case validRelayTags of
-                        [] -> pure False
-                        relays' -> do
+                        let isReply = not $ null threadRefs
+
+                        unless isReply $ do
+                            addTimelineEntryTx txn (postTimelineDb currentState) eventId' [author] eventTimestamp
+                            runE $ modify @LmdbState $ \s -> s
+                                { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
+
+                        forM_ threadRefs $ \(parentId, _) -> do
+                            existing <- Map.lookup' (readonly txn) (commentDb currentState) parentId
+                            let comments = maybe [] id existing
+                            unless (eventId' `elem` comments) $ do
+                                Map.repsert' txn (commentDb currentState) parentId (eventId' : comments)
+                                runE $ modify @LmdbState $ \s -> s
+                                    { commentCache = fst $ LRU.delete parentId (commentCache s) }
+
+                        return True
+
+                    Repost -> do
+                        let mEventTag = [ (eid, fromMaybe "" relay)
+                                        | ("e":eidHex:rest) <- tags ev
+                                        , Just eid <- [eventIdFromHex eidHex]
+                                        , let relay = listToMaybe rest
+                                        ]
+                            mPubkeyTag = [ pk
+                                    | ("p":pkHex:_) <- tags ev
+                                    , Just pk <- [pubKeyXOFromHex pkHex] ]
+                            mOriginalEvent = eitherDecode (fromStrict $ encodeUtf8 $ content ev)
+                        case (mEventTag, mOriginalEvent) of
+                            ((_, relayUri'):_, Right originalEvent)
+                                -- Validate it's a repost of kind 1 for kind 6
+                                | kind ev == Repost && kind originalEvent == ShortTextNote
+                                -- Validate pubkey if provided
+                                && (null mPubkeyTag || head mPubkeyTag == pubKey originalEvent)
+                                && validateEvent originalEvent -> do
+                                    -- Store the original event
+                                    existing <- Map.lookup' (readonly txn) (eventDb currentState) (eventId originalEvent)
+                                    when (isNothing existing) $ do
+                                        Map.repsert' txn (eventDb currentState) (eventId originalEvent) originalEvent
+
+                                    -- Add relay info for original event
+                                    existingRelays <- Map.lookup' (readonly txn) (eventRelaysDb currentState) (eventId originalEvent)
+                                    let relaySet = Set.singleton relayUri'
+                                        updatedRelays = maybe relaySet (`Set.union` relaySet) existingRelays
+                                    Map.repsert' txn (eventRelaysDb currentState) (eventId originalEvent) updatedRelays
+
+                                    -- Add to timeline
+                                    addTimelineEntryTx txn (postTimelineDb currentState) eventId' [author] eventTimestamp
+                                    runE $ modify @LmdbState $ \s -> s
+                                        { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
+
+                                    return True
+                            _ -> return False
+
+                    EventDeletion -> do
+                        let eventIdsToDelete = [eid | ("e":eidHex:_) <- tags ev, Just eid <- [eventIdFromHex eidHex]]
+                        forM_ eventIdsToDelete $ \eid -> do
+                            mEvent <- Map.lookup' (readonly txn) (eventDb currentState) eid
+                            case mEvent of
+                                Just deletedEv -> do
+                                    -- Validate that the deletion author matches the event author
+                                    if author == pubKey deletedEv then do
+                                        let timestamp = createdAt deletedEv
+                                            invertedTimestamp = maxBound - timestamp
+                                            author' = pubKey deletedEv
+                                            key = (author', invertedTimestamp)
+                                            timelineDb = case kind deletedEv of
+                                                ShortTextNote -> Just $ postTimelineDb currentState
+                                                Repost -> Just $ postTimelineDb currentState
+                                                GiftWrap -> Just $ chatTimelineDb currentState
+                                                _ -> Nothing
+
+                                        case timelineDb of
+                                            Just db -> do
+                                                Map.delete' txn db key
+                                                Map.delete' txn (eventDb currentState) eid
+                                                Map.delete' txn (eventRelaysDb currentState) eid
+                                            Nothing -> pure ()
+
+                                        runE $ modify @LmdbState $ \s -> s
+                                            { eventCache = fst $ LRU.delete eid (eventCache s)
+                                            , timelineCache =
+                                                removeAuthorTimelineEntries PostTimeline author $
+                                                removeAuthorTimelineEntries ChatTimeline author (timelineCache s)
+                                            }
+                                    else
+                                        pure ()
+
+                                Nothing -> pure ()
+                        return True
+
+                    Metadata -> do
+                        case eitherDecode (fromStrict $ encodeUtf8 $ content ev) of
+                            Right profile -> do
+                                existingProfile <- Map.lookup' (readonly txn) (profileDb currentState) author
+                                case existingProfile of
+                                    Just (_, existingTs) ->
+                                        if eventTimestamp > existingTs then do
+                                            Map.repsert' txn (profileDb currentState) author (profile, eventTimestamp)
+                                            runE $ modify @LmdbState $ \s -> s
+                                                { profileCache = fst $ LRU.delete author (profileCache s) }
+                                            return True
+                                        else
+                                            return False
+                                    Nothing -> do
+                                        Map.repsert' txn (profileDb currentState) author (profile, eventTimestamp)
+                                        runE $ modify @LmdbState $ \s -> s
+                                            { profileCache = fst $ LRU.delete author (profileCache s) }
+                                        return True
+                            Left _ -> return False
+
+                    FollowList -> do
+                        let followList' = [ Follow pk petname
+                                        | ("p":pkHex:rest) <- tags ev
+                                        , Just pk <- [pubKeyXOFromHex pkHex]
+                                        , let petname = case drop 1 rest of
+                                                (_:name:_) -> Just name  -- Skip relay URL, get petname
+                                                _ -> Nothing
+                                        ]
+                        existingTimestamp' <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
+                        case existingTimestamp' of
+                            Just existingTs ->
+                                if eventTimestamp > existingTs then do
+                                    Map.repsert' txn (followsDb currentState) author followList'
+                                    runE $ modify @LmdbState $ \s -> s
+                                        { followsCache = fst $ LRU.delete author (followsCache s) }
+                                    return True
+                                else
+                                    return False
+                            Nothing -> do
+                                Map.repsert' txn (followsDb currentState) author followList'
+                                runE $ modify @LmdbState $ \s -> s
+                                    { followsCache = fst $ LRU.delete author (followsCache s) }
+                                return True
+
+                    PreferredDMRelays -> do
+                        let validRelayTags = [ uri
+                                        | ("relay":uri:_) <- tags ev
+                                        , isValidRelayURI uri
+                                        ]
+                        if null validRelayTags
+                          then return False
+                          else do
+                            let relays' = validRelayTags
                             existingRelays <- Map.lookup' (readonly txn) (dmRelaysDb currentState) author
                             case existingRelays of
                                 Just (_, existingTs) ->
                                     if eventTimestamp > existingTs then do
                                         Map.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
-                                        updateState
-                                        pure True
-                                    else pure False
+                                        runE $ modify @LmdbState $ \s -> s
+                                            { dmRelaysCache = fst $ LRU.delete author (dmRelaysCache s) }
+                                        return True
+                                    else
+                                        return False
                                 Nothing -> do
                                     Map.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
-                                    updateState
-                                    pure True
-                    where
-                        updateState = runE $ modify @LmdbState $ \s -> s
-                            { dmRelaysCache = fst $ LRU.delete author (dmRelaysCache s) }
+                                    runE $ modify @LmdbState $ \s -> s
+                                        { dmRelaysCache = fst $ LRU.delete author (dmRelaysCache s) }
+                                    return True
 
-                RelayListMetadata -> do
-                    let validRelayTags = [ r
-                                       | ("r":uri:rest) <- tags (event ev)
-                                       , isValidRelayURI uri
-                                       , let r = case rest of
-                                                ("write":_) -> OutboxRelay uri
-                                                ("read":_) -> InboxRelay uri
-                                                _ -> InboxOutboxRelay uri
-                                       ]
-                    case validRelayTags of
-                        [] -> pure False
-                        relays -> do
+                    RelayListMetadata -> do
+                        let validRelayTags = [ r
+                                        | ("r":uri:rest) <- tags ev
+                                        , isValidRelayURI uri
+                                        , let r = case rest of
+                                                    ("write":_) -> OutboxRelay uri
+                                                    ("read":_) -> InboxRelay uri
+                                                    _ -> InboxOutboxRelay uri
+                                        ]
+                        if null validRelayTags
+                          then return False
+                          else do
+                            let relays = validRelayTags
                             existingRelays <- Map.lookup' (readonly txn) (generalRelaysDb currentState) author
                             case existingRelays of
                                 Just (_, existingTs) ->
                                     if eventTimestamp > existingTs then do
                                         Map.repsert' txn (generalRelaysDb currentState) author (relays, eventTimestamp)
-                                        updateState
-                                        pure True
-                                    else pure False
+                                        runE $ modify @LmdbState $ \s -> s
+                                            { generalRelaysCache = fst $ LRU.delete author (generalRelaysCache s) }
+                                        return True
+                                    else
+                                        return False
                                 Nothing -> do
                                     Map.repsert' txn (generalRelaysDb currentState) author (relays, eventTimestamp)
-                                    updateState
-                                    pure True
-                    where
-                        updateState = runE $ modify @LmdbState $ \s -> s
-                            { generalRelaysCache = fst $ LRU.delete author (generalRelaysCache s) }
+                                    runE $ modify @LmdbState $ \s -> s
+                                        { generalRelaysCache = fst $ LRU.delete author (generalRelaysCache s) }
+                                    return True
 
+                    _ -> return False -- By default, consider other events as not processed
 
-                _ -> pure False
+            -- Build final result
+            let result = PutEventResult
+                  { eventIsNew = isNewEvent && wasProcessed
+                  , relaysUpdated = hasNewRelays
+                  }
 
-        when wasUpdated $ do
-            liftIO $ withMVar (lmdbLock currentState) $ \_ -> withTransaction (lmdbEnv currentState) $ \txn -> do
+            -- Update latest timestamp if needed
+            when isNewEvent $ do
                 existingTimestamp <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
                 case existingTimestamp of
                     Just existingTs ->
@@ -376,25 +428,51 @@ runLmdbStore = interpret $ \_ -> \case
                     Nothing ->
                         Map.repsert' txn (latestTimestampDb currentState) (author, eventKind) eventTimestamp
 
-            modify @LmdbState $ \s -> s
-                { eventCache = fst $ LRU.delete (eventId $ event ev) (eventCache s) }
+            -- Update cache
+            when ((eventIsNew result) || (relaysUpdated result)) $
+                runE $ modify @LmdbState $ \s -> s
+                    { eventCache = LRU.insert eventId' ev (eventCache s) }
 
-        pure wasUpdated
+            when hasNewRelays $
+                runE $ modify @LmdbState $ \s -> s
+                    { eventRelaysCache = LRU.insert eventId' combinedRelays (eventRelaysCache s) }
+
+            pure result
+
+        pure result
 
     -- Query operations (read-only)
 
     GetEvent eid -> do
         st <- get @LmdbState
         case LRU.lookup eid (eventCache st) of
-            (_, Just ev) -> pure (Just ev)
+            (newCache, Just ev) -> do
+                modify @LmdbState $ \s -> s { eventCache = newCache }
+                pure (Just ev)
             (_, Nothing) -> do
                 mev <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
                     Map.lookup' (readonly txn) (eventDb st) eid
                 case mev of
                     Just ev -> do
-                        modify @LmdbState $ \s -> s { eventCache = LRU.insert eid ev $ eventCache s }
+                        -- Cache the event
+                        modify @LmdbState $ \s -> s { eventCache = LRU.insert eid ev (eventCache s) }
                         pure (Just ev)
                     Nothing -> pure Nothing
+
+    GetEventRelays eid -> do
+        st <- get @LmdbState
+        case LRU.lookup eid (eventRelaysCache st) of
+            (newCache, Just relays') -> do
+                modify @LmdbState $ \s -> s { eventRelaysCache = newCache }
+                pure relays'
+            (_, Nothing) -> do
+                -- Get relays from DB
+                relays' <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+                    Map.lookup' (readonly txn) (eventRelaysDb st) eid
+                let relaySet = fromMaybe Set.empty relays'
+                -- Update cache
+                modify @LmdbState $ \s -> s { eventRelaysCache = LRU.insert eid relaySet (eventRelaysCache s) }
+                pure relaySet
 
     GetFollows pk -> do
         st <- get @LmdbState
@@ -517,15 +595,15 @@ runLmdbStore = interpret $ \_ -> \case
 -- Helper function for timeline entries within a transaction
 addTimelineEntryTx :: Transaction 'ReadWrite
                    -> Database TimelineKey EventId
-                   -> EventWithRelays
+                   -> EventId
                    -> [PubKeyXO]
                    -> Int
                    -> IO ()
-addTimelineEntryTx txn timelineDb' ev pks timestamp = do
+addTimelineEntryTx txn timelineDb' eventId pks timestamp = do
     let invertedTimestamp = maxBound - timestamp
     withCursor txn timelineDb' $ \cursor ->
         forM_ pks $ \pk ->
-            Map.repsert cursor (pk, invertedTimestamp) (eventId $ event ev)
+            Map.repsert cursor (pk, invertedTimestamp) eventId
 
 
 -- | Default Lmdb settings for JSON-serializable types with better error handling
@@ -553,7 +631,7 @@ maxReaders :: Int
 maxReaders = 120
 
 maxDbs :: Int
-maxDbs = 10
+maxDbs = 11
 
 -- | Initialize the Lmdb environment
 initializeEnv :: FilePath -> IO (Environment ReadWrite, MVar ())
@@ -563,17 +641,15 @@ initializeEnv dbPath = do
     pure (env, lock)
 
 -- | Settings for the event database
-eventDbSettings :: DatabaseSettings EventId EventWithRelays
+eventDbSettings :: DatabaseSettings EventId Event
 eventDbSettings = makeSettings
     (SortCustom $ CustomSortSafe compare)
     (Codec.throughByteString
         (\(EventId bs) -> bs)
         (Just . EventId))
     (Codec.throughByteString
-        (\(EventWithRelays ev rs) -> toStrict $ encode (ev, Set.toList rs))
-        (\bs -> case decode (fromStrict bs) of
-            Just (ev, rsList) -> Just $ EventWithRelays ev (Set.fromList rsList)
-            Nothing -> Nothing))
+        (\ev -> toStrict $ encode ev)
+        (\bs -> decode (fromStrict bs)))
 
 
 -- | Settings for the follows database
@@ -608,14 +684,20 @@ latestTimestampDbSettings = makeSettings
             Left _ -> Nothing))
 
 
--- | Extract pubkeys from p-tags in the tags list
-getAllPubKeysFromPTags :: [Tag] -> [PubKeyXO]
-getAllPubKeysFromPTags = concatMap extractPubKey
-  where
-    extractPubKey ("p":pubkeyHex:_) = case pubKeyXOFromHex pubkeyHex of
-        Just pk -> [pk]
-        Nothing -> []
-    extractPubKey _ = []
+-- | Settings for the event relays database
+eventRelaysDbSettings :: DatabaseSettings EventId (Set RelayURI)
+eventRelaysDbSettings = makeSettings
+    (SortCustom $ CustomSortSafe compare)
+    (Codec.throughByteString
+        (\(EventId bs) -> bs)
+        (Just . EventId))
+    (Codec.throughByteString
+        (\relays -> toStrict $ encode (Set.toList relays))
+        (\bs -> case decode (fromStrict bs) of
+            Just relaysList -> Just $ Set.fromList relaysList
+            Nothing -> Nothing))
+
+
 
 -- | Initialize LMDB state
 initializeLmdbState :: FilePath -> IO LmdbState
@@ -623,6 +705,7 @@ initializeLmdbState dbPath = do
     (env, lock) <- initializeEnv dbPath
     withTransaction env $ \txn -> do
         eventDb' <- openDatabase txn (Just "events") eventDbSettings
+        eventRelaysDb' <- openDatabase txn (Just "event_relays") eventRelaysDbSettings
         followsDb' <- openDatabase txn (Just "follows") followsDbSettings
         profileDb' <- openDatabase txn (Just "profiles") defaultJsonSettings
         postTimelineDb' <- openDatabase txn (Just "post_timeline") defaultJsonSettings
@@ -637,6 +720,7 @@ initializeLmdbState dbPath = do
             { lmdbLock = lock
             , lmdbEnv = env
             , eventDb = eventDb'
+            , eventRelaysDb = eventRelaysDb'
             , profileDb = profileDb'
             , postTimelineDb = postTimelineDb'
             , chatTimelineDb = chatTimelineDb'
@@ -647,6 +731,7 @@ initializeLmdbState dbPath = do
             , commentDb = commentDb'
             , failedRelaysDb = failedRelaysDb'
             , eventCache = LRU.newLRU (Just cacheSize)
+            , eventRelaysCache = LRU.newLRU (Just cacheSize)
             , profileCache = LRU.newLRU (Just smallCacheSize)
             , followsCache = LRU.newLRU (Just smallCacheSize)
             , timelineCache = LRU.newLRU (Just cacheSize)
@@ -669,6 +754,7 @@ initialLmdbState = LmdbState
     { lmdbLock = error "LMDB not initialized"
     , lmdbEnv = error "LMDB not initialized"
     , eventDb = error "LMDB not initialized"
+    , eventRelaysDb = error "LMDB not initialized"
     , profileDb = error "LMDB not initialized"
     , postTimelineDb = error "LMDB not initialized"
     , chatTimelineDb = error "LMDB not initialized"
@@ -679,6 +765,7 @@ initialLmdbState = LmdbState
     , commentDb = error "LMDB not initialized"
     , failedRelaysDb = error "LMDB not initialized"
     , eventCache = LRU.newLRU (Just cacheSize)
+    , eventRelaysCache = LRU.newLRU (Just cacheSize)
     , profileCache = LRU.newLRU (Just smallCacheSize)
     , followsCache = LRU.newLRU (Just smallCacheSize)
     , timelineCache = LRU.newLRU (Just cacheSize)
@@ -696,3 +783,10 @@ removeAuthorTimelineEntries timelineType author cache =
     in case LRU.maxSize cache of
         Just maxSize -> LRU.fromList (Just maxSize) newEntries
         Nothing -> LRU.fromList Nothing newEntries
+
+-- | Helper to get an event directly from the database without using cache
+getEventDirectFromDb :: (IOE :> es, State LmdbState :> es) => EventId -> Eff es (Maybe Event)
+getEventDirectFromDb eid = do
+    st <- get @LmdbState
+    liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+        Map.lookup' (readonly txn) (eventDb st) eid
