@@ -29,9 +29,9 @@ import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.Util (Util, getCurrentTime, getKeyPair)
 import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..))
-import Store.Lmdb (LmdbStore, getCommentIds, getEvent, getFollows, getProfile)
+import Store.Lmdb (LmdbStore, getCommentIds, getEvent, getEventRelays, getFollows, getProfile)
 import TimeFormatter
-import Types (AppState(..), EventWithRelays(..), Follow(..), PublishStatus(..), RelayPool(..))
+import Types (AppState(..), Follow(..), PublishStatus(..), RelayPool(..))
 
 data Classes :: Effect where
     ProfileClass :: SignalKey (IO ()) -> Classes m (Class PubKeyXO)
@@ -160,9 +160,9 @@ runClasses = interpret $ \_ -> \case
               let eid = fromObjRef obj :: EventId
               eventMaybe <- runE $ getEvent eid
               case eventMaybe of
-                Just eventWithRelays -> do
-                  let e = event eventWithRelays
-                  let r = head $ Set.toList $ relays eventWithRelays
+                Just e -> do
+                  relaysSet <- runE $ getEventRelays eid
+                  let r = if Set.null relaysSet then "" else head $ Set.toList relaysSet
                   return $ eventToNevent e [r]
                 Nothing -> return "",
 
@@ -170,9 +170,8 @@ runClasses = interpret $ \_ -> \case
               let eid = fromObjRef obj :: EventId
               eventMaybe <- runE $ getEvent eid
               case eventMaybe of
-                Just eventWithRelays -> do
-                  let e = event eventWithRelays
-                      prettyConfig = defConfig {
+                Just e -> do
+                  let prettyConfig = defConfig {
                         confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
                           `mappend` compare
                       }
@@ -191,22 +190,19 @@ runClasses = interpret $ \_ -> \case
             defPropertySigRO' "relays" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
               runE $ storePostObjRef eid "relays" obj
-              eventMaybe <- runE $ getEvent eid
-              case eventMaybe of
-                Just eventWithRelays -> do
-                  return $ Set.toList $ relays eventWithRelays
-                Nothing -> return [],
+              relaysSet <- runE $ getEventRelays eid
+              return $ Set.toList relaysSet,
 
             defPropertySigRO' "postType" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
               eventMaybe <- runE $ getEvent eid
               let value = case eventMaybe of
-                    Just eventWithRelays ->
-                        pack $ case kind (event eventWithRelays) of
+                    Just e ->
+                        pack $ case kind e of
                             ShortTextNote ->
                                 if any (\t -> case t of
                                               ("q":_) -> True
-                                              _ -> False) (tags (event eventWithRelays))
+                                              _ -> False) (tags e)
                                 then "quote_repost"
                                 else "short_text_note"
                             Repost -> "repost"
@@ -219,8 +215,7 @@ runClasses = interpret $ \_ -> \case
             defPropertySigRO' "content" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
               value <- runE $ getEvent eid >>= \case
-                Just eventWithRelays -> do
-                  let ev = event eventWithRelays
+                Just ev -> do
                   case kind ev of
                     GiftWrap -> do
                       kp <- getKeyPair
@@ -235,8 +230,7 @@ runClasses = interpret $ \_ -> \case
             defPropertySigRO' "contentParts" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
               value <- runE $ getEvent eid >>= \case
-                Just eventWithRelays -> do
-                  let ev = event eventWithRelays
+                Just ev -> do
                   content' <- case kind ev of
                     GiftWrap -> do
                       kp <- getKeyPair
@@ -260,17 +254,16 @@ runClasses = interpret $ \_ -> \case
               let eid = fromObjRef obj :: EventId
               eventMaybe <- runE $ getEvent eid
               value <- case eventMaybe of
-                Just eventWithRelays -> do
+                Just e -> do
                   now <- runE getCurrentTime
-                  return $ Just $ formatDateTime English now (createdAt (event eventWithRelays))
+                  return $ Just $ formatDateTime English now (createdAt e)
                 Nothing -> return Nothing
               return value,
 
             defPropertySigRO' "authorId" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
               runE $ getEvent eid >>= \case
-                Just eventWithRelays -> do
-                  let ev = event eventWithRelays
+                Just ev -> do
                   case kind ev of
                     GiftWrap -> do
                       kp <- getKeyPair
@@ -284,7 +277,7 @@ runClasses = interpret $ \_ -> \case
               let eid = fromObjRef obj :: EventId
               eventMaybe <- runE $ getEvent eid
               case eventMaybe of
-                Just eventWithRelays -> runE $ getRootReference (event eventWithRelays) >>= \case
+                Just e -> runE $ getRootReference e >>= \case
                   Just refId -> return $ Just $ eventIdToNote refId
                   Nothing -> return Nothing
                 Nothing -> return Nothing,
@@ -293,9 +286,9 @@ runClasses = interpret $ \_ -> \case
               let eid = fromObjRef obj :: EventId
               eventMaybe <- runE $ getEvent eid
               case eventMaybe of
-                Just eventWithRelays -> do
-                  parentId <- runE $ getParentReference (event eventWithRelays)
-                  rootId <- runE $ getRootReference (event eventWithRelays)
+                Just e -> do
+                  parentId <- runE $ getParentReference e
+                  rootId <- runE $ getRootReference e
                   case (parentId, rootId) of
                     (Just p, Just r) | p /= r -> return $ Just $ eventIdToNote p
                     _ -> return Nothing
@@ -305,8 +298,8 @@ runClasses = interpret $ \_ -> \case
               let eid = fromObjRef obj :: EventId
               eventMaybe <- runE $ getEvent eid
               case eventMaybe of
-                Just eventWithRelays | kind (event eventWithRelays) == Repost -> do
-                  let tags' = tags (event eventWithRelays)
+                Just e | kind e == Repost -> do
+                  let tags' = tags e
                       repostedId = listToMaybe [eidStr | ("e":eidStr:_) <- tags']
                   return repostedId
                 _ -> return Nothing,

@@ -59,7 +59,6 @@ data PropertyMap = PropertyMap
 -- | UI updates
 data UIUpdates = UIUpdates
   { profilesChanged :: Bool
-  , followsChanged :: Bool
   , myFollowsChanged :: Bool
   , postsChanged :: Bool
   , privateMessagesChanged :: Bool
@@ -75,7 +74,6 @@ data UIUpdates = UIUpdates
 instance Semigroup UIUpdates where
   a <> b = UIUpdates
     { profilesChanged = profilesChanged a || profilesChanged b
-    , followsChanged = followsChanged a || followsChanged b
     , myFollowsChanged = myFollowsChanged a || myFollowsChanged b
     , postsChanged = postsChanged a || postsChanged b
     , privateMessagesChanged = privateMessagesChanged a || privateMessagesChanged b
@@ -94,7 +92,7 @@ instance Monoid UIUpdates where
 
 -- | Empty UI updates.
 emptyUpdates :: UIUpdates
-emptyUpdates = UIUpdates False False False False False False False False False False False
+emptyUpdates = UIUpdates False False False False False False False False False False
 
 
 -- | Initial effectful QML state.
@@ -113,6 +111,8 @@ data QtQuick :: Effect where
   CreateSignalKey :: QtQuick m (QML.SignalKey (IO ()))
   FireSignal :: QML.ObjRef () -> QtQuick m ()
   -- object specific signals
+  SignalPost :: QML.ObjRef EventId -> QtQuick m ()
+  SignalProfile :: QML.ObjRef PubKeyXO -> QtQuick m ()
   Notify :: UIUpdates -> QtQuick m ()
   NotifyRelayStatus :: QtQuick m ()
 
@@ -173,13 +173,23 @@ runQtQuick = interpret $ \_ -> \case
 
     CreateSignalKey -> liftIO $ QML.newSignalKey
 
-    FireSignal obj -> do
+    FireSignal objRef -> do
         st <- get
         case signalKey st of
-          Just key -> do
-            logDebug "fire signal"
-            liftIO $ QML.fireSignal key obj
-          Nothing -> logError "No signal key available"
+            Just key -> liftIO $ QML.fireSignal key objRef
+            Nothing -> logError "No signal key available"
+
+    SignalPost objRef -> do
+        st <- get
+        case signalKey st of
+            Just key -> liftIO $ QML.fireSignal key objRef
+            Nothing -> logError "No signal key available"
+
+    SignalProfile objRef -> do
+        st <- get
+        case signalKey st of
+            Just key -> liftIO $ QML.fireSignal key objRef
+            Nothing -> logError "No signal key available"
 
     NotifyRelayStatus -> do
         st <- get
