@@ -2,11 +2,12 @@
 
 module Nostr.EventHandler where
 
-import Control.Monad (forM_,when)
+import Control.Monad (forM, when)
 import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy (fromStrict)
 import Data.List (sort)
 import Data.Map qualified as Map
+import Data.Maybe (catMaybes)
 import Data.Text (pack, unpack)
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
@@ -96,15 +97,17 @@ runEventHandler = interpret $ \_ -> \case
 
                 PutEventResult{eventIsNew, relaysUpdated} <- putEvent eventInput mr
 
-                when relaysUpdated $ do
+                relayObjRefs <- if relaysUpdated then do
                     pmap <- gets @QtQuickState propertyMap
-                    let maybeRef = Map.lookup (eventId event') (postObjRefs pmap) >>= Map.lookup "relays"
-                    forM_ maybeRef $ \weakRef -> do
-                        objRef <- liftIO $ QML.fromWeakObjRef weakRef
-                        signalPost objRef
+                    case Map.lookup (eventId event') (postObjRefs pmap) >>= Map.lookup "relays" of
+                        Just weakRef -> do
+                            objRef <- liftIO $ QML.fromWeakObjRef weakRef
+                            pure [objRef]
+                        Nothing -> pure []
+                else pure []
 
                 if not eventIsNew then
-                    pure emptyUpdates
+                    pure emptyUpdates { postObjectsToSignal = relayObjRefs }
                 else case eventInput of
                     DecryptedGiftWrapEvent _ decrypted -> do
                         st <- get @AppState
@@ -126,18 +129,21 @@ runEventHandler = interpret $ \_ -> \case
                                                 ]
 
                                 pmap <- gets @QtQuickState propertyMap
-                                forM_ parentIds $ \parentId -> do
-                                    let maybeRef = Map.lookup parentId (postObjRefs pmap) >>= Map.lookup "comments"
-                                    forM_ maybeRef $ \weakRef -> do
-                                        objRef <- liftIO $ QML.fromWeakObjRef weakRef
-                                        signalPost objRef
+                                commentObjRefs <- do
+                                    refs <- forM parentIds $ \parentId -> do
+                                        case Map.lookup parentId (postObjRefs pmap) >>= Map.lookup "comments" of
+                                            Just weakRef -> do
+                                                objRef <- liftIO $ QML.fromWeakObjRef weakRef
+                                                pure $ Just objRef
+                                            Nothing -> pure Nothing
+                                    pure $ catMaybes refs
 
-                                pure $ emptyUpdates
+                                pure $ emptyUpdates { postObjectsToSignal = commentObjRefs }
                             else do
                                 st <- get @AppState
                                 case currentProfile st of
                                     Just (pk, _) -> do
-                                        if pk == pubKey ev then do
+                                        if pk == pubKey ev then
                                             pure $ emptyUpdates { postsChanged = True }
                                         else
                                             pure $ emptyUpdates
@@ -190,12 +196,13 @@ runEventHandler = interpret $ \_ -> \case
 
                                     -- signal profile object changes
                                     pmap <- gets @QtQuickState propertyMap
-                                    let profileWeakRefs = concatMap Map.elems $ Map.lookup (pubKey ev) $ profileObjRefs pmap
-                                    forM_ profileWeakRefs $ \weakRef -> do
-                                        objRef <- liftIO $ QML.fromWeakObjRef weakRef
-                                        signalProfile objRef
+                                    profileObjRefs <- do
+                                        let profileWeakRefs = concatMap Map.elems $ Map.lookup (pubKey ev) $ profileObjRefs pmap
+                                        refs <- forM profileWeakRefs $ \weakRef ->
+                                            liftIO $ QML.fromWeakObjRef weakRef
+                                        pure refs
 
-                                    pure $ emptyUpdates
+                                    pure $ emptyUpdates { profileObjectsToSignal = profileObjRefs }
                                 Left err -> do
                                     logWarning $ "Failed to decode metadata: " <> pack err
                                     pure emptyUpdates
@@ -247,12 +254,10 @@ runEventHandler = interpret $ \_ -> \case
                             pure $ emptyUpdates
 
         when (myFollowsChanged updates || dmRelaysChanged updates || generalRelaysChanged updates) $ do
-            -- notify the inbox model to update the subscriptions
-            -- @TODO
             q <- gets @RelayPool updateQueue
             atomically $ writeTQueue q ()
 
         --logDebug $ "Event: " <> pack (show event')
         --logDebug $ "Notifying updates: " <> pack (show updates)
-        when (updates /= emptyUpdates) $ do
+        when (hasUpdates updates) $ do
             notify updates
