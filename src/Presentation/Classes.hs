@@ -27,9 +27,10 @@ import Nostr.Bech32
 import Nostr.Event (Event(..), EventId(..), Kind(..), Rumor(..), eventIdFromHex)
 import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
+import Nostr.ProfileManager (ProfileManager, getProfile)
 import Nostr.Util (Util, getCurrentTime, getKeyPair)
 import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..))
-import Store.Lmdb (LmdbStore, getCommentIds, getEvent, getEventRelays, getFollows, getProfile)
+import Store.Lmdb (LmdbStore, getCommentIds, getEvent, getEventRelays, getFollows)
 import TimeFormatter
 import Types (AppState(..), Follow(..), PublishStatus(..), RelayPool(..))
 
@@ -50,6 +51,7 @@ type ClassesEff es =
   , State QtQuickState :> es
   , State RelayPool :> es
   , State AppState :> es
+  , ProfileManager :> es
   , LmdbStore :> es
   , Concurrent :> es
   , Nostr :> es
@@ -79,37 +81,37 @@ runClasses = interpret $ \_ -> \case
             defPropertySigRO' "name" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
                 runE $ storeProfileObjRef pk "name" obj
-                profile <- runE $ getProfile pk
+                (profile, _) <- runE $ getProfile pk
                 return $ name profile,
 
             defPropertySigRO' "displayName" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
                 runE $ storeProfileObjRef pk "displayName" obj
-                profile <- runE $ getProfile pk
+                (profile, _) <- runE $ getProfile pk
                 return $ displayName profile,
 
             defPropertySigRO' "about" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
                 runE $ storeProfileObjRef pk "about" obj
-                profile <- runE $ getProfile pk
+                (profile, _) <- runE $ getProfile pk
                 return $ about profile,
 
             defPropertySigRO' "picture" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
                 runE $ storeProfileObjRef pk "picture" obj
-                profile <- runE $ getProfile pk
+                (profile, _) <- runE $ getProfile pk
                 return $ picture profile,
 
             defPropertySigRO' "nip05" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
                 runE $ storeProfileObjRef pk "nip05" obj
-                profile <- runE $ getProfile pk
+                (profile, _) <- runE $ getProfile pk
                 return $ nip05 profile,
 
             defPropertySigRO' "banner" changeKey' $ \obj -> do
                 let pk = fromObjRef obj :: PubKeyXO
                 runE $ storeProfileObjRef pk "banner" obj
-                profile <- runE $ getProfile pk
+                (profile, _) <- runE $ getProfile pk
                 return $ banner profile,
 
             defPropertySigRO' "isFollow" changeKey' $ \obj -> do
@@ -355,17 +357,17 @@ runClasses = interpret $ \_ -> \case
             followProp "displayName" $ \obj -> maybe (return "") (\follow -> do
                 let pk = pubkey follow
                 runE $ storeProfileObjRef pk "displayName" obj
-                profile <- runE $ getProfile pk
+                (profile, _) <- runE $ getProfile pk
                 return $ fromMaybe "" (displayName profile)),
             followProp "name" $ \obj -> maybe (return "") (\follow -> do
                 let pk = pubkey follow
                 runE $ storeProfileObjRef pk "name" obj
-                profile <- runE $ getProfile pk
+                (profile, _) <- runE $ getProfile pk
                 return $ fromMaybe "" (name profile)),
             followProp "picture" $ \obj -> maybe (return "") (\follow -> do
                 let pk = pubkey follow
                 runE $ storeProfileObjRef pk "picture" obj
-                profile <- runE $ getProfile pk
+                (profile, _) <- runE $ getProfile pk
                 return $ fromMaybe "" (picture profile))
           ]
 
@@ -417,7 +419,7 @@ storePostObjRef evId propName obj = withEffToIO (ConcUnlift Persistent Unlimited
 
 
 -- | Parse content into parts (text, images, URLs, and nostr references)
-parseContentParts :: (LmdbStore :> es) => Text -> Eff es [[Text]]
+parseContentParts :: (LmdbStore :> es, ProfileManager :> es) => Text -> Eff es [[Text]]
 parseContentParts contentText
     | Text.null contentText = pure []
     | otherwise = do
@@ -503,7 +505,7 @@ parseContentParts contentText
         | otherwise = x : mergeOverlappingMatches (y:rest)
 
     -- Effectful version of processContentWithMatches that can use GetProfile
-    processContentWithMatchesM :: (LmdbStore :> es) => Text -> Int -> [(Int, Int, Text)] -> Eff es [[Text]]
+    processContentWithMatchesM :: (LmdbStore :> es, ProfileManager :> es) => Text -> Int -> [(Int, Int, Text)] -> Eff es [[Text]]
     processContentWithMatchesM text currentPos [] = do
         let remaining = Text.drop currentPos text
         pure $ if Text.null remaining
@@ -528,7 +530,7 @@ parseContentParts contentText
             "embed-npub" -> do
                 case bech32ToPubKeyXO processedMatchText of
                     Just profilePubKey -> do
-                        profile <- getProfile profilePubKey
+                        (profile, _) <- getProfile profilePubKey
                         let profileDisplayName = fromMaybe (Text.take 8 processedMatchText <> "...") $
                                               getDisplayName profile
                             html = "<a href=\"profile://" <> processedMatchText <>
@@ -540,7 +542,7 @@ parseContentParts contentText
             "embed-nprofile" -> do
                 case nprofileToPubKeyXO processedMatchText of
                     Just (profilePubKey, _) -> do
-                        profile <- getProfile profilePubKey
+                        (profile, _) <- getProfile profilePubKey
                         let profileDisplayName = fromMaybe (Text.take 8 processedMatchText <> "...") $
                                               getDisplayName profile
                             html = "<a href=\"profile://" <> processedMatchText <>

@@ -43,7 +43,6 @@ data Nip05Response = Nip05Response
   } deriving (Show)
 
 
-
 -- | 'ToJSON' instance for 'Profile'.
 instance ToJSON Profile where
   toEncoding (Profile n dn abt pic nip bnr) = pairs $

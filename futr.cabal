@@ -42,6 +42,7 @@ executable futr
         Nostr.InboxModel
         Nostr.Keys
         Nostr.Profile
+        Nostr.ProfileManager
         Nostr.Publisher
         Nostr.Relay
         Nostr.RelayConnection

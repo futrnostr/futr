@@ -38,12 +38,13 @@ import Nostr.Event (Event(..), EventId(..), createMetadata)
 import Nostr.Publisher
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
+import Nostr.ProfileManager (fetchProfile, getProfile)
 import Nostr.Util
 import Presentation.Classes
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb (LmdbStore, TimelineType(..), getEvent, getFollows, getProfile, getTimelineIds)
+import Store.Lmdb (LmdbStore, TimelineType(..), getEvent, getFollows, getTimelineIds)
 import Types
 
 
@@ -122,7 +123,7 @@ runHomeScreen = interpret $ \_ -> \case
           st <- runE $ get @AppState
           case keyPair st of
             Just kp -> do
-              profile <- runE $ getProfile $ keyPairToPubKeyXO kp
+              (profile, _) <- runE $ getProfile $ keyPairToPubKeyXO kp
               return $ fromMaybe "" $ picture profile
             Nothing -> return "",
 
@@ -247,9 +248,9 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "getProfile" $ \_ input -> do
           result <- case parseNprofileOrNpub input of
-            Just (pk, _) -> do
+            Just (pk, relayHints) -> do
+              _ <- runE $ fetchProfile pk relayHints  -- this will return profile and handle fetch if needed
               profileObj <- getPoolObject profilesPool pk
-              --profileObj <- newObject profileClass' pk
               return $ Just profileObj
             _ -> return Nothing
           return result,
