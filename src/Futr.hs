@@ -9,7 +9,7 @@ import Control.Monad (forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
 import Data.Text (Text, isPrefixOf, pack, unpack)
@@ -49,10 +49,12 @@ import Nostr.InboxModel ( InboxModel, awaitAtLeastOneConnected, startInboxModel
                         , stopInboxModel, subscribeToProfilesAndPostsFor
                         , subscribeToCommentsFor, unsubscribeToCommentsFor )
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, pubKeyXOToHex, secKeyToKeyPair)
+import Nostr.ProfileManager (ProfileManager)
 import Nostr.Publisher
 import Nostr.Relay (RelayURI, getUri, isInboxCapable, isValidRelayURI)
 import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Subscription
+import Nostr.SubscriptionHandler (SubscriptionHandler)
 import Nostr.Util
 import Presentation.Classes (Classes)
 import Presentation.KeyMgmtUI (KeyMgmtUI)
@@ -78,14 +80,14 @@ instance SignalKeyClass DownloadCompleted where
 
 -- | Search result.
 data SearchResult
-  = ProfileResult { npub :: Text, relayUri :: Maybe Text }
+  = ProfileResult { npub :: Text, relayUris :: [Text] }
   | NoResult
   deriving (Eq, Generic, Show)
 
 instance ToJSON SearchResult where
-  toEncoding (ProfileResult npub' relayUri') = pairs
+  toEncoding (ProfileResult npub' relayUris') = pairs
      ( "npub"  .= npub'
-    <> "relayUri" .= relayUri'
+    <> "relayUris" .= relayUris'
      )
   toEncoding NoResult = pairs ( "result" .= ("no_result" :: Text) )
 
@@ -124,10 +126,12 @@ type FutrEff es =
   , KeyMgmtUI :> es
   , RelayMgmtUI :> es
   , Nostr :> es
+  , ProfileManager :> es
   , InboxModel :> es
   , RelayConnection :> es
   , RelayMgmt :> es
   , Subscription :> es
+  , SubscriptionHandler :> es
   , Publisher :> es
   , State KeyMgmtState :> es
   , State RelayPool :> es
@@ -176,15 +180,15 @@ runFutr = interpret $ \_ -> \case
       then return NoResult
       else case parseNprofileOrNpub input of
         Nothing -> return NoResult
-        Just (pubkey', maybeRelay)
-          | Just pubkey' == myPubKey -> return $ ProfileResult (pubKeyXOToBech32 pubkey') maybeRelay
+        Just (pubkey', relayUris)
+          | Just pubkey' == myPubKey -> return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
           | otherwise -> do
               currentFollows <- maybe [] id <$> traverse getFollows myPubKey
               if any (\f -> pubkey f == pubkey') currentFollows
-                then return $ ProfileResult (pubKeyXOToBech32 pubkey') maybeRelay
+                then return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
                 else do
-                  searchInRelays pubkey' maybeRelay
-                  return $ ProfileResult (pubKeyXOToBech32 pubkey') maybeRelay
+                  searchInRelays pubkey' relayUris
+                  return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
 
   SetCurrentPost eid -> do
     previousPost <- gets @AppState currentPost
@@ -427,13 +431,11 @@ runFutr = interpret $ \_ -> \case
 
 
 -- Helper function to parse nprofile or npub
-parseNprofileOrNpub :: Text -> Maybe (PubKeyXO, Maybe RelayURI)
+parseNprofileOrNpub :: Text -> Maybe (PubKeyXO, [RelayURI])
 parseNprofileOrNpub input =
   case bech32ToPubKeyXO input of
-    Just pubkey' -> Just (pubkey', Nothing)  -- for npub
-    Nothing -> case nprofileToPubKeyXO input of
-      Just (pubkey', relays') -> Just (pubkey', listToMaybe relays')  -- for nprofile
-      Nothing -> Nothing
+    Just pubkey' -> Just (pubkey', [])  -- for npub
+    Nothing -> nprofileToPubKeyXO input  -- for nprofile
 
 
 -- | Login with an account.
@@ -476,24 +478,24 @@ sendFollowListEvent follows = do
 
 
 -- | Search for a profile in relays.
-searchInRelays :: FutrEff es => PubKeyXO -> Maybe RelayURI -> Eff es ()
-searchInRelays xo mr = do
-    manuallyConnected <- case mr of
-        Just relayUri -> do
+searchInRelays :: FutrEff es => PubKeyXO -> [RelayURI] -> Eff es ()
+searchInRelays xo relayUris = do
+    manuallyConnected <- case relayUris of
+        [relayUri] -> do
             conns <- gets @RelayPool activeConnections
             if Map.member relayUri conns
                 then return False
                 else do
                     void $ connect relayUri
                     return True
-        Nothing -> return False
+        _ -> return False
 
     relays <- getGeneralRelays xo
     conns <- gets @RelayPool activeConnections
 
-    let searchRelays = case mr of
-            Just uri -> uri : map getUri relays
-            Nothing -> map getUri relays
+    let searchRelays = case relayUris of
+            [relayUri] -> [relayUri]
+            _ -> map getUri relays
 
     forM_ searchRelays $ \relayUri' -> do
         when (Map.member relayUri' conns) $ do
@@ -516,12 +518,12 @@ searchInRelays xo mr = do
 
                                 SubscriptionEose _ -> do
                                   stopSubscription subId'
-                                  when (manuallyConnected && Just relayUri' == mr) $ do
+                                  when (manuallyConnected && relayUri' `elem` relayUris) $ do
                                     disconnect relayUri'
 
                                 SubscriptionClosed _ -> do
                                   atomically $ writeTVar shouldStopVar True
-                                  when (manuallyConnected && Just relayUri' == mr) $ do
+                                  when (manuallyConnected && relayUri' `elem` relayUris) $ do
                                     disconnect relayUri'
 
                         shouldStop <- atomically $ readTVar shouldStopVar

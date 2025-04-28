@@ -87,7 +87,7 @@ data LmdbState = LmdbState
     , failedRelaysDb :: Database RelayURI Int
     , eventCache :: LRU.LRU EventId Event
     , eventRelaysCache :: LRU.LRU EventId (Set RelayURI)
-    , profileCache :: LRU.LRU PubKeyXO Profile
+    , profileCache :: LRU.LRU PubKeyXO (Profile, Int)
     , followsCache :: LRU.LRU PubKeyXO [Follow]
     , timelineCache :: LRU.LRU (TimelineType, PubKeyXO, Int) [EventId]
     , generalRelaysCache :: LRU.LRU PubKeyXO ([Relay], Int)
@@ -127,7 +127,7 @@ data LmdbStore :: Effect where
     GetEvent :: EventId -> LmdbStore m (Maybe Event)
     GetEventRelays :: EventId -> LmdbStore m (Set RelayURI)
     GetFollows :: PubKeyXO -> LmdbStore m [Follow]
-    GetProfile :: PubKeyXO -> LmdbStore m Profile
+    GetProfile :: PubKeyXO -> LmdbStore m (Profile, Int)
     GetTimelineIds :: TimelineType -> PubKeyXO -> Int -> LmdbStore m [EventId]
     GetGeneralRelays :: PubKeyXO -> LmdbStore m [Relay]
     GetDMRelays :: PubKeyXO -> LmdbStore m [RelayURI]
@@ -494,13 +494,13 @@ runLmdbStore = interpret $ \_ -> \case
     GetProfile pk -> do
         st <- get @LmdbState
         case LRU.lookup pk (profileCache st) of
-            (_, Just profile) -> pure profile
+            (_, Just (profile, timestamp)) -> pure (profile, timestamp)
             (_, Nothing) -> do
                 mp <- liftIO $ withTransaction (lmdbEnv st) $ \txn -> do
                     Map.lookup' (readonly txn) (profileDb st) pk
-                let (profile, _) = maybe (emptyProfile, 0) id mp
-                modify @LmdbState $ \s -> s { profileCache = LRU.insert pk profile $ profileCache s }
-                pure profile
+                let (profile, timestamp) = maybe (emptyProfile, 0) id mp
+                modify @LmdbState $ \s -> s { profileCache = LRU.insert pk (profile, timestamp) $ profileCache s }
+                pure (profile, timestamp)
 
     GetTimelineIds timelineType author limit -> do
         st <- get @LmdbState

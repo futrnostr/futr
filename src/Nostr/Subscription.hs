@@ -142,6 +142,15 @@ profilesFilter pks = emptyFilter
     }
 
 
+-- | Creates a filter for fetching metadata.
+metadataFilter :: [PubKeyXO] -> Filter
+metadataFilter pks = emptyFilter
+    { authors = Just pks
+    , kinds = Just [Metadata]
+    , limit = Just $ 50 * length pks
+    }
+
+
 -- | Creates a filter for fetching a user's public posts and interactions.
 --
 -- This filter targets three event kinds:
@@ -158,10 +167,6 @@ userPostsFilter pks s ml = emptyFilter
         Nothing -> Just $ 500 * length pks
     }
 
-
--- | Creates a filter for metadata.
-metadataFilter :: [PubKeyXO] -> Filter
-metadataFilter pks = emptyFilter { authors = Just pks, kinds = Just [Metadata] }
 
 -- | Creates a filter for short text notes.
 shortTextNoteFilter :: [PubKeyXO] -> Filter

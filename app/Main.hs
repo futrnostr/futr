@@ -14,6 +14,7 @@ import Logging (runLoggingStdout)
 import Nostr
 import Nostr.EventHandler (runEventHandler)
 import Nostr.InboxModel (runInboxModel)
+import Nostr.ProfileManager (ProfileManagerState, initialProfileManagerState, runProfileManager)
 import Nostr.Publisher (runPublisher)
 import Nostr.RelayConnection (runRelayConnection)
 import Nostr.Subscription (runSubscription)
@@ -55,6 +56,7 @@ main = do
         . runSubscription
         . runSubscriptionHandler
         . runInboxModel
+        . runProfileManager
         -- presentation related
         . runKeyMgmtUI
         . runRelayMgmtUI
@@ -89,10 +91,12 @@ withInitialState
            : State KeyMgmtState
            : State AppState
            : State LmdbState
+           : State ProfileManagerState
            : es) a
     -> Eff es a
 withInitialState
-    = evalState initialLmdbState
+    = evalState initialProfileManagerState
+    . evalState initialLmdbState
     . evalState initialState
     . evalState initialKeyMgmtState
     . evalState initialRelayPool
