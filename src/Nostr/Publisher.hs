@@ -68,7 +68,6 @@ runPublisher
 runPublisher =  interpret $ \_ -> \case
     Broadcast event' -> do
         handleEvent Nothing event'
-        --void $ putEvent $ EventWithRelays event' Set.empty
 
         kp <- getKeyPair
         let xo = keyPairToPubKeyXO kp
@@ -107,7 +106,6 @@ runPublisher =  interpret $ \_ -> \case
 
     PublishToOutbox event' -> do
         handleEvent Nothing event'
-        --void $ putEvent $ EventWithRelays event' Set.empty
 
         kp <- getKeyPair
         let pk = keyPairToPubKeyXO kp
@@ -120,7 +118,6 @@ runPublisher =  interpret $ \_ -> \case
         forM_ outboxCapableURIs $ \r -> writeToChannel event' r
 
     PublishToRelay event' relayUri' -> do
-        --void $ putEvent $ EventWithRelays event' $ Set.empty
         handleEvent Nothing event'
         updateEventRelayStatus (eventId event') relayUri' Publishing
         writeToChannel event' relayUri'
