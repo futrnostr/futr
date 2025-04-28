@@ -12,7 +12,9 @@ module Store.Lmdb
     ( LmdbStore(..)
     , LmdbState(..)
     , TimelineType(..)
+    , PutEventInput(..)
     , PutEventResult(..)
+    , DecryptedGiftWrapData(..)
     , initialLmdbState
     , initializeLmdbState
     , runLmdbStore
@@ -35,7 +37,6 @@ import Control.Monad (forM, forM_, when, unless)
 import Data.Aeson (ToJSON, FromJSON, encode, decode, eitherDecode)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Cache.LRU qualified as LRU
-import Data.List (sort)
 import Data.Maybe (catMaybes, fromMaybe, isNothing, listToMaybe)
 import Data.Set qualified as Set
 import Data.Set (Set)
@@ -53,9 +54,9 @@ import Pipes.Prelude qualified as Pipes
 import Pipes ((>->))
 
 import Logging
-import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..), Rumor(..)
-                   , eventIdFromHex, getAllPubKeysFromPTags, validateEvent, unwrapGiftWrap, unwrapSeal )
-import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, pubKeyXOFromHex)
+import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..)
+                   , eventIdFromHex, validateEvent )
+import Nostr.Keys (PubKeyXO, pubKeyXOFromHex)
 import Nostr.Profile (Profile, emptyProfile)
 import Nostr.Relay (Relay(..), RelayURI, isValidRelayURI)
 import Nostr.Util
@@ -96,16 +97,30 @@ data LmdbState = LmdbState
     } deriving (Generic)
 
 
+-- | Decrypted gift wrap event
+data DecryptedGiftWrapData = DecryptedGiftWrapData
+    { participants :: [PubKeyXO]
+    , rumorTimestamp :: Int
+    }
+
+
+-- | Input for putting an event in the database
+data PutEventInput
+    = RawEvent Event
+    | DecryptedGiftWrapEvent Event DecryptedGiftWrapData
+
+
 -- | Result of putting an event in the database
 data PutEventResult = PutEventResult
     { eventIsNew :: Bool           -- ^ True if the event was new
     , relaysUpdated :: Bool        -- ^ True if relay list was updated
     } deriving (Show, Eq)
 
+
 -- | LmdbStore operations
 data LmdbStore :: Effect where
     -- Event operations
-    PutEvent :: Event -> Maybe RelayURI -> LmdbStore m PutEventResult
+    PutEvent :: PutEventInput -> Maybe RelayURI -> LmdbStore m PutEventResult
     RecordFailedRelay:: RelayURI -> LmdbStore m () -- Int: timestamp
 
     -- Query operations (read-only)
@@ -137,14 +152,17 @@ runLmdbStore = interpret $ \_ -> \case
         liftIO $ withTransaction (lmdbEnv st) $ \txn ->
             Map.repsert' txn (failedRelaysDb st) relayUri ts
 
-    PutEvent ev relayUri -> do
-        let author = pubKey ev
-            eventKind = kind ev
-            eventTimestamp = createdAt ev
-            eventId' = eventId ev
+    PutEvent eventInput mr -> do
+        let (event', mDecrypted) = case eventInput of
+                RawEvent ev -> (ev, Nothing)
+                DecryptedGiftWrapEvent ev dec -> (ev, Just dec)
+
+        let author = pubKey event'
+            eventKind = kind event'
+            eventTimestamp = createdAt event'
+            eventId' = eventId event'
 
         currentState <- get @LmdbState
-        kp <- getKeyPair
 
         -- Check if the event already exists
         existingEvent <- getEventDirectFromDb eventId'
@@ -158,10 +176,10 @@ runLmdbStore = interpret $ \_ -> \case
 
             -- Always store the event itself
             when isNewEvent $ do
-              Map.repsert' txn (eventDb currentState) eventId' ev
+              Map.repsert' txn (eventDb currentState) eventId' event'
 
             -- Update relay list if we have a relay URI
-            relaysWereUpdated <- case relayUri of
+            relaysWereUpdated <- case mr of
               Nothing -> return (False, Set.empty)
               Just uri -> do
                 existingRelays <- Map.lookup' (readonly txn) (eventRelaysDb currentState) eventId'
@@ -183,38 +201,24 @@ runLmdbStore = interpret $ \_ -> \case
 
             -- Process based on event kind if the event is new
             wasProcessed <- if not isNewEvent then return False else case eventKind of
-                    GiftWrap -> do
-                        mSealedEvent <- unwrapGiftWrap ev kp
-                        case mSealedEvent of
-                            Just sealedEvent | validateEvent sealedEvent ->
-                                case kind sealedEvent of
-                                    Seal -> do
-                                        mDecryptedRumor <- unwrapSeal sealedEvent kp
-                                        case mDecryptedRumor of
-                                            Just decryptedRumor
-                                                | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
-                                                    let tags' = rumorTags decryptedRumor
-                                                        pListPks = getAllPubKeysFromPTags tags'
-                                                        participants = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
-                                                        then sort pListPks
-                                                        else filter (/= keyPairToPubKeyXO kp)
-                                                            (rumorPubKey decryptedRumor : sort pListPks)
-
-                                                    addTimelineEntryTx txn (chatTimelineDb currentState) eventId' participants (rumorCreatedAt decryptedRumor)
-                                                    runE $ modify @LmdbState $ \s -> s
-                                                        { timelineCache = foldr (\p cache ->
-                                                            removeAuthorTimelineEntries ChatTimeline p cache)
-                                                            (timelineCache s)
-                                                            participants
-                                                        }
-                                                    return True -- Successfully processed
-                                            _ -> return False -- Failed to decrypt rumor
-                                    _ -> return False -- Not a Seal
-                            _ -> return False -- Not a valid sealed event
+                    GiftWrap -> case mDecrypted of
+                        Just decrypted -> do
+                            addTimelineEntryTx txn (chatTimelineDb currentState)
+                                eventId'
+                                (participants decrypted)
+                                (rumorTimestamp decrypted)
+                            runE $ modify @LmdbState $ \s -> s
+                                { timelineCache = foldr (\p cache ->
+                                    removeAuthorTimelineEntries ChatTimeline p cache)
+                                    (timelineCache s)
+                                    (participants decrypted)
+                                }
+                            return True
+                        Nothing -> return False
 
                     ShortTextNote -> do
                         let threadRefs = [ (eid, marker)
-                                    | ("e":eidHex:rest) <- tags ev
+                                    | ("e":eidHex:rest) <- tags event'
                                     , Just eid <- [eventIdFromHex eidHex]
                                     , let marker = case drop 1 rest of
                                             ("root":_) -> Just Root
@@ -241,18 +245,18 @@ runLmdbStore = interpret $ \_ -> \case
 
                     Repost -> do
                         let mEventTag = [ (eid, fromMaybe "" relay)
-                                        | ("e":eidHex:rest) <- tags ev
+                                        | ("e":eidHex:rest) <- tags event'
                                         , Just eid <- [eventIdFromHex eidHex]
                                         , let relay = listToMaybe rest
                                         ]
                             mPubkeyTag = [ pk
-                                    | ("p":pkHex:_) <- tags ev
+                                    | ("p":pkHex:_) <- tags event'
                                     , Just pk <- [pubKeyXOFromHex pkHex] ]
-                            mOriginalEvent = eitherDecode (fromStrict $ encodeUtf8 $ content ev)
+                            mOriginalEvent = eitherDecode (fromStrict $ encodeUtf8 $ content event')
                         case (mEventTag, mOriginalEvent) of
                             ((_, relayUri'):_, Right originalEvent)
                                 -- Validate it's a repost of kind 1 for kind 6
-                                | kind ev == Repost && kind originalEvent == ShortTextNote
+                                | kind event' == Repost && kind originalEvent == ShortTextNote
                                 -- Validate pubkey if provided
                                 && (null mPubkeyTag || head mPubkeyTag == pubKey originalEvent)
                                 && validateEvent originalEvent -> do
@@ -276,7 +280,7 @@ runLmdbStore = interpret $ \_ -> \case
                             _ -> return False
 
                     EventDeletion -> do
-                        let eventIdsToDelete = [eid | ("e":eidHex:_) <- tags ev, Just eid <- [eventIdFromHex eidHex]]
+                        let eventIdsToDelete = [eid | ("e":eidHex:_) <- tags event', Just eid <- [eventIdFromHex eidHex]]
                         forM_ eventIdsToDelete $ \eid -> do
                             mEvent <- Map.lookup' (readonly txn) (eventDb currentState) eid
                             case mEvent of
@@ -313,7 +317,7 @@ runLmdbStore = interpret $ \_ -> \case
                         return True
 
                     Metadata -> do
-                        case eitherDecode (fromStrict $ encodeUtf8 $ content ev) of
+                        case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
                             Right profile -> do
                                 existingProfile <- Map.lookup' (readonly txn) (profileDb currentState) author
                                 case existingProfile of
@@ -334,7 +338,7 @@ runLmdbStore = interpret $ \_ -> \case
 
                     FollowList -> do
                         let followList' = [ Follow pk petname
-                                        | ("p":pkHex:rest) <- tags ev
+                                        | ("p":pkHex:rest) <- tags event'
                                         , Just pk <- [pubKeyXOFromHex pkHex]
                                         , let petname = case drop 1 rest of
                                                 (_:name:_) -> Just name  -- Skip relay URL, get petname
@@ -358,7 +362,7 @@ runLmdbStore = interpret $ \_ -> \case
 
                     PreferredDMRelays -> do
                         let validRelayTags = [ uri
-                                        | ("relay":uri:_) <- tags ev
+                                        | ("relay":uri:_) <- tags event'
                                         , isValidRelayURI uri
                                         ]
                         if null validRelayTags
@@ -383,7 +387,7 @@ runLmdbStore = interpret $ \_ -> \case
 
                     RelayListMetadata -> do
                         let validRelayTags = [ r
-                                        | ("r":uri:rest) <- tags ev
+                                        | ("r":uri:rest) <- tags event'
                                         , isValidRelayURI uri
                                         , let r = case rest of
                                                     ("write":_) -> OutboxRelay uri
@@ -431,7 +435,7 @@ runLmdbStore = interpret $ \_ -> \case
             -- Update cache
             when ((eventIsNew result) || (relaysUpdated result)) $
                 runE $ modify @LmdbState $ \s -> s
-                    { eventCache = LRU.insert eventId' ev (eventCache s) }
+                    { eventCache = LRU.insert eventId' event' (eventCache s) }
 
             when hasNewRelays $
                 runE $ modify @LmdbState $ \s -> s
@@ -446,17 +450,17 @@ runLmdbStore = interpret $ \_ -> \case
     GetEvent eid -> do
         st <- get @LmdbState
         case LRU.lookup eid (eventCache st) of
-            (newCache, Just ev) -> do
+            (newCache, Just event') -> do
                 modify @LmdbState $ \s -> s { eventCache = newCache }
-                pure (Just ev)
+                pure (Just event')
             (_, Nothing) -> do
                 mev <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
                     Map.lookup' (readonly txn) (eventDb st) eid
                 case mev of
-                    Just ev -> do
+                    Just event' -> do
                         -- Cache the event
-                        modify @LmdbState $ \s -> s { eventCache = LRU.insert eid ev (eventCache s) }
-                        pure (Just ev)
+                        modify @LmdbState $ \s -> s { eventCache = LRU.insert eid event' (eventCache s) }
+                        pure (Just event')
                     Nothing -> pure Nothing
 
     GetEventRelays eid -> do

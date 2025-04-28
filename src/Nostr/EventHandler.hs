@@ -5,6 +5,7 @@ module Nostr.EventHandler where
 import Control.Monad (forM_,when)
 import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy (fromStrict)
+import Data.List (sort)
 import Data.Map qualified as Map
 import Data.Text (pack, unpack)
 import Data.Text.Encoding (encodeUtf8)
@@ -67,105 +68,7 @@ runEventHandler = interpret $ \_ -> \case
                 pure emptyUpdates
             else do
                 --logDebug $ "Seen event: " <> pack (show $ kind event') <> " " <> pack (show $ eventId event') <> " on relay: " <> r
-                PutEventResult{eventIsNew, relaysUpdated} <- putEvent event' mr
-
-                when relaysUpdated $ do
-                    pmap <- gets @QtQuickState propertyMap
-                    let maybeRef = Map.lookup (eventId event') (postObjRefs pmap) >>= Map.lookup "relays"
-                    forM_ maybeRef $ \weakRef -> do
-                        objRef <- liftIO $ QML.fromWeakObjRef weakRef
-                        signalPost objRef
-
-                if not eventIsNew then
-                    pure $ emptyUpdates
-                else case kind event' of
-                    ShortTextNote -> do
-                        if isComment event' then do
-                            let parentIds = [ eid
-                                            | ("e":eidHex:_) <- tags event'
-                                            , Just eid <- [eventIdFromHex eidHex]
-                                            ]
-
-                            pmap <- gets @QtQuickState propertyMap
-                            forM_ parentIds $ \parentId -> do
-                                let maybeRef = Map.lookup parentId (postObjRefs pmap) >>= Map.lookup "comments"
-                                forM_ maybeRef $ \weakRef -> do
-                                    objRef <- liftIO $ QML.fromWeakObjRef weakRef
-                                    signalPost objRef
-
-                            pure $ emptyUpdates
-                        else do
-                            st <- get @AppState
-                            case currentProfile st of
-                                Just (pk, _) -> do
-                                    if pk == pubKey event' then do
-                                        pure $ emptyUpdates { postsChanged = True }
-                                    else
-                                        pure $ emptyUpdates
-                                Nothing -> do
-                                    pure $ emptyUpdates
-
-                    Repost -> do
-                        st <- get @AppState
-                        case currentProfile st of
-                            Just (pk, _) -> do
-                                if pk == pubKey event' then do
-                                    pure $ emptyUpdates { postsChanged = True }
-                                else
-                                    pure $ emptyUpdates
-                            Nothing -> do
-                                pure $ emptyUpdates
-
-                    EventDeletion -> do
-                        let kTags = [k | ("k":kStr:_) <- tags event'
-                                        , Just k <- [readMaybe (unpack kStr) :: Maybe Int]]
-
-                        if any (== 1059) kTags then
-                            -- GiftWrap (1059) - always trigger update for encrypted messages
-                            pure $ emptyUpdates { privateMessagesChanged = True }
-                        else do
-                            st <- get @AppState
-                            case currentProfile st of
-                                Just (pk', _) -> do
-                                    if pk' == pubKey event' then
-                                        if any (\k -> k == 1 || k == 6) kTags then
-                                            -- ShortTextNote (1) or Repost (6)
-                                            pure $ emptyUpdates { postsChanged = True }
-                                        else
-                                            pure $ emptyUpdates
-                                    else
-                                        pure $ emptyUpdates
-                                Nothing ->
-                                    pure $ emptyUpdates
-
-                    Metadata -> do
-                        case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
-                            Right profile -> do
-                                kp <- getKeyPair
-                                let isOwnProfile = pubKey event' == keyPairToPubKeyXO kp
-
-                                -- update account profile
-                                when isOwnProfile $ do
-                                    let aid = AccountId $ pubKeyXOToBech32 (pubKey event')
-                                    updateProfile aid profile
-
-                                -- signal profile object changes
-                                pmap <- gets @QtQuickState propertyMap
-                                let profileWeakRefs = concatMap Map.elems $ Map.lookup (pubKey event') $ profileObjRefs pmap
-                                forM_ profileWeakRefs $ \weakRef -> do
-                                    objRef <- liftIO $ QML.fromWeakObjRef weakRef
-                                    signalProfile objRef
-
-                                pure $ emptyUpdates
-                            Left err -> do
-                                logWarning $ "Failed to decode metadata: " <> pack err
-                                pure emptyUpdates
-
-                    FollowList -> do
-                        kp <- getKeyPair
-                        let pk = keyPairToPubKeyXO kp
-                        pure $ emptyUpdates { myFollowsChanged = pk == pubKey event' }
-
+                eventInput <- case kind event' of
                     GiftWrap -> do
                         kp <- getKeyPair
                         mSealedEvent <- unwrapGiftWrap event' kp
@@ -175,37 +78,173 @@ runEventHandler = interpret $ \_ -> \case
                                     Seal -> do
                                         mDecryptedRumor <- unwrapSeal sealedEvent kp
                                         case mDecryptedRumor of
-                                            Just decryptedRumor
-                                                | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
-                                                    let tags' = rumorTags decryptedRumor
-                                                        pListPks = getAllPubKeysFromPTags tags'
+                                            Just decryptedRumor | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
+                                                let tags' = rumorTags decryptedRumor
+                                                    pListPks = getAllPubKeysFromPTags tags'
+                                                    participants = if rumorPubKey decryptedRumor == keyPairToPubKeyXO kp
+                                                        then sort pListPks
+                                                        else filter (/= keyPairToPubKeyXO kp)
+                                                             (rumorPubKey decryptedRumor : sort pListPks)
+                                                return $ DecryptedGiftWrapEvent event' DecryptedGiftWrapData
+                                                    { participants = participants
+                                                    , rumorTimestamp = rumorCreatedAt decryptedRumor
+                                                    }
+                                            _ -> return $ RawEvent event'
+                                    _ -> return $ RawEvent event'
+                            _ -> return $ RawEvent event'
+                    _ -> return $ RawEvent event'
 
-                                                    st <- get @AppState
-                                                    case currentProfile st of
-                                                        Just (pk, _) -> do
-                                                            if pk `elem` pListPks then do
-                                                                pure $ emptyUpdates { privateMessagesChanged = True }
-                                                            else
+                PutEventResult{eventIsNew, relaysUpdated} <- putEvent eventInput mr
+
+                when relaysUpdated $ do
+                    pmap <- gets @QtQuickState propertyMap
+                    let maybeRef = Map.lookup (eventId event') (postObjRefs pmap) >>= Map.lookup "relays"
+                    forM_ maybeRef $ \weakRef -> do
+                        objRef <- liftIO $ QML.fromWeakObjRef weakRef
+                        signalPost objRef
+
+                if not eventIsNew then
+                    pure emptyUpdates
+                else case eventInput of
+                    DecryptedGiftWrapEvent _ decrypted -> do
+                        st <- get @AppState
+                        case currentProfile st of
+                            Just (pk, _) ->
+                                if pk `elem` participants decrypted then
+                                    pure $ emptyUpdates { privateMessagesChanged = True }
+                                else
+                                    pure emptyUpdates
+                            Nothing ->
+                                pure emptyUpdates
+
+                    RawEvent ev -> case kind ev of
+                        ShortTextNote -> do
+                            if isComment ev then do
+                                let parentIds = [ eid
+                                                | ("e":eidHex:_) <- tags ev
+                                                , Just eid <- [eventIdFromHex eidHex]
+                                                ]
+
+                                pmap <- gets @QtQuickState propertyMap
+                                forM_ parentIds $ \parentId -> do
+                                    let maybeRef = Map.lookup parentId (postObjRefs pmap) >>= Map.lookup "comments"
+                                    forM_ maybeRef $ \weakRef -> do
+                                        objRef <- liftIO $ QML.fromWeakObjRef weakRef
+                                        signalPost objRef
+
+                                pure $ emptyUpdates
+                            else do
+                                st <- get @AppState
+                                case currentProfile st of
+                                    Just (pk, _) -> do
+                                        if pk == pubKey ev then do
+                                            pure $ emptyUpdates { postsChanged = True }
+                                        else
+                                            pure $ emptyUpdates
+                                    Nothing -> do
+                                        pure $ emptyUpdates
+
+                        Repost -> do
+                            st <- get @AppState
+                            case currentProfile st of
+                                Just (pk, _) -> do
+                                    if pk == pubKey ev then do
+                                        pure $ emptyUpdates { postsChanged = True }
+                                    else
+                                        pure $ emptyUpdates
+                                Nothing -> do
+                                    pure $ emptyUpdates
+
+                        EventDeletion -> do
+                            let kTags = [k | ("k":kStr:_) <- tags ev
+                                            , Just k <- [readMaybe (unpack kStr) :: Maybe Int]]
+
+                            if any (== 1059) kTags then
+                                -- GiftWrap (1059) - always trigger update for encrypted messages
+                                pure $ emptyUpdates { privateMessagesChanged = True }
+                            else do
+                                st <- get @AppState
+                                case currentProfile st of
+                                    Just (pk', _) -> do
+                                        if pk' == pubKey ev then
+                                            if any (\k -> k == 1 || k == 6) kTags then
+                                                -- ShortTextNote (1) or Repost (6)
+                                                pure $ emptyUpdates { postsChanged = True }
+                                            else
+                                                pure $ emptyUpdates
+                                        else
+                                            pure $ emptyUpdates
+                                    Nothing ->
+                                        pure $ emptyUpdates
+
+                        Metadata -> do
+                            case eitherDecode (fromStrict $ encodeUtf8 $ content ev) of
+                                Right profile -> do
+                                    kp <- getKeyPair
+                                    let isOwnProfile = pubKey ev == keyPairToPubKeyXO kp
+
+                                    -- update account profile
+                                    when isOwnProfile $ do
+                                        let aid = AccountId $ pubKeyXOToBech32 (pubKey ev)
+                                        updateProfile aid profile
+
+                                    -- signal profile object changes
+                                    pmap <- gets @QtQuickState propertyMap
+                                    let profileWeakRefs = concatMap Map.elems $ Map.lookup (pubKey ev) $ profileObjRefs pmap
+                                    forM_ profileWeakRefs $ \weakRef -> do
+                                        objRef <- liftIO $ QML.fromWeakObjRef weakRef
+                                        signalProfile objRef
+
+                                    pure $ emptyUpdates
+                                Left err -> do
+                                    logWarning $ "Failed to decode metadata: " <> pack err
+                                    pure emptyUpdates
+
+                        FollowList -> do
+                            kp <- getKeyPair
+                            let pk = keyPairToPubKeyXO kp
+                            pure $ emptyUpdates { myFollowsChanged = pk == pubKey ev }
+
+                        GiftWrap -> do
+                            kp <- getKeyPair
+                            mSealedEvent <- unwrapGiftWrap ev kp
+                            case mSealedEvent of
+                                Just sealedEvent | validateEvent sealedEvent ->
+                                    case kind sealedEvent of
+                                        Seal -> do
+                                            mDecryptedRumor <- unwrapSeal sealedEvent kp
+                                            case mDecryptedRumor of
+                                                Just decryptedRumor
+                                                    | pubKey sealedEvent == rumorPubKey decryptedRumor -> do
+                                                        let tags' = rumorTags decryptedRumor
+                                                            pListPks = getAllPubKeysFromPTags tags'
+
+                                                        st <- get @AppState
+                                                        case currentProfile st of
+                                                            Just (pk, _) -> do
+                                                                if pk `elem` pListPks then do
+                                                                    pure $ emptyUpdates { privateMessagesChanged = True }
+                                                                else
+                                                                    pure $ emptyUpdates
+                                                            Nothing -> do
                                                                 pure $ emptyUpdates
-                                                        Nothing -> do
-                                                            pure $ emptyUpdates
-                                            _ -> pure $ emptyUpdates
-                                    _ -> pure $ emptyUpdates
-                            _ -> pure $ emptyUpdates
+                                                _ -> pure $ emptyUpdates
+                                        _ -> pure $ emptyUpdates
+                                _ -> pure $ emptyUpdates
 
-                    RelayListMetadata -> do
-                        kp <- getKeyPair
-                        let pk = keyPairToPubKeyXO kp
-                        pure $ emptyUpdates { generalRelaysChanged = pk == pubKey event' }
+                        RelayListMetadata -> do
+                            kp <- getKeyPair
+                            let pk = keyPairToPubKeyXO kp
+                            pure $ emptyUpdates { generalRelaysChanged = pk == pubKey ev }
 
-                    PreferredDMRelays -> do
-                        kp <- getKeyPair
-                        let pk = keyPairToPubKeyXO kp
-                        pure $ emptyUpdates { dmRelaysChanged = pk == pubKey event' }
+                        PreferredDMRelays -> do
+                            kp <- getKeyPair
+                            let pk = keyPairToPubKeyXO kp
+                            pure $ emptyUpdates { dmRelaysChanged = pk == pubKey ev }
 
-                    _ -> do
-                        logDebug $ "Ignoring event of kind: " <> pack (show (kind event'))
-                        pure $ emptyUpdates
+                        _ -> do
+                            logDebug $ "Ignoring event of kind: " <> pack (show (kind ev))
+                            pure $ emptyUpdates
 
         when (myFollowsChanged updates || dmRelaysChanged updates || generalRelaysChanged updates) $ do
             -- notify the inbox model to update the subscriptions
