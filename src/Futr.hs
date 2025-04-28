@@ -234,7 +234,7 @@ runFutr = interpret $ \_ -> \case
       _ -> return ()
 
     modify @AppState $ \st' -> st' { currentProfile = Just (pk, []) }
-    notify $ emptyUpdates { profilesChanged = True, postsChanged = True, privateMessagesChanged = True }
+    notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
 
     void $ async $ do
       kp <- getKeyPair

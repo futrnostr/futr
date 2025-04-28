@@ -58,8 +58,7 @@ data PropertyMap = PropertyMap
 
 -- | UI updates
 data UIUpdates = UIUpdates
-  { profilesChanged :: Bool
-  , myFollowsChanged :: Bool
+  { myFollowsChanged :: Bool
   , postsChanged :: Bool
   , privateMessagesChanged :: Bool
   , dmRelaysChanged :: Bool
@@ -68,13 +67,15 @@ data UIUpdates = UIUpdates
   , publishStatusChanged :: Bool
   , noticesChanged :: Bool
   , inboxModelStateChanged :: Bool
-  } deriving (Eq, Show)
+  , postObjectsToSignal :: [QML.ObjRef EventId]
+  , profileObjectsToSignal :: [QML.ObjRef PubKeyXO]
+  , generalObjectsToSignal :: [QML.ObjRef ()]
+  }
 
 
 instance Semigroup UIUpdates where
   a <> b = UIUpdates
-    { profilesChanged = profilesChanged a || profilesChanged b
-    , myFollowsChanged = myFollowsChanged a || myFollowsChanged b
+    { myFollowsChanged = myFollowsChanged a || myFollowsChanged b
     , postsChanged = postsChanged a || postsChanged b
     , privateMessagesChanged = privateMessagesChanged a || privateMessagesChanged b
     , dmRelaysChanged = dmRelaysChanged a || dmRelaysChanged b
@@ -83,6 +84,9 @@ instance Semigroup UIUpdates where
     , publishStatusChanged = publishStatusChanged a || publishStatusChanged b
     , noticesChanged = noticesChanged a || noticesChanged b
     , inboxModelStateChanged = inboxModelStateChanged a || inboxModelStateChanged b
+    , postObjectsToSignal = postObjectsToSignal a ++ postObjectsToSignal b
+    , profileObjectsToSignal = profileObjectsToSignal a ++ profileObjectsToSignal b
+    , generalObjectsToSignal = generalObjectsToSignal a ++ generalObjectsToSignal b
     }
 
 
@@ -92,7 +96,8 @@ instance Monoid UIUpdates where
 
 -- | Empty UI updates.
 emptyUpdates :: UIUpdates
-emptyUpdates = UIUpdates False False False False False False False False False False
+emptyUpdates = UIUpdates
+  False False False False False False False False False [] [] []
 
 
 -- | Initial effectful QML state.
@@ -136,6 +141,8 @@ runQtQuick = interpret $ \_ -> \case
           moreUpdates <- atomically $ flushTQueue q
           let combinedUpdates = uiUpdates <> mconcat moreUpdates
           refs <- gets uiRefs
+
+          -- Handle boolean flag updates
           let updates = [ (myFollowsChanged, followsObjRef)
                         , (postsChanged, postsObjRef)
                         , (privateMessagesChanged, privateMessagesObjRef)
@@ -150,22 +157,15 @@ runQtQuick = interpret $ \_ -> \case
             when (checkFn combinedUpdates) $
               forM_ (getRef refs) (liftIO . QML.fireSignal changeKey)
 
-          -- @todo: trigger more specific signals for each pubkey instead of just the whole list
-          when (profilesChanged combinedUpdates) $ do
-            pmap <- gets @QtQuickState propertyMap
-            let allProfileWeakRefs = concatMap Map.elems $ Map.elems $ profileObjRefs pmap
-            --logDebug $ "Updating " <> T.pack (show (length allProfileWeakRefs)) <> " profile objects"
-            forM_ allProfileWeakRefs $ \weakRef -> do
-              objRef <- liftIO $ QML.fromWeakObjRef weakRef
-              liftIO $ QML.fireSignal changeKey objRef
+          -- Handle specific object updates
+          forM_ (postObjectsToSignal combinedUpdates) $ \objRef ->
+            liftIO $ QML.fireSignal changeKey objRef
 
-          when (postsChanged combinedUpdates) $ do
-            pmap <- gets @QtQuickState propertyMap
-            let allPostWeakRefs = concatMap Map.elems $ Map.elems $ postObjRefs pmap
-            --logDebug $ "Updating " <> T.pack (show (length allPostWeakRefs)) <> " post objects"
-            forM_ allPostWeakRefs $ \weakRef -> do
-              objRef <- liftIO $ QML.fromWeakObjRef weakRef
-              liftIO $ QML.fireSignal changeKey objRef
+          forM_ (profileObjectsToSignal combinedUpdates) $ \objRef ->
+            liftIO $ QML.fireSignal changeKey objRef
+
+          forM_ (generalObjectsToSignal combinedUpdates) $ \objRef ->
+            liftIO $ QML.fireSignal changeKey objRef
 
           threadDelay 1200000  -- 0.2 second delay for UI updates
 
@@ -204,3 +204,20 @@ runQtQuick = interpret $ \_ -> \case
         case queue st of
           Just q -> atomically $ writeTQueue q u
           Nothing -> logError "No queue available"
+
+
+-- | Check if the UI updates have any changes.
+hasUpdates :: UIUpdates -> Bool
+hasUpdates u =
+    myFollowsChanged u ||
+    postsChanged u ||
+    privateMessagesChanged u ||
+    dmRelaysChanged u ||
+    generalRelaysChanged u ||
+    tempRelaysChanged u ||
+    publishStatusChanged u ||
+    noticesChanged u ||
+    inboxModelStateChanged u ||
+    not (null (postObjectsToSignal u)) ||
+    not (null (profileObjectsToSignal u)) ||
+    not (null (generalObjectsToSignal u))
