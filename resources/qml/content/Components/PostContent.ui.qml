@@ -34,11 +34,8 @@ Pane {
 
     padding: Constants.spacing_xs
 
-    Connections {
-        target: post
-        function onContentPartsChanged() {
-            updateContent()
-        }
+    onContentPartsChanged: {
+        updateContent()
     }
 
     Component.onCompleted: {
