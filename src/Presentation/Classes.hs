@@ -29,7 +29,7 @@ import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (ProfileManager, getProfile)
 import Nostr.Util (Util, getCurrentTime, getKeyPair)
-import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..))
+import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..), storeProfileContentRef)
 import Store.Lmdb (LmdbStore, getCommentIds, getEvent, getEventRelays, getFollows)
 import TimeFormatter
 import Types (AppState(..), Follow(..), PublishStatus(..), RelayPool(..))
@@ -214,23 +214,9 @@ runClasses = interpret $ \_ -> \case
                     Nothing -> "unknown"
               return value,
 
-            defPropertySigRO' "content" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              value <- runE $ getEvent eid >>= \case
-                Just ev -> do
-                  case kind ev of
-                    GiftWrap -> do
-                      kp <- getKeyPair
-                      sealed <- unwrapGiftWrap ev kp
-                      rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
-                      return $ rumorContent <$> rumor
-                    Repost -> return $ Just ""
-                    _ -> return $ Just $ content ev
-                Nothing -> return Nothing
-              return value,
-
             defPropertySigRO' "contentParts" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
+              runE $ storePostObjRef eid "contentParts" obj
               value <- runE $ getEvent eid >>= \case
                 Just ev -> do
                   content' <- case kind ev of
@@ -247,8 +233,7 @@ runClasses = interpret $ \_ -> \case
                           return $ "nostr:" <> (eventIdToNote eid'')
                         Nothing -> return ""
                     _ -> return $ content ev
-                  r <- parseContentParts content'
-                  return r
+                  parseContentParts obj content'
                 Nothing -> return []
               return value,
 
@@ -419,8 +404,8 @@ storePostObjRef evId propName obj = withEffToIO (ConcUnlift Persistent Unlimited
 
 
 -- | Parse content into parts (text, images, URLs, and nostr references)
-parseContentParts :: (LmdbStore :> es, ProfileManager :> es) => Text -> Eff es [[Text]]
-parseContentParts contentText
+parseContentParts :: ClassesEff es => ObjRef EventId -> Text -> Eff es [[Text]]
+parseContentParts objRef contentText
     | Text.null contentText = pure []
     | otherwise = do
         let matches = findMatches contentText
@@ -505,62 +490,59 @@ parseContentParts contentText
         | otherwise = x : mergeOverlappingMatches (y:rest)
 
     -- Effectful version of processContentWithMatches that can use GetProfile
-    processContentWithMatchesM :: (LmdbStore :> es, ProfileManager :> es) => Text -> Int -> [(Int, Int, Text)] -> Eff es [[Text]]
+    processContentWithMatchesM :: ClassesEff es => Text -> Int -> [(Int, Int, Text)] -> Eff es [[Text]]
     processContentWithMatchesM text currentPos [] = do
         let remaining = Text.drop currentPos text
         pure $ if Text.null remaining
                then []
                else [["text", replaceNewlines remaining]]
 
-    processContentWithMatchesM text currentPos ((start, end, typ):rest) = do
-        let beforeText = Text.take (start - currentPos) (Text.drop currentPos text)
-            matchText = Text.take (end - start) (Text.drop start text)
-            -- Remove "nostr:" prefix for nostr types
+    processContentWithMatchesM text currentPos ((start, end, matchType):rest) = do
+        let beforeMatch = Text.take (start - currentPos) $ Text.drop currentPos text
+            matchText = Text.take (end - start) $ Text.drop start text
             processedMatchText = if "nostr:" `Text.isPrefixOf` matchText &&
-                                   typ `elem` ["note", "embed-npub", "embed-nprofile", "nevent", "naddr"]
-                                then Text.drop 6 matchText
-                                else matchText
+                                  matchType `elem` ["note", "embed-npub", "embed-nprofile", "nevent", "naddr"]
+                               then Text.drop 6 matchText
+                               else Text.strip matchText
 
-        beforePart <- if Text.null beforeText
+        beforeParts <- if Text.null beforeMatch
                       then pure []
-                      else pure [["text", replaceNewlines beforeText]]
+                      else pure [["text", replaceNewlines beforeMatch]]
 
-        -- Handle match part based on type
-        matchPart <- case typ of
+        matchParts <- case matchType of
             "embed-npub" -> do
                 case bech32ToPubKeyXO processedMatchText of
                     Just profilePubKey -> do
                         (profile, _) <- getProfile profilePubKey
+                        storeProfileContentRef profilePubKey objRef
                         let profileDisplayName = fromMaybe (Text.take 8 processedMatchText <> "...") $
                                               getDisplayName profile
                             html = "<a href=\"profile://" <> processedMatchText <>
-                                   "\" style=\"color: #9C27B0\">@" <> profileDisplayName <> "</a>"
+                                  "\" style=\"color: #9C27B0\">@" <> profileDisplayName <> "</a>"
                         pure [["text", html]]
-                    Nothing ->
-                        pure [["text", processedMatchText]]  -- Invalid npub
+                    Nothing -> pure [["text", matchText]]
 
             "embed-nprofile" -> do
                 case nprofileToPubKeyXO processedMatchText of
                     Just (profilePubKey, _) -> do
                         (profile, _) <- getProfile profilePubKey
+                        storeProfileContentRef profilePubKey objRef
                         let profileDisplayName = fromMaybe (Text.take 8 processedMatchText <> "...") $
                                               getDisplayName profile
                             html = "<a href=\"profile://" <> processedMatchText <>
-                                   "\" style=\"color: #9C27B0\">@" <> profileDisplayName <> "</a>"
+                                  "\" style=\"color: #9C27B0\">@" <> profileDisplayName <> "</a>"
                         pure [["text", html]]
-                    Nothing ->
-                        pure [["text", processedMatchText]]  -- Invalid nprofile
+                    Nothing -> pure [["text", matchText]]
 
             "embed-url" -> do
                 let html = "<a href=\"" <> processedMatchText <>
-                           "\" style=\"color: #9C27B0\">" <> processedMatchText <> "</a>"
+                          "\" style=\"color: #9C27B0\">" <> processedMatchText <> "</a>"
                 pure [["text", html]]
 
-            _ -> pure [[typ, processedMatchText]]  -- All other types as regular components
+            _ -> pure [[matchType, processedMatchText]]
 
-        -- Process the rest of the content
         restParts <- processContentWithMatchesM text end rest
-        pure $ beforePart ++ matchPart ++ restParts
+        pure $ beforeParts ++ matchParts ++ restParts
 
     -- Helper to get display name from profile
     getDisplayName :: Profile -> Maybe Text

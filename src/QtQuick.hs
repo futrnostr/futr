@@ -7,13 +7,14 @@ module QtQuick where
 import Control.Monad (forever, forM_, void, when)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTQueueIO, readTQueue, writeTQueue)
 import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.State.Static.Shared (State, get, gets, put)
+import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Effectful.TH
 import Graphics.QML qualified as QML
 
@@ -52,6 +53,7 @@ type PropertyName = Text
 
 data PropertyMap = PropertyMap
   { profileObjRefs :: Map PubKeyXO (Map PropertyName (QML.WeakObjRef PubKeyXO))
+  , profileContentRefs :: Map PubKeyXO [QML.WeakObjRef EventId]
   , postObjRefs :: Map EventId (Map PropertyName (QML.WeakObjRef EventId))
   }
 
@@ -70,6 +72,7 @@ data UIUpdates = UIUpdates
   , postObjectsToSignal :: [QML.ObjRef EventId]
   , profileObjectsToSignal :: [QML.ObjRef PubKeyXO]
   , generalObjectsToSignal :: [QML.ObjRef ()]
+  , contentObjectsToSignal :: [QML.ObjRef EventId]
   }
 
 
@@ -87,6 +90,7 @@ instance Semigroup UIUpdates where
     , postObjectsToSignal = postObjectsToSignal a ++ postObjectsToSignal b
     , profileObjectsToSignal = profileObjectsToSignal a ++ profileObjectsToSignal b
     , generalObjectsToSignal = generalObjectsToSignal a ++ generalObjectsToSignal b
+    , contentObjectsToSignal = contentObjectsToSignal a ++ contentObjectsToSignal b
     }
 
 
@@ -97,12 +101,12 @@ instance Monoid UIUpdates where
 -- | Empty UI updates.
 emptyUpdates :: UIUpdates
 emptyUpdates = UIUpdates
-  False False False False False False False False False [] [] []
+  False False False False False False False False False [] [] [] []
 
 
 -- | Initial effectful QML state.
 initialQtQuickState :: QtQuickState
-initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs (PropertyMap Map.empty Map.empty) Nothing
+initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs (PropertyMap Map.empty Map.empty Map.empty) Nothing
 
 
 -- | Initial UI references.
@@ -135,7 +139,7 @@ runQtQuick
 runQtQuick = interpret $ \_ -> \case
     RunEngineLoop config changeKey ctx -> do
         q <- newTQueueIO
-        put $ QtQuickState (Just changeKey) (Just ctx) initialUIRefs (PropertyMap Map.empty Map.empty) (Just q)
+        put $ QtQuickState (Just changeKey) (Just ctx) initialUIRefs (PropertyMap Map.empty Map.empty Map.empty) (Just q)
         void $ async $ forever $ do
           uiUpdates <- atomically $ readTQueue q
           moreUpdates <- atomically $ flushTQueue q
@@ -165,6 +169,9 @@ runQtQuick = interpret $ \_ -> \case
             liftIO $ QML.fireSignal changeKey objRef
 
           forM_ (generalObjectsToSignal combinedUpdates) $ \objRef ->
+            liftIO $ QML.fireSignal changeKey objRef
+
+          forM_ (contentObjectsToSignal combinedUpdates) $ \objRef -> do
             liftIO $ QML.fireSignal changeKey objRef
 
           threadDelay 1200000  -- 0.2 second delay for UI updates
@@ -220,4 +227,26 @@ hasUpdates u =
     inboxModelStateChanged u ||
     not (null (postObjectsToSignal u)) ||
     not (null (profileObjectsToSignal u)) ||
-    not (null (generalObjectsToSignal u))
+    not (null (generalObjectsToSignal u)) ||
+    not (null (contentObjectsToSignal u))
+
+
+storeProfileContentRef :: (State QtQuickState :> es, IOE :> es)
+                      => PubKeyXO -> QML.ObjRef EventId -> Eff es ()
+storeProfileContentRef pk obj = withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
+    weakObjRef <- QML.toWeakObjRef obj
+
+    runE $ modify @QtQuickState $ \st ->
+        let currentRefs = fromMaybe [] $ Map.lookup pk $ profileContentRefs $ propertyMap st
+            updatedRefs = weakObjRef : currentRefs
+        in st { propertyMap = (propertyMap st)
+                { profileContentRefs = Map.insert pk updatedRefs $ profileContentRefs $ propertyMap st }
+              }
+
+    finalizer <- QML.newObjFinaliser $ \_ -> do
+        runE $ modify @QtQuickState $ \st' ->
+            st' { propertyMap = (propertyMap st')
+                  { profileContentRefs = Map.delete pk $ profileContentRefs $ propertyMap st' }
+                }
+
+    QML.addObjFinaliser finalizer obj
