@@ -7,7 +7,7 @@ import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy (fromStrict)
 import Data.List (sort)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.Text (pack, unpack)
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
@@ -202,7 +202,16 @@ runEventHandler = interpret $ \_ -> \case
                                             liftIO $ QML.fromWeakObjRef weakRef
                                         pure refs
 
-                                    pure $ emptyUpdates { profileObjectsToSignal = profileObjRefs }
+                                    -- Get content refs that reference this profile
+                                    contentRefs <- do
+                                        let contentWeakRefs = fromMaybe [] $ Map.lookup (pubKey ev) $ profileContentRefs pmap
+                                        forM contentWeakRefs $ \weakRef -> do
+                                            liftIO $ QML.fromWeakObjRef weakRef
+
+                                    pure $ emptyUpdates
+                                        { profileObjectsToSignal = profileObjRefs
+                                        , contentObjectsToSignal = contentRefs }
+
                                 Left err -> do
                                     logWarning $ "Failed to decode metadata: " <> pack err
                                     pure emptyUpdates

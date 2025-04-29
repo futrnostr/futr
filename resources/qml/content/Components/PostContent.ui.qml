@@ -17,6 +17,7 @@ Pane {
     property bool isRefPost: false
     property var author
     property bool privateChatMode: false
+    property var contentParts: post ? post.contentParts : []
 
     property var componentMap: {
         "text": "PostContent/TextComponent.ui.qml",
@@ -33,6 +34,13 @@ Pane {
 
     padding: Constants.spacing_xs
 
+    Connections {
+        target: post
+        function onContentPartsChanged() {
+            updateContent()
+        }
+    }
+
     Component.onCompleted: {
         if (!post) {
             return
@@ -42,39 +50,7 @@ Pane {
             author = getProfile(post.authorId)
         }
 
-        let parts = post.contentParts
-
-        for (var i = 0; i < parts.length; i++) {
-            var type = parts[i][0]
-            var value = parts[i][1]
-
-            var component = Qt.createComponent(componentMap[type])
-
-            if (component.status === Component.Ready) {
-                let args = {}
-                if (componentMap[type] === "PostContent/ReferencedPost.ui.qml") {
-                    args = {
-                        "value": value,
-                        "Layout.fillWidth": true,
-                        "currentUser": currentUser,
-                        "parent": contentLayout,
-                        "Layout.minimumHeight": 100,
-                    }
-                } else {
-                    args = {
-                        "value": value,
-                        "Layout.fillWidth": true,
-                        "parent": contentLayout,
-                    }
-                }
-                var item = component.createObject(contentLayout, args)
-                if (item === null) {
-                    console.error("Failed to create object for", value)
-                }
-            } else {
-                console.error("Failed to load component:", component.errorString())
-            }
-        }
+        updateContent()
     }
 
     Component.onDestruction: {
@@ -391,5 +367,42 @@ Pane {
 
     function videoDownloadCallback(success, filePathOrError) {
         downloadCompleted.disconnect(videoDownloadCallback)
+    }
+
+    function updateContent() {
+        contentLayout.children = [] // Clear existing content first
+        let parts = contentParts
+
+        for (var i = 0; i < parts.length; i++) {
+            var type = parts[i][0]
+            var value = parts[i][1]
+
+            var component = Qt.createComponent(componentMap[type])
+
+            if (component.status === Component.Ready) {
+                let args = {}
+                if (componentMap[type] === "PostContent/ReferencedPost.ui.qml") {
+                    args = {
+                        "value": value,
+                        "Layout.fillWidth": true,
+                        "currentUser": currentUser,
+                        "parent": contentLayout,
+                        "Layout.minimumHeight": 100,
+                    }
+                } else {
+                    args = {
+                        "value": value,
+                        "Layout.fillWidth": true,
+                        "parent": contentLayout,
+                    }
+                }
+                var item = component.createObject(contentLayout, args)
+                if (item === null) {
+                    console.error("Failed to create object for", value)
+                }
+            } else {
+                console.error("Failed to load component:", component.errorString())
+            }
+        }
     }
 }
