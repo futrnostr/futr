@@ -7,8 +7,6 @@ import Futr 1.0
 
 Page {
     id: root
-    width: parent.width
-    height: parent.height
 
     required property string imageSource
     property bool showOriginalSize: false

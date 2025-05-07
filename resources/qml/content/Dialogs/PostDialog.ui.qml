@@ -55,14 +55,15 @@ Dialog {
                     color: Material.backgroundColor
                     radius: Constants.radius_m
                     width: scrollView.width
-                    implicitHeight: postContent.implicitHeight + Constants.spacing_xs * 2
+                    implicitHeight: postContent.implicitHeight + Constants.spacing_xs
 
                     PostContent {
                         id: postContent
                         anchors.fill: parent
-                        anchors.margins: Constants.spacing_xs
+                        anchors.margins: 2
                         post: root.targetPost
                         currentUser: "root.currentUser"
+                        showAuthor: true
                     }                
                 }
             }

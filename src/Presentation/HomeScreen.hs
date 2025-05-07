@@ -114,18 +114,13 @@ runHomeScreen = interpret $ \_ -> \case
                     Nothing -> return ()),
 
         defPropertySigRO' "mynpub" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          return $ case keyPair st of
-            Just kp -> pubKeyXOToBech32 $ keyPairToPubKeyXO kp
-            Nothing -> "",
+          kp <- runE $ getKeyPair
+          return $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp,
 
         defPropertySigRO' "mypicture" changeKey' $ \_ -> do
-          st <- runE $ get @AppState
-          case keyPair st of
-            Just kp -> do
-              (profile, _) <- runE $ getProfile $ keyPairToPubKeyXO kp
-              return $ fromMaybe "" $ picture profile
-            Nothing -> return "",
+          kp <- runE $ getKeyPair
+          (profile, _) <- runE $ getProfile $ keyPairToPubKeyXO kp
+          return $ fromMaybe "" $ picture profile,
 
         defPropertySigRO' "inboxModelState" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { inboxModelStateObjRef = Just obj } }
@@ -161,13 +156,10 @@ runHomeScreen = interpret $ \_ -> \case
 
         defPropertySigRO' "followList" changeKey' $ \obj -> do
           runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
-          st <- runE $ get @AppState
-          case keyPair st of
-            Just kp -> do
-              let userPubKey = keyPairToPubKeyXO kp
-              followedPubKeys <- runE $ getFollows userPubKey
-              mapM (getPoolObject followPool) (userPubKey : map pubkey followedPubKeys)
-            _ -> return [],
+          kp <- runE $ getKeyPair
+          let userPubKey = keyPairToPubKeyXO kp
+          followedPubKeys <- runE $ getFollows userPubKey
+          mapM (getPoolObject followPool) (userPubKey : map pubkey followedPubKeys),
 
         defPropertySigRO' "posts" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { postsObjRef = Just obj } }
@@ -242,8 +234,9 @@ runHomeScreen = interpret $ \_ -> \case
           runE $ do
             case meid of
               Just eid -> do
-                let eid' = read (unpack eid) :: EventId
-                setCurrentPost $ Just eid'
+                case readMaybe (unpack eid) of
+                  Just eid' -> setCurrentPost $ Just eid'
+                  Nothing -> logError $ "Invalid event ID format: " <> eid
               Nothing -> setCurrentPost Nothing,
 
         defMethod' "getProfile" $ \_ input -> do
@@ -265,7 +258,12 @@ runHomeScreen = interpret $ \_ -> \case
                 "note"  -> fetchByType noteToEventId
                 "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
                 "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
-                _ -> return Nothing,
+                _ -> do
+                  let meid = readMaybe (unpack input) :: Maybe EventId
+                  case meid of
+                    Just eid -> do
+                      fetchEventObject postsPool eid
+                    Nothing -> return Nothing,
 
         defMethod' "convertNprofileToNpub" $ \_ input -> do
           runE $ do

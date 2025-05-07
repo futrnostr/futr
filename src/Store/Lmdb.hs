@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Store.Lmdb
     ( LmdbStore(..)
@@ -28,19 +30,26 @@ module Store.Lmdb
     , getGeneralRelays
     , getDMRelays
     , getLatestTimestamp
-    , getCommentIds
+    , getCommentTree
+    , getCommentsWithIndentationLevel
     , getFailedRelaysWithinLastNDays
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Monad (forM, forM_, when, unless)
-import Data.Aeson (ToJSON, FromJSON, encode, decode, eitherDecode)
+import Control.Monad (forM, forM_, when)
+import Data.Aeson (FromJSON, ToJSON, encode, decode, eitherDecode)
+import Data.Bits (shiftL, shiftR, (.|.))
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Cache.LRU qualified as LRU
-import Data.Maybe (catMaybes, fromMaybe, isNothing, listToMaybe)
+import Data.List (find)
+import Data.Map qualified as Map
+import Data.Map (Map)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe)
 import Data.Set qualified as Set
 import Data.Set (Set)
 import Data.Text.Encoding (encodeUtf8)
+import Data.Word (Word8)
 import Effectful
 import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Shared (State, get, modify)
@@ -48,7 +57,7 @@ import Effectful.TH (makeEffect)
 import GHC.Generics (Generic)
 import Lmdb.Codec qualified as Codec
 import Lmdb.Connection
-import Lmdb.Map qualified as Map
+import Lmdb.Map qualified as LMap
 import Lmdb.Types
 import Pipes.Prelude qualified as Pipes
 import Pipes ((>->))
@@ -83,7 +92,7 @@ data LmdbState = LmdbState
     , generalRelaysDb :: Database PubKeyXO ([Relay], Int)
     , dmRelaysDb :: Database PubKeyXO ([RelayURI], Int)
     , latestTimestampDb :: Database (PubKeyXO, Kind) Int
-    , commentDb :: Database EventId [EventId]
+    , commentDb :: Database CommentKey ()
     , failedRelaysDb :: Database RelayURI Int
     , eventCache :: LRU.LRU EventId Event
     , eventRelaysCache :: LRU.LRU EventId (Set RelayURI)
@@ -93,7 +102,7 @@ data LmdbState = LmdbState
     , generalRelaysCache :: LRU.LRU PubKeyXO ([Relay], Int)
     , dmRelaysCache :: LRU.LRU PubKeyXO ([RelayURI], Int)
     , latestTimestampCache :: LRU.LRU (PubKeyXO, Kind) Int
-    , commentCache :: LRU.LRU EventId [EventId]
+    , commentCache :: LRU.LRU EventId [CommentTree]
     } deriving (Generic)
 
 
@@ -117,6 +126,17 @@ data PutEventResult = PutEventResult
     } deriving (Show, Eq)
 
 
+-- | Comment key type
+type CommentKey = (EventId, EventId, Int, EventId)  -- (rootId, parentId, timestamp, commentId)
+
+
+-- | Comment tree structure
+data CommentTree = CommentTree
+    { commentId :: EventId
+    , replies :: [CommentTree]
+    } deriving (Show, Eq, Generic, ToJSON, FromJSON)
+
+
 -- | LmdbStore operations
 data LmdbStore :: Effect where
     -- Event operations
@@ -132,11 +152,13 @@ data LmdbStore :: Effect where
     GetGeneralRelays :: PubKeyXO -> LmdbStore m [Relay]
     GetDMRelays :: PubKeyXO -> LmdbStore m [RelayURI]
     GetLatestTimestamp :: PubKeyXO -> [Kind] -> LmdbStore m (Maybe Int)
-    GetCommentIds :: EventId -> LmdbStore m [EventId]
+    GetCommentTree :: EventId -> LmdbStore m (Maybe [CommentTree])
+    GetCommentsWithIndentationLevel :: EventId -> LmdbStore m [(EventId, Int)]
     GetFailedRelaysWithinLastNDays :: Int -> LmdbStore m [RelayURI] -- Int: number of days to look back
 
 
 type instance DispatchOf LmdbStore = Dynamic
+
 
 makeEffect ''LmdbStore
 
@@ -150,7 +172,7 @@ runLmdbStore = interpret $ \_ -> \case
         ts <- getCurrentTime
         st <- get @LmdbState
         liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-            Map.repsert' txn (failedRelaysDb st) relayUri ts
+            LMap.repsert' txn (failedRelaysDb st) relayUri ts
 
     PutEvent eventInput mr -> do
         let (event', mDecrypted) = case eventInput of
@@ -176,13 +198,13 @@ runLmdbStore = interpret $ \_ -> \case
 
             -- Always store the event itself
             when isNewEvent $ do
-              Map.repsert' txn (eventDb currentState) eventId' event'
+              LMap.repsert' txn (eventDb currentState) eventId' event'
 
             -- Update relay list if we have a relay URI
             relaysWereUpdated <- case mr of
               Nothing -> return (False, Set.empty)
               Just uri -> do
-                existingRelays <- Map.lookup' (readonly txn) (eventRelaysDb currentState) eventId'
+                existingRelays <- LMap.lookup' (readonly txn) (eventRelaysDb currentState) eventId'
                 let newRelays = Set.singleton uri
                     combinedRelays = case existingRelays of
                       Just existing -> Set.union existing newRelays
@@ -192,7 +214,7 @@ runLmdbStore = interpret $ \_ -> \case
                       Nothing -> True
 
                 when hasNewRelays $ do
-                  Map.repsert' txn (eventRelaysDb currentState) eventId' combinedRelays
+                  LMap.repsert' txn (eventRelaysDb currentState) eventId' combinedRelays
 
                 -- Store combinedRelays in the function context for later use with the cache
                 return (hasNewRelays, combinedRelays)
@@ -224,22 +246,50 @@ runLmdbStore = interpret $ \_ -> \case
                                             ("root":_) -> Just Root
                                             ("reply":_) -> Just Reply
                                             _ -> Nothing
+                                    , isJust marker  -- Only process e tags with markers
                                     ]
 
-                        let isReply = not $ null threadRefs
-
-                        unless isReply $ do
+                        -- If no thread refs with markers, treat as regular short text note
+                        if null threadRefs then do
                             addTimelineEntryTx txn (postTimelineDb currentState) eventId' [author] eventTimestamp
                             runE $ modify @LmdbState $ \s -> s
                                 { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
+                        else do
+                            -- Find root and reply IDs
+                            let rootId = case find (\t -> case t of
+                                    ("e":eidHex:rest) -> "root" `elem` rest && isJust (eventIdFromHex eidHex)
+                                    _ -> False) (tags event') of
+                                    Just ("e":rootHex:_) -> eventIdFromHex rootHex
+                                    _ -> Nothing
+                                replyId = case find (\t -> case t of
+                                    ("e":eidHex:rest) -> "reply" `elem` rest && isJust (eventIdFromHex eidHex)
+                                    _ -> False) (tags event') of
+                                    Just ("e":replyHex:_) -> eventIdFromHex replyHex
+                                    _ -> Nothing
 
-                        forM_ threadRefs $ \(parentId, _) -> do
-                            existing <- Map.lookup' (readonly txn) (commentDb currentState) parentId
-                            let comments = maybe [] id existing
-                            unless (eventId' `elem` comments) $ do
-                                Map.repsert' txn (commentDb currentState) parentId (eventId' : comments)
-                                runE $ modify @LmdbState $ \s -> s
-                                    { commentCache = fst $ LRU.delete parentId (commentCache s) }
+                            -- Only process if we have a root ID (case 1 and 2)
+                            case (rootId, replyId) of
+                                (Just rootId', Just replyId') -> do
+                                    let commentKey = (rootId', replyId', negate eventTimestamp, eventId')
+                                    LMap.repsert' txn (commentDb currentState) commentKey ()
+
+                                    let sndCommentKey = (replyId', replyId', negate eventTimestamp, eventId')
+                                    LMap.repsert' txn (commentDb currentState) sndCommentKey ()
+
+                                    -- Clean comment cache for both root and reply
+                                    runE $ modify @LmdbState $ \s -> s
+                                        { commentCache = fst $ LRU.delete replyId' $ fst $ LRU.delete rootId' (commentCache s) }
+
+                                (Just rootId', Nothing) -> do
+                                    let commentKey = (rootId', rootId', negate eventTimestamp, eventId')
+                                    LMap.repsert' txn (commentDb currentState) commentKey ()
+
+                                    runE $ modify @LmdbState $ \s -> s
+                                        { commentCache = fst $ LRU.delete rootId' (commentCache s) }
+                                _ -> do -- Invalid event with only reply marker, treat as regular short text note
+                                    addTimelineEntryTx txn (postTimelineDb currentState) eventId' [author] eventTimestamp
+                                    runE $ modify @LmdbState $ \s -> s
+                                        { timelineCache = removeAuthorTimelineEntries PostTimeline author (timelineCache s) }
 
                         return True
 
@@ -261,15 +311,15 @@ runLmdbStore = interpret $ \_ -> \case
                                 && (null mPubkeyTag || head mPubkeyTag == pubKey originalEvent)
                                 && validateEvent originalEvent -> do
                                     -- Store the original event
-                                    existing <- Map.lookup' (readonly txn) (eventDb currentState) (eventId originalEvent)
+                                    existing <- LMap.lookup' (readonly txn) (eventDb currentState) (eventId originalEvent)
                                     when (isNothing existing) $ do
-                                        Map.repsert' txn (eventDb currentState) (eventId originalEvent) originalEvent
+                                        LMap.repsert' txn (eventDb currentState) (eventId originalEvent) originalEvent
 
                                     -- Add relay info for original event
-                                    existingRelays <- Map.lookup' (readonly txn) (eventRelaysDb currentState) (eventId originalEvent)
+                                    existingRelays <- LMap.lookup' (readonly txn) (eventRelaysDb currentState) (eventId originalEvent)
                                     let relaySet = Set.singleton relayUri'
                                         updatedRelays = maybe relaySet (`Set.union` relaySet) existingRelays
-                                    Map.repsert' txn (eventRelaysDb currentState) (eventId originalEvent) updatedRelays
+                                    LMap.repsert' txn (eventRelaysDb currentState) (eventId originalEvent) updatedRelays
 
                                     -- Add to timeline
                                     addTimelineEntryTx txn (postTimelineDb currentState) eventId' [author] eventTimestamp
@@ -282,7 +332,7 @@ runLmdbStore = interpret $ \_ -> \case
                     EventDeletion -> do
                         let eventIdsToDelete = [eid | ("e":eidHex:_) <- tags event', Just eid <- [eventIdFromHex eidHex]]
                         forM_ eventIdsToDelete $ \eid -> do
-                            mEvent <- Map.lookup' (readonly txn) (eventDb currentState) eid
+                            mEvent <- LMap.lookup' (readonly txn) (eventDb currentState) eid
                             case mEvent of
                                 Just deletedEv -> do
                                     -- Validate that the deletion author matches the event author
@@ -299,9 +349,9 @@ runLmdbStore = interpret $ \_ -> \case
 
                                         case timelineDb of
                                             Just db -> do
-                                                Map.delete' txn db key
-                                                Map.delete' txn (eventDb currentState) eid
-                                                Map.delete' txn (eventRelaysDb currentState) eid
+                                                LMap.delete' txn db key
+                                                LMap.delete' txn (eventDb currentState) eid
+                                                LMap.delete' txn (eventRelaysDb currentState) eid
                                             Nothing -> pure ()
 
                                         runE $ modify @LmdbState $ \s -> s
@@ -319,18 +369,18 @@ runLmdbStore = interpret $ \_ -> \case
                     Metadata -> do
                         case eitherDecode (fromStrict $ encodeUtf8 $ content event') of
                             Right profile -> do
-                                existingProfile <- Map.lookup' (readonly txn) (profileDb currentState) author
+                                existingProfile <- LMap.lookup' (readonly txn) (profileDb currentState) author
                                 case existingProfile of
                                     Just (_, existingTs) ->
                                         if eventTimestamp > existingTs then do
-                                            Map.repsert' txn (profileDb currentState) author (profile, eventTimestamp)
+                                            LMap.repsert' txn (profileDb currentState) author (profile, eventTimestamp)
                                             runE $ modify @LmdbState $ \s -> s
                                                 { profileCache = fst $ LRU.delete author (profileCache s) }
                                             return True
                                         else
                                             return False
                                     Nothing -> do
-                                        Map.repsert' txn (profileDb currentState) author (profile, eventTimestamp)
+                                        LMap.repsert' txn (profileDb currentState) author (profile, eventTimestamp)
                                         runE $ modify @LmdbState $ \s -> s
                                             { profileCache = fst $ LRU.delete author (profileCache s) }
                                         return True
@@ -344,18 +394,18 @@ runLmdbStore = interpret $ \_ -> \case
                                                 (_:name:_) -> Just name  -- Skip relay URL, get petname
                                                 _ -> Nothing
                                         ]
-                        existingTimestamp' <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
+                        existingTimestamp' <- LMap.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
                         case existingTimestamp' of
                             Just existingTs ->
                                 if eventTimestamp > existingTs then do
-                                    Map.repsert' txn (followsDb currentState) author followList'
+                                    LMap.repsert' txn (followsDb currentState) author followList'
                                     runE $ modify @LmdbState $ \s -> s
                                         { followsCache = fst $ LRU.delete author (followsCache s) }
                                     return True
                                 else
                                     return False
                             Nothing -> do
-                                Map.repsert' txn (followsDb currentState) author followList'
+                                LMap.repsert' txn (followsDb currentState) author followList'
                                 runE $ modify @LmdbState $ \s -> s
                                     { followsCache = fst $ LRU.delete author (followsCache s) }
                                 return True
@@ -369,18 +419,18 @@ runLmdbStore = interpret $ \_ -> \case
                           then return False
                           else do
                             let relays' = validRelayTags
-                            existingRelays <- Map.lookup' (readonly txn) (dmRelaysDb currentState) author
+                            existingRelays <- LMap.lookup' (readonly txn) (dmRelaysDb currentState) author
                             case existingRelays of
                                 Just (_, existingTs) ->
                                     if eventTimestamp > existingTs then do
-                                        Map.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
+                                        LMap.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
                                         runE $ modify @LmdbState $ \s -> s
                                             { dmRelaysCache = fst $ LRU.delete author (dmRelaysCache s) }
                                         return True
                                     else
                                         return False
                                 Nothing -> do
-                                    Map.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
+                                    LMap.repsert' txn (dmRelaysDb currentState) author (relays', eventTimestamp)
                                     runE $ modify @LmdbState $ \s -> s
                                         { dmRelaysCache = fst $ LRU.delete author (dmRelaysCache s) }
                                     return True
@@ -398,18 +448,18 @@ runLmdbStore = interpret $ \_ -> \case
                           then return False
                           else do
                             let relays = validRelayTags
-                            existingRelays <- Map.lookup' (readonly txn) (generalRelaysDb currentState) author
+                            existingRelays <- LMap.lookup' (readonly txn) (generalRelaysDb currentState) author
                             case existingRelays of
                                 Just (_, existingTs) ->
                                     if eventTimestamp > existingTs then do
-                                        Map.repsert' txn (generalRelaysDb currentState) author (relays, eventTimestamp)
+                                        LMap.repsert' txn (generalRelaysDb currentState) author (relays, eventTimestamp)
                                         runE $ modify @LmdbState $ \s -> s
                                             { generalRelaysCache = fst $ LRU.delete author (generalRelaysCache s) }
                                         return True
                                     else
                                         return False
                                 Nothing -> do
-                                    Map.repsert' txn (generalRelaysDb currentState) author (relays, eventTimestamp)
+                                    LMap.repsert' txn (generalRelaysDb currentState) author (relays, eventTimestamp)
                                     runE $ modify @LmdbState $ \s -> s
                                         { generalRelaysCache = fst $ LRU.delete author (generalRelaysCache s) }
                                     return True
@@ -424,13 +474,13 @@ runLmdbStore = interpret $ \_ -> \case
 
             -- Update latest timestamp if needed
             when isNewEvent $ do
-                existingTimestamp <- Map.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
+                existingTimestamp <- LMap.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
                 case existingTimestamp of
                     Just existingTs ->
                         when (eventTimestamp > existingTs) $
-                            Map.repsert' txn (latestTimestampDb currentState) (author, eventKind) eventTimestamp
+                            LMap.repsert' txn (latestTimestampDb currentState) (author, eventKind) eventTimestamp
                     Nothing ->
-                        Map.repsert' txn (latestTimestampDb currentState) (author, eventKind) eventTimestamp
+                        LMap.repsert' txn (latestTimestampDb currentState) (author, eventKind) eventTimestamp
 
             -- Update cache
             when ((eventIsNew result) || (relaysUpdated result)) $
@@ -455,7 +505,7 @@ runLmdbStore = interpret $ \_ -> \case
                 pure (Just event')
             (_, Nothing) -> do
                 mev <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-                    Map.lookup' (readonly txn) (eventDb st) eid
+                    LMap.lookup' (readonly txn) (eventDb st) eid
                 case mev of
                     Just event' -> do
                         -- Cache the event
@@ -472,7 +522,7 @@ runLmdbStore = interpret $ \_ -> \case
             (_, Nothing) -> do
                 -- Get relays from DB
                 relays' <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-                    Map.lookup' (readonly txn) (eventRelaysDb st) eid
+                    LMap.lookup' (readonly txn) (eventRelaysDb st) eid
                 let relaySet = fromMaybe Set.empty relays'
                 -- Update cache
                 modify @LmdbState $ \s -> s { eventRelaysCache = LRU.insert eid relaySet (eventRelaysCache s) }
@@ -484,7 +534,7 @@ runLmdbStore = interpret $ \_ -> \case
             (_, Just fs) -> pure fs
             (_, Nothing) -> do
                 mfs <- liftIO $ withTransaction (lmdbEnv st) $ \txn -> do
-                    Map.lookup' (readonly txn) (followsDb st) pk
+                    LMap.lookup' (readonly txn) (followsDb st) pk
                 case mfs of
                     Just follows -> do
                         modify @LmdbState $ \s -> s { followsCache = LRU.insert pk follows $ followsCache s }
@@ -497,7 +547,7 @@ runLmdbStore = interpret $ \_ -> \case
             (_, Just (profile, timestamp)) -> pure (profile, timestamp)
             (_, Nothing) -> do
                 mp <- liftIO $ withTransaction (lmdbEnv st) $ \txn -> do
-                    Map.lookup' (readonly txn) (profileDb st) pk
+                    LMap.lookup' (readonly txn) (profileDb st) pk
                 let (profile, timestamp) = maybe (emptyProfile, 0) id mp
                 modify @LmdbState $ \s -> s { profileCache = LRU.insert pk (profile, timestamp) $ profileCache s }
                 pure (profile, timestamp)
@@ -512,7 +562,7 @@ runLmdbStore = interpret $ \_ -> \case
                 ids <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
                     withCursor (readonly txn) (if timelineType == PostTimeline then postTimelineDb st else chatTimelineDb st) $ \cursor -> do
                         Pipes.toListM $
-                            Map.lastBackward cursor
+                            LMap.lastBackward cursor
                             >-> Pipes.filter (\kv -> fst (keyValueKey kv) == author)
                             >-> Pipes.map keyValueValue
                             >-> Pipes.take limit
@@ -525,7 +575,7 @@ runLmdbStore = interpret $ \_ -> \case
             (_, Just (relays, _)) -> pure relays
             (_, Nothing) -> do
                 mRelays <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-                    Map.lookup' (readonly txn) (generalRelaysDb st) pubKey
+                    LMap.lookup' (readonly txn) (generalRelaysDb st) pubKey
                 case mRelays of
                     Just (relaysList, timestamp) -> do
                         modify @LmdbState $ \s -> s { generalRelaysCache = LRU.insert pubKey (relaysList, timestamp) $ generalRelaysCache s }
@@ -539,7 +589,7 @@ runLmdbStore = interpret $ \_ -> \case
             (_, Just (relays, _)) -> pure relays
             (_, Nothing) -> do
                 mRelays <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-                    Map.lookup' (readonly txn) (dmRelaysDb st) pubKey
+                    LMap.lookup' (readonly txn) (dmRelaysDb st) pubKey
                 case mRelays of
                     Just (relaysList, timestamp) -> do
                         modify @LmdbState $ \s -> s { dmRelaysCache = LRU.insert pubKey (relaysList, timestamp) $ dmRelaysCache s }
@@ -555,7 +605,7 @@ runLmdbStore = interpret $ \_ -> \case
                 (_, Just ts) -> return (Just ts)
                 (_, Nothing) -> do
                     mts <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-                        Map.lookup' (readonly txn) (latestTimestampDb st) key
+                        LMap.lookup' (readonly txn) (latestTimestampDb st) key
                     case mts of
                         Just ts -> do
                             modify @LmdbState $ \s -> s { latestTimestampCache = LRU.insert key ts (latestTimestampCache s) }
@@ -565,17 +615,13 @@ runLmdbStore = interpret $ \_ -> \case
         let validTimestamps = catMaybes timestamps
         return $ if null validTimestamps then Nothing else Just (maximum validTimestamps)
 
-    GetCommentIds eventId -> do
-        st <- get @LmdbState
-        case LRU.lookup eventId (commentCache st) of
-            (_, Just comments) -> pure comments
-            (_, Nothing) -> do
-                mComments <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-                    Map.lookup' (readonly txn) (commentDb st) eventId
-                let comments = maybe [] id mComments
-                modify @LmdbState $ \s -> s
-                    { commentCache = LRU.insert eventId comments $ commentCache s }
-                pure comments
+    GetCommentTree eventId -> do
+        comments <- getComments eventId
+        pure $ Just comments
+
+    GetCommentsWithIndentationLevel eventId -> do
+        comments <- getComments eventId
+        pure $ flattenComments comments 0
 
     GetFailedRelaysWithinLastNDays days -> do
         st <- get @LmdbState
@@ -583,7 +629,7 @@ runLmdbStore = interpret $ \_ -> \case
         let threshold = now - (days * 86400)
         failedUris <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
             withCursor (readonly txn) (failedRelaysDb st) $ \cursor -> do
-                pairs <- Pipes.toListM (Map.firstForward cursor)
+                pairs <- Pipes.toListM (LMap.firstForward cursor)
                 forM pairs $ \kv ->
                     let uri = keyValueKey kv
                         ts = keyValueValue kv
@@ -591,7 +637,7 @@ runLmdbStore = interpret $ \_ -> \case
                        then return (Just uri)
                        else do
                            -- Clean up old entries
-                           Map.delete' txn (failedRelaysDb st) uri
+                           LMap.delete' txn (failedRelaysDb st) uri
                            return Nothing
         pure $ catMaybes failedUris
 
@@ -607,7 +653,7 @@ addTimelineEntryTx txn timelineDb' eventId pks timestamp = do
     let invertedTimestamp = maxBound - timestamp
     withCursor txn timelineDb' $ \cursor ->
         forM_ pks $ \pk ->
-            Map.repsert cursor (pk, invertedTimestamp) eventId
+            LMap.repsert cursor (pk, invertedTimestamp) eventId
 
 
 -- | Default Lmdb settings for JSON-serializable types with better error handling
@@ -702,6 +748,56 @@ eventRelaysDbSettings = makeSettings
             Nothing -> Nothing))
 
 
+-- | Settings for the comment database
+commentDbSettings :: DatabaseSettings CommentKey ()
+commentDbSettings = makeSettings
+    (SortCustom $ CustomSortSafe compare)
+    (Codec.throughByteString
+        (\(rootId, parentId, timestamp, commentId) ->
+            let rootIdBs = getEventId rootId
+                parentIdBs = getEventId parentId
+                timestampBs = BS.pack $ encodeInt timestamp
+                commentIdBs = getEventId commentId
+            in if BS.length rootIdBs == 32 && BS.length parentIdBs == 32 && BS.length commentIdBs == 32
+               then BS.concat [rootIdBs, parentIdBs, timestampBs, commentIdBs]
+               else error "Invalid event ID lengths in comment key")
+        (\bs ->
+            let len = BS.length bs
+            in if len == 100  -- 32 (root) + 32 (parent) + 4 (timestamp) + 32 (comment)
+               then let rootIdBs = BS.take 32 bs
+                        parentIdBs = BS.take 32 (BS.drop 32 bs)
+                        timestampBs = BS.take 4 (BS.drop 64 bs)
+                        commentIdBs = BS.drop 68 bs
+                    in if BS.length rootIdBs == 32 && BS.length parentIdBs == 32 && BS.length commentIdBs == 32
+                       then Just ( EventId rootIdBs
+                               , EventId parentIdBs
+                               , decodeInt timestampBs
+                               , EventId commentIdBs )
+                       else Nothing
+               else Nothing)
+    )
+    -- We can safely ignore the value since it's just `()`
+    (Codec.unit)
+
+
+-- | Encode an Int to a 4-byte ByteString
+encodeInt :: Int -> [Word8]
+encodeInt n = [fromIntegral (n `shiftR` 24),
+               fromIntegral (n `shiftR` 16),
+               fromIntegral (n `shiftR` 8),
+               fromIntegral n]
+
+
+-- | Decode a 4-byte ByteString to an Int
+decodeInt :: BS.ByteString -> Int
+decodeInt bs =
+    case BS.unpack bs of
+        [b1, b2, b3, b4] -> (fromIntegral b1 `shiftL` 24) .|.
+                            (fromIntegral b2 `shiftL` 16) .|.
+                            (fromIntegral b3 `shiftL` 8) .|.
+                            fromIntegral b4
+        _ -> 0  -- Default to 0 if we don't have exactly 4 bytes
+
 
 -- | Initialize LMDB state
 initializeLmdbState :: FilePath -> IO LmdbState
@@ -717,7 +813,7 @@ initializeLmdbState dbPath = do
         generalRelaysDb' <- openDatabase txn (Just "general_relays") defaultJsonSettings
         dmRelaysDb' <- openDatabase txn (Just "dm_relays") defaultJsonSettings
         latestTimestampDb' <- openDatabase txn (Just "latest_timestamps") latestTimestampDbSettings
-        commentDb' <- openDatabase txn (Just "comments") defaultJsonSettings
+        commentDb' <- openDatabase txn (Just "comments") commentDbSettings
         failedRelaysDb' <- openDatabase txn (Just "failed_relays") defaultJsonSettings
 
         pure $ LmdbState
@@ -742,7 +838,7 @@ initializeLmdbState dbPath = do
             , generalRelaysCache = LRU.newLRU (Just smallCacheSize)
             , dmRelaysCache = LRU.newLRU (Just smallCacheSize)
             , latestTimestampCache = LRU.newLRU (Just smallCacheSize)
-            , commentCache = LRU.newLRU (Just smallCacheSize)
+            , commentCache = LRU.newLRU (Just cacheSize)
             }
 
 -- | Cache size constants
@@ -751,6 +847,9 @@ cacheSize = 5000
 
 smallCacheSize :: Integer
 smallCacheSize = 500
+
+miniCacheSize :: Integer
+miniCacheSize = 50
 
 -- | Initial LMDB state before login
 initialLmdbState :: LmdbState
@@ -776,7 +875,7 @@ initialLmdbState = LmdbState
     , generalRelaysCache = LRU.newLRU (Just smallCacheSize)
     , dmRelaysCache = LRU.newLRU (Just smallCacheSize)
     , latestTimestampCache = LRU.newLRU (Just smallCacheSize)
-    , commentCache = LRU.newLRU (Just smallCacheSize)
+    , commentCache = LRU.newLRU (Just miniCacheSize)
     }
 
 -- | Remove timeline entries for a given author
@@ -793,4 +892,52 @@ getEventDirectFromDb :: (IOE :> es, State LmdbState :> es) => EventId -> Eff es 
 getEventDirectFromDb eid = do
     st <- get @LmdbState
     liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-        Map.lookup' (readonly txn) (eventDb st) eid
+        LMap.lookup' (readonly txn) (eventDb st) eid
+
+
+-- | Query comments for a root ID
+queryComments :: Transaction e -> Database CommentKey () -> EventId -> IO [(CommentKey, ())]
+queryComments txn db rootId = do
+    withCursor txn db $ \cursor -> do
+        let startKey = (rootId, rootId, minBound, EventId $ BS.replicate 32 0)
+        -- Get all comments that have this as their root, starting from newest
+        allComments <- Pipes.toListM $
+            LMap.lookupGteForward cursor startKey
+            >-> Pipes.takeWhile (\kv -> case keyValueKey kv of (r, _, _, _) -> r == rootId)
+            >-> Pipes.map (\kv -> (keyValueKey kv, keyValueValue kv))
+
+        pure allComments
+
+-- | Get comments from cache or database
+getComments :: (IOE :> es, State LmdbState :> es) => EventId -> Eff es [CommentTree]
+getComments rootId = do
+    st <- get @LmdbState
+    case LRU.lookup rootId (commentCache st) of
+        (_, Just comments) -> pure comments
+        (_, Nothing) -> do
+            comments <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+                queryComments txn (commentDb st) rootId
+
+            -- Build parent-child map directly from comment keys, maintaining order
+            let parentMap = Map.fromListWith (flip (++)) $ map (\((_, parentId, _, commentId), _) ->
+                    (parentId, [commentId])) comments
+                rootChildren = fromMaybe [] $ Map.lookup rootId parentMap
+                commentTree = map (\childId -> CommentTree childId (buildCommentTree childId parentMap)) rootChildren
+
+            modify @LmdbState $ \s -> s { commentCache = LRU.insert rootId commentTree (commentCache s) }
+            pure commentTree
+
+-- | Build comment tree from parent-child map
+buildCommentTree :: EventId -> Map EventId [EventId] -> [CommentTree]
+buildCommentTree parentId parentMap =
+    case Map.lookup parentId parentMap of
+        Just children -> map (\childId -> CommentTree childId (buildCommentTree childId parentMap)) children
+        Nothing -> []
+
+-- | Flatten comments into a list of (eventId, indentation level) pairs
+flattenComments :: [CommentTree] -> Int -> [(EventId, Int)]
+flattenComments comments level =
+    concatMap (\comment ->
+        (commentId comment, level) :
+        flattenComments (replies comment) (level + 1)
+    ) comments

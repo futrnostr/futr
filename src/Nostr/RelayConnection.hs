@@ -88,7 +88,7 @@ runRelayConnection = interpret $ \_ -> \case
                     Just Disconnected -> do
                         -- Try to reconnect
                         chan <- newTChanIO
-                        connectWithRetry r' 5 chan
+                        connectWithRetry r' 2 chan
                     Nothing -> do
                         return False
             else do
@@ -105,7 +105,7 @@ runRelayConnection = interpret $ \_ -> \case
                             }
                 modify @RelayPool $ \st ->
                     st { activeConnections = Map.insert r' rd (activeConnections st) }
-                connectWithRetry r' 5 chan
+                connectWithRetry r' 2 chan
 
     Disconnect r -> do
         let r' = normalizeRelayURI r
