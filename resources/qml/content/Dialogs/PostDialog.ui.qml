@@ -14,11 +14,11 @@ Dialog {
     width: parent.width * 0.95
     height: parent.height * 0.9
     padding: 0
-    title: isQuoteMode ? qsTr("Quote Post") : qsTr("Reply")
+    title: isQuoteMode ? qsTr("Quote Post") : qsTr("Comment")
 
     property var targetPost: null
-    property string inputPlaceholder: qsTr("Post your reply")
-    property string buttonText: qsTr("Reply")
+    property string inputPlaceholder: isQuoteMode ? qsTr("Add a quote...") : qsTr("Post your comment...")
+    property string buttonText: qsTr("Send")
     property bool isQuoteMode: false
     required property string currentUser
     required property string currentUserPicture

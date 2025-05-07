@@ -70,9 +70,18 @@ Page {
     }
 
     PostDialog {
-        id: quoteReplyDialog
-        inputPlaceholder: qsTr("Add a quote...")
-        buttonText: qsTr("Quote")
+        id: commentDialog
+        isQuoteMode: false
+        currentUser: root.currentUser
+        currentUserPicture: root.currentUserPicture
+
+        onMessageSubmitted: function(text) {
+            comment(targetPost.id, text)
+        }
+    }
+
+    PostDialog {
+        id: quoteReplyDialog // used by RepostMenu
         isQuoteMode: true
         currentUser: root.currentUser
         currentUserPicture: root.currentUserPicture
@@ -100,6 +109,7 @@ Page {
                 Layout.leftMargin: 0
                 Layout.rightMargin: Constants.spacing_m
                 showAuthor: true
+                disableCommentAction: true
 
                 onRepostClicked: {
                     if (post) {
@@ -187,7 +197,20 @@ Page {
                         width: parent.width - indentation
                         x: indentation
                         showAuthor: true
-                        hideActions: true
+
+                        onCommentClicked: {
+                            if (post) {
+                                commentDialog.targetPost = post
+                                commentDialog.open()
+                            }
+                        }
+
+                        onRepostClicked: {
+                            if (post) {
+                                repostMenu.targetPost = post
+                                repostMenu.popup()
+                            }
+                        }
 
                         onPostClicked: {
                             if (post) {

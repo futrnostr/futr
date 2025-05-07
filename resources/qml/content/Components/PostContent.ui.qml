@@ -3,7 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
-import QtMultimedia 5.15
+import QtGraphicalEffects 1.15
 
 import Components 1.0
 import Futr 1.0
@@ -21,6 +21,7 @@ Pane {
     property var comments: post ? post.comments : []
     property bool hideActions: false
     property bool showAuthor: false
+    property bool disableCommentAction: false
 
     property var componentMap: {
         "text": "PostContent/TextComponent.ui.qml",
@@ -201,6 +202,8 @@ Pane {
 
             RowLayout {
                 spacing: Constants.spacing_s
+                visible: !disableCommentAction
+
                 Button {
                     flat: true
                     icon.source: "qrc:/icons/comment.svg"
@@ -209,12 +212,40 @@ Pane {
                     implicitWidth: 36
                     implicitHeight: 36
                     padding: 8
-                    icon.color: comments.length > 0 ? Material.primary : Material.secondaryTextColor
+                    icon.color: Material.secondaryTextColor
                     onClicked: commentClicked()
                 }
                 Text {
                     text: comments.length
-                    color: comments.length > 0 ? Material.primary : Material.secondaryTextColor
+                    color: Material.secondaryTextColor
+                }
+            }
+
+            RowLayout {
+                spacing: Constants.spacing_s
+                visible: disableCommentAction
+
+                Item {
+                    width: 20
+                    height: 20
+
+                    Image {
+                        id: commentIcon
+                        source: "qrc:/icons/comment.svg"
+                        width: parent.width
+                        height: parent.height
+                    }
+
+                    ColorOverlay {
+                        anchors.fill: commentIcon
+                        source: commentIcon
+                        color: Material.secondaryTextColor
+                    }
+                }
+
+                Text {
+                    text: comments.length
+                    color: Material.secondaryTextColor
                 }
             }
 

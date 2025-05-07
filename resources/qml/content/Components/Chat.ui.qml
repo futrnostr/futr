@@ -32,9 +32,18 @@ Rectangle {
     }
 
     PostDialog {
-        id: quoteReplyDialog
-        inputPlaceholder: qsTr("Add a quote...")
-        buttonText: qsTr("Quote")
+        id: commentDialog
+        isQuoteMode: false
+        currentUser: chat.currentUser
+        currentUserPicture: chat.currentUserPicture
+
+        onMessageSubmitted: function(text) {
+            comment(targetPost.id, text)
+        }
+    }
+
+    PostDialog {
+        id: quoteReplyDialog // used by RepostMenu
         isQuoteMode: true
         currentUser: chat.currentUser
         currentUserPicture: chat.currentUserPicture
@@ -166,7 +175,8 @@ Rectangle {
 
                         onCommentClicked: {
                             if (post) {
-                                stackView.push(postDetailsComponent, { post: post })
+                                commentDialog.targetPost = post
+                                commentDialog.open()
                             }
                         }
 
