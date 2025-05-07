@@ -74,7 +74,7 @@ Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: Constants.spacing_xs
+        anchors.margins: 2
         visible: false
 
         onPostClicked: {
@@ -97,7 +97,7 @@ Rectangle {
         repeat: false
         onTriggered: {
             let targetHeight = referencedPostContent.visible 
-                            ? referencedPostContent.implicitHeight + 2 * Constants.spacing_xs
+                            ? referencedPostContent.implicitHeight + 4 // 4 for borders
                             : loadingContainer.height
 
             if (Math.abs(referencedPostContainer.height - targetHeight) > 1) {
@@ -105,5 +105,12 @@ Rectangle {
                 referencedPostContainer.Layout.preferredHeight = targetHeight
             }
         }
+    }
+
+    BusyIndicator {
+        id: loadingIndicator
+        anchors.centerIn: parent
+        visible: false
+        running: visible
     }
 }

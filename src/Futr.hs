@@ -196,11 +196,19 @@ runFutr = interpret $ \_ -> \case
     modify @AppState $ \st -> st { currentPost = eid }
 
     case (eid, previousPost) of
-      (Just newId, _) -> subscribeToCommentsFor newId
+      (Just newId, Just oldId) -> do
+        if newId == oldId
+          then pure()
+          else do
+            unsubscribeToCommentsFor oldId
+            subscribeToCommentsFor newId
+      (Just newId, Nothing) -> do
+        subscribeToCommentsFor newId
       (Nothing, Just oldId) -> do
         clearCommentsRef
         unsubscribeToCommentsFor oldId
-      (Nothing, Nothing) -> clearCommentsRef
+      (Nothing, Nothing) -> do
+        clearCommentsRef
     where
       clearCommentsRef =
         modify @QtQuickState $ \st ->
@@ -312,60 +320,54 @@ runFutr = interpret $ \_ -> \case
     logInfo "User logged out successfully"
 
   Repost eid -> do
-    st <- get @AppState
-    case keyPair st of
-      Nothing -> logError "No keypair found"
-      Just kp -> do
-        now <- getCurrentTime
-        mEvent <- getEvent eid
-        case mEvent of
-          Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just event -> do
-            relays <- getEventRelays eid
-            let e = createRepost event (Set.findMin relays) (keyPairToPubKeyXO kp) now
-            signed <- signEvent e kp
-            case signed of
-              Just s -> do
-                publishToOutbox s
-                mEventAndRelays <- getEvent eid
-                case mEventAndRelays of
-                  Just origEvent -> do
-                    relaySet <- getEventRelays eid
-                    let eventRelayUris = Set.fromList $
-                          [ uri | ("r":uri:_) <- tags origEvent
-                          , isValidRelayURI uri
-                          ]
+    kp <- getKeyPair
+    now <- getCurrentTime
+    mEvent <- getEvent eid
+    case mEvent of
+      Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
+      Just event -> do
+        relays <- getEventRelays eid
+        let e = createRepost event (Set.findMin relays) (keyPairToPubKeyXO kp) now
+        signed <- signEvent e kp
+        case signed of
+          Nothing -> logError "Failed to sign repost"
+          Just s -> do
+            publishToOutbox s
+            mEventAndRelays <- getEvent eid
+            case mEventAndRelays of
+              Nothing -> return ()
+              Just origEvent -> do
+                relaySet <- getEventRelays eid
+                let eventRelayUris = Set.fromList $
+                      [ uri | ("r":uri:_) <- tags origEvent
+                      , isValidRelayURI uri
+                      ]
 
-                    authorRelays <- getGeneralRelays (pubKey origEvent)
-                    let authorInboxUris = Set.fromList $ map getUri $
-                          filter isInboxCapable authorRelays
+                authorRelays <- getGeneralRelays (pubKey origEvent)
+                let authorInboxUris = Set.fromList $ map getUri $
+                      filter isInboxCapable authorRelays
 
-                    let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
+                let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
-                    forM_ (Set.toList targetUris) $ \relay ->
-                      publishToRelay s relay
-                    notify $ emptyUpdates { postsChanged = True }
-                  Nothing -> return ()
-              Nothing -> logError "Failed to sign repost"
+                forM_ (Set.toList targetUris) $ \relay ->
+                  publishToRelay s relay
+                notify $ emptyUpdates { postsChanged = True }
 
   QuoteRepost eid quote -> do
-    st <- get @AppState
-    case keyPair st of
-      Nothing -> logError "No keypair found"
-      Just kp -> do
-        now <- getCurrentTime
-        mEvent <- getEvent eid
-        case mEvent of
-          Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just event -> do
-            relays <- getEventRelays $ eventId event
-            let q = createQuoteRepost event (Set.findMin relays) quote (keyPairToPubKeyXO kp) now
-            signed <- signEvent q kp
-            case signed of
-              Just s -> do
-                publishToOutbox s
-                notify $ emptyUpdates { postsChanged = True }
-              Nothing -> logError "Failed to sign quote repost"
+    kp <- getKeyPair
+    now <- getCurrentTime
+    mEvent <- getEvent eid
+    case mEvent of
+      Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
+      Just event -> do
+        relays <- getEventRelays $ eventId event
+        let q = createQuoteRepost event (Set.findMin relays) quote (keyPairToPubKeyXO kp) now
+        signed <- signEvent q kp
+        case signed of
+          Nothing -> logError "Failed to sign quote repost"
+          Just s -> do
+            publishToOutbox s
+            notify $ emptyUpdates { postsChanged = True }
     where
       createQuoteRepost :: Event -> RelayURI -> Text -> PubKeyXO -> Int -> UnsignedEvent
       createQuoteRepost event relayUrl quote' xo t =
@@ -379,40 +381,37 @@ runFutr = interpret $ \_ -> \case
           }
 
   Comment eid comment' -> do
-    st <- get @AppState
-    case keyPair st of
-      Nothing -> logError "No keypair found"
-      Just kp -> do
-        now <- getCurrentTime
-        mEvent <- getEvent eid
-        case mEvent of
-          Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
-          Just ev -> do
-            let c = createComment ev comment' (keyPairToPubKeyXO kp) now
-            signed <- signEvent c kp
-            case signed of
-              Just s -> do
-                publishToOutbox s
-                mEventAndRelays <- getEvent eid
-                case mEventAndRelays of
-                  Just origEvent -> do
-                    relaySet <- getEventRelays eid
-                    let eventRelayUris = Set.fromList $
-                          [ uri | ("r":uri:_) <- tags origEvent
-                          , isValidRelayURI uri
-                          ]
+    kp <- getKeyPair
+    now <- getCurrentTime
+    mEvent <- getEvent eid
+    case mEvent of
+      Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
+      Just ev -> do
+        let c = createComment ev comment' (keyPairToPubKeyXO kp) now
+        signed <- signEvent c kp
+        case signed of
+          Nothing -> logError "Failed to sign comment"
+          Just s -> do
+            publishToOutbox s
+            mEventAndRelays <- getEvent eid
+            case mEventAndRelays of
+              Just origEvent -> do
+                relaySet <- getEventRelays eid
+                let eventRelayUris = Set.fromList $
+                      [ uri | ("r":uri:_) <- tags origEvent
+                      , isValidRelayURI uri
+                      ]
 
-                    authorRelays <- getGeneralRelays (pubKey origEvent)
-                    let authorInboxUris = Set.fromList $ map getUri $
-                          filter isInboxCapable authorRelays
+                authorRelays <- getGeneralRelays (pubKey origEvent)
+                let authorInboxUris = Set.fromList $ map getUri $
+                      filter isInboxCapable authorRelays
 
-                    let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
+                let targetUris = eventRelayUris `Set.union` authorInboxUris `Set.union` relaySet
 
-                    forM_ (Set.toList targetUris) $ \relay ->
-                      publishToRelay s relay
-                    notify $ emptyUpdates { postsChanged = True }
-                  Nothing -> return ()
-              Nothing -> logError "Failed to sign comment"
+                forM_ (Set.toList targetUris) $ \relay ->
+                  publishToRelay s relay
+                notify $ emptyUpdates { postsChanged = True }
+              Nothing -> return ()
 
   Futr.DeleteEvent eid reason -> do
       kp <- getKeyPair
@@ -462,19 +461,16 @@ loginWithAccount obj a = do
 -- | Send a follow list event.
 sendFollowListEvent :: FutrEff es => [Follow] -> Eff es ()
 sendFollowListEvent follows = do
-    st <- get @AppState
-    case keyPair st of
-        Nothing -> logError "No keypair found"
-        Just kp -> do
-            let userPK = keyPairToPubKeyXO kp
-            currentTime <- getCurrentTime
-            let followTuples = map (\f -> (pubkey f, Nothing)) follows
-            let event = createFollowList followTuples userPK currentTime
-            signedEvent <- signEvent event kp
-            case signedEvent of
-                Just signedEvent' -> do
-                    publishToOutbox signedEvent'
-                Nothing -> logError "Failed to sign follow list event"
+    kp <- getKeyPair
+    let userPK = keyPairToPubKeyXO kp
+    currentTime <- getCurrentTime
+    let followTuples = map (\f -> (pubkey f, Nothing)) follows
+    let event = createFollowList followTuples userPK currentTime
+    signedEvent <- signEvent event kp
+    case signedEvent of
+        Just signedEvent' -> do
+            publishToOutbox signedEvent'
+        Nothing -> logError "Failed to sign follow list event"
 
 
 -- | Search for a profile in relays.

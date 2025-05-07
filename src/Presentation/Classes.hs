@@ -1,6 +1,5 @@
 module Presentation.Classes where
 
-import Control.Monad.Fix (mfix)
 import Data.Aeson (toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
@@ -30,7 +29,7 @@ import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (ProfileManager, getProfile)
 import Nostr.Util (Util, getCurrentTime, getKeyPair)
 import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..), storeProfileContentRef)
-import Store.Lmdb (LmdbStore, getCommentIds, getEvent, getEventRelays, getFollows)
+import Store.Lmdb (LmdbStore, getCommentsWithIndentationLevel, getEvent, getEventRelays, getFollows)
 import TimeFormatter
 import Types (AppState(..), Follow(..), PublishStatus(..), RelayPool(..))
 
@@ -39,6 +38,7 @@ data Classes :: Effect where
     PostClass :: SignalKey (IO ()) -> Classes m (Class EventId)
     PublishStatusClass :: SignalKey (IO ()) -> Classes m (Class EventId)
     FollowClass :: SignalKey (IO ()) -> Classes m (Class PubKeyXO)
+    CommentClass :: SignalKey (IO ()) -> Classes m (Class (EventId, Int))
 
 
 type instance DispatchOf Classes = Dynamic
@@ -152,7 +152,7 @@ runClasses = interpret $ \_ -> \case
                     _ -> return Nothing
 
 
-        mfix $ \postClass' -> newClass [
+        newClass [
             defPropertyRO' "id" $ \obj -> do
               let eid = fromObjRef obj :: EventId
               let value = TE.decodeUtf8 $ B16.encode $ getEventId eid
@@ -298,8 +298,9 @@ runClasses = interpret $ \_ -> \case
               let eid = fromObjRef obj :: EventId
               runE $ storePostObjRef eid "comments" obj
               runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { currentPostCommentsObjRef = Just obj } }
-              commentIds <- runE $ getCommentIds eid
-              mapM (newObject postClass') commentIds
+              commentIds <- runE $ getCommentsWithIndentationLevel eid
+              commentClass' <- runE $ createCommentClass changeKey'
+              mapM (newObject commentClass') commentIds
           ]
 
     PublishStatusClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
@@ -355,6 +356,23 @@ runClasses = interpret $ \_ -> \case
                 (profile, _) <- runE $ getProfile pk
                 return $ fromMaybe "" (picture profile))
           ]
+
+    CommentClass changeKey' -> createCommentClass changeKey'
+
+
+
+createCommentClass :: ClassesEff es => SignalKey (IO ()) -> Eff es (Class (EventId, Int))
+createCommentClass changeKey' = liftIO $ do
+    newClass [
+        defPropertySigRO' "post" changeKey' $ \obj -> do
+            let (eid, _) = fromObjRef obj :: (EventId, Int)
+            return $ TE.decodeUtf8 $ B16.encode $ getEventId eid,
+
+        defPropertySigRO' "indentationLevel" changeKey' $ \obj -> do
+            let (_, level) = fromObjRef obj :: (EventId, Int)
+            return level
+        ]
+
 
 -- | Store a profile object reference in the property map
 storeProfileObjRef :: ClassesEff es => PubKeyXO -> PropertyName -> ObjRef PubKeyXO -> Eff es ()
@@ -447,12 +465,16 @@ parseContentParts objRef contentText
     findNostrMatches :: Text -> [(Int, Int, Text)]
     findNostrMatches text =
         let positions = Text.breakOnAll "nostr:" text
-        in concatMap (\(before, _) ->
+        in concatMap (\(before, after) ->
                 let startPos = Text.length before
-                    fullEntity = extractEntity (Text.drop (Text.length before) text)
+                    fullEntity = extractEntity after
                     endPos = startPos + Text.length fullEntity
+                    -- Only match if it's a valid nostr reference
+                    isValidNostrRef = Text.length fullEntity >= 11 &&
+                        let prefix = Text.take 5 (Text.drop 6 fullEntity) -- after "nostr:"
+                        in prefix `elem` ["note1", "npub1", "nprof", "neven", "naddr"]
                     -- Determine the nostr reference type
-                    nostrType = if Text.length fullEntity >= 11
+                    nostrType = if isValidNostrRef
                                 then
                                     let prefix = Text.take 5 (Text.drop 6 fullEntity) -- after "nostr:"
                                     in case prefix of
@@ -462,8 +484,10 @@ parseContentParts objRef contentText
                                         "neven" -> "nevent"
                                         "naddr" -> "naddr"
                                         _ -> "nostr"
-                                else "nostr"
-                in [(startPos, endPos, nostrType)]
+                                else "text" -- Treat as regular text if not a valid nostr reference
+                in if isValidNostrRef
+                   then [(startPos, endPos, nostrType)]
+                   else [] -- Skip invalid matches
             ) positions
 
     -- Extract a complete entity from text

@@ -6,6 +6,7 @@ import QtQuick.Layouts 1.15
 
 import Components 1.0
 import Futr 1.0
+import Dialogs 1.0
 import HsQML.Model 1.0
 
 Page {
@@ -14,6 +15,19 @@ Page {
     property var post: null
     required property string currentUser
     required property string currentUserPicture
+    property var comments: post ? post.comments : []
+
+    Component.onCompleted: {
+        setCurrentPost(post ? post.id : null)
+    }
+
+    Component.onDestruction: {
+        setCurrentPost(null)
+    }
+
+    onPostChanged: {
+        setCurrentPost(post ? post.id : null)
+    }
 
     header: ToolBar {
         RowLayout {
@@ -43,6 +57,31 @@ Page {
         }
     }
 
+    RepostMenu {
+        id: repostMenu
+    }
+
+    EventJSONDialog {
+        id: eventJsonDialog
+    }
+
+    SeenOnRelaysDialog {
+        id: seenOnRelaysDialog
+    }
+
+    PostDialog {
+        id: quoteReplyDialog
+        inputPlaceholder: qsTr("Add a quote...")
+        buttonText: qsTr("Quote")
+        isQuoteMode: true
+        currentUser: root.currentUser
+        currentUserPicture: root.currentUserPicture
+
+        onMessageSubmitted: function(text) {
+            quoteRepost(targetPost.id, text)
+        }
+    }
+
     ScrollView {
         anchors.fill: parent
         anchors.bottomMargin: replyInput.height
@@ -60,73 +99,101 @@ Page {
                 Layout.topMargin: Constants.spacing_xs
                 Layout.leftMargin: 0
                 Layout.rightMargin: Constants.spacing_m
+                showAuthor: true
+
+                onRepostClicked: {
+                    if (post) {
+                        repostMenu.targetPost = post
+                        repostMenu.popup()
+                    }
+                }
+            }
+
+            MessageInput {
+                id: replyInput
+                height: implicitHeight
+                placeholderText: qsTr("Reply to post...")
+                buttonText: qsTr("Send")
+                currentUser: root.currentUser
+                currentUserPicture: root.currentUserPicture
+                Layout.margins: 0
+                Layout.rightMargin: Constants.spacing_m
+                width: scrollView.width
+
+                onMessageSent: function(text) {
+                    if (root.post && root.post.id) {
+                        comment(root.post.id, text)
+                        text = ""
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 0
+                Layout.rightMargin: Constants.spacing_m
+                width: scrollView.width
+                spacing: Constants.spacing_s
+
+                Label {
+                    text: qsTr("Seen on relays:")
+                    color: Material.foreground
+                    Layout.leftMargin: 0
+                    font: Constants.fontMedium
+                }
+
+                Text {
+                    text: post ? post.relays.join(", ") : ""
+                    color: Material.foreground
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
             }
 
             Label {
-                text: qsTr("Seen on Relays")
+                text: qsTr("Comments: ") + comments.length
                 color: Material.foreground
                 Layout.leftMargin: 0
                 font: Constants.fontMedium
             }
 
-            Repeater {
-                model: post ? post.relays : []
-                delegate: ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 0
-                    Layout.rightMargin: Constants.spacing_m
-                    spacing: Constants.spacing_s
-
-                    Text {
-                        text: modelData
-                        color: Material.foreground
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 1
-                        color: Material.dividerColor
-                        visible: post && post.relays.length > 1 && index < post.relays.length - 1
-                    }
-                }
-            }
-
-            Label {
-                text: qsTr("Comments")
-                color: Material.foreground
-                Layout.leftMargin: Constants.spacing_m
-                font: Constants.fontMedium
-                visible: commentsModel.count > 0
-            }
-
-            // Comments sections
+            // Comments section
             ScrollingListView {
                 id: commentsView
                 Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(contentHeight, 1000)
-                Layout.leftMargin: Constants.spacing_m
+                Layout.preferredHeight: contentHeight
+                Layout.leftMargin: 0
                 Layout.rightMargin: Constants.spacing_m
+                Layout.maximumHeight: 1000
+                leftMargin: 0
+                spacing: 2
 
                 model: AutoListModel {
                     id: commentsModel
-                    source: root.post ? root.post.comments : []
+                    source: comments
                     mode: AutoListModel.ByKey
-                    equalityTest: function (oldItem, newItem) {
-                        return oldItem.id === newItem.id
-                    }
                 }
 
-                delegate: Loader {
-                    active: modelData !== undefined && modelData !== null
-                    width: commentsView.width - commentsView.leftMargin - commentsView.rightMargin
-                    height: active ? item.implicitHeight : 0
+                delegate: Item {
+                    width: commentsView.width - Constants.spacing_m - 1
+                    height: postContent.implicitHeight
 
-                    sourceComponent: PostContent {
-                        post: modelData
+                    property int indentation: modelData ? modelData.indentationLevel * Constants.spacing_xl : 0
+
+                    PostContent {
+                        id: postContent
+                        post: modelData ? getPost(modelData.post) : null
                         currentUser: root.currentUser
-                        Layout.fillWidth: true
+                        width: parent.width - indentation
+                        x: indentation
+                        showAuthor: true
+                        hideActions: true
+
+                        onPostClicked: {
+                            if (post) {
+                                stackView.push(postDetailsComponent, { post: post })
+                            }
+                        }
                     }
                 }
             }
@@ -134,25 +201,6 @@ Page {
             Item {
                 Layout.fillHeight: true
                 height: 20
-            }
-        }
-    }
-
-    MessageInput {
-        id: replyInput
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        height: implicitHeight
-        placeholderText: qsTr("Reply to post...")
-        buttonText: qsTr("Send")
-        currentUser: root.currentUser
-        currentUserPicture: root.currentUserPicture
-
-        onMessageSent: function(text) {
-            if (root.post && root.post.id) {
-                sendReply(root.post.id, text)
-                text = ""
             }
         }
     }

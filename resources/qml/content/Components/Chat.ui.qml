@@ -44,35 +44,8 @@ Rectangle {
         }
     }
 
-    Menu {
+    RepostMenu {
         id: repostMenu
-        property var targetPost: null
-
-        MenuItem {
-            text: qsTr("Repost")
-            onTriggered: {
-                if (repostMenu.targetPost.postType == "repost") {
-                    repost(repostMenu.targetPost.referencedPostId, text)
-                } else {
-                    repost(repostMenu.targetPost.id, text)
-                }
-            }
-        }
-
-        MenuItem {
-            text: qsTr("Quote Post")
-            onTriggered: {
-                quoteReplyDialog.targetPost = repostMenu.targetPost
-
-                if (repostMenu.targetPost.postType == "repost") {
-                    quoteReplyDialog.targetPost = repostMenu.targetPost.referencedPostId
-                } else {
-                    quoteReplyDialog.targetPost = repostMenu.targetPost
-                }
-
-                quoteReplyDialog.open()
-            }
-        }
     }
 
     ColumnLayout {
@@ -183,11 +156,6 @@ Rectangle {
                         id: postsModel
                         source: posts
                         mode: AutoListModel.ByKey
-                        equalityTest: function (oldItem, newItem) {
-                            return oldItem.id == newItem.id
-                                && oldItem.relays == newItem.relays
-                                && oldItem.comments == newItem.comments
-                        }
                     }
 
                     delegate: PostContent {
@@ -198,9 +166,7 @@ Rectangle {
 
                         onCommentClicked: {
                             if (post) {
-                                //commentsDialog.targetPost = post
-                                //setCurrentPost(post.id)
-                                //commentsDialog.open()
+                                stackView.push(postDetailsComponent, { post: post })
                             }
                         }
 
@@ -314,15 +280,6 @@ Rectangle {
         }
     }
 
-    // Add loading indicator
-    BusyIndicator {
-        id: loadingIndicator
-        anchors.centerIn: parent
-        visible: false
-        running: visible
-        z: 1000
-    }
-
     // Add error banner
     Rectangle {
         id: errorBanner
@@ -354,34 +311,6 @@ Rectangle {
         }
     }
 
-    // Add states for UI elements
-    states: [
-        State {
-            name: "loading"
-            PropertyChanges { target: loadingIndicator; visible: true }
-            PropertyChanges { target: mainContentArea; opacity: 0.5 }
-        },
-        State {
-            name: "error"
-            PropertyChanges { target: errorBanner; visible: true }
-        },
-        State {
-            name: "ready"
-            PropertyChanges { target: mainContentArea; opacity: 1.0 }
-        }
-    ]
-/*
-    transitions: [
-        Transition {
-            from: "*"; to: "*"
-            NumberAnimation {
-                properties: "opacity"
-                duration: 150
-                easing.type: Easing.InOutQuad
-            }
-        }
-    ]
-*/
     EventJSONDialog {
         id: eventJsonDialog
     }

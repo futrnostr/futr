@@ -18,6 +18,9 @@ Pane {
     property var author
     property bool privateChatMode: false
     property var contentParts: post ? post.contentParts : []
+    property var comments: post ? post.comments : []
+    property bool hideActions: false
+    property bool showAuthor: false
 
     property var componentMap: {
         "text": "PostContent/TextComponent.ui.qml",
@@ -108,7 +111,7 @@ Pane {
 
         RowLayout {
             Layout.fillWidth: true
-            visible: isRefPost
+            visible: showAuthor || isRefPost
 
             Rectangle {
                 Layout.preferredWidth: root.isCollapsed ? 30 : 34
@@ -192,7 +195,7 @@ Pane {
             Layout.topMargin: 0
             Layout.bottomMargin: 0
             Layout.preferredHeight: 36
-            visible: !isRefPost && !privateChatMode
+            visible: !hideActions && !isRefPost && !privateChatMode
 
             Item { Layout.fillWidth: true }
 
@@ -206,12 +209,12 @@ Pane {
                     implicitWidth: 36
                     implicitHeight: 36
                     padding: 8
-                    icon.color: post && post.comments && post.comments.length > 0 ? Material.primary : Material.secondaryTextColor
+                    icon.color: comments.length > 0 ? Material.primary : Material.secondaryTextColor
                     onClicked: commentClicked()
                 }
                 Text {
-                    text: post && post.comments ? post.comments.length : "0"
-                    color: post && post.comments && post.comments.length > 0 ? Material.primary : Material.secondaryTextColor
+                    text: comments.length
+                    color: comments.length > 0 ? Material.primary : Material.secondaryTextColor
                 }
             }
 
