@@ -1,5 +1,6 @@
 import Control.Monad (filterM, forM)
 import Data.Time.Clock (UTCTime)
+import Data.Time.Clock.POSIX (getPOSIXTime, posixSecondsToUTCTime)
 import Distribution.Simple
 import Distribution.Simple.Setup (BuildFlags)
 import Distribution.Simple.UserHooks (Args, postBuild, preBuild)
@@ -9,10 +10,9 @@ import Distribution.Types.LocalBuildInfo
 import Distribution.Types.PackageDescription
 import Distribution.Types.UnqualComponentName
 import System.Process (rawSystem)
-import System.Directory (listDirectory, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getModificationTime)
+import System.Directory (listDirectory, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getModificationTime, setModificationTime)
 import System.Exit
 import System.FilePath ((</>), makeRelative, takeExtension)
-import System.Posix.Files (touchFile)
 
 main = defaultMainWithHooks simpleUserHooks { preBuild = myPreBuild }
 
@@ -45,7 +45,8 @@ myPreBuild _ _ = do
     else
         putStrLn "No resource file changes detected."
 
-    touchFile touchFileName
+    currentTime <- getPOSIXTime
+    setModificationTime touchFileName (posixSecondsToUTCTime currentTime)
 
     let buildInfo = emptyBuildInfo { cSources = ["resources.cpp"] }
     return (Nothing, [(mkUnqualComponentName "futr", buildInfo)])
