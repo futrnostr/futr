@@ -27,23 +27,6 @@ import RelayMgmt
 import Store.Lmdb
 import Types
 
-
--- | SubscriptionEff
-type SubscriptionEff es =
-  ( State AppState :> es
-  , State RelayPool :> es
-  , LmdbStore :> es
-  , RelayConnection :> es
-  , KeyMgmt :> es
-  , RelayMgmt :> es
-  , Util :> es
-  , Logging :> es
-  , Concurrent :> es
-  , QtQuick :> es
-  , IOE :> es
-  )
-
-
 -- | Subscription effects
 data Subscription :: Effect where
     Subscribe :: RelayURI -> Filter -> Subscription m SubscriptionId
@@ -63,6 +46,22 @@ stopSubscription subId = send $ StopSubscription subId
 
 stopAllSubscriptions :: Subscription :> es => RelayURI -> Eff es ()
 stopAllSubscriptions uri = send $ StopAllSubscriptions uri
+
+
+-- | SubscriptionEff
+type SubscriptionEff es =
+  ( State AppState :> es
+  , State RelayPool :> es
+  , LmdbStore :> es
+  , RelayConnection :> es
+  , KeyMgmt :> es
+  , RelayMgmt :> es
+  , Util :> es
+  , Logging :> es
+  , Concurrent :> es
+  , QtQuick :> es
+  , IOE :> es
+  )
 
 
 -- | Handler for subscription effects.

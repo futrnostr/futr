@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -60,6 +61,16 @@ import Lmdb.Map qualified as LMap
 import Lmdb.Types
 import Pipes.Prelude qualified as Pipes
 import Pipes ((>->))
+import System.Directory (doesFileExist, getFileSize)
+import System.DiskSpace (getDiskUsage, diskAvail)
+import System.FilePath ((</>))
+
+-- Windows specific imports and FFI for marking a file as sparse
+#ifdef mingw32_HOST_OS
+import Foreign
+import System.Win32.Types (HANDLE, BOOL, DWORD, iNVALID_HANDLE_VALUE)
+import System.Win32.File (createFile, closeHandle, gENERIC_WRITE, fILE_SHARE_WRITE, oPEN_EXISTING, fILE_ATTRIBUTE_NORMAL)
+#endif
 
 import Logging
 import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..)
@@ -716,9 +727,25 @@ defaultJsonSettings = makeSettings
             Left _ -> Nothing))
 
 
--- Lmdb configuration
-maxMapSize :: Int
-maxMapSize = 500_000_000_000 -- 500 GB
+-- Lmdb configuration(
+
+-- | Determine a reasonable map size.
+--   Priority order:
+--     1. 95% of disk space reported by 'diskAvail'
+--     2. lower bound of 200 MB
+determineMapSize :: FilePath -> IO Int
+determineMapSize path = do
+    usage <- getDiskUsage path
+    let bytesAvail = diskAvail usage
+    dbSize <- getDbSize path
+    let availD :: Double
+        availD = fromIntegral bytesAvail
+        minFree = 200 * 1000 * 1000 -- 200 MB
+        minMap = max dbSize minFree
+        maxMap = dbSize + floor (availD * 0.95)
+        mapSize = max minMap maxMap
+    pure mapSize
+
 
 maxReaders :: Int
 maxReaders = 120
@@ -726,12 +753,53 @@ maxReaders = 120
 maxDbs :: Int
 maxDbs = 11
 
+
+-- Windows specific imports and FFI for marking a file as sparse
+#ifdef mingw32_HOST_OS
+foreign import ccall unsafe "windows.h DeviceIOControl"
+    c_DeviceIOControl :: HANDLE -> DWORD -> Ptr () -> DWORD -> Ptr () -> DWORD -> Ptr DWORD -> Ptr () -> IO BOOL
+
+fSCTL_SET_SPARSE :: DWORD
+fSCTL_SET_SPARSE = 0x900C4
+
+-- Mark a file as sparse (Windows only)
+markFileSparse :: FilePath -> IO ()
+markFileSparse path = do
+    h <- createFile path gENERIC_WRITE fILE_SHARE_WRITE Nothing oPEN_EXISTING fILE_ATTRIBUTE_NORMAL Nothing
+    if h == iNVALID_HANDLE_VALUE
+        then pure ()
+        else alloca $ \lpBytesReturned -> do
+            _ <- c_DeviceIOControl h fSCTL_SET_SPARSE nullPtr 0 nullPtr 0 lpBytesReturned nullPtr
+            closeHandle h
+            pure ()
+#endif
+
 -- | Initialize the Lmdb environment
 initializeEnv :: FilePath -> IO (Environment ReadWrite, MVar ())
 initializeEnv dbPath = do
-    env <- initializeReadWriteEnvironment maxMapSize maxReaders maxDbs dbPath
+#ifdef mingw32_HOST_OS
+    let dataFile = dbPath ++ "\\data.mdb"
+    exists <- doesFileExist dataFile
+    unless exists $ do
+        -- Create an empty file so we can mark it as sparse
+        writeFile dataFile ""
+    markFileSparse dataFile
+#endif
+    mapSize <- determineMapSize dbPath
+    env <- initializeReadWriteEnvironment mapSize maxReaders maxDbs dbPath
     lock <- newMVar ()
     pure (env, lock)
+
+
+-- Return current size of the LMDB data.mdb file (in bytes) or 0 if absent.
+getDbSize :: FilePath -> IO Int
+getDbSize dir = do
+    let dataFile = dir </> "data.mdb"
+    exists <- doesFileExist dataFile
+    if exists
+        then fmap (fromIntegral :: Integer -> Int) (getFileSize dataFile)
+        else pure 0
+
 
 -- | Settings for the event database
 eventDbSettings :: DatabaseSettings EventId Event

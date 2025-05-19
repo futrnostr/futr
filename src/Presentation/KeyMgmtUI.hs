@@ -5,13 +5,15 @@
 
 module Presentation.KeyMgmtUI where
 
+import Control.Monad (void)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
+import Data.Text (Text, unpack)
 import Effectful
 import Effectful.Concurrent
+import Effectful.Concurrent.Async (async)
 import Effectful.Dispatch.Dynamic (EffectHandler, interpret, send)
-import Effectful.FileSystem (FileSystem)
-import Effectful.State.Static.Shared (State, get, modify)
+import Effectful.FileSystem (FileSystem, XdgDirectory(..), createDirectoryIfMissing, getXdgDirectory)
+import Effectful.State.Static.Shared (State, get, modify, put)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 
 import QtQuick
@@ -20,14 +22,17 @@ import Logging
 import Nostr
 import Nostr.Bech32
 import Nostr.InboxModel
+import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Publisher
 import Nostr.Util
+import Store.Lmdb (LmdbState, initializeLmdbState)
 import Types (AppState(..), RelayPool(..), initialRelayPool)
 
 -- | Key Management UI Effect.
 type KeyMgmgtUIEff es =
   ( State AppState :> es
   , State RelayPool :> es
+  , State LmdbState :> es
   , Util :> es
   , Nostr :> es
   , InboxModel :> es
@@ -121,7 +126,18 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                   Just kp -> do
                     modify @AppState $ \s -> s { keyPair = Just kp }
                     modify @RelayPool $ const initialRelayPool
-                    startInboxModel
+
+                    -- Create the directory for the account
+                    let pk = keyPairToPubKeyXO kp
+                    baseDir <- getXdgDirectory XdgData ("futrnostr" <> unpack (pubKeyXOToBech32 pk))
+                    createDirectoryIfMissing True baseDir
+                    let lmdDir = baseDir <> "db"
+                    createDirectoryIfMissing True lmdDir
+                    -- Initialize the LMDB database
+                    lmdbState <- liftIO $ initializeLmdbState lmdDir
+                    put @LmdbState lmdbState
+
+                    void $ async $ startInboxModel
                     return True
 
                   Nothing -> do

@@ -4,6 +4,11 @@ tests: True
 
 source-repository-package
   type: git
+  location: https://github.com/prolic/libsecp256k1-haskell
+  tag: 63a3d0bafe00fddd106b5e5f703069c1d8ee820a
+
+source-repository-package
+  type: git
   location: https://github.com/prolic/HsQML
   tag: 383c32ac42a9ef9dd081f96107f3458cf2f9a53d
 
