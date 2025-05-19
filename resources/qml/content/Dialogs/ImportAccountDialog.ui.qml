@@ -125,21 +125,18 @@ Dialog {
                 Layout.rightMargin: 10
                 Layout.preferredWidth: implicitWidth + 80
 
-                Connections {
-                    target: importButton
-                    onClicked: function () {
-                        if (radionsec.checked) {
-                            var res = ctxKeyMgmt.importSecretKey(secretkey.text);
-                            if (res === true) {
-                                importSuccessDialog.visible = true
-                                importAccountDialog.visible = false
-                            }
-                        } else if (radioseedphrase.checked) {
-                            var res = ctxKeyMgmt.importSeedphrase(seedphrase.text, password.text)
-                            if (res === true) {
-                                importSuccessDialog.visible = true
-                                importAccountDialog.visible = false
-                            }
+                onClicked: {
+                    if (radionsec.checked) {
+                        var res = ctxKeyMgmt.importSecretKey(secretkey.text);
+                        if (res === true) {
+                            importSuccessDialog.visible = true
+                            importAccountDialog.visible = false
+                        }
+                    } else if (radioseedphrase.checked) {
+                        var res = ctxKeyMgmt.importSeedphrase(seedphrase.text, password.text)
+                        if (res === true) {
+                            importSuccessDialog.visible = true
+                            importAccountDialog.visible = false
                         }
                     }
                 }
