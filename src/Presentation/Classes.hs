@@ -32,6 +32,8 @@ import Store.Lmdb (LmdbStore, getCommentsWithIndentationLevel, getEvent, getEven
 import TimeFormatter
 import Types (AppState(..), Follow(..), PublishStatus(..), RelayPool(..))
 
+
+-- Effect for creating C++ classes for usage in QtQuick QML
 data Classes :: Effect where
     ProfileClass :: SignalKey (IO ()) -> Classes m (Class PubKeyXO)
     PostClass :: SignalKey (IO ()) -> Classes m (Class EventId)

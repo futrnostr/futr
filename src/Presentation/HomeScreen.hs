@@ -46,7 +46,7 @@ import Store.Lmdb (LmdbStore, TimelineType(..), getEvent, getFollows, getTimelin
 import Types
 
 
--- | Key Management Effect for creating QML UI.
+-- | HomeScren Effect for creating QML UI.
 data HomeScreen :: Effect where
   CreateUI :: SignalKey (IO ()) -> HomeScreen m (ObjRef ())
 
