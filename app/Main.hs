@@ -33,10 +33,8 @@ import Types (AppState(..), RelayPool(..), initialState, initialRelayPool)
 -- | Main function for the app.
 main :: IO ()
 main = do
-    setEnv "QT_AUTO_SCREEN_SCALE_FACTOR" "1"
+    -- Only works on linux, for debugging only
     setEnv "QT_LOGGING_RULES" "qt.qml.connections=false"
-    setEnv "QT_ENABLE_HIGHDPI_SCALING" "1"
-    setEnv "QT_QUICK_CONTROLS_STYLE" "Material"
 
     runEff
         . runLoggingStdout
@@ -75,12 +73,12 @@ main = do
                         [ "qrc:/qml"
                         , "qrc:/qml/content"
                         , "qrc:/qml/imports"
-                    ]
+                        ]
                     , QML.iconPath = Just ":/icons/nostr-purple.png"
                     }
 
             --liftIO $ QML.setQtFlag QML.QtEnableQMLDebug True
-
+            liftIO $ QML.enableHighDpiScaling
             runEngineLoop config changeKey ctx
             
 
