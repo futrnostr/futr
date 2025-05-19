@@ -7,9 +7,8 @@ import Data.Set qualified as Set
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, modify)
-import Effectful.TH
 
 import Nostr.Event (Kind(..))
 import Nostr.Keys (PubKeyXO)
@@ -40,7 +39,13 @@ data ProfileManager :: Effect where
 
 type instance DispatchOf ProfileManager = Dynamic
 
-makeEffect ''ProfileManager
+
+getProfile :: ProfileManager :> es => PubKeyXO -> Eff es (Profile, Int)
+getProfile pk = send $ GetProfile pk
+
+fetchProfile :: ProfileManager :> es => PubKeyXO -> [RelayURI] -> Eff es (Profile, Int)
+fetchProfile pk relayHints = send $ FetchProfile pk relayHints
+
 
 type ProfileManagerEff es =
     ( LmdbStore :> es

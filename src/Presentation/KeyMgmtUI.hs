@@ -10,10 +10,9 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Dispatch.Dynamic (EffectHandler, interpret)
+import Effectful.Dispatch.Dynamic (EffectHandler, interpret, send)
 import Effectful.FileSystem (FileSystem)
 import Effectful.State.Static.Shared (State, get, modify)
-import Effectful.TH
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 
 import QtQuick
@@ -51,7 +50,8 @@ data KeyMgmtUI :: Effect where
 type instance DispatchOf KeyMgmtUI = Dynamic
 
 
-makeEffect ''KeyMgmtUI
+createUI :: KeyMgmtUI :> es => SignalKey (IO ()) -> Eff es (ObjRef ())
+createUI changeKey = send $ CreateUI changeKey
 
 
 -- | Run the Key Management UI effect.

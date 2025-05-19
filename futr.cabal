@@ -74,7 +74,6 @@ executable futr
                         OverloadedStrings,
                         RankNTypes,
                         ScopedTypeVariables,
-                        TemplateHaskell,
                         TypeApplications,
                         TypeFamilies,
                         TypeOperators
@@ -97,7 +96,6 @@ executable futr
         directory >=1.3.7.1 && <1.4,
         effectful >=2.5.1.0 && <2.6,
         effectful-core >=2.5.1.0 && <2.6,
-        effectful-th >=1.0.0.3 && <1.1,
         entropy >=0.4.1.10 && <0.5,
         filepath >= 1.4.2 && <1.5,
         haskoin-core,

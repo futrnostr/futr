@@ -9,9 +9,8 @@ import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTVarIO, readTQueue
                                 , readTVar, writeTChan, writeTVar, modifyTVar)
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, gets, modify)
-import Effectful.TH
 import Prelude hiding (until)
 
 import KeyMgmt (KeyMgmt)
@@ -35,7 +34,16 @@ data SubscriptionHandler :: Effect where
 
 type instance DispatchOf SubscriptionHandler = Dynamic
 
-makeEffect ''SubscriptionHandler
+
+handleSubscription :: SubscriptionHandler :> es => SubscriptionId -> Eff es ()
+handleSubscription subId = send $ HandleSubscription subId
+
+handleSubscriptionUntilEOSE :: SubscriptionHandler :> es => SubscriptionId -> Eff es ()
+handleSubscriptionUntilEOSE subId = send $ HandleSubscriptionUntilEOSE subId
+
+handlePaginationSubscription :: SubscriptionHandler :> es => SubscriptionId -> Eff es ()
+handlePaginationSubscription subId = send $ HandlePaginationSubscription subId
+
 
 -- | SubscriptionEff
 type SubscriptionHandlerEff es =

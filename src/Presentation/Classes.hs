@@ -13,10 +13,9 @@ import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.FileSystem
 import Effectful.State.Static.Shared (State, get, modify)
-import Effectful.TH
 import Graphics.QML
 import System.FilePath ((</>), takeExtension, dropExtension)
 
@@ -43,7 +42,22 @@ data Classes :: Effect where
 
 type instance DispatchOf Classes = Dynamic
 
-makeEffect ''Classes
+
+profileClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class PubKeyXO)
+profileClass changeKey = send $ ProfileClass changeKey
+
+postClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class EventId)
+postClass changeKey = send $ PostClass changeKey
+
+publishStatusClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class EventId)
+publishStatusClass changeKey = send $ PublishStatusClass changeKey
+
+followClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class PubKeyXO)
+followClass changeKey = send $ FollowClass changeKey
+
+commentClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class (EventId, Int))
+commentClass changeKey = send $ CommentClass changeKey
+
 
 -- | SubscriptionEff
 type ClassesEff es =

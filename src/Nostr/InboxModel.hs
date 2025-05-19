@@ -15,9 +15,8 @@ import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, cancel, forConcurrently)
 import Effectful.Concurrent.STM
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, gets, put, modify)
-import Effectful.TH
 
 import Logging
 import Nostr
@@ -58,7 +57,25 @@ data InboxModel :: Effect where
 
 type instance DispatchOf InboxModel = Dynamic
 
-makeEffect ''InboxModel
+
+startInboxModel :: InboxModel :> es => Eff es ()
+startInboxModel = send StartInboxModel
+
+stopInboxModel :: InboxModel :> es => Eff es ()
+stopInboxModel = send StopInboxModel
+
+awaitAtLeastOneConnected :: InboxModel :> es => Eff es Bool
+awaitAtLeastOneConnected = send AwaitAtLeastOneConnected
+
+subscribeToProfilesAndPostsFor :: InboxModel :> es => PubKeyXO -> Eff es [SubscriptionId]
+subscribeToProfilesAndPostsFor pk = send $ SubscribeToProfilesAndPostsFor pk
+
+subscribeToCommentsFor :: InboxModel :> es => EventId -> Eff es ()
+subscribeToCommentsFor eid = send $ SubscribeToCommentsFor eid
+
+unsubscribeToCommentsFor :: InboxModel :> es => EventId -> Eff es ()
+unsubscribeToCommentsFor eid = send $ UnsubscribeToCommentsFor eid
+
 
 type InboxModelEff es =
   ( State AppState :> es

@@ -8,15 +8,10 @@ import Data.Text.Encoding (decodeUtf8)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.STM (atomically, newTQueueIO, writeTChan, writeTQueue)
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, modify)
-import Effectful.TH
 import Prelude hiding (until)
 import System.Random (randomIO)
-
--- debug imports
---import Crypto.Hash.SHA256 qualified as SHA256
---import Data.Aeson (encode)
 
 import QtQuick
 import KeyMgmt (KeyMgmt)
@@ -59,7 +54,16 @@ data Subscription :: Effect where
 
 type instance DispatchOf Subscription = Dynamic
 
-makeEffect ''Subscription
+
+subscribe :: Subscription :> es => RelayURI -> Filter -> Eff es SubscriptionId
+subscribe uri filter' = send $ Subscribe uri filter'
+
+stopSubscription :: Subscription :> es => SubscriptionId -> Eff es ()
+stopSubscription subId = send $ StopSubscription subId
+
+stopAllSubscriptions :: Subscription :> es => RelayURI -> Eff es ()
+stopAllSubscriptions uri = send $ StopAllSubscriptions uri
+
 
 -- | Handler for subscription effects.
 runSubscription

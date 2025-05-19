@@ -16,9 +16,8 @@ import Effectful.Concurrent.Async (async, waitAnyCancel)
 import Effectful.Concurrent.STM ( TChan, TMVar, atomically, newTChanIO
                                 , newEmptyTMVarIO, putTMVar, readTChan
                                 , takeTMVar, writeTChan, writeTQueue )
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, gets, modify)
-import Effectful.TH
 import Network.URI (URI(..), parseURI, uriAuthority, uriPort, uriRegName, uriScheme)
 import Network.WebSockets qualified as WS
 import Network.WebSockets.Connection.PingPong (defaultPingPongOptions, withPingPong)
@@ -52,7 +51,11 @@ data RelayConnection :: Effect where
 type instance DispatchOf RelayConnection = Dynamic
 
 
-makeEffect ''RelayConnection
+connect :: RelayConnection :> es => RelayURI -> Eff es Bool
+connect uri = send $ Connect uri
+
+disconnect :: RelayConnection :> es => RelayURI -> Eff es ()
+disconnect uri = send $ Disconnect uri
 
 
 -- | RelayConnectionEff

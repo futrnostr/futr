@@ -13,9 +13,8 @@ import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTQueueIO, readTQueue, writeTQueue)
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, gets, modify, put)
-import Effectful.TH
 import Graphics.QML qualified as QML
 
 import Logging
@@ -128,12 +127,36 @@ data QtQuick :: Effect where
 
 type instance DispatchOf QtQuick = Dynamic
 
-makeEffect ''QtQuick
+
+-- | Effectful type for QtQuick.
+type QtQuickEff es = (IOE :> es, Concurrent :> es, Logging :> es, State QtQuickState :> es, State AppState :> es)
+
+
+runEngineLoop :: QtQuick :> es => QML.EngineConfig -> QML.SignalKey (IO ()) -> QML.ObjRef () -> Eff es ()
+runEngineLoop config changeKey ctx = send $ RunEngineLoop config changeKey ctx
+
+createSignalKey :: QtQuick :> es => Eff es (QML.SignalKey (IO ()))
+createSignalKey = send CreateSignalKey
+
+fireSignal :: QtQuick :> es => QML.ObjRef () -> Eff es ()
+fireSignal obj = send $ FireSignal obj
+
+signalPost :: QtQuick :> es => QML.ObjRef EventId -> Eff es ()
+signalPost obj = send $ SignalPost obj
+
+signalProfile :: QtQuick :> es => QML.ObjRef PubKeyXO -> Eff es ()
+signalProfile obj = send $ SignalProfile obj
+
+notify :: QtQuick :> es => UIUpdates -> Eff es ()
+notify updates = send $ Notify updates
+
+notifyRelayStatus :: QtQuick :> es => Eff es ()
+notifyRelayStatus = send NotifyRelayStatus
 
 
 -- | Handler for the QML effects.
 runQtQuick
-  :: (IOE :> es, Concurrent :> es, Logging :> es, State QtQuickState :> es, State AppState :> es)
+  :: QtQuickEff es
   => Eff (QtQuick : es) a
   -> Eff es a
 runQtQuick = interpret $ \_ -> \case

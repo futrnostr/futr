@@ -5,8 +5,7 @@
 module Nostr where
 
 import Effectful
-import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.TH
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Haskoin.Crypto (Mnemonic, Passphrase)
 import Nostr.Event (Event, Rumor, UnsignedEvent)
 import Nostr.Event qualified as NE
@@ -32,15 +31,43 @@ data Nostr :: Effect where
   VerifyNip05 :: Profile -> PubKeyXO -> Nostr m Bool
 
 
--- | Dispatch type for Futr effect.
+-- | Dispatch type for Nostr effect.
 type instance DispatchOf Nostr = Dynamic
 
 
-makeEffect ''Nostr
-
-
 -- | Effectful type for Nostr.
-type NostrEff es = ( IOE :> es )
+type NostrEff es = IOE :> es
+
+
+createSecKey :: Nostr :> es => Eff es SecKey
+createSecKey = send CreateSecKey
+
+createKeyPair :: Nostr :> es => Eff es KeyPair
+createKeyPair = send CreateKeyPair
+
+createMnemonic :: Nostr :> es => Eff es (Either String Mnemonic)
+createMnemonic = send CreateMnemonic
+
+mnemonicToKeyPair :: Nostr :> es => Mnemonic -> Passphrase -> Eff es (Either String KeyPair)
+mnemonicToKeyPair mnemonic passphrase = send $ MnemonicToKeyPair mnemonic passphrase
+
+signEvent :: Nostr :> es => UnsignedEvent -> KeyPair -> Eff es (Maybe Event)
+signEvent event kp = send $ SignEvent event kp
+
+createSeal :: Nostr :> es => Rumor -> KeyPair -> PubKeyXO -> Eff es (Maybe Event)
+createSeal rumor kp pk = send $ CreateSeal rumor kp pk
+
+createGiftWrap :: Nostr :> es => Event -> PubKeyXO -> Eff es (Maybe (Event, KeyPair))
+createGiftWrap event pk = send $ CreateGiftWrap event pk
+
+unwrapGiftWrap :: Nostr :> es => Event -> KeyPair -> Eff es (Maybe Event)
+unwrapGiftWrap event kp = send $ UnwrapGiftWrap event kp
+
+unwrapSeal :: Nostr :> es => Event -> KeyPair -> Eff es (Maybe Rumor)
+unwrapSeal event kp = send $ UnwrapSeal event kp
+
+verifyNip05 :: Nostr :> es => Profile -> PubKeyXO -> Eff es Bool
+verifyNip05 profile pk = send $ VerifyNip05 profile pk
 
 
 -- | Run the Nostr effect.

@@ -5,9 +5,8 @@ module Nostr.Util where
 
 import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
 import Effectful
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get)
-import Effectful.TH
 import System.Random.Shuffle (shuffleM)
 
 import Nostr.Keys (KeyPair)
@@ -21,11 +20,24 @@ data Util :: Effect where
 
 type instance DispatchOf Util = Dynamic
 
-makeEffect ''Util
+
+-- | Effectful type for Util.
+type UtilEff es = (State AppState :> es, IOE :> es)
+
+
+getCurrentTime :: Util :> es => Eff es Int
+getCurrentTime = send GetCurrentTime
+
+getKeyPair :: Util :> es => Eff es KeyPair
+getKeyPair = send GetKeyPair
+
+shuffleList :: Util :> es => [a] -> Eff es [a]
+shuffleList xs = send $ ShuffleList xs
+
 
 -- | Handler for the IDGen effect.
 runUtil
-  :: (State AppState :> es, IOE :> es)
+  :: UtilEff es
   => Eff (Util : es) a
   -> Eff es a
 runUtil = interpret $ \_ -> \case

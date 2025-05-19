@@ -53,7 +53,6 @@ import Data.Word (Word8)
 import Effectful
 import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Shared (State, get, modify)
-import Effectful.TH (makeEffect)
 import GHC.Generics (Generic)
 import Lmdb.Codec qualified as Codec
 import Lmdb.Connection
@@ -160,11 +159,55 @@ data LmdbStore :: Effect where
 type instance DispatchOf LmdbStore = Dynamic
 
 
-makeEffect ''LmdbStore
+-- | Effectful type for LmdbStore.
+type LmdbStoreEff es = ( Util :> es
+                       , Logging :> es
+                       , State LmdbState :> es
+                       , IOE :> es )
+
+
+putEvent :: LmdbStore :> es => PutEventInput -> Maybe RelayURI -> Eff es PutEventResult
+putEvent input mUri = send $ PutEvent input mUri
+
+recordFailedRelay :: LmdbStore :> es => RelayURI -> Eff es ()
+recordFailedRelay uri = send $ RecordFailedRelay uri
+
+getEvent :: LmdbStore :> es => EventId -> Eff es (Maybe Event)
+getEvent eid = send $ GetEvent eid
+
+getEventRelays :: LmdbStore :> es => EventId -> Eff es (Set RelayURI)
+getEventRelays eid = send $ GetEventRelays eid
+
+getFollows :: LmdbStore :> es => PubKeyXO -> Eff es [Follow]
+getFollows pk = send $ GetFollows pk
+
+getProfile :: LmdbStore :> es => PubKeyXO -> Eff es (Profile, Int)
+getProfile pk = send $ GetProfile pk
+
+getTimelineIds :: LmdbStore :> es => TimelineType -> PubKeyXO -> Int -> Eff es [EventId]
+getTimelineIds timelineType pk limit = send $ GetTimelineIds timelineType pk limit
+
+getGeneralRelays :: LmdbStore :> es => PubKeyXO -> Eff es [Relay]
+getGeneralRelays pk = send $ GetGeneralRelays pk
+
+getDMRelays :: LmdbStore :> es => PubKeyXO -> Eff es [RelayURI]
+getDMRelays pk = send $ GetDMRelays pk
+
+getLatestTimestamp :: LmdbStore :> es => PubKeyXO -> [Kind] -> Eff es (Maybe Int)
+getLatestTimestamp pk kinds = send $ GetLatestTimestamp pk kinds
+
+getCommentTree :: LmdbStore :> es => EventId -> Eff es (Maybe [CommentTree])
+getCommentTree eid = send $ GetCommentTree eid
+
+getCommentsWithIndentationLevel :: LmdbStore :> es => EventId -> Eff es [(EventId, Int)]
+getCommentsWithIndentationLevel eid = send $ GetCommentsWithIndentationLevel eid
+
+getFailedRelaysWithinLastNDays :: LmdbStore :> es => Int -> Eff es [RelayURI]
+getFailedRelaysWithinLastNDays days = send $ GetFailedRelaysWithinLastNDays days
 
 
 -- | Run LmdbEffect
-runLmdbStore :: (Util :> es, IOE :> es, State LmdbState :> es, Logging :> es)
+runLmdbStore :: LmdbStoreEff es
              => Eff (LmdbStore : es) a
              -> Eff es a
 runLmdbStore = interpret $ \_ -> \case

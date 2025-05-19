@@ -5,8 +5,7 @@ module Logging where
 
 import Data.Text (Text)
 import Effectful
-import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.TH
+import Effectful.Dispatch.Dynamic (interpret, send)
 
 -- | Effect for logging messages.
 data Logging :: Effect where
@@ -17,10 +16,26 @@ data Logging :: Effect where
 
 type instance DispatchOf Logging = Dynamic
 
-makeEffect ''Logging
+
+-- | Effectful type for Logging.
+type LoggingEff es = (IOE :> es)
+
+
+logDebug :: Logging :> es => Text -> Eff es ()
+logDebug msg = send $ LogDebug msg
+
+logInfo :: Logging :> es => Text -> Eff es ()
+logInfo msg = send $ LogInfo msg
+
+logWarning :: Logging :> es => Text -> Eff es ()
+logWarning msg = send $ LogWarning msg
+
+logError :: Logging :> es => Text -> Eff es ()
+logError msg = send $ LogError msg
+
 
 -- | Handler for the logging effect to stdout.
-runLoggingStdout :: IOE :> es => Eff (Logging : es) a -> Eff es a
+runLoggingStdout :: LoggingEff es => Eff (Logging : es) a -> Eff es a
 runLoggingStdout = interpret $ \_ -> \case
     LogDebug msg -> liftIO $ putStrLn ("[DEBUG] " <> show msg)
     LogInfo msg  -> liftIO $ putStrLn ("[INFO] " <> show msg)

@@ -18,7 +18,7 @@ import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (atomically, flushTQueue, newTVarIO, readTQueue, readTVar, writeTVar)
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.Exception (SomeException, try)
 import Effectful.FileSystem
   ( FileSystem,
@@ -27,7 +27,6 @@ import Effectful.FileSystem
     getXdgDirectory
   )
 import Effectful.State.Static.Shared (State, get, gets, modify, put)
-import Effectful.TH
 import Lmdb.Connection (closeEnvironment)
 import QtQuick
 import GHC.Generics (Generic)
@@ -113,7 +112,44 @@ data Futr :: Effect where
 type instance DispatchOf Futr = Dynamic
 
 
-makeEffect ''Futr
+login :: Futr :> es => ObjRef () -> Text -> Eff es ()
+login obj input = send $ Login obj input
+
+search :: Futr :> es => ObjRef () -> Text -> Eff es SearchResult
+search obj input = send $ Search obj input
+
+setCurrentPost :: Futr :> es => Maybe EventId -> Eff es ()
+setCurrentPost eid = send $ SetCurrentPost eid
+
+followProfile :: Futr :> es => Text -> Eff es ()
+followProfile npub' = send $ FollowProfile npub'
+
+unfollowProfile :: Futr :> es => Text -> Eff es ()
+unfollowProfile npub' = send $ UnfollowProfile npub'
+
+loadFeed :: Futr :> es => PubKeyXO -> Eff es ()
+loadFeed pk = send $ LoadFeed pk
+
+sendPrivateMessage :: Futr :> es => Text -> Eff es ()
+sendPrivateMessage input = send $ SendPrivateMessage input
+
+sendShortTextNote :: Futr :> es => Text -> Eff es ()
+sendShortTextNote input = send $ SendShortTextNote input
+
+logout :: Futr :> es => ObjRef () -> Eff es ()
+logout obj = send $ Logout obj
+
+repost :: Futr :> es => EventId -> Eff es ()
+repost eid = send $ Repost eid
+
+quoteRepost :: Futr :> es => EventId -> Text -> Eff es ()
+quoteRepost eid quote = send $ QuoteRepost eid quote
+
+comment :: Futr :> es => EventId -> Text -> Eff es ()
+comment eid comment' = send $ Comment eid comment'
+
+deleteEvent :: Futr :> es => EventId -> Text -> Eff es ()
+deleteEvent eid reason = send $ DeleteEvent eid reason
 
 
 -- | Effectful type for Futr.

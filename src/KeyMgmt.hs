@@ -16,7 +16,7 @@ import Data.Text (Text, isPrefixOf, pack, strip, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable (Typeable)
 import Effectful
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.FileSystem
   ( FileSystem,
     XdgDirectory (XdgData),
@@ -30,7 +30,6 @@ import Effectful.FileSystem
 import Effectful.FileSystem.IO.ByteString qualified as FIOE (readFile, writeFile)
 import Effectful.FileSystem.IO.ByteString.Lazy qualified as BL
 import Effectful.State.Static.Shared (State, gets, modify)
-import Effectful.TH
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import System.Random (randomRIO)
 
@@ -85,15 +84,6 @@ initialKeyMgmtState =
     }
 
 
--- | Key Management Effect.
-type KeyMgmtEff es = ( State KeyMgmtState :> es
-                     , State AppState :> es
-                     , Nostr :> es
-                     , FileSystem :> es
-                     , IOE :> es
-                     , QtQuick :> es
-                     , Logging :> es )
-
 -- | Key Management Effects.
 data KeyMgmt :: Effect where
   ImportSecretKey :: ObjRef () -> Text -> KeyMgmt m Bool
@@ -105,7 +95,30 @@ data KeyMgmt :: Effect where
 type instance DispatchOf KeyMgmt = Dynamic
 
 
-makeEffect ''KeyMgmt
+-- | Key Management Effect.
+type KeyMgmtEff es = ( State KeyMgmtState :> es
+                     , State AppState :> es
+                     , Nostr :> es
+                     , FileSystem :> es
+                     , IOE :> es
+                     , QtQuick :> es
+                     , Logging :> es )
+
+
+importSecretKey :: KeyMgmt :> es => ObjRef () -> Text -> Eff es Bool
+importSecretKey obj input = send $ ImportSecretKey obj input
+
+importSeedphrase :: KeyMgmt :> es => ObjRef () -> Text -> Text -> Eff es Bool
+importSeedphrase obj seedphrase' passphrase = send $ ImportSeedphrase obj seedphrase' passphrase
+
+generateSeedphrase :: KeyMgmt :> es => ObjRef () -> Eff es (Maybe KeyPair)
+generateSeedphrase obj = send $ GenerateSeedphrase obj
+
+removeAccount :: KeyMgmt :> es => ObjRef () -> Text -> Eff es ()
+removeAccount obj input = send $ RemoveAccount obj input
+
+updateProfile :: KeyMgmt :> es => AccountId -> Profile -> Eff es ()
+updateProfile accountId' profile = send $ UpdateProfile accountId' profile
 
 
 -- | Run the Key Management effect.

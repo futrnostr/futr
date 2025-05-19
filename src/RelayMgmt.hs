@@ -4,8 +4,7 @@ module RelayMgmt where
 
 import Control.Monad (when)
 import Effectful
-import Effectful.Dispatch.Dynamic (interpret)
-import Effectful.TH
+import Effectful.Dispatch.Dynamic (interpret, send)
 
 import QtQuick
 import Logging
@@ -32,7 +31,24 @@ data RelayMgmt :: Effect where
 
 type instance DispatchOf RelayMgmt = Dynamic
 
-makeEffect ''RelayMgmt
+
+addGeneralRelay :: RelayMgmt :> es => PubKeyXO -> RelayURI -> Bool -> Bool -> Eff es Bool
+addGeneralRelay pk uri inbox outbox = send $ AddGeneralRelay pk uri inbox outbox
+
+removeGeneralRelay :: RelayMgmt :> es => PubKeyXO -> RelayURI -> Eff es ()
+removeGeneralRelay pk uri = send $ RemoveGeneralRelay pk uri
+
+setDefaultGeneralRelays :: RelayMgmt :> es => Eff es ()
+setDefaultGeneralRelays = send SetDefaultGeneralRelays
+
+addDMRelay :: RelayMgmt :> es => PubKeyXO -> RelayURI -> Eff es Bool
+addDMRelay pk uri = send $ AddDMRelay pk uri
+
+removeDMRelay :: RelayMgmt :> es => PubKeyXO -> RelayURI -> Eff es ()
+removeDMRelay pk uri = send $ RemoveDMRelay pk uri
+
+setDefaultDMRelays :: RelayMgmt :> es => Eff es ()
+setDefaultDMRelays = send SetDefaultDMRelays
 
 
 -- | RelayMgmtEff

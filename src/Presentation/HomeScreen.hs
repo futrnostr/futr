@@ -18,10 +18,9 @@ import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent.Async (async)
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.FileSystem
 import Effectful.State.Static.Shared (get, gets, modify)
-import Effectful.TH
 import QtQuick
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
@@ -57,7 +56,8 @@ data HomeScreen :: Effect where
 type instance DispatchOf HomeScreen = Dynamic
 
 
-makeEffect ''HomeScreen
+createUI :: HomeScreen :> es => SignalKey (IO ()) -> Eff es (ObjRef ())
+createUI changeKey = send $ CreateUI changeKey
 
 
 -- | Run the UI effect.

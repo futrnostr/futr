@@ -8,9 +8,8 @@ import Effectful
 import Effectful.Concurrent (Concurrent, threadDelay)
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (atomically, writeTChan)
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, modify)
-import Effectful.TH
 
 import Logging
 import Nostr.Event (Event(..), EventId)
@@ -43,7 +42,21 @@ data Publisher :: Effect where
 
 type instance DispatchOf Publisher = Dynamic
 
-makeEffect ''Publisher
+
+broadcast :: Publisher :> es => Event -> Eff es ()
+broadcast event = send $ Broadcast event
+
+publishToOutbox :: Publisher :> es => Event -> Eff es ()
+publishToOutbox event = send $ PublishToOutbox event
+
+publishToRelay :: Publisher :> es => Event -> RelayURI -> Eff es ()
+publishToRelay event uri = send $ PublishToRelay event uri
+
+publishGiftWrap :: Publisher :> es => Event -> PubKeyXO -> PubKeyXO -> Eff es ()
+publishGiftWrap event sender recipient = send $ PublishGiftWrap event sender recipient
+
+getPublishResult :: Publisher :> es => EventId -> Eff es PublishResult
+getPublishResult eid = send $ GetPublishResult eid
 
 
 -- | Publisher effect handlers

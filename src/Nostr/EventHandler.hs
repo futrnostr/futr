@@ -13,9 +13,8 @@ import Data.Text.Encoding (encodeUtf8)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.STM (atomically, writeTQueue)
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, gets)
-import Effectful.TH
 import Graphics.QML qualified as QML
 import Prelude hiding (until)
 import Text.Read (readMaybe)
@@ -39,7 +38,10 @@ data EventHandler :: Effect where
 
 type instance DispatchOf EventHandler = Dynamic
 
-makeEffect ''EventHandler
+
+handleEvent :: EventHandler :> es => Maybe RelayURI -> Event -> Eff es ()
+handleEvent mUri event = send $ HandleEvent mUri event
+
 
 -- | EventHandlerEff
 type EventHandlerEff es =
