@@ -48,7 +48,7 @@ myPreBuild _ _ = do
     currentTime <- getPOSIXTime
     setModificationTime touchFileName (posixSecondsToUTCTime currentTime)
 
-    let buildInfo = emptyBuildInfo { cSources = ["resources.cpp"] }
+    let buildInfo = emptyBuildInfo { cxxSources = ["resources.cpp"] }
     return (Nothing, [(mkUnqualComponentName "futr", buildInfo)])
 
 generateQrcFile :: FilePath -> FilePath -> [FilePath] -> IO ()
