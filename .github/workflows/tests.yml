@@ -17,6 +17,7 @@ jobs:
         with:
           cabal-file: futr.cabal
           ubuntu-version: latest
+          windows-version: latest
           version: 0.1.7.1
 
   tests:
