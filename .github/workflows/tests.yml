@@ -105,15 +105,16 @@ jobs:
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
           git checkout v0.6.0 && \
-          ./configure  --enable-module-schnorrsig \
+          ./autogen.sh && \
+          ./configure --enable-module-schnorrsig \
             --enable-module-extrakeys \
             --enable-module-ecdh \
             --enable-module-recovery \
             --enable-experimental \
-            CFLAGS="-DSECP256K1_BUILD"
-          make
-          make install
-          echo "LD_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+            CFLAGS="-DSECP256K1_BUILD" && \
+          make && \
+          make install && \
+          echo "LD_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV && \
           cd ..
 
       - name: Set Library Path (Linux)
