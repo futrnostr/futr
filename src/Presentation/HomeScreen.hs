@@ -104,7 +104,6 @@ runHomeScreen = interpret $ \_ -> \case
               st <- runE $ get @AppState
               return $ pack $ show $ currentScreen st)
             (\obj newScreen -> do
-                runE $ logDebug $ "Setting property: currentScreen = " <> newScreen
                 case readMaybe (unpack newScreen) :: Maybe AppScreen of
                     Just s -> do
                         runE $ do

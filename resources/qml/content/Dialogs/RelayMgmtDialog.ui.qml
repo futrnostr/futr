@@ -15,7 +15,7 @@ Dialog {
 
     id: relayMgmtDialog
     width: 800
-    height: 700
+    height: 600
 
     ColumnLayout {
         anchors.fill: parent

@@ -3,8 +3,8 @@ import QtQuick 2.15
 import QtQuick.Controls.Material 2.15
 
 QtObject {
-    readonly property int width: 1280
-    readonly property int height: 720
+    readonly property int width: 1100
+    readonly property int height: 620
 
     // Radius
     readonly property int radius_s: 4

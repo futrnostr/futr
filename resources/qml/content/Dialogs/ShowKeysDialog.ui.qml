@@ -11,7 +11,7 @@ Dialog {
     standardButtons: Dialog.Ok
     anchors.centerIn: parent
     width: 940
-    height: 675
+    height: 600
 
     Rectangle {
         width: 900
