@@ -29,6 +29,17 @@ jobs:
       - name: Checkout base repo
         uses: actions/checkout@v4
 
+      - name: Setup MSYS2 (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base
+            mingw-w64-x86_64-toolchain
+            git
+
       - name: Set up Haskell
         id: setup-haskell
         uses: haskell-actions/setup@v2
@@ -50,27 +61,57 @@ jobs:
       - name: Update Cabal package list
         run: cabal update
 
-      - name: Install Build Tools
+      - name: Install Build Tools (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf autogen automake libtool liblmdb-dev
 
-      - name: Install Qt5 Dependencies
+      - name: Install Build Tools (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          pacman -Syu
+          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb
+
+      - name: Install Qt5 Dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y qtdeclarative5-dev qml-module-qtquick-controls2 libqt5quick5 qt5-image-formats-plugins qtmultimedia5-dev qml-module-qtmultimedia qttools5-dev-tools qtbase5-dev
 
-      - name: Install secp256k1 Library
+      - name: Install Qt5 Dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          pacman -S --noconfirm mingw-w64-x86_64-qt5-base mingw-w64-x86_64-qt5-declarative mingw-w64-x86_64-qt5-graphicaleffects mingw-w64-x86_64-qt5-imageformats mingw-w64-x86_64-qt5-multimedia mingw-w64-x86_64-qt5-quickcontrols2 mingw-w64-x86_64-qt5-svg mingw-w64-x86_64-qt5-tools mingw-w64-x86_64-qt5-translations mingw-w64-x86_64-qt5-winextras mingw-w64-x86_64-angleproject
+
+      - name: Install secp256k1 Library (Linux)
+        if: runner.os == 'Linux'
         run: |
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
           git checkout v0.6.0 && \
           ./autogen.sh && \
-          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery CFLAGS="-DSECP256K1_BUILD"&& \
           make && \
           sudo make install && \
           cd ..
 
-      - name: Set Library Path
+      - name: Install secp256k1 Library (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          git clone https://github.com/bitcoin-core/secp256k1 && \
+          cd secp256k1 && \
+          git checkout v0.6.0 && \
+          ./autogen.sh && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery CFLAGS="-DSECP256K1_BUILD" && \
+          make && \
+          make install && \
+          cd ..
+
+      - name: Set Library Path (Linux)
+        if: runner.os == 'Linux'
         run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
 
       - name: Configure
