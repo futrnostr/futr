@@ -73,7 +73,7 @@ jobs:
         shell: msys2 {0}
         run: |
           pacman -Syu
-          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-pkg-config
+          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb mingw-w64-x86_64-make mingw-w64-x86_64-cmake
 
       - name: Install Qt5 Dependencies (Linux)
         if: runner.os == 'Linux'
@@ -103,9 +103,7 @@ jobs:
         shell: msys2 {0}
         run: |
           pacman --noconfirm -Sy msys2-keyring
-          pacman --noconfirm -S mingw-w64-x86_64-pkg-config
           pacman --noconfirm -S mingw-w64-x86_64-autotools
-          pacman --noconfirm -S mingw-w64-x86_64-cmake
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
           git checkout v0.6.0 && \

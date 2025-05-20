@@ -3,7 +3,7 @@ name:               futr
 version:            0.3.0.0
 license:            GPL-3.0-only
 license-file:       LICENSE
-copyright:          2024 Sascha-Oliver Prolic
+copyright:          2025 Sascha-Oliver Prolic
 maintainer:         saschaprolic@googlemail.com
 author:             Sascha-Oliver Prolic
 tested-with:        ghc == 9.6.7

@@ -99,9 +99,7 @@ jobs:
         shell: msys2 {0}
         run: |
           pacman --noconfirm -Sy msys2-keyring
-          pacman --noconfirm -S mingw-w64-x86_64-pkg-config
           pacman --noconfirm -S mingw-w64-x86_64-autotools
-          pacman --noconfirm -S mingw-w64-x86_64-cmake
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
           git checkout v0.6.0 && \
