@@ -110,7 +110,7 @@ jobs:
             --enable-module-extrakeys \
             --enable-module-ecdh \
             --enable-module-recovery \
-            --enable-experimental \
+            --enable-experimental && \
           make && \
           make install && \
           cp .libs/libsecp256k1-5.dll /mingw64/bin/ && \
