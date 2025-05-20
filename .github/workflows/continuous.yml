@@ -29,15 +29,7 @@ jobs:
             mingw-w64-x86_64-toolchain
             git
 
-      - name: Install Inno Setup (Windows)
-        if: runner.os == 'Windows'
-        shell: msys2 {0}
-        run: |
-          curl -L -o is.exe https://jrsoftware.org/download.php/is.exe?site=1
-          ./is.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
-          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
-
-      - name: Install Flatpak and Flatpak Builder
+      - name: Install Flatpak and Flatpak Builder (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -177,9 +169,9 @@ jobs:
 
       - name: Create Installer (Windows)
         if: runner.os == 'Windows'
-        shell: msys2 {0}
-        run: |
-          ISCC.exe platform/windows/innosetup.iss
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: platform/windows/innosetup.iss
 
   release:
     name: Create Release
