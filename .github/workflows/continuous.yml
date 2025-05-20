@@ -69,7 +69,7 @@ jobs:
         shell: msys2 {0}
         run: |
           pacman -Syu
-          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-pkg-config
+          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-autotools
 
       - name: Install Qt5 Dependencies (Linux)
         if: runner.os == 'Linux'
@@ -98,23 +98,18 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          pacman --noconfirm -Sy msys2-keyring
-          pacman --noconfirm -S mingw-w64-x86_64-autotools
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
           git checkout v0.6.0 && \
-          cmake -S . -B build -G "Unix Makefiles" \
-            -DCMAKE_TOOLCHAIN_FILE=../cmake/x86_64-w64-mingw32.toolchain.cmake \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=/mingw64 \
-            -DSECP256K1_ENABLE_MODULE_RECOVERY=ON \
-            -DSECP256K1_ENABLE_MODULE_SCHNORRSIG=ON \
-            -DSECP256K1_ENABLE_MODULE_EXTRAKEYS=ON \
-            -DSECP256K1_ENABLE_MODULE_ECDH=ON \
-            -DSECP256K1_ENABLE_EXPERIMENTAL=ON && \
-          cmake --build build --target all && \
-          cmake --build build --target test && \
-          cmake --build build --target install && \
+          ./configure  --enable-module-schnorrsig \
+            --enable-module-extrakeys \
+            --enable-module-ecdh \
+            --enable-module-recovery \
+            --enable-experimental \
+            CFLAGS="-DSECP256K1_BUILD"
+          make
+          make install
+          echo "LD_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
           cd ..
 
       - name: Set Library Path (Linux)
