@@ -69,7 +69,7 @@ jobs:
         shell: msys2 {0}
         run: |
           pacman -Syu
-          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb
+          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-pkg-config
 
       - name: Install Qt5 Dependencies (Linux)
         if: runner.os == 'Linux'

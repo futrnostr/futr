@@ -62,18 +62,18 @@ jobs:
       - name: Update Cabal package list
         run: cabal update
 
-      - name: Install Build Tools (Linux)
+      - name: Install Build Tools + LMDB (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf autogen automake libtool liblmdb-dev
 
-      - name: Install Build Tools (Windows)
+      - name: Install Build Tools + LMDB (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           pacman -Syu
-          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb
+          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-pkg-config
 
       - name: Install Qt5 Dependencies (Linux)
         if: runner.os == 'Linux'
