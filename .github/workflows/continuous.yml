@@ -1,4 +1,4 @@
-name: Flatpak Build and Release
+name: Continuous Build and Release
 
 on:
   push:
@@ -89,7 +89,7 @@ jobs:
           cd secp256k1 && \
           git checkout v0.6.0 && \
           ./autogen.sh && \
-          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery CFLAGS="-DSECP256K1_BUILD" && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
           make && \
           sudo make install && \
           cd ..
@@ -98,13 +98,25 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
+          pacman --noconfirm -Sy msys2-keyring
+          pacman --noconfirm -S mingw-w64-x86_64-pkg-config
+          pacman --noconfirm -S mingw-w64-x86_64-autotools
+          pacman --noconfirm -S mingw-w64-x86_64-cmake
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
           git checkout v0.6.0 && \
-          ./autogen.sh && \
-          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery --disable-dependency-tracking CFLAGS="-DSECP256K1_BUILD" && \
-          make && \
-          make install && \
+          cmake -S . -B build -G "Unix Makefiles" \
+            -DCMAKE_TOOLCHAIN_FILE=../cmake/x86_64-w64-mingw32.toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/mingw64 \
+            -DSECP256K1_ENABLE_MODULE_RECOVERY=ON \
+            -DSECP256K1_ENABLE_MODULE_SCHNORRSIG=ON \
+            -DSECP256K1_ENABLE_MODULE_EXTRAKEYS=ON \
+            -DSECP256K1_ENABLE_MODULE_ECDH=ON \
+            -DSECP256K1_ENABLE_EXPERIMENTAL=ON && \
+          cmake --build build --target all && \
+          cmake --build build --target test && \
+          cmake --build build --target install && \
           cd ..
 
       - name: Set Library Path (Linux)

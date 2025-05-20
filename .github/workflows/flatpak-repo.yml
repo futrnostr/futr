@@ -2,7 +2,7 @@ name: Update Flatpak Repository
 
 on:
   workflow_run:
-    workflows: ["Flatpak Tagged Release", "Flatpak Build and Release"]
+    workflows: ["Flatpak Tagged Release", "Continuous Build and Release"]
     types:
       - completed
 
