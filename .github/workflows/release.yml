@@ -26,7 +26,7 @@ jobs:
       - name: Set up Haskell
         uses: haskell-actions/setup@v2
         with:
-          ghc-version: '9.6.6'
+          ghc-version: '9.6.7'
           cabal-version: '3.10.3.0'
 
       - name: Cache Cabal packages
@@ -36,9 +36,9 @@ jobs:
             ~/.cabal/packages
             ~/.cabal/store
             dist-newstyle
-          key: ${{ runner.os }}-ghc-9.6.6-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          key: ${{ runner.os }}-ghc-9.6.7-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
           restore-keys: |
-            ${{ runner.os }}-ghc-9.6.6-cabal-
+            ${{ runner.os }}-ghc-9.6.7-cabal-
 
       - name: Update Cabal package list
         run: cabal update
@@ -56,7 +56,7 @@ jobs:
         run: |
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
-          git checkout v0.5.1 && \
+          git checkout v0.6.0 && \
           ./autogen.sh && \
           ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
           make && \

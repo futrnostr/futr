@@ -77,7 +77,7 @@ main = do
                     , QML.iconPath = Just ":/icons/nostr-purple.png"
                     }
 
-            --liftIO $ QML.setQtFlag QML.QtEnableQMLDebug True
+            --liftIO $ QML.setQtFlag QML.QtEnableQMLDebug False
             liftIO $ QML.enableHighDpiScaling
             runEngineLoop config changeKey ctx
             

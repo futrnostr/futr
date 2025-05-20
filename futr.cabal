@@ -1,12 +1,12 @@
 cabal-version:      2.4
 name:               futr
-version:            0.1.0.0
+version:            0.3.0.0
 license:            GPL-3.0-only
 license-file:       LICENSE
 copyright:          2024 Sascha-Oliver Prolic
 maintainer:         saschaprolic@googlemail.com
 author:             Sascha-Oliver Prolic
-tested-with:        ghc == 9.6.6
+tested-with:        ghc == 9.6.7
 homepage:           https://github.com/futrnostr/futr#readme
 synopsis:           nostr client application
 description:        A nostr client application written in Haskell and Qt5.
