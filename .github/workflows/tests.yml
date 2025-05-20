@@ -114,7 +114,7 @@ jobs:
             CFLAGS="-DSECP256K1_BUILD" && \
           make && \
           make install && \
-          echo "LD_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV && \
+          cp .libs/libsecp256k1-2.dll /mingw64/bin/ && \
           cd ..
 
       - name: Set Library Path (Linux)
