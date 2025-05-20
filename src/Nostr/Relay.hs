@@ -114,7 +114,9 @@ defaultGeneralRelays =
 -- | Provides a default list of DM relays.
 defaultDMRelays :: ([RelayURI], Int)
 defaultDMRelays =
-  ( [ "wss://auth.nostr1.com" ], 0 )
+  ( [ "wss://auth.nostr1.com"
+    , "wss://inbox.azzamo.net"
+    ], 0 )
 
 
 -- | Extracts the scheme of a relay's URI.
