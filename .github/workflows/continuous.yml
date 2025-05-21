@@ -120,13 +120,13 @@ jobs:
       - name: Build with Cabal (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
-        run: cabal build
-
-      - name: Build with Cabal (Linux)
-        if: runner.os == 'Linux'
         run: |
           export PATH="/c/ghcup/bin:$PATH"
           cabal build
+
+      - name: Build with Cabal (Linux)
+        if: runner.os == 'Linux'
+        run: cabal build
 
       - name: Update appdata.xml (Linux)
         if: runner.os == 'Linux'
