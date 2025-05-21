@@ -48,9 +48,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          echo 'export PATH="$PATH:/c/ghcup/bin"' >> ~/.bashrc && \
-          source ~/.bashrc && \
-          which cabal || echo "Cabal not found in PATH" && \
+          export PATH="/c/ghcup/bin:$PATH"
+          which cabal || echo "Cabal not found in PATH"
           echo "PATH=$PATH"
 
       - name: Cache Cabal packages
