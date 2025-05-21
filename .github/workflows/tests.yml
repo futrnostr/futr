@@ -107,7 +107,7 @@ jobs:
           cd secp256k1 && \
           git checkout v0.5.1 && \
           ./autogen.sh && \
-          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery CFLAGS="SECP256K1_BUILD" && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
           make && \
           sudo make install && \
           cd ..
