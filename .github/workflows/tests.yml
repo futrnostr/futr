@@ -68,12 +68,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y autoconf autogen automake libtool liblmdb-dev
 
-      - name: Install Build Tools + LMDB (Windows)
+      - name: Install Build Tools (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           pacman -Syu
-          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-autotools mingw-w64-x86_64-pkg-config
+          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-autotools mingw-w64-x86_64-pkg-config
+
+      - name: Install LMDB (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          git clone https://github.com/LMDB/lmdb.git && \
+          cd lmdb/libraries/liblmdb && \
+          make XCFLAGS="-fPIC" SOEXT=".dll" && \
+          mkdir -p /mingw64/bin /mingw64/lib /mingw64/include && \
+          cp mdb_stat.exe mdb_copy.exe mdb_dump.exe mdb_load.exe mdb_drop.exe /mingw64/bin/ && \
+          cp liblmdb.dll.a /mingw64/lib/ && \
+          cp liblmdb.dll /mingw64/bin/ && \
+          cp lmdb.h /mingw64/include/ && \
+          cd ../../..
 
       - name: Install Qt5 Dependencies (Linux)
         if: runner.os == 'Linux'
