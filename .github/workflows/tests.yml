@@ -128,7 +128,7 @@ jobs:
             --enable-experimental && \
           make && \
           make install && \
-          cp .libs/libsecp256k1-5.dll /mingw64/bin/ && \
+          cp .libs/libsecp256k1-2.dll /mingw64/bin/ && \
           cd ..
 
       - name: Set Library Path (Linux)
