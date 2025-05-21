@@ -77,12 +77,12 @@ jobs:
         run: |
           git clone https://github.com/LMDB/lmdb.git && \
           cd lmdb/libraries/liblmdb && \
-          make XCFLAGS="-fPIC" SOEXT=".dll" && \
-          mkdir -p /mingw64/bin /mingw64/lib /mingw64/include && \
-          cp mdb_stat.exe mdb_copy.exe mdb_dump.exe mdb_load.exe mdb_drop.exe /mingw64/bin/ && \
-          cp liblmdb.dll.a /mingw64/lib/ && \
-          cp liblmdb.dll /mingw64/bin/ && \
-          cp lmdb.h /mingw64/include/ && \
+          gcc -O2 -g -W -Wall -Wno-unused-parameter -Wbad-function-cast -Wuninitialized -c mdb.c -D_WIN32 -DMDB_VL32 && \
+          gcc -O2 -c midl.c -D_WIN32 && \
+          ar rc liblmdb.a mdb.o midl.o && \
+          mkdir -p /c/ghcup/ghc/9.6.7/mingw/lib /c/ghcup/ghc/9.6.7/mingw/include && \
+          cp liblmdb.a /c/ghcup/ghc/9.6.7/mingw/lib/ && \
+          cp lmdb.h /c/ghcup/ghc/9.6.7/mingw/include/ && \
           cd ../../..
 
       - name: Install Qt5 Dependencies (Linux)
