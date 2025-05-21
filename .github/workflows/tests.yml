@@ -152,7 +152,8 @@ jobs:
         shell: msys2 {0}
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
-          cabal build all --with-ld=x86_64-w64-mingw32-ld
+          export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
+          cabal build all
 
       - name: Build (Linux)
         if: runner.os == 'Linux'
@@ -163,7 +164,8 @@ jobs:
         shell: msys2 {0}
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
-          cabal test --with-ld=x86_64-w64-mingw32-ld
+          export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
+          cabal test
 
       - name: Test (Linux)
         if: runner.os == 'Linux'

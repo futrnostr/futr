@@ -136,7 +136,8 @@ jobs:
         shell: msys2 {0}
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
-          cabal build --with-ld=x86_64-w64-mingw32-ld
+          export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
+          cabal build
 
       - name: Build with Cabal (Linux)
         if: runner.os == 'Linux'
