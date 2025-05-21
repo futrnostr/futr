@@ -44,6 +44,13 @@ jobs:
           cabal-version: '3.10.3.0'
         id: haskell-setup
 
+      - name: Add Haskell to MSYS2 PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          echo 'export PATH="$PATH:/c/Program Files/Haskell/bin"' >> ~/.bashrc && \
+          source ~/.bashrc
+
       - name: Cache Cabal packages
         uses: actions/cache@v4.2.3
         with:
