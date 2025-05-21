@@ -16,3 +16,6 @@ source-repository-package
   type: git
   location: https://github.com/lolepezy/lmdb-high-level
   tag: c1bfd9564b5a894659428281f328df2975d04569
+
+package hsqml
+    flags: +UsePkgConfig
