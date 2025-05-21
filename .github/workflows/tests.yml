@@ -48,21 +48,11 @@ jobs:
           ghc-version: ${{ matrix.ghc }}
           cabal-version: '3.10.3.0'
 
-      - name: Debug Haskell Path (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          echo "Haskell setup outputs:"
-          echo "Cabal path: ${{ steps.haskell-setup.outputs.cabal-path }}"
-          echo "GHC path: ${{ steps.haskell-setup.outputs.ghc-path }}"
-          echo "Stack path: ${{ steps.haskell-setup.outputs.stack-path }}"
-          echo "Cabal version: ${{ steps.haskell-setup.outputs.cabal-version }}"
-          echo "GHC version: ${{ steps.haskell-setup.outputs.ghc-version }}"
-
       - name: Add Haskell to MSYS2 PATH (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          echo 'export PATH="$PATH:${{ steps.haskell-setup.outputs.cabal-path }}"' >> ~/.bashrc && \
+          echo 'export PATH="$PATH:/c/ghcup/bin"' >> ~/.bashrc && \
           source ~/.bashrc && \
           which cabal || echo "Cabal not found in PATH" && \
           echo "PATH=$PATH"
