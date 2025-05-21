@@ -135,7 +135,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          export PATH="/c/ghcup/bin:$PATH"
+          export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           cabal build
 
       - name: Build with Cabal (Linux)
