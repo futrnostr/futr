@@ -44,14 +44,6 @@ jobs:
           cabal-version: '3.10.3.0'
         id: haskell-setup
 
-      - name: Add Haskell to MSYS2 PATH (Windows)
-        if: runner.os == 'Windows'
-        shell: msys2 {0}
-        run: |
-          export PATH="/c/ghcup/bin:$PATH"
-          which cabal || echo "Cabal not found in PATH"
-          echo "PATH=$PATH"
-
       - name: Cache Cabal packages
         uses: actions/cache@v4.2.3
         with:
@@ -132,7 +124,9 @@ jobs:
 
       - name: Build with Cabal (Linux)
         if: runner.os == 'Linux'
-        run: cabal build
+        run: |
+          export PATH="/c/ghcup/bin:$PATH"
+          cabal build
 
       - name: Update appdata.xml (Linux)
         if: runner.os == 'Linux'
