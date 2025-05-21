@@ -105,9 +105,9 @@ jobs:
         run: |
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
-          git checkout v0.6.0 && \
+          git checkout v0.5.1 && \
           ./autogen.sh && \
-          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery CFLAGS="SECP256K1_BUILD" && \
           make && \
           sudo make install && \
           cd ..
@@ -119,7 +119,7 @@ jobs:
         run: |
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
-          git checkout v0.6.0 && \
+          git checkout v0.5.1 && \
           ./autogen.sh && \
           ./configure --enable-module-schnorrsig \
             --enable-module-extrakeys \
