@@ -73,7 +73,7 @@ jobs:
         shell: msys2 {0}
         run: |
           pacman -Syu
-          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb mingw-w64-x86_64-make mingw-w64-x86_64-cmake
+          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-lmdb mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-autotools mingw-w64-x86_64-pkg-config
 
       - name: Install Qt5 Dependencies (Linux)
         if: runner.os == 'Linux'
@@ -99,6 +99,7 @@ jobs:
           cd ..
 
       - name: Install secp256k1 Library (Windows)
+        # windows doesn't need sudo
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
@@ -113,19 +114,6 @@ jobs:
             --enable-experimental && \
           make && \
           make install && \
-          # Create and install pkg-config file
-          echo "prefix=/mingw64
-          exec_prefix=\${prefix}
-          libdir=\${exec_prefix}/lib
-          includedir=\${prefix}/include
-          
-          Name: libsecp256k1
-          Description: Optimized C library for EC operations on curve secp256k1
-          Version: 0.6.0
-          Libs: -L\${libdir} -lsecp256k1
-          Cflags: -I\${includedir}" > libsecp256k1.pc && \
-          mkdir -p /mingw64/lib/pkgconfig && \
-          cp libsecp256k1.pc /mingw64/lib/pkgconfig/ && \
           cp .libs/libsecp256k1-5.dll /mingw64/bin/ && \
           cd ..
 
