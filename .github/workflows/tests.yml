@@ -121,11 +121,29 @@ jobs:
         if: runner.os == 'Linux'
         run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
 
-      - name: Configure
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
         run: cabal configure --enable-tests
 
-      - name: Build
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        run: cabal configure --enable-tests
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
         run: cabal build all
 
-      - name: Test
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: cabal build all
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: cabal test
+
+      - name: Test (Linux)
+        if: runner.os == 'Linux'
         run: cabal test
