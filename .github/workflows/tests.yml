@@ -73,7 +73,19 @@ jobs:
         shell: msys2 {0}
         run: |
           pacman -Syu
-          pacman -S --noconfirm autoconf autogen automake libtool gcc git mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-make mingw-w64-x86_64-cmake mingw-w64-x86_64-autotools mingw-w64-x86_64-pkg-config
+          pacman -S --noconfirm \
+            autoconf \
+            autogen \
+            automake \
+            libtool \
+            gcc \
+            git \
+            mingw-w64-x86_64-libunwind \
+            mingw-w64-x86_64-toolchain \
+            mingw-w64-x86_64-make \
+            mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-autotools \
+            mingw-w64-x86_64-pkg-config
 
       - name: Install LMDB (Windows)
         if: runner.os == 'Windows'
@@ -98,7 +110,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          pacman -S --noconfirm mingw-w64-x86_64-qt5-base mingw-w64-x86_64-qt5-declarative mingw-w64-x86_64-qt5-graphicaleffects mingw-w64-x86_64-qt5-imageformats mingw-w64-x86_64-qt5-multimedia mingw-w64-x86_64-qt5-quickcontrols2 mingw-w64-x86_64-qt5-svg mingw-w64-x86_64-qt5-tools mingw-w64-x86_64-qt5-translations mingw-w64-x86_64-qt5-winextras mingw-w64-x86_64-angleproject
+          pacman -S --noconfirm \
+            mingw-w64-x86_64-qt5-base \
+            mingw-w64-x86_64-qt5-declarative \
+            mingw-w64-x86_64-qt5-graphicaleffects \
+            mingw-w64-x86_64-qt5-imageformats \
+            mingw-w64-x86_64-qt5-multimedia \
+            mingw-w64-x86_64-qt5-quickcontrols2 \
+            mingw-w64-x86_64-qt5-svg \
+            mingw-w64-x86_64-qt5-tools \
+            mingw-w64-x86_64-qt5-translations \
+            mingw-w64-x86_64-qt5-winextras \
+            mingw-w64-x86_64-qt5-network \
+            mingw-w64-x86_64-angleproject
 
       - name: Install secp256k1 Library (Linux)
         if: runner.os == 'Linux'
@@ -107,7 +131,12 @@ jobs:
           cd secp256k1 && \
           git checkout v0.5.1 && \
           ./autogen.sh && \
-          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+          ./configure \
+            --enable-module-schnorrsig \
+            --enable-module-extrakeys \
+            --enable-module-ecdh \
+            --enable-experimental \
+            --enable-module-recovery && \
           make && \
           sudo make install && \
           cd ..
