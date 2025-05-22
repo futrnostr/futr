@@ -117,7 +117,6 @@ jobs:
             mingw-w64-x86_64-qt5-tools \
             mingw-w64-x86_64-qt5-translations \
             mingw-w64-x86_64-qt5-winextras \
-            mingw-w64-x86_64-qt5-network \
             mingw-w64-x86_64-angleproject
 
       - name: Install secp256k1 Library (Linux)
