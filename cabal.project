@@ -10,7 +10,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/prolic/HsQML
-  tag: f7160fd3f8b34a2b00af228257d8eceb30fa2cdb
+  tag: 8c3455ea18cccef577a80950719ac413f92d4c31
 
 source-repository-package
   type: git
