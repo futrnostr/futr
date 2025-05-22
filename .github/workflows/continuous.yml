@@ -137,15 +137,7 @@ jobs:
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
-          # Print Qt paths and versions
-          echo "Qt location:"
-          which qmake
-          qmake --version
-          pkg-config --modversion Qt5Core
-          echo "Libraries in mingw64/lib:"
-          ls -la /mingw64/lib/libQt5*
-          # Build with verbose output
-          cabal build -v3
+          cabal build 
 
       - name: Build with Cabal (Linux)
         if: runner.os == 'Linux'
