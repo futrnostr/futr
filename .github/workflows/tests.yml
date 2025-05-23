@@ -174,7 +174,7 @@ jobs:
         run: |
           export PATH="/c/ghcup/bin:$PATH"
           export CABAL_DIR="/c/cabal"
-          cabal configure --enable-tests
+          cabal configure --enable-tests  --builddir=/c/futrb
 
       - name: Build (Linux)
         if: runner.os == 'Linux'
@@ -186,8 +186,7 @@ jobs:
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
-          export CABAL_DIR="/c/cabal"
-          cabal build all
+          cabal build all --builddir=/c/futrb
 
       - name: Test (Linux)
         if: runner.os == 'Linux'
@@ -199,5 +198,4 @@ jobs:
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
-          export CABAL_DIR="/c/cabal"
-          cabal test
+          cabal test --builddir=/c/futrb
