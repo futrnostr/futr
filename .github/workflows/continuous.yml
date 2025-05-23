@@ -107,7 +107,7 @@ jobs:
         run: |
           git clone https://github.com/LMDB/lmdb.git && \
           cd lmdb/libraries/liblmdb && \
-          gcc -O2 -g -W -Wall -Wno-unused-parameter -Wbad-function-cast -Wuninitialized -c mdb.c -D_WIN32 -DMDB_VL32 && \
+          gcc -O2 -g -W -Wall -Wno-unused-parameter -Wbad-function-cast -Wuninitialized -c mdb.c -D_WIN32 -DMDB_VL32 -DMDB_USE_POSIX_MUTEX && \
           gcc -O2 -c midl.c -D_WIN32 && \
           ar rc liblmdb.a mdb.o midl.o && \
           mkdir -p /c/ghcup/ghc/9.6.7/mingw/lib /c/ghcup/ghc/9.6.7/mingw/include && \
