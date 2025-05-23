@@ -164,6 +164,10 @@ jobs:
         if: runner.os == 'Linux'
         run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
 
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        run: cabal configure --enable-tests
+
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
@@ -171,9 +175,9 @@ jobs:
           export PATH="/c/ghcup/bin:$PATH"
           cabal configure --enable-tests
 
-      - name: Configure (Linux)
+      - name: Build (Linux)
         if: runner.os == 'Linux'
-        run: cabal configure --enable-tests
+        run: cabal build all
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
@@ -183,9 +187,9 @@ jobs:
           export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
           cabal build all
 
-      - name: Build (Linux)
+      - name: Test (Linux)
         if: runner.os == 'Linux'
-        run: cabal build all
+        run: cabal test
 
       - name: Test (Windows)
         if: runner.os == 'Windows'
@@ -194,7 +198,3 @@ jobs:
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
           cabal test
-
-      - name: Test (Linux)
-        if: runner.os == 'Linux'
-        run: cabal test
