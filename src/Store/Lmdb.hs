@@ -37,7 +37,7 @@ module Store.Lmdb
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Monad (forM, forM_, unless,when)
+import Control.Monad (forM, forM_, unless, when)
 import Data.Aeson (FromJSON, ToJSON, encode, decode, eitherDecode)
 import Data.Bits (shiftL, shiftR, (.|.))
 import Data.ByteString qualified as BS

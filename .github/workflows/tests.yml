@@ -173,6 +173,7 @@ jobs:
         shell: msys2 {0}
         run: |
           export PATH="/c/ghcup/bin:$PATH"
+          export CABAL_DIR="/c/cabal"
           cabal configure --enable-tests
 
       - name: Build (Linux)
@@ -185,6 +186,7 @@ jobs:
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
+          export CABAL_DIR="/c/cabal"
           cabal build all
 
       - name: Test (Linux)
@@ -197,4 +199,5 @@ jobs:
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
+          export CABAL_DIR="/c/cabal"
           cabal test

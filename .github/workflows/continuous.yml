@@ -165,8 +165,7 @@ jobs:
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
-          export CFLAGS="-Wno-error=deprecated-declarations"
-          export CXXFLAGS="-Wno-error=deprecated-declarations"
+          export CABAL_DIR="/c/cabal"
           cabal build 
 
       - name: Build with Cabal (Linux)
