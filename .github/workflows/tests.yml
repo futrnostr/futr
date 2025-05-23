@@ -154,7 +154,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          export PATH="/c/ghcup/bin:$PATH"
+          export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
           git checkout v0.5.1 && \
@@ -181,9 +181,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          export PATH="/c/ghcup/bin:$PATH"
-          export CABAL_DIR="/c/cabal"
-          cabal configure --enable-tests  --builddir=/c/futrb
+          export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
+          cabal configure --enable-tests
 
       - name: Build (Linux)
         if: runner.os == 'Linux'
@@ -194,8 +193,9 @@ jobs:
         shell: msys2 {0}
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
-          export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
-          cabal build all --builddir=/c/futrb
+          export LIBRARY_PATH="/mingw64/lib:$LIBRARY_PATH"
+          export CPATH="/mingw64/include:$CPATH"
+          cabal build all
 
       - name: Test (Linux)
         if: runner.os == 'Linux'
@@ -206,5 +206,4 @@ jobs:
         shell: msys2 {0}
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
-          export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
-          cabal test --builddir=/c/futrb
+          cabal test

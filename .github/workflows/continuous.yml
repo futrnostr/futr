@@ -105,6 +105,8 @@ jobs:
         shell: msys2 {0}
         run: |
           pacman -S --noconfirm mingw-w64-x86_64-lmdb
+          ls /mingw64/bin/liblmdb.dll
+          ls /mingw64/lib/liblmdb*
 
       - name: Install Qt5 Dependencies (Linux)
         if: runner.os == 'Linux'
@@ -150,6 +152,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
+          export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
           git checkout v0.5.1 && \
@@ -168,17 +171,18 @@ jobs:
         if: runner.os == 'Linux'
         run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
 
+      - name: Build with Cabal (Linux)
+        if: runner.os == 'Linux'
+        run: cabal build
+
       - name: Build with Cabal (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
-          export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
-          cabal build --builddir=/c/futrb
-
-      - name: Build with Cabal (Linux)
-        if: runner.os == 'Linux'
-        run: cabal build
+          export LIBRARY_PATH="/mingw64/lib:$LIBRARY_PATH"
+          export CPATH="/mingw64/include:$CPATH"
+          cabal build
 
       - name: Update appdata.xml (Linux)
         if: runner.os == 'Linux'
@@ -225,7 +229,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          windeployqt.exe /c/futrb/futr.exe --qmldir=resources\qml
+          windeployqt.exe dist-newstyle/build/x86_64-linux/ghc-${{ steps.haskell-setup.outputs.ghc-version }}/futr-${{ env.PACKAGE_VERSION }}/build/futr/futr.exe --qmldir=resources\qml
 
       - name: Deploy dependencies (Windows)
         if: runner.os == 'Windows'
