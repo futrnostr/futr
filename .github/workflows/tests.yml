@@ -30,6 +30,24 @@ jobs:
       - name: Checkout base repo
         uses: actions/checkout@v4
 
+      - name: Copy cabal project file (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cp cabal.project.unix cabal.project.local
+
+      - name: Copy cabal project file (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cp cabal.project.windows cabal.project.local
+
+      - name: Checkout HsQML (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/checkout@v4
+        with:
+          repository: prolic/HsQML
+          ref: 0a5f3c57aaff9719c8702a5b6a69e9e9f1f2d660
+          path: ../HsQML
+
       - name: Setup MSYS2 (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
