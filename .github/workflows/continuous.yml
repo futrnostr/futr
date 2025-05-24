@@ -181,6 +181,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
+          pacman -Ql mingw-w64-x86_64-lmdb
+          pacman -S --noconfirm mingw-w64-x86_64-lmdb
+          pacman -Ql mingw-w64-x86_64-lmdb
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           export LIBRARY_PATH="/mingw64/lib:$LIBRARY_PATH"
           export CPATH="/mingw64/include:$CPATH"
