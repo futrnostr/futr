@@ -1,2 +1,7 @@
 packages:
     HsQML/
+
+source-repository-package
+  type: git
+  location: https://github.com/duog/haskell-lmdb
+  tag: 774fee77940591108a7142f8f1d3d41a1afd6e06
