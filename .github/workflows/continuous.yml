@@ -187,6 +187,15 @@ jobs:
           export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
           export LIBRARY_PATH="/mingw64/lib:$LIBRARY_PATH"
           export CPATH="/mingw64/include:$CPATH"
+          echo "#include <lmdb.h>
+
+          int main() {
+              MDB_env *env;
+              mdb_env_create(&env);
+              return 0;
+          }
+          " >> test.c
+          gcc -I/mingw64/include -L/mingw64/lib test.c -llmdb
           cabal build --extra-include-dirs=/mingw64/include --extra-lib-dirs=/mingw64/lib --ghc-options="-optl=/mingw64/lib/liblmdb.a"
 
       - name: Update appdata.xml (Linux)
