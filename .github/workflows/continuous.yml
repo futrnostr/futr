@@ -1,21 +1,54 @@
-name: Flatpak Build and Release
+name: Continuous Build and Release
 
 on:
   push:
-    branches: ["master"]
+    branches: ["master", "windows"]
 
 permissions:
   contents: write
 
 jobs:
-  flatpak-build-and-release:
-    name: Flatpak Build and Release
-    runs-on: ubuntu-latest
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Flatpak and Flatpak Builder
+      - name: Copy cabal project file (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cp cabal.project.unix cabal.project.local
+
+      - name: Copy cabal project file (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cp cabal.project.windows cabal.project.local
+
+      - name: Checkout HsQML (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/checkout@v4
+        with:
+          repository: prolic/HsQML
+          ref: 3db765497fec03cbfc4a76284b8e35c2d5848bdc
+          path: HsQML
+
+      - name: Setup MSYS2 (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base
+            mingw-w64-x86_64-toolchain
+            git
+
+      - name: Install Flatpak and Flatpak Builder (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
@@ -25,8 +58,9 @@ jobs:
       - name: Set up Haskell
         uses: haskell-actions/setup@v2
         with:
-          ghc-version: '9.6.6'
-          cabal-version: '3.10.3.0'
+          ghc-version: '9.6.7'
+          cabal-version: '3.12.1.0'
+        id: haskell-setup
 
       - name: Cache Cabal packages
         uses: actions/cache@v4.2.3
@@ -35,40 +69,153 @@ jobs:
             ~/.cabal/packages
             ~/.cabal/store
             dist-newstyle
-          key: ${{ runner.os }}-ghc-9.6.6-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          key: ${{ runner.os }}-ghc-9.6.7-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
           restore-keys: |
-            ${{ runner.os }}-ghc-9.6.6-cabal-
+            ${{ runner.os }}-ghc-9.6.7-cabal-
 
       - name: Update Cabal package list
         run: cabal update
 
-      - name: Install Build Tools
+      - name: Install Build Tools + LMDB (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf autogen automake libtool liblmdb-dev
 
-      - name: Install Qt5 Dependencies
+      - name: Install Build Tools (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          pacman -Syu
+          pacman -S --noconfirm \
+            autoconf \
+            autogen \
+            automake \
+            libtool \
+            gcc \
+            git \
+            mingw-w64-x86_64-libunwind \
+            mingw-w64-x86_64-toolchain \
+            mingw-w64-x86_64-make \
+            mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-autotools
+
+      - name: Install LMDB (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          # Compile LMDB from source
+          git clone https://github.com/LMDB/lmdb.git
+          cd lmdb/libraries/liblmdb
+          # Build static library first
+          make CC=gcc
+          # Build DLL for Windows
+          gcc -shared -o liblmdb.dll mdb.o midl.o -Wl,--out-implib,liblmdb.dll.a
+          # Install manually for Windows
+          mkdir -p /mingw64/bin /mingw64/lib /mingw64/include /mingw64/share/man/man1
+          cp mdb_stat mdb_copy mdb_dump mdb_load mdb_drop /mingw64/bin/
+          cp liblmdb.a liblmdb.dll.a /mingw64/lib/
+          cp liblmdb.dll /mingw64/bin/
+          cp lmdb.h /mingw64/include/
+          cp mdb_stat.1 mdb_copy.1 mdb_dump.1 mdb_load.1 mdb_drop.1 /mingw64/share/man/man1/ 2>/dev/null || true
+          cd ../../..
+          # Verify installation
+          ls /mingw64/bin/liblmdb.dll
+          ls /mingw64/lib/liblmdb*
+          ls /mingw64/include/lmdb.h
+
+      - name: Install Qt5 Dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y qtdeclarative5-dev qml-module-qtquick-controls2 libqt5quick5 qt5-image-formats-plugins qtmultimedia5-dev qml-module-qtmultimedia qttools5-dev-tools qtbase5-dev
 
-      - name: Install secp256k1 Library
+      - name: Install Qt5 Dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          pacman -S --noconfirm \
+            mingw-w64-x86_64-qt5-base \
+            mingw-w64-x86_64-qt5-declarative \
+            mingw-w64-x86_64-qt5-graphicaleffects \
+            mingw-w64-x86_64-qt5-imageformats \
+            mingw-w64-x86_64-qt5-multimedia \
+            mingw-w64-x86_64-qt5-quickcontrols2 \
+            mingw-w64-x86_64-qt5-svg \
+            mingw-w64-x86_64-qt5-tools \
+            mingw-w64-x86_64-qt5-translations \
+            mingw-w64-x86_64-qt5-winextras \
+            mingw-w64-x86_64-angleproject
+
+      - name: Install secp256k1 Library (Linux)
+        if: runner.os == 'Linux'
         run: |
           git clone https://github.com/bitcoin-core/secp256k1 && \
           cd secp256k1 && \
           git checkout v0.5.1 && \
           ./autogen.sh && \
-          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+          ./configure \
+            --enable-module-schnorrsig \
+            --enable-module-extrakeys \
+            --enable-module-ecdh \
+            --enable-experimental \
+            --enable-module-recovery && \
           make && \
           sudo make install && \
           cd ..
 
-      - name: Set Library Path
+      - name: Install secp256k1 Library (Windows)
+        # windows doesn't need sudo
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
+          git clone https://github.com/bitcoin-core/secp256k1 && \
+          cd secp256k1 && \
+          git checkout v0.5.1 && \
+          ./autogen.sh && \
+          ./configure --enable-module-schnorrsig \
+            --enable-module-extrakeys \
+            --enable-module-ecdh \
+            --enable-module-recovery \
+            --enable-experimental && \
+          make && \
+          make install && \
+          cp .libs/libsecp256k1-2.dll /mingw64/bin/ && \
+          cd ..
+
+      - name: Set Library Path (Linux)
+        if: runner.os == 'Linux'
         run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
 
-      - name: Build with Cabal
+      - name: Build with Cabal (Linux)
+        if: runner.os == 'Linux'
         run: cabal build
 
-      - name: Update appdata.xml
+      - name: Build with Cabal (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          export PATH="/c/ghcup/bin:/mingw64/bin:$PATH"
+          export LIBRARY_PATH="/mingw64/lib:$LIBRARY_PATH"
+          export CPATH="/mingw64/include:$CPATH"
+          # Test LMDB compilation
+          echo "#include <lmdb.h>
+
+          int main() {
+              MDB_env *env;
+              mdb_env_create(&env);
+              return 0;
+          }
+          " > test.c
+          gcc -I/mingw64/include -L/mingw64/lib test.c -llmdb
+          echo "LMDB test compilation successful"
+          # Clean and build
+          rm -rf dist-newstyle
+          cabal clean
+          cabal build --extra-include-dirs=/mingw64/include --extra-lib-dirs=/mingw64/lib --ghc-options="-optl=/mingw64/lib/liblmdb.a" -v3
+
+      - name: Update appdata.xml (Linux)
+        if: runner.os == 'Linux'
         run: |
           TODAY=$(date +%Y-%m-%d)
           APPDATA="flatpak/com.futrnostr.futr.appdata.xml"
@@ -84,23 +231,53 @@ jobs:
           # Add new continuous release entry at the top of releases section
           sed -i "/<releases>/a \    <release version=\"continuous\" date=\"$TODAY\" type=\"development\">\n      <description>\n        <p>Development build from master branch</p>\n        <p>Commit: ${{ github.sha }}</p>\n      </description>\n    </release>" "$APPDATA"
 
-      - name: Build Flatpak
+      - name: Build Flatpak (Linux)
+        if: runner.os == 'Linux'
         run: ./build-flatpak.sh
 
-      - name: Upload appdata.xml
+      - name: Upload appdata.xml (Linux)
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: appdata-xml
           path: flatpak/com.futrnostr.futr.appdata.xml
           retention-days: 7
 
-      - name: Upload Flatpak Bundle
+      - name: Upload Flatpak Bundle (Linux)
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: flatpak-bundle
           path: futr.flatpak
           retention-days: 7
 
+      - name: Get Package Version
+        run: |
+          echo "PACKAGE_VERSION=$(grep '^version:' futr.cabal | awk '{print $2}')" >> $GITHUB_ENV
+
+      - name: Windeploy QT (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          windeployqt.exe dist-newstyle/build/x86_64-linux/ghc-${{ steps.haskell-setup.outputs.ghc-version }}/futr-${{ env.PACKAGE_VERSION }}/build/futr/futr.exe --qmldir=resources\qml
+
+      - name: Deploy dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          cp /mingw64/bin/{libbrotlicommon.dll,libbrotlidec.dll,libbz2-1.dll,libc++.dll,libcrypto-3-x64.dll,libdouble-conversion.dll,libfreetype-6.dll,libgcc_s_seh-1.dll,libglib-2.0-0.dll,libgraphite2.dll,libharfbuzz-0.dll,libiconv-2.dll,libicudt77.dll,libicuin77.dll,libicuuc77.dll,libintl-8.dll,libjpeg-8.dll,liblmdb.dll,libmd4c.dll,libpcre2-16-0.dll,libpcre2-8-0.dll,libpng16-16.dll,libsecp256k1-2.dll,libssl-3-x64.dll,libstdc++-6.dll,libtiff-6.dll,libtiffxx-6.dll,libunwind.dll,libwebp-7.dll,libwinpthread-1.dll,libzstd.dll,zlib1.dll} dist-newstyle/build/x86_64-linux/ghc-${{ steps.haskell-setup.outputs.ghc-version }}/futr-${{ env.PACKAGE_VERSION }}/build/futr/
+
+      - name: Create Installer (Windows)
+        if: runner.os == 'Windows'
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: platform/windows/innosetup.iss
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
       - name: Delete existing release and tag
         uses: dev-drprasad/delete-tag-and-release@v1.1
         with:
@@ -113,7 +290,9 @@ jobs:
         with:
           tag_name: continuous
           name: "🚧 Development Build (Continuous)"
-          files: "futr.flatpak"
+          files: |
+            futr.flatpak
+            platform/windows/Output/futr-setup.exe
           prerelease: true
           body: |
             ⚠️ This is an automated development build from the latest master branch.

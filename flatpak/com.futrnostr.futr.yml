@@ -56,7 +56,7 @@ modules:
       - install -D com.futrnostr.futr.appdata.xml /app/share/appdata/com.futrnostr.futr.appdata.xml
     sources:
       - type: file
-        path: ../dist-newstyle/build/x86_64-linux/ghc-9.6.6/futr-0.1.0.0/build/futr/futr
+        path: ../dist-newstyle/build/x86_64-linux/ghc-9.6.7/futr-0.3.0.0/build/futr/futr
       - type: file
         path: futr.desktop
       - type: file

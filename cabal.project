@@ -9,10 +9,5 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/prolic/HsQML
-  tag: 383c32ac42a9ef9dd081f96107f3458cf2f9a53d
-
-source-repository-package
-  type: git
   location: https://github.com/lolepezy/lmdb-high-level
   tag: c1bfd9564b5a894659428281f328df2975d04569

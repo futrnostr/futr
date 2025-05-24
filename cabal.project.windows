@@ -1,0 +1,5 @@
+packages:
+    HsQML/
+
+package *
+  pkg-config-path: /mingw64/lib/pkgconfig
