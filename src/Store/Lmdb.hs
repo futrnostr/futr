@@ -37,7 +37,7 @@ module Store.Lmdb
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_, unless, when)
 import Data.Aeson (FromJSON, ToJSON, encode, decode, eitherDecode)
 import Data.Bits (shiftL, shiftR, (.|.))
 import Data.ByteString qualified as BS
@@ -756,8 +756,8 @@ maxDbs = 11
 
 -- Windows specific imports and FFI for marking a file as sparse
 #ifdef mingw32_HOST_OS
-foreign import ccall unsafe "windows.h DeviceIOControl"
-    c_DeviceIOControl :: HANDLE -> DWORD -> Ptr () -> DWORD -> Ptr () -> DWORD -> Ptr DWORD -> Ptr () -> IO BOOL
+foreign import ccall unsafe "DeviceIoControl"
+    c_DeviceIoControl :: HANDLE -> DWORD -> Ptr () -> DWORD -> Ptr () -> DWORD -> Ptr DWORD -> Ptr () -> IO BOOL
 
 fSCTL_SET_SPARSE :: DWORD
 fSCTL_SET_SPARSE = 0x900C4
@@ -769,7 +769,7 @@ markFileSparse path = do
     if h == iNVALID_HANDLE_VALUE
         then pure ()
         else alloca $ \lpBytesReturned -> do
-            _ <- c_DeviceIOControl h fSCTL_SET_SPARSE nullPtr 0 nullPtr 0 lpBytesReturned nullPtr
+            _ <- c_DeviceIoControl h fSCTL_SET_SPARSE nullPtr 0 nullPtr 0 lpBytesReturned nullPtr
             closeHandle h
             pure ()
 #endif

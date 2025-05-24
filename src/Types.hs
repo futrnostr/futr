@@ -176,6 +176,6 @@ initialState = AppState
   , currentScreen = KeyMgmt
   , currentProfile = Nothing
   , currentPost = Nothing
-  , version = "v0.2.3-dev"
+  , version = "v0.3.0-dev"
   , inboxModelState = Stopped
   }

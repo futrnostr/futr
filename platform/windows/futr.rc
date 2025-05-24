@@ -1,0 +1,35 @@
+#include <windows.h>
+
+// Icon resource
+APPICON ICON "../../resources/icons/nostr-purple.ico"
+
+// Version information
+1 VERSIONINFO
+FILEVERSION     0,3,0,0
+PRODUCTVERSION  0,3,0,0
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0x0L
+FILEOS          0x40004L
+FILETYPE        0x1L
+FILESUBTYPE     0x0L
+
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"  // U.S. English, Unicode
+    BEGIN
+      VALUE "CompanyName", "Sascha-Oliver Prolic\0"
+      VALUE "FileDescription", "nostr client application\0"
+      VALUE "FileVersion", "0.3.0.0\0"
+      VALUE "InternalName", "futr.exe\0"
+      VALUE "LegalCopyright", "2025 Sascha-Oliver Prolić\0"
+      VALUE "OriginalFilename", "futr.exe\0"
+      VALUE "ProductName", "futr\0"
+      VALUE "ProductVersion", "0.3.0.0\0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 1200
+  END
+END

@@ -13,6 +13,7 @@ import System.Process (rawSystem)
 import System.Directory (listDirectory, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getModificationTime, setModificationTime)
 import System.Exit
 import System.FilePath ((</>), makeRelative, takeExtension)
+import System.Info (os)
 
 main = defaultMainWithHooks simpleUserHooks { preBuild = myPreBuild }
 
@@ -45,10 +46,18 @@ myPreBuild _ _ = do
     else
         putStrLn "No resource file changes detected."
 
+    -- Conditionally compile Windows resources
+    windowsResources <- if os == "mingw32"
+                       then compileWindowsResources
+                       else return []
+
     currentTime <- getPOSIXTime
     setModificationTime touchFileName (posixSecondsToUTCTime currentTime)
 
-    let buildInfo = emptyBuildInfo { cxxSources = ["resources.cpp"] }
+    let buildInfo = emptyBuildInfo {
+        cxxSources = ["resources.cpp"],
+        ldOptions = windowsResources
+    }
     return (Nothing, [(mkUnqualComponentName "futr", buildInfo)])
 
 generateQrcFile :: FilePath -> FilePath -> [FilePath] -> IO ()
@@ -68,6 +77,28 @@ rcc = do
     if exitCode1 /= ExitSuccess
         then error "Failed to compile .qrc file"
         else return ()
+
+-- Compile Windows resource file to object file
+compileWindowsResources :: IO [String]
+compileWindowsResources = do
+    let rcFile = "platform/windows/futr.rc"
+        objFile = "platform/windows/futr_res.o"
+
+    rcExists <- doesFileExist rcFile
+    if not rcExists
+    then do
+        putStrLn "Warning: Windows resource file not found, skipping resource compilation"
+        return []
+    else do
+        putStrLn $ "Compiling Windows resources: " ++ rcFile ++ " to " ++ objFile
+        exitCode <- rawSystem "windres" [rcFile, "-o", objFile]
+        if exitCode /= ExitSuccess
+        then do
+            putStrLn "Warning: Failed to compile Windows resources (windres not found or failed)"
+            return []
+        else do
+            putStrLn "Windows resources compiled successfully"
+            return [objFile]
 
 -- Recursively list all files in a directory
 listFilesRecursive :: FilePath -> IO [FilePath]
