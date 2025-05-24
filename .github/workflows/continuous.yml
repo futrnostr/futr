@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: prolic/HsQML
-          ref: 0a5f3c57aaff9719c8702a5b6a69e9e9f1f2d660
+          ref: 3db765497fec03cbfc4a76284b8e35c2d5848bdc
           path: HsQML
 
       - name: Setup MSYS2 (Windows)
