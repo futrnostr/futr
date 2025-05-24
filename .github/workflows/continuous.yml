@@ -212,7 +212,7 @@ jobs:
           # Clean and build
           rm -rf dist-newstyle
           cabal clean
-          cabal build --extra-include-dirs=/mingw64/include --extra-lib-dirs=/mingw64/lib
+          cabal build --extra-include-dirs=/mingw64/include --extra-lib-dirs=/mingw64/lib --ghc-options="-optl=/mingw64/lib/liblmdb.a" -v3
 
       - name: Update appdata.xml (Linux)
         if: runner.os == 'Linux'
