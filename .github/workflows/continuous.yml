@@ -107,11 +107,20 @@ jobs:
           # Compile LMDB from source
           git clone https://github.com/LMDB/lmdb.git
           cd lmdb/libraries/liblmdb
+          # Build static library first
           make CC=gcc
-          make install CC=gcc prefix=/mingw64
+          # Build DLL for Windows
+          gcc -shared -o liblmdb.dll mdb.o midl.o -Wl,--out-implib,liblmdb.dll.a
+          # Install manually for Windows
+          mkdir -p /mingw64/bin /mingw64/lib /mingw64/include /mingw64/share/man/man1
+          cp mdb_stat mdb_copy mdb_dump mdb_load mdb_drop /mingw64/bin/
+          cp liblmdb.a liblmdb.dll.a /mingw64/lib/
+          cp liblmdb.dll /mingw64/bin/
+          cp lmdb.h /mingw64/include/
+          cp mdb_stat.1 mdb_copy.1 mdb_dump.1 mdb_load.1 mdb_drop.1 /mingw64/share/man/man1/ 2>/dev/null || true
           cd ../../..
           # Verify installation
-          ls /mingw64/bin/liblmdb.dll || echo "No DLL found"
+          ls /mingw64/bin/liblmdb.dll
           ls /mingw64/lib/liblmdb*
           ls /mingw64/include/lmdb.h
 
