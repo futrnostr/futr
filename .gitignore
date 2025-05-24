@@ -13,6 +13,7 @@ dist-docs.*/
 cabal.project.local*
 *.ft
 build/
+platform/windows/futr_res.o
 resources.cpp
 resources.qrc
 futr.flatpak
