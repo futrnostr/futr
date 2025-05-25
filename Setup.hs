@@ -1,6 +1,8 @@
 import Control.Monad (filterM, forM)
+import Data.List (intercalate)
 import Data.Time.Clock (UTCTime)
 import Data.Time.Clock.POSIX (getPOSIXTime, posixSecondsToUTCTime)
+import Distribution.Package (pkgVersion)
 import Distribution.Simple
 import Distribution.Simple.Setup (BuildFlags)
 import Distribution.Simple.UserHooks (Args, postBuild, preBuild)
@@ -8,17 +10,25 @@ import Distribution.Types.BuildInfo
 import Distribution.Types.HookedBuildInfo
 import Distribution.Types.LocalBuildInfo
 import Distribution.Types.PackageDescription
+import Distribution.Types.GenericPackageDescription (GenericPackageDescription(..), packageDescription)
 import Distribution.Types.UnqualComponentName
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
+import Distribution.Fields.ParseResult (ParseResult(..), runParseResult)
+import Distribution.Version (versionNumbers)
 import System.Process (rawSystem)
 import System.Directory (listDirectory, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getModificationTime, setModificationTime)
 import System.Exit
 import System.FilePath ((</>), makeRelative, takeExtension)
 import System.Info (os)
+import qualified Data.ByteString.Char8 as BS
 
 main = defaultMainWithHooks simpleUserHooks { preBuild = myPreBuild }
 
 myPreBuild :: Args -> BuildFlags -> IO HookedBuildInfo
 myPreBuild _ _ = do
+    -- Generate version-dependent files
+    generateVersionFiles
+
     let resourceDir = "resources"
         qrcFile = "resources.qrc"
         touchFileName = "build.touch"
@@ -59,6 +69,89 @@ myPreBuild _ _ = do
         ldOptions = windowsResources
     }
     return (Nothing, [(mkUnqualComponentName "futr", buildInfo)])
+
+-- | Generate all version-dependent files from templates
+generateVersionFiles :: IO ()
+generateVersionFiles = do
+    putStrLn "Generating version-dependent files..."
+
+    -- Read version from cabal file
+    (versionDot, versionNumbers) <- readVersionFromCabal
+    let versionComma = intercalate "," (map show versionNumbers)
+
+    -- Generate the Version.hs module
+    generateVersionModule versionDot
+
+    -- Generate files from templates
+    generateFromTemplate "platform/windows/futr.rc.template" "platform/windows/futr.rc"
+        [("@VERSION@", versionDot), ("@VERSION_STRING@", versionDot), ("@VERSION_COMMA@", versionComma)]
+
+    generateFromTemplate "platform/windows/copy-dlls.sh.template" "platform/windows/copy-dlls.sh"
+        [("@VERSION@", versionDot)]
+
+    generateFromTemplate "platform/windows/innosetup.iss.template" "platform/windows/innosetup.iss"
+        [("@VERSION@", versionDot)]
+
+    generateFromTemplate "flatpak/com.futrnostr.futr.yml.template" "flatpak/com.futrnostr.futr.yml"
+        [("@VERSION@", versionDot)]
+
+    putStrLn $ "Generated files with version: " ++ versionDot
+
+-- | Generate a simple Version.hs module with version constants
+generateVersionModule :: String -> IO ()
+generateVersionModule version = do
+    let versionContent = unlines
+            [ "-- | Auto-generated version module. Do not edit directly!"
+            , "-- | Edit version in futr.cabal instead."
+            , "module Version where"
+            , ""
+            , "-- | Version string extracted from cabal file"
+            , "versionString :: String"
+            , "versionString = " ++ show version
+            , ""
+            , "-- | Runtime version in 'v0.4.0' format"
+            , "runtimeVersion :: String"
+            , "runtimeVersion = \"v\" ++ versionString"
+            ]
+    writeFile "src/Version.hs" versionContent
+    putStrLn "Generated: src/Version.hs"
+
+-- | Read version from cabal file
+readVersionFromCabal :: IO (String, [Int])
+readVersionFromCabal = do
+    contents <- BS.readFile "futr.cabal"
+    case runParseResult (parseGenericPackageDescription contents) of
+        (_, Right pkg) -> do
+            let version = pkgVersion $ package $ packageDescription pkg
+                versionList = versionNumbers version
+                versionString = intercalate "." $ map show versionList
+            return (versionString, versionList)
+        (_, Left err) -> do
+            error $ "Failed to parse cabal file: " ++ show err
+
+-- | Generate a file from a template by replacing placeholders
+generateFromTemplate :: FilePath -> FilePath -> [(String, String)] -> IO ()
+generateFromTemplate templatePath outputPath replacements = do
+    templateExists <- doesFileExist templatePath
+    if templateExists
+    then do
+        template <- readFile templatePath
+        let result = foldl (\content (placeholder, replacement) ->
+                         replaceAll placeholder replacement content) template replacements
+        writeFile outputPath result
+        putStrLn $ "Generated: " ++ outputPath
+    else
+        putStrLn $ "Warning: Template not found: " ++ templatePath
+
+-- | Replace all occurrences of a substring
+replaceAll :: String -> String -> String -> String
+replaceAll [] _ haystack = haystack
+replaceAll _ _ [] = []
+replaceAll needle replacement haystack
+    | take (length needle) haystack == needle =
+        replacement ++ replaceAll needle replacement (drop (length needle) haystack)
+    | otherwise =
+        head haystack : replaceAll needle replacement (tail haystack)
 
 generateQrcFile :: FilePath -> FilePath -> [FilePath] -> IO ()
 generateQrcFile dir qrc files = do

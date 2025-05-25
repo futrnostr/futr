@@ -2,7 +2,7 @@
 
 # Script to copy required DLLs to the build directory
 
-BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-0.3.0.0/build/futr"
+BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-@VERSION@/build/futr"
 
 # Check if build directory exists
 if [ ! -d "$BUILD_DIR" ]; then
