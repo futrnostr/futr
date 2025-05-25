@@ -43,7 +43,7 @@ windres futr.rc -o futr_res.o
 
 ### Updating Version Information
 
-The version information in `futr.rc` should be kept in sync with the version in `futr.cabal`. Currently set to version 0.3.0.0.
+The version information in `futr.rc` should be kept in sync with the version in `futr.cabal`.
 
 ### Icon Requirements
 

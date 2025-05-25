@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "futr"
-#define MyAppVersion "0.3.0.0"
+#define MyAppVersion "@VERSION@"
 #define MyAppPublisher "Sascha-Oliver Prolic"
 #define MyAppURL "https://github.com/futrnostr/futr"
 #define MyAppExeName "futr.exe"
@@ -24,7 +24,7 @@ LicenseFile=..\..\LICENSE
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 OutputDir=..\..\dist
-OutputBaseFilename=futr-0.3.0.0-setup
+OutputBaseFilename=futr-@VERSION@-setup
 SetupIconFile=..\..\resources\icons\nostr-purple.ico
 Compression=lzma
 SolidCompression=yes
@@ -37,8 +37,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\..\dist-newstyle\build\x86_64-windows\ghc-9.6.7\futr-0.3.0.0\build\futr\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\dist-newstyle\build\x86_64-windows\ghc-9.6.7\futr-0.3.0.0\build\futr\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist-newstyle\build\x86_64-windows\ghc-9.6.7\futr-@VERSION@\build\futr\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist-newstyle\build\x86_64-windows\ghc-9.6.7\futr-@VERSION@\build\futr\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

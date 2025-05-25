@@ -63,7 +63,7 @@ modules:
     build-commands:
       - cabal update
       - cabal build --enable-relocatable
-      - install -Dm755 dist-newstyle/build/x86_64-linux/ghc-9.6.7/futr-0.3.0.0/build/futr/futr /app/bin/futr
+      - install -Dm755 dist-newstyle/build/x86_64-linux/ghc-9.6.7/futr-@VERSION@/build/futr/futr /app/bin/futr
       - install -Dm644 resources/icons/nostr-purple.svg /app/share/icons/hicolor/scalable/apps/com.futrnostr.futr.svg
       - install -Dm644 flatpak/com.futrnostr.futr.desktop /app/share/applications/com.futrnostr.futr.desktop
       - install -Dm644 flatpak/com.futrnostr.futr.metainfo.xml /app/share/metainfo/com.futrnostr.futr.metainfo.xml

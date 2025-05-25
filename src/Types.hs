@@ -8,7 +8,7 @@ import Data.Aeson (FromJSON, ToJSON, toJSON, parseJSON, (.:), (.=), withObject, 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import Control.Concurrent.Async (Async)
 import Effectful.Concurrent.STM (TChan, TQueue)
 import GHC.Generics (Generic)
@@ -16,6 +16,7 @@ import Nostr.Event (Event, EventId)
 import Nostr.Keys (KeyPair, PubKeyXO)
 import Nostr.Types (Filter, Request, SubscriptionId)
 import Nostr.Relay (RelayURI)
+import Version (runtimeVersion)
 
 
 -- | Status of a publish operation
@@ -176,6 +177,6 @@ initialState = AppState
   , currentScreen = KeyMgmt
   , currentProfile = Nothing
   , currentPost = Nothing
-  , version = "v0.3.0-dev"
+  , version = pack runtimeVersion
   , inboxModelState = Stopped
   }
