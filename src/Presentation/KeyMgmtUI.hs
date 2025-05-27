@@ -15,6 +15,7 @@ import Effectful.Dispatch.Dynamic (EffectHandler, interpret, send)
 import Effectful.FileSystem (FileSystem, XdgDirectory(..), createDirectoryIfMissing, getXdgDirectory)
 import Effectful.State.Static.Shared (State, get, modify, put)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
+import System.FilePath ((</>))
 
 import QtQuick
 import KeyMgmt
@@ -129,9 +130,9 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
 
                     -- Create the directory for the account
                     let pk = keyPairToPubKeyXO kp
-                    baseDir <- getXdgDirectory XdgData ("futrnostr" <> unpack (pubKeyXOToBech32 pk))
+                    baseDir <- getXdgDirectory XdgData ("futrnostr" </> unpack (pubKeyXOToBech32 pk))
                     createDirectoryIfMissing True baseDir
-                    let lmdDir = baseDir <> "db"
+                    let lmdDir = baseDir </> "db"
                     createDirectoryIfMissing True lmdDir
                     -- Initialize the LMDB database
                     lmdbState <- liftIO $ initializeLmdbState lmdDir
