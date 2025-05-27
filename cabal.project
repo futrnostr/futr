@@ -14,5 +14,15 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/prolic/unix-time
+  tag: 86b7e3a626972d871982894a1e6d19c68cdd9024
+
+source-repository-package
+  type: git
+  location: https://github.com/prolic/hsc2hs
+  tag: 339a832b7bfa4d8072bfc3911af7d2f4b03c432d
+
+source-repository-package
+  type: git
   location: https://github.com/lolepezy/lmdb-high-level
   tag: c1bfd9564b5a894659428281f328df2975d04569
