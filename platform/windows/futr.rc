@@ -22,7 +22,7 @@ BEGIN
       VALUE "FileDescription", "nostr client application\0"
       VALUE "FileVersion", "0.3.0.0\0"
       VALUE "InternalName", "futr.exe\0"
-      VALUE "LegalCopyright", "2025 Sascha-Oliver Prolic\0"
+      VALUE "LegalCopyright", "2025 Sascha-Oliver Prolić\0"
       VALUE "OriginalFilename", "futr.exe\0"
       VALUE "ProductName", "futr\0"
       VALUE "ProductVersion", "0.3.0.0\0"
