@@ -17,8 +17,3 @@ platform/windows/futr_res.o
 resources.cpp
 resources.qrc
 futr.flatpak
-# Generated version-dependent files (do not edit directly - edit templates instead)
-platform/windows/futr.rc
-platform/windows/copy-dlls.sh
-platform/windows/innosetup.iss
-flatpak/com.futrnostr.futr.yml

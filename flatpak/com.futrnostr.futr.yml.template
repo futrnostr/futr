@@ -1,72 +1,71 @@
 app-id: com.futrnostr.futr
-runtime: org.freedesktop.Platform
-runtime-version: '23.08'
-sdk: org.freedesktop.Sdk
-sdk-extensions:
-  - org.freedesktop.Sdk.Extension.haskell
+runtime: org.kde.Platform
+runtime-version: 5.15-23.08
+sdk: org.kde.Sdk
 command: futr
+copy-icon: true
+
+x-flatpak-refs:
+  - type: runtime
+    name: org.kde.Platform
+    branch: 5.15-23.08
+  - type: repository
+    url: https://futrnostr.github.io/futr-flatpak/repo
+    branch: master
+
 finish-args:
   - --share=network
-  - --socket=wayland
+  - --share=ipc
   - --socket=fallback-x11
+  - --socket=wayland
   - --device=dri
-  - --filesystem=xdg-config/fontconfig:ro
-  - --talk-name=org.freedesktop.Flatpak
+  - --socket=session-bus
+
 modules:
-  - name: secp256k1
+  - name: lmdb
+    buildsystem: simple
+    build-commands:
+      - cd libraries/liblmdb && make
+      - mkdir -p /app/lib
+      - cp libraries/liblmdb/liblmdb.so /app/lib/liblmdb.so.0
+      - ln -s /app/lib/liblmdb.so.0 /app/lib/liblmdb.so
+    sources:
+      - type: archive
+        url: https://github.com/LMDB/lmdb/archive/LMDB_0.9.31.tar.gz
+        sha256: dd70a8c67807b3b8532b3e987b0a4e998962ecc28643e1af5ec77696b081c9b0
+
+  - name: libsecp256k1
     buildsystem: autotools
+    sources:
+      - type: git
+        url: https://github.com/bitcoin-core/secp256k1.git
+        tag: v0.5.1
     config-opts:
       - --enable-module-recovery
       - --enable-experimental
       - --enable-module-ecdh
-    sources:
-      - type: archive
-        url: https://github.com/bitcoin-core/secp256k1/archive/refs/tags/v0.5.1.tar.gz
-        sha256: ec91c5a0c2dd5e4b7ba8eaeb3c525b6ff6c775db4e8a2b518e1e8a8b1ffa8bc9
-
-  - name: lmdb
-    buildsystem: make
-    make-install-args:
-      - prefix=/app
-    sources:
-      - type: archive
-        url: https://github.com/LMDB/lmdb/archive/refs/tags/LMDB_0.9.32.tar.gz
-        sha256: c6ab10c91e8fe8cf18d1e4f4ecc63b44c8e6b8e2b9f0e5ec94e24e1c8e6e0c0c
-
-  - name: qt5-qtbase
-    buildsystem: cmake-ninja
-    builddir: true
-    config-opts:
-      - -DCMAKE_BUILD_TYPE=RelWithDebInfo
-      - -DQT_BUILD_EXAMPLES=OFF
-      - -DQT_BUILD_TESTS=OFF
-    sources:
-      - type: archive
-        url: https://download.qt.io/official_releases/qt/5.15/5.15.15/submodules/qtbase-everywhere-opensource-src-5.15.15.tar.xz
-        sha256: bb4da57e8c2071bb5ea0a57ff8d41095a77e0e0f7a3ab1993d8c1df5ce75a2f7
-
-  - name: qt5-qtdeclarative
-    buildsystem: qmake
-    sources:
-      - type: archive
-        url: https://download.qt.io/official_releases/qt/5.15/5.15.15/submodules/qtdeclarative-everywhere-opensource-src-5.15.15.tar.xz
-        sha256: 25b71e1ff64e1d26a7e59a16db9e1e93c3f5be3c5a1b1c9c0d8e8b2b4e0a8e8e
+      - --enable-module-schnorrsig
+      - --enable-module-extrakeys
 
   - name: futr
     buildsystem: simple
-    build-options:
-      build-args:
-        - --share=network
-      append-path: /usr/lib/sdk/haskell/bin
-      env:
-        CABAL_DIR: /run/build/futr/cabal
     build-commands:
-      - cabal update
-      - cabal build --enable-relocatable
-      - install -Dm755 dist-newstyle/build/x86_64-linux/ghc-9.6.7/futr-@VERSION@/build/futr/futr /app/bin/futr
-      - install -Dm644 resources/icons/nostr-purple.svg /app/share/icons/hicolor/scalable/apps/com.futrnostr.futr.svg
-      - install -Dm644 flatpak/com.futrnostr.futr.desktop /app/share/applications/com.futrnostr.futr.desktop
-      - install -Dm644 flatpak/com.futrnostr.futr.metainfo.xml /app/share/metainfo/com.futrnostr.futr.metainfo.xml
+      - install -D futr /app/bin/futr
+      - install -D futr.desktop /app/share/applications/com.futrnostr.futr.desktop
+      - install -D nostr-purple.png /app/share/icons/hicolor/256x256/apps/com.futrnostr.futr.png
+      - install -D com.futrnostr.futr.appdata.xml /app/share/appdata/com.futrnostr.futr.appdata.xml
     sources:
-      - type: dir
-        path: ..
+      - type: file
+        path: ../dist-newstyle/build/x86_64-linux/ghc-9.6.7/futr-@VERSION@/build/futr/futr
+      - type: file
+        path: futr.desktop
+      - type: file
+        path: nostr-purple.png
+      - type: file
+        path: com.futrnostr.futr.appdata.xml
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/man
+  - /share/doc
