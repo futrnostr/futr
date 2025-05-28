@@ -82,6 +82,7 @@ import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..)
 import Nostr.Keys (PubKeyXO, pubKeyXOFromHex)
 import Nostr.Profile (Profile, emptyProfile)
 import Nostr.Relay (Relay(..), RelayURI, isValidRelayURI)
+import Nostr.RelayConnection (normalizeRelayURI)
 import Nostr.Util
 import Types (Follow(..))
 
@@ -469,7 +470,7 @@ runLmdbStore = interpret $ \_ -> \case
                                 return True
 
                     PreferredDMRelays -> do
-                        let validRelayTags = [ uri
+                        let validRelayTags = [ normalizeRelayURI uri
                                         | ("relay":uri:_) <- tags event'
                                         , isValidRelayURI uri
                                         ]
@@ -497,10 +498,11 @@ runLmdbStore = interpret $ \_ -> \case
                         let validRelayTags = [ r
                                         | ("r":uri:rest) <- tags event'
                                         , isValidRelayURI uri
+                                        , let normalizedUri = normalizeRelayURI uri
                                         , let r = case rest of
-                                                    ("write":_) -> OutboxRelay uri
-                                                    ("read":_) -> InboxRelay uri
-                                                    _ -> InboxOutboxRelay uri
+                                                    ("write":_) -> OutboxRelay normalizedUri
+                                                    ("read":_) -> InboxRelay normalizedUri
+                                                    _ -> InboxOutboxRelay normalizedUri
                                         ]
                         if null validRelayTags
                           then return False

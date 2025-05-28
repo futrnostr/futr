@@ -7,6 +7,7 @@
 module Nostr.InboxModel where
 
 import Control.Monad (forever, forM, forM_, unless, void, when)
+import Data.List.Split (chunksOf)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Set qualified as Set
@@ -143,6 +144,7 @@ runInboxModel = interpret $ \_ -> \case
     st <- get @RelayPool
 
     forM_ (updateThread st) cancel
+    forM_ (monitoringThread st) cancel
 
     modify @RelayPool $ \s -> s { updateThread = Nothing }
 
@@ -282,12 +284,12 @@ continueWithRelays inboxRelays = do
   follows <- getFollows xo
   let followList = xo : map pubkey follows
 
-  -- Connect to DM relays concurrently
+  -- Connect to DM relays concurrently with rate limiting
   void $ forConcurrently dmRelays $ \r -> do
     connected <- connect r -- no fallback for DM relays
     when connected $ subscribeToGiftwraps r xo
 
-  -- Connect to inbox relays concurrently
+  -- Connect to inbox relays concurrently with rate limiting
   void $ forConcurrently inboxRelays $ \r -> do
     when (isInboxCapable r) $ do
       let relayUri = getUri r
@@ -299,12 +301,18 @@ continueWithRelays inboxRelays = do
   -- Pre-calculate timestamps for each pubkey
   pubkeyTimestamps <- getPubkeyTimestamps (xo : followList)
 
-  connectedRelays <- forConcurrently (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
-    connected <- connect relayUri
-    if connected
-      then void $ subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
-      else recordFailedRelay relayUri
-    return (relayUri, connected)
+  -- Connect to follow relays with rate limiting (max 7 concurrent new connections)
+  let relayChunks = chunksOf 7 (Map.toList followRelayMap)
+  connectedRelays <- fmap concat $ forM relayChunks $ \chunk -> do
+    results <- forConcurrently chunk $ \(relayUri, pubkeys) -> do
+      connected <- connect relayUri
+      if connected
+        then void $ subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
+        else recordFailedRelay relayUri
+      return (relayUri, connected)
+    -- Add delay between chunks to avoid overwhelming the network
+    threadDelay 250000  -- 250ms delay between chunks
+    return results
 
   let failedRelays  = [ relayUri | (relayUri, connected) <- connectedRelays, not connected ]
       failedPubkeys = concatMap (\r -> Map.findWithDefault [] r followRelayMap) failedRelays
@@ -429,7 +437,7 @@ getSubscriptionTimestamp pks ks = do
 -- | Build a map from relay URI to pubkeys, using inbox relays only as fallback
 buildRelayPubkeyMap :: InboxModelEff es => [PubKeyXO] -> [RelayURI] -> Eff es (Map.Map RelayURI [PubKeyXO])
 buildRelayPubkeyMap pks ownInboxRelays = do
-  recentlyFailedRelays <- getFailedRelaysWithinLastNDays 5
+  recentlyFailedRelays <- getFailedRelaysWithinLastNDays 1
   relayPubkeyPairs <- forM pks $ \pk -> do
     relays <- getGeneralRelays pk
     let outboxRelayURIs = [ normalizeRelayURI (getUri r) | r <- relays, isOutboxCapable r ]

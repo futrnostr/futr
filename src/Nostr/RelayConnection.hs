@@ -11,7 +11,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
 import Effectful
-import Effectful.Concurrent (Concurrent, forkIO)
+import Effectful.Concurrent (Concurrent, forkIO, threadDelay)
 import Effectful.Concurrent.Async (async, waitAnyCancel)
 import Effectful.Concurrent.STM ( TChan, TMVar, atomically, newTChanIO
                                 , newEmptyTMVarIO, putTMVar, readTChan
@@ -84,14 +84,12 @@ runRelayConnection = interpret $ \_ -> \case
             then do
                 let connState = connectionState <$> Map.lookup r' conns
                 case connState of
-                    Just Connected -> do
-                        return True
-                    Just Connecting -> do
-                        return False
+                    Just Connected -> return True
+                    Just Connecting -> return False
                     Just Disconnected -> do
                         -- Try to reconnect
                         chan <- newTChanIO
-                        connectWithRetry r' 2 chan
+                        connectWithRetry r' 5 chan
                     Nothing -> do
                         return False
             else do
@@ -108,7 +106,7 @@ runRelayConnection = interpret $ \_ -> \case
                             }
                 modify @RelayPool $ \st ->
                     st { activeConnections = Map.insert r' rd (activeConnections st) }
-                connectWithRetry r' 2 chan
+                connectWithRetry r' 5 chan
 
     Disconnect r -> do
         let r' = normalizeRelayURI r
@@ -143,6 +141,11 @@ connectWithRetry r maxRetries requestChan = do
                 }
             return False
         else do
+            -- Add exponential backoff delay
+            when (attempts > 0) $ do
+                let delayMs = min 5000000 (1000000 * (2 ^ attempts))  -- Cap at 5 seconds
+                threadDelay delayMs
+
             modify @RelayPool $ \st' ->
                 st' { activeConnections = Map.adjust
                     (\d -> d { connectionState = Connecting
@@ -171,10 +174,9 @@ connectWithRetry r maxRetries requestChan = do
                 let runClient = nostrClient connectionMVar r requestChan runE
                 result <- try @SomeException $ connectAction runClient
                 case result of
-                    Right _ -> return ()
+                    Right _ -> runE $ do
                     Left e -> runE $ do
                         atomically $ putTMVar connectionMVar False
-                        logError $ "Connection error on " <> r <> ": " <> T.pack (show e)
                         st' <- get @RelayPool
                         when (Map.member r (activeConnections st')) $
                             modify @RelayPool $ \s ->
@@ -186,8 +188,7 @@ connectWithRetry r maxRetries requestChan = do
                                     (activeConnections s)
                                 }
 
-            result <- atomically $ takeTMVar connectionMVar
-            return result
+            atomically $ takeTMVar connectionMVar
 
 
 -- | Nostr client for relay connections.
@@ -443,8 +444,6 @@ handleAuthRequired relayURI' request = case request of
                 relayURI'
                 (activeConnections st')
             }
-
-
 -- | Normalize a relay URI according to RFC 3986
 normalizeRelayURI :: RelayURI -> RelayURI
 normalizeRelayURI uri = case parseURI (T.unpack uri) of
