@@ -174,7 +174,7 @@ connectWithRetry r maxRetries requestChan = do
                 let runClient = nostrClient connectionMVar r requestChan runE
                 result <- try @SomeException $ connectAction runClient
                 case result of
-                    Right _ -> runE $ do
+                    Right _ -> return ()
                     Left e -> runE $ do
                         atomically $ putTMVar connectionMVar False
                         st' <- get @RelayPool
