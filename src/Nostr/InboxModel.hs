@@ -144,7 +144,6 @@ runInboxModel = interpret $ \_ -> \case
     st <- get @RelayPool
 
     forM_ (updateThread st) cancel
-    forM_ (monitoringThread st) cancel
 
     modify @RelayPool $ \s -> s { updateThread = Nothing }
 
