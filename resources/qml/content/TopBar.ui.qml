@@ -89,8 +89,8 @@ Item {
 
         TextField {
             id: searchInput
-            placeholderText: qsTr("Enter npub or nprofile")
-            Layout.preferredWidth: 300
+            placeholderText: qsTr("Enter npub, nprofile, or NIP-05 (name@domain.com)")
+            Layout.preferredWidth: 400
             onAccepted: searchButton.clicked()
         }
 

@@ -48,6 +48,7 @@ import Nostr.InboxModel ( InboxModel, awaitAtLeastOneConnected, startInboxModel
                         , stopInboxModel, subscribeToProfilesAndPostsFor
                         , subscribeToCommentsFor, unsubscribeToCommentsFor )
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, pubKeyXOToHex, secKeyToKeyPair)
+import Nostr.Nip05Search (isNip05Identifier, searchNip05, Nip05SearchResult(..))
 import Nostr.ProfileManager (ProfileManager)
 import Nostr.Publisher
 import Nostr.Relay (RelayURI, getUri, isInboxCapable, isValidRelayURI)
@@ -80,12 +81,18 @@ instance SignalKeyClass DownloadCompleted where
 -- | Search result.
 data SearchResult
   = ProfileResult { npub :: Text, relayUris :: [Text] }
+  | Nip05Result { npub :: Text, nip05 :: Text, relayUris :: [Text] }
   | NoResult
   deriving (Eq, Generic, Show)
 
 instance ToJSON SearchResult where
   toEncoding (ProfileResult npub' relayUris') = pairs
      ( "npub"  .= npub'
+    <> "relayUris" .= relayUris'
+     )
+  toEncoding (Nip05Result npub' nip05' relayUris') = pairs
+     ( "npub" .= npub'
+    <> "nip05" .= nip05'
     <> "relayUris" .= relayUris'
      )
   toEncoding NoResult = pairs ( "result" .= ("no_result" :: Text) )
@@ -212,19 +219,42 @@ runFutr = interpret $ \_ -> \case
   Search _ input -> do
     st <- get @AppState
     let myPubKey = keyPairToPubKeyXO <$> keyPair st
-    if not ("nprofile" `isPrefixOf` input || "npub" `isPrefixOf` input)
-      then return NoResult
-      else case parseNprofileOrNpub input of
-        Nothing -> return NoResult
-        Just (pubkey', relayUris)
-          | Just pubkey' == myPubKey -> return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
-          | otherwise -> do
-              currentFollows <- maybe [] id <$> traverse getFollows myPubKey
-              if any (\f -> pubkey f == pubkey') currentFollows
-                then return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
-                else do
-                  searchInRelays pubkey' relayUris
-                  return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
+
+    -- Check if input is a NIP-05 identifier (email-like)
+    if isNip05Identifier input
+      then do
+        -- Perform NIP-05 search
+        nip05Result <- liftIO $ searchNip05 input
+        case nip05Result of
+          Just (Nip05SearchResult nip05Id userPubKey relayHints) -> do
+            let npubStr = pubKeyXOToBech32 userPubKey
+            -- Check if it's the current user
+            if Just userPubKey == myPubKey
+              then return $ Nip05Result npubStr nip05Id relayHints
+              else do
+                -- Check if already following
+                currentFollows <- maybe [] id <$> traverse getFollows myPubKey
+                if any (\f -> pubkey f == userPubKey) currentFollows
+                  then return $ Nip05Result npubStr nip05Id relayHints
+                  else do
+                    -- Search in relays to get more info about the user
+                    searchInRelays userPubKey relayHints
+                    return $ Nip05Result npubStr nip05Id relayHints
+          Nothing -> return NoResult
+      -- Check for nprofile/npub format
+      else if "nprofile" `isPrefixOf` input || "npub" `isPrefixOf` input
+        then case parseNprofileOrNpub input of
+          Nothing -> return NoResult
+          Just (pubkey', relayUris)
+            | Just pubkey' == myPubKey -> return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
+            | otherwise -> do
+                currentFollows <- maybe [] id <$> traverse getFollows myPubKey
+                if any (\f -> pubkey f == pubkey') currentFollows
+                  then return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
+                  else do
+                    searchInRelays pubkey' relayUris
+                    return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
+        else return NoResult
 
   SetCurrentPost eid -> do
     previousPost <- gets @AppState currentPost
