@@ -73,8 +73,6 @@ myPreBuild _ _ = do
 -- | Generate all version-dependent files from templates
 generateVersionFiles :: IO ()
 generateVersionFiles = do
-    putStrLn "Generating version-dependent files..."
-
     -- Read version from cabal file
     (versionDot, versionNumbers) <- readVersionFromCabal
     let versionComma = intercalate "," (map show versionNumbers)
@@ -114,7 +112,6 @@ generateVersionModule version = do
             , "runtimeVersion = \"v\" ++ versionString"
             ]
     writeFile "src/Version.hs" versionContent
-    putStrLn "Generated: src/Version.hs"
 
 -- | Read version from cabal file
 readVersionFromCabal :: IO (String, [Int])
@@ -139,7 +136,6 @@ generateFromTemplate templatePath outputPath replacements = do
         let result = foldl (\content (placeholder, replacement) ->
                          replaceAll placeholder replacement content) template replacements
         writeFile outputPath result
-        putStrLn $ "Generated: " ++ outputPath
     else
         putStrLn $ "Warning: Template not found: " ++ templatePath
 
@@ -183,14 +179,12 @@ compileWindowsResources = do
         putStrLn "Warning: Windows resource file not found, skipping resource compilation"
         return []
     else do
-        putStrLn $ "Compiling Windows resources: " ++ rcFile ++ " to " ++ objFile
         exitCode <- rawSystem "windres" [rcFile, "-o", objFile]
         if exitCode /= ExitSuccess
         then do
             putStrLn "Warning: Failed to compile Windows resources (windres not found or failed)"
             return []
         else do
-            putStrLn "Windows resources compiled successfully"
             return [objFile]
 
 -- Recursively list all files in a directory
