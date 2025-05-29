@@ -41,6 +41,7 @@ executable futr
         Nostr.EventHandler
         Nostr.InboxModel
         Nostr.Keys
+        Nostr.Nip05Search
         Nostr.Profile
         Nostr.ProfileManager
         Nostr.Publisher
@@ -60,25 +61,18 @@ executable futr
         TimeFormatter
         Version
 
-    default-language: Haskell2010
+    default-language: GHC2021
     extra-libraries:  secp256k1, lmdb
     extra-lib-dirs:   /usr/local/lib
     ghc-options:
         -threaded -Wall -Wcompat -Wincomplete-uni-patterns
         -Wincomplete-record-updates
-    default-extensions: ConstraintKinds,
-                        DataKinds,
-                        FlexibleContexts,
+    default-extensions: DataKinds,
                         GADTs,
                         ImportQualifiedPost,
-                        KindSignatures,
                         LambdaCase,
                         OverloadedStrings,
-                        RankNTypes,
-                        ScopedTypeVariables,
-                        TypeApplications,
-                        TypeFamilies,
-                        TypeOperators
+                        TypeFamilies
     build-depends:
         aeson >=2.2.3.0 && <2.3,
         aeson-pretty >=0.8.10 && <0.9,
@@ -141,10 +135,15 @@ test-suite futr-tests
         Nostr.Encryption.Internal
         Nostr.EncryptionTest
         Nostr.Keys
+        Nostr.Nip05Search
+        Nostr.Nip05SearchTest
 
     ghc-options:
         -threaded -Wall -Wcompat -Wincomplete-uni-patterns
         -Wincomplete-record-updates
+
+    default-extensions: OverloadedStrings,
+                        ImportQualifiedPost
 
     build-depends:
         aeson >=2.2.3.0 && <2.3,
@@ -158,16 +157,19 @@ test-suite futr-tests
         directory >=1.3.7.1 && <1.4,
         entropy >=0.4.1.10 && <0.5,
         haskoin-core,
+        lens >=5.3.2 && <5.4,
         libsecp256k1 >=0.3.1 && <0.4,
         memory >=0.18 && <0.19,
+        network-uri >=2.6.4.2 && <2.7,
         tasty >=1.4.3 && <1.5,
         tasty-hunit >=0.10.2 && <0.11,
         text >=2.0.2 && <2.1,
-        random >=1.2.1.2 && <1.3
+        random >=1.2.1.2 && <1.3,
+        wreq >=0.5.4.3 && <0.6
 
     extra-libraries:  secp256k1
     extra-lib-dirs:   /usr/local/lib
-    default-language:     Haskell2010
+    default-language:     GHC2021
 
 source-repository head
   type: git
