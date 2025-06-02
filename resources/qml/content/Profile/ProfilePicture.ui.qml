@@ -5,6 +5,7 @@ import QtQuick.Layouts 1.15
 import QtGraphicalEffects 1.15
 
 Rectangle {
+    id: root
     Layout.preferredWidth: 36
     Layout.preferredHeight: 36
     Layout.alignment: Qt.AlignVCenter
@@ -15,9 +16,9 @@ Rectangle {
     layer.enabled: true
     layer.effect: OpacityMask {
         maskSource: Rectangle {
-            width: parent.width
-            height: parent.height
-            radius: parent.radius
+            width: root.width
+            height: root.height
+            radius: root.radius
         }
     }
 

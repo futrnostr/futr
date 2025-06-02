@@ -20,13 +20,14 @@ Dialog {
     property var targetPost: null
 
     ScrollView {
+        id: scrollView
         anchors.fill: parent
 
         layer.enabled: true
         layer.effect: OpacityMask {
             maskSource: Rectangle {
-                width: accountsView.width
-                height: accountsView.height
+                width: scrollView.width
+                height: scrollView.height
                 radius: Constants.radius_m
             }
         }
