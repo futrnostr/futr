@@ -75,7 +75,7 @@ Rectangle {
 
                 background: Rectangle {
                     color: parent.down || parent.checked ? Material.primaryColor : "transparent"
-                    opacity: parent.down || parent.checked ? 0.12 : 1.0
+                    opacity: parent.down || parent.checked ? 0.7 : 1.0
                 }
 
                 contentItem: RowLayout {
@@ -111,7 +111,7 @@ Rectangle {
 
                 background: Rectangle {
                     color: parent.down || parent.checked ? Material.primaryColor : "transparent"
-                    opacity: parent.down || parent.checked ? 0.12 : 1.0
+                    opacity: parent.down || parent.checked ? 0.7 : 1.0
                 }
 
                 contentItem: RowLayout {

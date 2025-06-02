@@ -11,7 +11,15 @@ Rectangle {
     Layout.topMargin: 0
     radius: width / 2
     color: Material.dividerColor
-    clip: true
+
+    layer.enabled: true
+    layer.effect: OpacityMask {
+        maskSource: Rectangle {
+            width: parent.width
+            height: parent.height
+            radius: parent.radius
+        }
+    }
 
     property string imageSource
 

@@ -33,7 +33,15 @@ Dialog {
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
+
+            layer.enabled: true
+            layer.effect: OpacityMask {
+                maskSource: Rectangle {
+                    width: relayMgmtDialog.width
+                    height: relayMgmtDialog.height
+                    radius: Constants.radius_m
+                }
+            }
 
             ScrollBar.vertical.policy: ScrollBar.AlwaysOn
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -53,9 +61,17 @@ Dialog {
                     id: dmRelaysListView
                     Layout.fillWidth: true
                     Layout.preferredHeight: contentHeight
-                    clip: true
                     interactive: false
                     Layout.rightMargin: 25
+
+                    layer.enabled: true
+                    layer.effect: OpacityMask {
+                        maskSource: Rectangle {
+                            width: dmRelaysListView.width
+                            height: dmRelaysListView.height
+                            radius: Constants.radius_m
+                        }
+                    }
 
                     model: AutoListModel {
                         source: ctxRelayMgmt.dmRelays
@@ -214,9 +230,17 @@ Dialog {
                     id: inboxRelayListView
                     Layout.fillWidth: true
                     Layout.preferredHeight: contentHeight
-                    clip: true
                     interactive: false
                     Layout.rightMargin: 25
+
+                    layer.enabled: true
+                    layer.effect: OpacityMask {
+                        maskSource: Rectangle {
+                            width: inboxRelayListView.width
+                            height: inboxRelayListView.height
+                            radius: Constants.radius_m
+                        }
+                    }
 
                     model: AutoListModel {
                         source: ctxRelayMgmt.generalRelays
@@ -397,9 +421,17 @@ Dialog {
                     id: tempRelayListView
                     Layout.fillWidth: true
                     Layout.preferredHeight: contentHeight
-                    clip: true
                     interactive: false
                     Layout.rightMargin: 25
+
+                    layer.enabled: true
+                    layer.effect: OpacityMask {
+                        maskSource: Rectangle {
+                            width: tempRelayListView.width
+                            height: tempRelayListView.height
+                            radius: Constants.radius_m
+                        }
+                    }
 
                     model: AutoListModel {
                         source: ctxRelayMgmt.tempRelays

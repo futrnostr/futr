@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Controls.Material.impl 2.15
 import QtQuick.Layouts 1.15
+import QtGraphicalEffects 1.15
 
 import Components 1.0
 import Futr 1.0
@@ -92,10 +93,18 @@ Page {
     }
 
     ScrollView {
+        id: scrollView
         anchors.fill: parent
         anchors.bottomMargin: replyInput.height
-        clip: true
-        id: scrollView
+
+        layer.enabled: true
+        layer.effect: OpacityMask {
+            maskSource: Rectangle {
+                width: scrollView.width
+                height: scrollView.height
+                radius: Constants.radius_m
+            }
+        }
 
         ColumnLayout {
             width: scrollView.width
@@ -175,8 +184,6 @@ Page {
                 Layout.leftMargin: 0
                 Layout.rightMargin: Constants.spacing_m
                 Layout.maximumHeight: 1000
-                leftMargin: 0
-                spacing: 2
 
                 model: AutoListModel {
                     id: commentsModel

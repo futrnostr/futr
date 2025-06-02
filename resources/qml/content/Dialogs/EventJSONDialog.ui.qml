@@ -3,6 +3,8 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
+import QtGraphicalEffects 1.15
+
 import Components 1.0
 import Futr 1.0
 
@@ -13,13 +15,21 @@ Dialog {
     standardButtons: Dialog.Close
     anchors.centerIn: parent
     width: 700
-    height: 610
+    height: 530
 
     property var targetPost: null
 
     ScrollView {
         anchors.fill: parent
-        clip: true
+
+        layer.enabled: true
+        layer.effect: OpacityMask {
+            maskSource: Rectangle {
+                width: accountsView.width
+                height: accountsView.height
+                radius: Constants.radius_m
+            }
+        }
 
         ScrollBar.vertical.policy: ScrollBar.AlwaysOn
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOn

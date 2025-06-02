@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
+import QtGraphicalEffects 1.15
 
 import Dialogs 1.0
 import Futr 1.0
@@ -15,10 +16,19 @@ ScrollView {
     ListView {
         id: accountsView
         focus: true
-        clip: true
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignHCenter
         spacing: 5
+
+        layer.enabled: true
+        layer.effect: OpacityMask {
+            maskSource: Rectangle {
+                width: accountsView.width
+                height: accountsView.height
+                radius: Constants.radius_m
+            }
+        }
+
 
         model: AutoListModel {
             source: ctxKeyMgmt.accounts

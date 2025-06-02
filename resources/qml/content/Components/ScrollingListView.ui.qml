@@ -1,12 +1,19 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
+import QtGraphicalEffects 1.15
 
 import Futr 1.0
 
 ListView {
     id: root
-    clip: true
+    layer.enabled: true
+    layer.effect: OpacityMask {
+        maskSource: Rectangle {
+            width: root.width
+            height: root.height
+        }
+    }
     verticalLayoutDirection: ListView.TopToBottom
     leftMargin: Constants.spacing_m
     rightMargin: Constants.spacing_m
