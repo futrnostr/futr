@@ -96,7 +96,6 @@ Page {
                     anchors.fill: parent
                     contentWidth: root.showOriginalSize ? image.sourceSize.width : width
                     contentHeight: root.showOriginalSize ? image.sourceSize.height : height
-                    clip: true
                     boundsBehavior: Flickable.StopAtBounds
 
                     ScrollBar.vertical: ScrollBar {

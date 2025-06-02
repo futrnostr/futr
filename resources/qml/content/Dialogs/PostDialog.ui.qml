@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Controls.Material.impl 2.15
 import QtQuick.Layouts 1.15
+import QtGraphicalEffects 1.15
 
 import Components 1.0
 import Futr 1.0
@@ -42,8 +43,16 @@ Dialog {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 0
-            clip: true
             id: scrollView
+
+            layer.enabled: true
+            layer.effect: OpacityMask {
+                maskSource: Rectangle {
+                    width: scrollView.width
+                    height: scrollView.height
+                    radius: Constants.radius_m
+                }
+            }
 
             // Use a Loader to conditionally create the post content
             Loader {

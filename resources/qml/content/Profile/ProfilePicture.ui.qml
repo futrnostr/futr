@@ -5,13 +5,22 @@ import QtQuick.Layouts 1.15
 import QtGraphicalEffects 1.15
 
 Rectangle {
+    id: root
     Layout.preferredWidth: 36
     Layout.preferredHeight: 36
     Layout.alignment: Qt.AlignVCenter
     Layout.topMargin: 0
     radius: width / 2
     color: Material.dividerColor
-    clip: true
+
+    layer.enabled: true
+    layer.effect: OpacityMask {
+        maskSource: Rectangle {
+            width: root.width
+            height: root.height
+            radius: root.radius
+        }
+    }
 
     property string imageSource
 

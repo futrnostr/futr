@@ -17,8 +17,11 @@ Rectangle {
     property var cachedPost
 
     Layout.fillWidth: true
-    height: 100
-    Layout.preferredHeight: height
+
+    implicitHeight: referencedPostContent.visible
+                      ? referencedPostContent.implicitHeight + Constants.spacing_xs
+                      : loadingContainer.height
+
     color: Material.backgroundColor
     radius: Constants.radius_m
 
@@ -83,27 +86,6 @@ Rectangle {
                 "isRefPost": true,
                 "currentUser": referencedPostContainer.currentUser
             })
-        }
-
-        onHeightChanged: {
-            heightUpdateTimer.restart()
-        }
-    }
-
-    Timer {
-        id: heightUpdateTimer
-        interval: 16
-        running: false
-        repeat: false
-        onTriggered: {
-            let targetHeight = referencedPostContent.visible 
-                            ? referencedPostContent.implicitHeight + 4 // 4 for borders
-                            : loadingContainer.height
-
-            if (Math.abs(referencedPostContainer.height - targetHeight) > 1) {
-                referencedPostContainer.height = targetHeight
-                referencedPostContainer.Layout.preferredHeight = targetHeight
-            }
         }
     }
 

@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
+import QtGraphicalEffects 1.15
 
 import Components 1.0
 import Dialogs 1.0
@@ -45,7 +46,15 @@ Item {
                     id: sidebarContainer
                     width: mainContainer.sidebarExpanded ? parent.width * 0.3 : 80
                     height: parent.height
-                    clip: true
+
+                    layer.enabled: true
+                    layer.effect: OpacityMask {
+                        maskSource: Rectangle {
+                            width: sidebarContainer.width
+                            height: sidebarContainer.height
+                            radius: Constants.radius_m
+                        }
+                    }
 
                     Behavior on width {
                         NumberAnimation {
