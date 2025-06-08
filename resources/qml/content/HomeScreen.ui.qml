@@ -42,19 +42,14 @@ Item {
                 anchors.rightMargin: 10
                 spacing: 10
 
-                Item {
+                Rectangle {
                     id: sidebarContainer
                     width: mainContainer.sidebarExpanded ? parent.width * 0.3 : 80
                     height: parent.height
-
-                    layer.enabled: true
-                    layer.effect: OpacityMask {
-                        maskSource: Rectangle {
-                            width: sidebarContainer.width
-                            height: sidebarContainer.height
-                            radius: Constants.radius_m
-                        }
-                    }
+                    color: "transparent"
+                    border.color: Material.dividerColor
+                    border.width: 1
+                    radius: Constants.radius_m
 
                     Behavior on width {
                         NumberAnimation {
@@ -63,18 +58,11 @@ Item {
                         }
                     }
 
-                    Rectangle {
-                        anchors.fill: parent
-                        color: Material.backgroundColor
-                        border.color: Material.dividerColor
-                        border.width: 1
-                        radius: Constants.radius_m
-                    }
-
                     FollowList {
                         id: followListElement
                         anchors.fill: parent
                         anchors.margins: 10
+                        radius: Constants.radius_m
 
                         isCollapsed: !mainContainer.sidebarExpanded
                         stackView: stackView
@@ -100,7 +88,7 @@ Item {
 
                         Rectangle {
                             anchors.fill: parent
-                            anchors.leftMargin: -8
+                            anchors.margins: 0
                             color: toggleMouseArea.containsMouse ?
                                 Qt.rgba(Material.accentColor.r,
                                        Material.accentColor.g,

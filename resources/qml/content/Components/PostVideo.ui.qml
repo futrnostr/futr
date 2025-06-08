@@ -41,7 +41,7 @@ Item {
         id: videoContainer
         width: parent.width
         height: Math.min(width * 9/16, root.maxHeight)
-        color: "black"
+        color: "transparent"
         radius: Constants.radius_m
 
         VideoPlayer {

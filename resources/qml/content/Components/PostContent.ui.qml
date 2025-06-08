@@ -119,7 +119,9 @@ Pane {
                 Layout.preferredHeight: Layout.preferredWidth
                 Layout.alignment: Qt.AlignVCenter
                 radius: width/2
-                color: Material.backgroundColor
+                color: "transparent"
+                border.width: 1
+                border.color: Material.dividerColor
 
                 MouseArea {
                     anchors.fill: parent
@@ -225,21 +227,17 @@ Pane {
                 spacing: Constants.spacing_s
                 visible: disableCommentAction
 
-                Item {
+                Image {
+                    id: commentIcon
+                    source: "qrc:/icons/comment.svg"
                     width: 20
                     height: 20
 
-                    Image {
-                        id: commentIcon
-                        source: "qrc:/icons/comment.svg"
-                        width: parent.width
-                        height: parent.height
-                    }
-
                     ColorOverlay {
-                        anchors.fill: commentIcon
-                        source: commentIcon
+                        anchors.fill: parent
+                        source: parent
                         color: Material.secondaryTextColor
+                        cached: true
                     }
                 }
 
