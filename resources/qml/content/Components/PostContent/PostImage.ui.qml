@@ -25,19 +25,12 @@ Image {
         stackView.push(imageViewerComponent, {"imageSource": url})
     }
 
-    Rectangle {
+    Text {
+        id: errorText
         anchors.centerIn: parent
         visible: postImage.status === Image.Error
-        color: "transparent"
-        width: errorText.width + 20
-        height: errorText.height + 10
-
-        Text {
-            id: errorText
-            anchors.centerIn: parent
-            text: "Failed to load image"
-            color: Material.accent
-        }
+        text: "Failed to load image"
+        color: Material.accent
     }
 
     MouseArea {

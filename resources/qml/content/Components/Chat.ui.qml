@@ -11,7 +11,7 @@ import Profile 1.0
 
 Rectangle {
     id: chat
-    color: Material.backgroundColor
+    color: "transparent"
     radius: Constants.radius_m
     border.color: Material.dividerColor
     border.width: 1

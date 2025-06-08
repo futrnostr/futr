@@ -1,19 +1,12 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
-import QtGraphicalEffects 1.15
 
 import Futr 1.0
 
 ListView {
     id: root
-    layer.enabled: true
-    layer.effect: OpacityMask {
-        maskSource: Rectangle {
-            width: root.width
-            height: root.height
-        }
-    }
+    clip: true
     verticalLayoutDirection: ListView.TopToBottom
     leftMargin: Constants.spacing_m
     rightMargin: Constants.spacing_m
@@ -76,6 +69,7 @@ ListView {
         policy: ScrollBar.AlwaysOn
         topPadding: topArrow.height
         bottomPadding: bottomArrow.height
+        minimumSize: 0.1
 
         onActiveChanged: {
             if (active) {

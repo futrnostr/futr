@@ -15,15 +15,18 @@ Rectangle {
     property string value
     property var currentUser
     property var cachedPost
+    property bool isLoading: true
 
     Layout.fillWidth: true
 
-    implicitHeight: referencedPostContent.visible
+    implicitHeight: !isLoading
                       ? referencedPostContent.implicitHeight + Constants.spacing_xs
-                      : loadingContainer.height
+                      : 40
 
-    color: Material.backgroundColor
+    color: isLoading ? Material.dialogColor : Material.backgroundColor
     radius: Constants.radius_m
+    border.color: isLoading ? Material.backgroundColor : "transparent"
+    border.width: isLoading ? 1 : 0
 
     Component.onCompleted: {
         if (value) {
@@ -31,41 +34,29 @@ Rectangle {
 
             if (cachedPost) {
                 referencedPostContent.post = cachedPost
-                referencedPostContent.visible = true
-                loadingIndicator.visible = false
+                isLoading = false
             }
         }
     }
 
-    Rectangle {
-        id: loadingContainer
-        height: 100
-        width: parent.width
-        color: Material.dialogColor
-        radius: Constants.radius_m
+    RowLayout {
+        visible: isLoading
+        anchors.centerIn: parent
+        width: parent.width - (Constants.spacing_xs * 2)
 
-        border.color: Material.backgroundColor
-        border.width: Constants.spacing_xs
+        BusyIndicator {
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: 36
+            Layout.preferredHeight: 36
+            running: true
+        }
 
-        anchors.left: parent.left
-        anchors.right: parent.right
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.margins: Constants.spacing_xs
-
-            BusyIndicator {
-                Layout.alignment: Qt.AlignVCenter
-                running: true
-            }
-
-            Text {
-                Layout.alignment: Qt.AlignLeft
-                Layout.fillWidth: true
-                text: qsTr("Event not found. Trying to find it for you...")
-                font: Constants.smallFontMedium
-                color: Material.secondaryTextColor
-            }
+        Text {
+            Layout.alignment: Qt.AlignLeft
+            Layout.fillWidth: true
+            text: qsTr("Event not found. Trying to find it for you...")
+            font: Constants.font
+            color: Material.secondaryTextColor
         }
     }
 
@@ -78,7 +69,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 2
-        visible: false
+        visible: !isLoading
 
         onPostClicked: {
             stackView.push("../PostDetails.ui.qml", {
@@ -87,12 +78,5 @@ Rectangle {
                 "currentUser": referencedPostContainer.currentUser
             })
         }
-    }
-
-    BusyIndicator {
-        id: loadingIndicator
-        anchors.centerIn: parent
-        visible: false
-        running: visible
     }
 }

@@ -9,8 +9,7 @@ import Profile 1.0
 
 Rectangle {
     id: root
-    color: Material.backgroundColor
-    radius: Constants.radius_m
+    color: "transparent"
 
     property bool isCollapsed: false
     property var stackView: null

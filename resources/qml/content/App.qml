@@ -14,6 +14,7 @@ ApplicationWindow {
     visible: true
     title: qsTr("Futr")
     font: Constants.font
+    color: Material.backgroundColor
 
     property bool isDarkTheme: true
     property color accentColor: "#9C27B0"
