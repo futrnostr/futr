@@ -17,8 +17,8 @@ Pane {
     property bool isRefPost: false
     property var author
     property bool privateChatMode: false
-    property var contentParts: post ? post.contentParts : []
-    property var comments: post ? post.comments : []
+    property var contentParts: visible && post ? post.contentParts : []
+    property var comments: visible && post ? post.comments : []
     property bool hideActions: false
     property bool showAuthor: false
     property bool disableCommentAction: false
@@ -43,7 +43,7 @@ Pane {
     }
 
     Component.onCompleted: {
-        if (!post) {
+        if (!post || !visible) {
             return
         }
 
@@ -52,6 +52,15 @@ Pane {
         }
 
         updateContent()
+    }
+
+    onVisibleChanged: {
+        if (visible && post && !author) {
+            if (post.authorId) {
+                author = getProfile(post.authorId)
+            }
+            updateContent()
+        }
     }
 
     Component.onDestruction: {

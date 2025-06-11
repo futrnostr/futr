@@ -73,9 +73,40 @@ Rectangle {
                 implicitWidth: chatTypeSelector.width / 2
                 text: qsTr("Short Text Notes")
 
-                background: Rectangle {
-                    color: parent.down || parent.checked ? Material.primaryColor : "transparent"
-                    opacity: parent.down || parent.checked ? 0.7 : 1.0
+                // I want rounded corner left-upper side, so we paint!
+                background: Canvas {
+                    width: parent.width
+                    height: parent.height
+
+                    property color fillColor: parent.down || parent.checked ? Material.primaryColor : "transparent"
+                    property real fillOpacity: parent.down || parent.checked ? 0.2 : 1.0
+
+                    onFillColorChanged: requestPaint()
+                    onFillOpacityChanged: requestPaint()
+
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+
+                        if (fillColor !== "transparent") {
+                            var colorStr = fillColor.toString()
+                            ctx.globalAlpha = fillOpacity
+                            ctx.fillStyle = colorStr
+
+                            var radius = Constants.radius_m
+                            ctx.beginPath()
+                            ctx.moveTo(radius, 0)
+                            ctx.lineTo(width, 0)
+                            ctx.lineTo(width, height)
+                            ctx.lineTo(0, height)
+                            ctx.lineTo(0, radius)
+                            ctx.arcTo(0, 0, radius, 0, radius)
+                            ctx.closePath()
+                            ctx.fill()
+
+                            ctx.globalAlpha = 1.0
+                        }
+                    }
                 }
 
                 contentItem: RowLayout {
@@ -109,9 +140,40 @@ Rectangle {
                 implicitWidth: chatTypeSelector.width / 2
                 text: npub === currentUser ? qsTr("Messages to myself") : qsTr("Private Chat")
 
-                background: Rectangle {
-                    color: parent.down || parent.checked ? Material.primaryColor : "transparent"
-                    opacity: parent.down || parent.checked ? 0.7 : 1.0
+                background: Canvas {
+                    width: parent.width
+                    height: parent.height
+
+                    property color fillColor: parent.down || parent.checked ? Material.primaryColor : "transparent"
+                    property real fillOpacity: parent.down || parent.checked ? 0.2 : 1.0
+
+                    onFillColorChanged: requestPaint()
+                    onFillOpacityChanged: requestPaint()
+
+                    // again, rounded corners, upper right side, so we paint!
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+
+                        if (fillColor !== "transparent") {
+                            var colorStr = fillColor.toString()
+                            ctx.globalAlpha = fillOpacity
+                            ctx.fillStyle = colorStr
+
+                            var radius = Constants.radius_m
+                            ctx.beginPath()
+                            ctx.moveTo(0, 0)
+                            ctx.lineTo(width - radius, 0)
+                            ctx.arcTo(width, 0, width, radius, radius)
+                            ctx.lineTo(width, height)
+                            ctx.lineTo(0, height)
+                            ctx.lineTo(0, 0)
+                            ctx.closePath()
+                            ctx.fill()
+
+                            ctx.globalAlpha = 1.0
+                        }
+                    }
                 }
 
                 contentItem: RowLayout {
@@ -155,6 +217,7 @@ Rectangle {
 
                 ScrollingListView {
                     id: postsView
+                    verticalLayoutDirection: ListView.BottomToTop
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     leftMargin: 0
@@ -227,6 +290,7 @@ Rectangle {
 
                 ScrollingListView {
                     id: privateMessageListView
+                    verticalLayoutDirection: ListView.BottomToTop
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     leftMargin: 0
