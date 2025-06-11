@@ -7,7 +7,6 @@ import Futr 1.0
 ListView {
     id: root
     clip: true
-    verticalLayoutDirection: ListView.TopToBottom
     leftMargin: Constants.spacing_m
     rightMargin: Constants.spacing_m
     spacing: Constants.spacing_m
@@ -16,22 +15,38 @@ ListView {
     keyNavigationEnabled: true
     keyNavigationWraps: false
 
+    cacheBuffer: Math.max(200, height * 2)
+    displayMarginBeginning: 100
+    displayMarginEnd: 100
+
     property bool shouldBeAtBottom: false
 
     Component.onCompleted: {
-        positionViewAtEnd()
+        if (verticalLayoutDirection === ListView.BottomToTop) {
+            positionViewAtBeginning()
+        } else {
+            positionViewAtEnd()
+        }
         shouldBeAtBottom = true
     }
 
     onCountChanged: {
         if (shouldBeAtBottom) {
-            positionViewAtEnd()
+            if (verticalLayoutDirection === ListView.BottomToTop) {
+                positionViewAtBeginning()
+            } else {
+                positionViewAtEnd()
+            }
         }
     }
 
     onContentHeightChanged: {
         if (shouldBeAtBottom) {
-            positionViewAtEnd()
+            if (verticalLayoutDirection === ListView.BottomToTop) {
+                positionViewAtBeginning()
+            } else {
+                positionViewAtEnd()
+            }
         }
     }
 
@@ -40,8 +55,14 @@ ListView {
     }
 
     onMovementEnded: {
-        if (atYEnd) {
-            shouldBeAtBottom = true
+        if (verticalLayoutDirection === ListView.BottomToTop) {
+            if (atYBeginning) {
+                shouldBeAtBottom = true
+            }
+        } else {
+            if (atYEnd) {
+                shouldBeAtBottom = true
+            }
         }
     }
 
@@ -50,15 +71,25 @@ ListView {
     }
 
     onFlickEnded: {
-        if (atYEnd) {
-            shouldBeAtBottom = true
+        if (verticalLayoutDirection === ListView.BottomToTop) {
+            if (atYBeginning) {
+                shouldBeAtBottom = true
+            }
+        } else {
+            if (atYEnd) {
+                shouldBeAtBottom = true
+            }
         }
     }
 
     onVisibleChanged: {
         if (visible) {
             shouldBeAtBottom = true
-            positionViewAtEnd()
+            if (verticalLayoutDirection === ListView.BottomToTop) {
+                positionViewAtBeginning()
+            } else {
+                positionViewAtEnd()
+            }
         }
     }
 
@@ -75,8 +106,14 @@ ListView {
             if (active) {
                 root.shouldBeAtBottom = false
             } else {
-                if (root.atYEnd) {
-                    root.shouldBeAtBottom = true
+                if (root.verticalLayoutDirection === ListView.BottomToTop) {
+                    if (root.atYBeginning) {
+                        root.shouldBeAtBottom = true
+                    }
+                } else {
+                    if (root.atYEnd) {
+                        root.shouldBeAtBottom = true
+                    }
                 }
             }
         }
@@ -84,8 +121,16 @@ ListView {
         onPressedChanged: {
             if (pressed) {
                 root.shouldBeAtBottom = false
-            } else if (root.atYEnd) {
-                root.shouldBeAtBottom = true
+            } else {
+                if (root.verticalLayoutDirection === ListView.BottomToTop) {
+                    if (root.atYBeginning) {
+                        root.shouldBeAtBottom = true
+                    }
+                } else {
+                    if (root.atYEnd) {
+                        root.shouldBeAtBottom = true
+                    }
+                }
             }
         }
 
