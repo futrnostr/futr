@@ -397,9 +397,8 @@ runLmdbStore = interpret $ \_ -> \case
                                     -- Validate that the deletion author matches the event author
                                     if author == pubKey deletedEv then do
                                         let timestamp = createdAt deletedEv
-                                            invertedTimestamp = maxBound - timestamp
                                             author' = pubKey deletedEv
-                                            key = (author', invertedTimestamp)
+                                            key = (author', negate timestamp)
                                             timelineDb = case kind deletedEv of
                                                 ShortTextNote -> Just $ postTimelineDb currentState
                                                 Repost -> Just $ postTimelineDb currentState
@@ -621,11 +620,13 @@ runLmdbStore = interpret $ \_ -> \case
             (_, Nothing) -> do
                 ids <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
                     withCursor (readonly txn) (if timelineType == PostTimeline then postTimelineDb st else chatTimelineDb st) $ \cursor -> do
-                        Pipes.toListM $
-                            LMap.lastBackward cursor
-                            >-> Pipes.filter (\kv -> fst (keyValueKey kv) == author)
-                            >-> Pipes.map keyValueValue
+                        -- Get posts for this author (newest first since we use negate timestamp)
+                        newestPosts <- Pipes.toListM $
+                            LMap.lookupGteForward cursor (author, minBound)
+                            >-> Pipes.takeWhile (\kv -> fst (keyValueKey kv) == author)
                             >-> Pipes.take limit
+                            >-> Pipes.map keyValueValue
+                        return newestPosts
                 modify @LmdbState $ \s -> s { timelineCache = LRU.insert cacheKey ids $ timelineCache s }
                 pure ids
 
@@ -710,7 +711,7 @@ addTimelineEntryTx :: Transaction 'ReadWrite
                    -> Int
                    -> IO ()
 addTimelineEntryTx txn timelineDb' eventId pks timestamp = do
-    let invertedTimestamp = maxBound - timestamp
+    let invertedTimestamp = negate timestamp
     withCursor txn timelineDb' $ \cursor ->
         forM_ pks $ \pk ->
             LMap.repsert cursor (pk, invertedTimestamp) eventId
@@ -736,20 +737,17 @@ defaultJsonSettings = makeSettings
 -- Lmdb configuration(
 
 -- | Determine a reasonable map size.
---   Priority order:
---     1. 95% of disk space reported by 'diskAvail'
---     2. lower bound of 200 MB
+--   Use a conservative approach that grows incrementally:
+--     1. Start with current DB size + reasonable headroom (2x current size, min 1GB, max 2GB)
+--     2. Map size is fixed per session - app restart will recalculate if DB grows
 determineMapSize :: FilePath -> IO Int
 determineMapSize path = do
-    usage <- getDiskUsage path
-    let bytesAvail = diskAvail usage
     dbSize <- getDbSize path
-    let availD :: Double
-        availD = fromIntegral bytesAvail
-        minFree = 200 * 1000 * 1000 -- 200 MB
-        minMap = max dbSize minFree
-        maxMap = dbSize + floor (availD * 0.95)
-        mapSize = max minMap maxMap
+    let minSize = 1000 * 1000 * 1000 -- 1 GB minimum
+        maxInitialSize = 2 * 1000 * 1000 * 1000 -- 2 GB maximum initial size
+        -- Give 2x current size as headroom, but within reasonable bounds
+        headroom = max minSize (min maxInitialSize (dbSize * 2))
+        mapSize = if dbSize == 0 then minSize else headroom
     pure mapSize
 
 
