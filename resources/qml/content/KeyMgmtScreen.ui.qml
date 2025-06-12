@@ -26,7 +26,7 @@ Rectangle {
             connectingModal.close()
         }
 
-        if (! success) {
+        if (! success && message !== "Login cancelled") {
             loginErrorDialog.errorMessage = message
             loginErrorDialog.open()
         }
@@ -163,6 +163,10 @@ Rectangle {
 
     ConnectingModal {
         id: connectingModal
+        onCancelLoginRequested: {
+            loginStatusChanged.disconnect(loginCallback)
+            cancelLogin()
+        }
     }
 
     LoginErrorDialog {

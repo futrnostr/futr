@@ -113,6 +113,7 @@ data Futr :: Effect where
   QuoteRepost :: EventId -> Text -> Futr m ()
   Comment :: EventId -> Text -> Futr m ()
   DeleteEvent :: EventId -> Text -> Futr m ()
+  CancelLogin :: ObjRef () -> Futr m ()
 
 
 -- | Dispatch type for Futr effect.
@@ -157,6 +158,9 @@ comment eid comment' = send $ Comment eid comment'
 
 deleteEvent :: Futr :> es => EventId -> Text -> Eff es ()
 deleteEvent eid reason = send $ DeleteEvent eid reason
+
+cancelLogin :: Futr :> es => ObjRef () -> Eff es ()
+cancelLogin obj = send $ CancelLogin obj
 
 
 -- | Effectful type for Futr.
@@ -363,27 +367,9 @@ runFutr = interpret $ \_ -> \case
       Nothing -> logError "Failed to sign short text note"
 
   Logout obj -> do
-    -- Close current Lmdb environment if it exists
-    st <- get @LmdbState
-    liftIO $ closeEnvironment (lmdbEnv st)
-
-    -- Reset LMDB state to initial
-    put @LmdbState initialLmdbState
-
-    -- Reset application state
-    modify @AppState $ \st' -> st'
-        { keyPair = Nothing
-        , currentScreen = KeyMgmt
-        }
-
-    stopInboxModel
-    -- Wait a moment for disconnects to process
-    threadDelay 100000  -- 100ms delay
-
-    modify @RelayPool $ const initialRelayPool
-
-    fireSignal obj
+    fullAppCleanup
     logInfo "User logged out successfully"
+    fireSignal obj
 
   Repost eid -> do
     kp <- getKeyPair
@@ -494,6 +480,12 @@ runFutr = interpret $ \_ -> \case
                       publishToOutbox s
                       notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
 
+  CancelLogin obj -> do
+    fullAppCleanup
+    liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Login cancelled"
+    logInfo "Login cancelled"
+    fireSignal obj
+
 
 -- Helper function to parse nprofile or npub
 parseNprofileOrNpub :: Text -> Maybe (PubKeyXO, [RelayURI])
@@ -512,17 +504,18 @@ loginWithAccount obj a = do
         , npubView = pubKeyXOToBech32 $ derivePublicKeyXO $ accountSecKey a
         }
 
-    void $ async $ startInboxModel
-    atLeastOneConnected <- awaitAtLeastOneConnected
+    void $ async $ do
+      startInboxModel
+      atLeastOneConnected <- awaitAtLeastOneConnected
 
-    if atLeastOneConnected
-      then do
-        modify @AppState $ \s -> s { currentScreen = Home }
-        liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
-        fireSignal obj
-      else do
-        liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Failed to connect to any relay"
+      if atLeastOneConnected
+        then do
+          modify @AppState $ \s -> s { currentScreen = Home }
+          liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
+        else do
+          liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Failed to connect to any relay"
 
+      fireSignal obj
 
 -- | Send a follow list event.
 sendFollowListEvent :: FutrEff es => [Follow] -> Eff es ()
@@ -592,3 +585,22 @@ searchInRelays xo relayUris = do
                         unless shouldStop loop
 
                 loop
+
+
+-- | Helper to fully clean up app state, disconnect all relays, and fire signal
+fullAppCleanup :: FutrEff es => Eff es ()
+fullAppCleanup = do
+  stopInboxModel
+
+  relayPool <- get @RelayPool
+  let relayUris = Map.keys (activeConnections relayPool)
+  forM_ relayUris disconnect
+
+  threadDelay 100000
+
+  st <- get @LmdbState
+  liftIO $ closeEnvironment (lmdbEnv st)
+
+  put @LmdbState initialLmdbState
+  put @AppState initialState
+  put @RelayPool initialRelayPool
