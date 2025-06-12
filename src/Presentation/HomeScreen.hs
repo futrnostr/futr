@@ -115,31 +115,27 @@ runHomeScreen = interpret $ \_ -> \case
           kp <- runE $ getKeyPair
           return $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp,
 
-        defPropertySigRO' "mypicture" changeKey' $ \_ -> do
-          kp <- runE $ getKeyPair
-          (profile, _) <- runE $ getProfile $ keyPairToPubKeyXO kp
+        defPropertySigRO' "mypicture" changeKey' $ \_ -> runE $ do
+          kp <- getKeyPair
+          (profile, _) <- getProfile $ keyPairToPubKeyXO kp
           return $ fromMaybe "" $ picture profile,
 
-        defPropertySigRO' "inboxModelState" changeKey' $ \obj -> do
-          runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { inboxModelStateObjRef = Just obj } }
-          st <- runE $ get @AppState
+        defPropertySigRO' "inboxModelState" changeKey' $ \obj -> runE $ do
+          modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { inboxModelStateObjRef = Just obj } }
+          st <- get @AppState
           return $ pack $ show $ inboxModelState st,
 
         defSignal "loginStatusChanged" (Proxy :: Proxy LoginStatusChanged),
 
-        defMethod' "login" $ \obj input -> do
-          runE $ login obj input,
+        defMethod' "login" $ \obj input -> runE $ login obj input,
 
-        defMethod' "logout" $ \obj -> do
-          runE $ logout obj,
+        defMethod' "logout" $ \obj -> runE $ logout obj,
 
-        defMethod' "search" $ \obj input -> do
-          runE $ do
+        defMethod' "search" $ \obj input -> runE $ do
             res <- search obj input
             return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
 
-        defMethod' "saveProfile" $ \_ input -> do
-          runE $ do
+        defMethod' "saveProfile" $ \_ input -> runE $ do
             let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
             n <- getCurrentTime
             kp <- getKeyPair
@@ -297,12 +293,12 @@ runHomeScreen = interpret $ \_ -> \case
                   logError $ "Download failed: " <> pack (show e)
                   liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
 
-            return ()
+            return (),
+
+        defMethod' "cancelLogin" $ \obj -> runE $ cancelLogin obj
       ]
 
-    rootObj <- newObject rootClass ()
-
-    return rootObj
+    newObject rootClass ()
 
 
 -- Helper function to fetch and create an event object
