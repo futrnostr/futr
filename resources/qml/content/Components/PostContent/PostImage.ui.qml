@@ -13,6 +13,7 @@ Image {
     id: postImage
 
     property string value
+    property string original
 
     source: value
     cache: false
@@ -22,7 +23,7 @@ Image {
     Layout.preferredHeight: sourceSize.height > 0 ? sourceSize.height * (width / sourceSize.width) : 200
 
     onImageClicked: function(url) {
-        stackView.push(imageViewerComponent, {"imageSource": url})
+        stackView.push(imageViewerComponent, {"imageSource": url, "original": original})
     }
 
     Text {
@@ -38,11 +39,11 @@ Image {
         cursorShape: clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: {
             if (clickable) {
-                imageClicked(value)
+                imageClicked(value, original)
             }
         }
     }
 
     property bool clickable: true
-    signal imageClicked(string url)
+    signal imageClicked(string url, string original)
 }

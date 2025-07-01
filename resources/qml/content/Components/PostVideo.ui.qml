@@ -11,6 +11,7 @@ Item {
     id: root
 
     property string value
+    property string original
 
     property string source: ""
     property bool clickable: true

@@ -7,7 +7,7 @@ import Effectful.State.Static.Shared (State, evalState)
 import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
-
+import Downloader (DownloaderState, initialDownloaderState, runDownloader)
 import Futr (runFutr)
 import KeyMgmt (KeyMgmtState(..), initialKeyMgmtState, runKeyMgmt)
 import Logging (runLoggingStdout)
@@ -44,6 +44,7 @@ main = do
         . runFileSystem
         . runUtil
         . runLmdbStore
+        . runDownloader
         -- nostr related
         . runNostr
         . runKeyMgmt
@@ -84,7 +85,8 @@ main = do
 
 -- | Initialize the state for the app.
 withInitialState
-    :: Eff ( State QtQuickState
+    :: Eff ( State DownloaderState
+           : State QtQuickState
            : State RelayPool
            : State KeyMgmtState
            : State AppState
@@ -99,3 +101,4 @@ withInitialState
     . evalState initialKeyMgmtState
     . evalState initialRelayPool
     . evalState initialQtQuickState
+    . evalState initialDownloaderState

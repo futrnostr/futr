@@ -1,26 +1,14 @@
 packages:
     ./
+    ../HsQML/
+    ../hsc2hs/
+    ../unix-time/
 tests: True
 
 source-repository-package
   type: git
   location: https://github.com/prolic/libsecp256k1-haskell
   tag: 63a3d0bafe00fddd106b5e5f703069c1d8ee820a
-
-source-repository-package
-  type: git
-  location: https://github.com/prolic/HsQML
-  tag: a5a80c793bbdce311bd85c2a9befb13df971b38b
-
-source-repository-package
-  type: git
-  location: https://github.com/prolic/unix-time
-  tag: 70e69aa6ed0cf50bf79e476703b97d6260b0187c
-
-source-repository-package
-  type: git
-  location: https://github.com/prolic/hsc2hs
-  tag: 339a832b7bfa4d8072bfc3911af7d2f4b03c432d
 
 source-repository-package
   type: git

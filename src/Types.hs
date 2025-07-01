@@ -146,6 +146,7 @@ data AppState = AppState
   , currentPost :: Maybe EventId
   , version :: Text
   , inboxModelState :: InboxModelState
+  , cacheClearer :: Maybe (Async ())
   }
 
 
@@ -179,4 +180,5 @@ initialState = AppState
   , currentPost = Nothing
   , version = pack runtimeVersion
   , inboxModelState = Stopped
+  , cacheClearer = Nothing
   }

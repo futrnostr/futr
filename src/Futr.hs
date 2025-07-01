@@ -5,7 +5,7 @@
 
 module Futr where
 
-import Control.Monad (forM, forM_, unless, void, when)
+import Control.Monad (forever, forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
@@ -16,7 +16,7 @@ import Data.Text (Text, isPrefixOf, pack, unpack)
 import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (async)
+import Effectful.Concurrent.Async (async, cancel)
 import Effectful.Concurrent.STM (atomically, flushTQueue, newTVarIO, readTQueue, readTVar, writeTVar)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.Exception (SomeException, try)
@@ -34,6 +34,7 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 import System.FilePath ((</>))
 
+import Downloader (Downloader, clearCache)
 import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
 import Nostr
@@ -172,6 +173,7 @@ type FutrEff es =
   , KeyMgmt :> es
   , KeyMgmtUI :> es
   , RelayMgmtUI :> es
+  , Downloader :> es
   , Nostr :> es
   , ProfileManager :> es
   , InboxModel :> es
@@ -219,6 +221,17 @@ runFutr = interpret $ \_ -> \case
               return ()
             Right _ -> do
               loginWithAccount obj a
+
+              -- Stop any previous cache clearer
+              mOld <- gets @AppState cacheClearer
+              forM_ mOld $ \old -> cancel old
+
+              -- Start new cache clearer
+              t <- async $ forever $ do
+                clearCache
+                threadDelay (5 * 60 * 1000000) -- 5 minutes in microseconds
+
+              modify @AppState $ \s -> s { cacheClearer = Just t }
 
   Search _ input -> do
     st <- get @AppState
@@ -371,6 +384,11 @@ runFutr = interpret $ \_ -> \case
     logInfo "User logged out successfully"
     fireSignal obj
 
+    -- Stop cache clearer thread if running
+    mClearer <- gets @AppState cacheClearer
+    forM_ mClearer $ \a -> cancel a
+    modify @AppState $ \s -> s { cacheClearer = Nothing }
+
   Repost eid -> do
     kp <- getKeyPair
     now <- getCurrentTime
@@ -485,6 +503,11 @@ runFutr = interpret $ \_ -> \case
     liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Login cancelled"
     logInfo "Login cancelled"
     fireSignal obj
+
+    -- Stop cache clearer thread if running
+    mClearer <- gets @AppState cacheClearer
+    forM_ mClearer $ \a -> cancel a
+    modify @AppState $ \s -> s { cacheClearer = Nothing }
 
 
 -- Helper function to parse nprofile or npub

@@ -10,6 +10,7 @@ Item {
     property string videoSource: ""
     property alias videoUrl: videoPlayerContainer.videoSource
     property bool isDownloading: false
+    property string original: ""
 
     signal fullScreenRequested()
     signal saveVideoRequested()
@@ -307,10 +308,10 @@ Item {
     }
 
     function initiateDownload() {
-        if (!isDownloading && videoSource) {
+        if (!isDownloading && original) {
             isDownloading = true
             downloadCompleted.connect(videoDownloadCallback)
-            downloadAsync(videoSource)
+            downloadAsync(original)
             notification.show("Video download started")
         }
     }

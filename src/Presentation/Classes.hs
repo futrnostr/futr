@@ -1,5 +1,6 @@
 module Presentation.Classes where
 
+import Control.Monad (void)
 import Data.Aeson (toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
@@ -13,6 +14,7 @@ import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent
+import Effectful.Concurrent.Async (async)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.FileSystem
 import Effectful.State.Static.Shared (State, get, modify)
@@ -27,10 +29,11 @@ import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (ProfileManager, getProfile)
 import Nostr.Util (Util, getCurrentTime, getKeyPair)
-import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..), storeProfileContentRef)
+import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..), storeProfileContentRef, notify, emptyUpdates, UIUpdates(..))
 import Store.Lmdb (LmdbStore, getCommentsWithIndentationLevel, getEvent, getEventRelays, getFollows)
 import TimeFormatter
 import Types (AppState(..), Follow(..), PublishStatus(..), RelayPool(..))
+import Downloader (Downloader(..), DownloadStatus(..), hasDownload, download, peekMimeType)
 
 
 -- Effect for creating C++ classes for usage in QtQuick QML
@@ -69,6 +72,7 @@ type ClassesEff es =
   , State AppState :> es
   , ProfileManager :> es
   , LmdbStore :> es
+  , Downloader :> es
   , Concurrent :> es
   , Nostr :> es
   , Logging :> es
@@ -94,49 +98,49 @@ runClasses = interpret $ \_ -> \case
                 let pk = fromObjRef obj :: PubKeyXO
                 return $ pubKeyXOToBech32 pk,
 
-            defPropertySigRO' "name" changeKey' $ \obj -> do
+            defPropertySigRO' "name" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk "name" obj
-                (profile, _) <- runE $ getProfile pk
-                return $ name profile,
+                storeProfileObjRef pk "name" obj
+                (profile, _) <- getProfile pk
+                pure $ name profile,
 
-            defPropertySigRO' "displayName" changeKey' $ \obj -> do
+            defPropertySigRO' "displayName" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk "displayName" obj
-                (profile, _) <- runE $ getProfile pk
-                return $ displayName profile,
+                storeProfileObjRef pk "displayName" obj
+                (profile, _) <- getProfile pk
+                pure $ displayName profile,
 
-            defPropertySigRO' "about" changeKey' $ \obj -> do
+            defPropertySigRO' "about" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk "about" obj
-                (profile, _) <- runE $ getProfile pk
-                return $ about profile,
+                storeProfileObjRef pk "about" obj
+                (profile, _) <- getProfile pk
+                pure $ about profile,
 
-            defPropertySigRO' "picture" changeKey' $ \obj -> do
+            defPropertySigRO' "picture" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk "picture" obj
-                (profile, _) <- runE $ getProfile pk
-                return $ picture profile,
+                storeProfileObjRef pk "picture" obj
+                (profile, _) <- getProfile pk
+                resolveProfileImage (const $ pure $ picture profile) pk obj,
 
-            defPropertySigRO' "nip05" changeKey' $ \obj -> do
+            defPropertySigRO' "nip05" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk "nip05" obj
-                (profile, _) <- runE $ getProfile pk
-                return $ nip05 profile,
+                storeProfileObjRef pk "nip05" obj
+                (profile, _) <- getProfile pk
+                pure $ nip05 profile,
 
-            defPropertySigRO' "banner" changeKey' $ \obj -> do
+            defPropertySigRO' "banner" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk "banner" obj
-                (profile, _) <- runE $ getProfile pk
-                return $ banner profile,
+                storeProfileObjRef pk "banner" obj
+                (profile, _) <- getProfile pk
+                resolveProfileImage (const $ pure $ banner profile) pk obj,
 
-            defPropertySigRO' "isFollow" changeKey' $ \obj -> do
+            defPropertySigRO' "isFollow" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
-                runE $ storeProfileObjRef pk "isFollow" obj
-                kp <- runE getKeyPair
+                storeProfileObjRef pk "isFollow" obj
+                kp <- getKeyPair
                 let currentPubKey = keyPairToPubKeyXO kp
-                follows <- runE $ getFollows currentPubKey
-                return $ pk `elem` map pubkey follows,
+                follows <- getFollows currentPubKey
+                pure $ pk `elem` map pubkey follows,
 
             defPropertySigRO' "followerCount" changeKey' $ \_ -> do
                 return (0 :: Int),
@@ -249,8 +253,10 @@ runClasses = interpret $ \_ -> \case
                           return $ "nostr:" <> (eventIdToNote eid'')
                         Nothing -> return ""
                     _ -> return $ content ev
-                  parseContentParts obj content'
-                Nothing -> return []
+                  r <- parseContentParts obj content'
+                  logDebug $ "contentParts"
+                  pure r
+                Nothing -> pure []
               return value,
 
             defPropertySigRO' "timestamp" changeKey' $ \obj -> do
@@ -370,7 +376,7 @@ runClasses = interpret $ \_ -> \case
                 let pk = pubkey follow
                 runE $ storeProfileObjRef pk "picture" obj
                 (profile, _) <- runE $ getProfile pk
-                return $ fromMaybe "" (picture profile))
+                runE $ resolveProfileImage (const $ pure $ picture profile) pk obj)
           ]
 
     CommentClass changeKey' -> createCommentClass changeKey'
@@ -452,29 +458,20 @@ parseContentParts objRef contentText
     -- Find matches for URLs and nostr references
     findMatches :: Text -> [(Int, Int, Text)]
     findMatches text =
-        let httpMatches = findPrefixMatches text "http://" "url"
-            httpsMatches = findPrefixMatches text "https://" "url"
+        let httpMatches = findPrefixMatches text "http://"
+            httpsMatches = findPrefixMatches text "https://"
             nostrMatches = findNostrMatches text
         in httpMatches ++ httpsMatches ++ nostrMatches
 
     -- Find all occurrences of a prefix and extract the full entity
-    findPrefixMatches :: Text -> Text -> Text -> [(Int, Int, Text)]
-    findPrefixMatches text prefix typ =
+    findPrefixMatches :: Text -> Text -> [(Int, Int, Text)]
+    findPrefixMatches text prefix =
         let positions = Text.breakOnAll prefix text
         in concatMap (\(before, _) ->
                 let startPos = Text.length before
                     fullEntity = extractEntity (Text.drop (Text.length before) text)
                     endPos = startPos + Text.length fullEntity
-                    matchType = if typ == "url" then
-                                  if shouldRenderAsMedia fullEntity then
-                                    if isImageUrl fullEntity
-                                    then "image"
-                                    else if isVideoUrl fullEntity
-                                         then "video"
-                                         else typ
-                                  else "embed-url"
-                                else typ
-                in [(startPos, endPos, matchType)]
+                in [(startPos, endPos, "embed-url")]
             ) positions
 
     -- Find nostr references and categorize them by type
@@ -511,15 +508,6 @@ parseContentParts objRef contentText
     extractEntity txt =
         let validChar c = not (c `elem` (" \t\n\r<>\"'()[]{},;" :: String))
         in Text.takeWhile validChar txt
-
-    isImageUrl :: Text -> Bool
-    isImageUrl url = any (`Text.isSuffixOf` url) [".jpg", ".jpeg", ".png", ".gif", ".webp"]
-
-    isVideoUrl :: Text -> Bool
-    isVideoUrl url = any (`Text.isSuffixOf` url) [".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v"]
-
-    shouldRenderAsMedia :: Text -> Bool
-    shouldRenderAsMedia url = isImageUrl url || isVideoUrl url
 
     -- Merge overlapping matches
     mergeOverlappingMatches :: [(Int, Int, Text)] -> [(Int, Int, Text)]
@@ -575,9 +563,23 @@ parseContentParts objRef contentText
                     Nothing -> pure [["text", matchText]]
 
             "embed-url" -> do
-                let html = "<a href=\"" <> processedMatchText <>
-                          "\" style=\"color: #9C27B0\">" <> processedMatchText <> "</a>"
-                pure [["text", html]]
+                let url = processedMatchText
+                status <- hasDownload url
+                case status of
+                  Ready (cacheFile, mime, _) | "image/" `Text.isPrefixOf` mime ->
+                    pure [["image", "file:///" <> Text.pack cacheFile, url]]
+                  Ready (cacheFile, mime, _) | "video/" `Text.isPrefixOf` mime ->
+                    pure [["video", "file:///" <> Text.pack cacheFile, url]]
+                  _ -> do
+                    let html = "<a href=\"" <> url <> "\" style=\"color: #9C27B0\">" <> url <> "</a>"
+                    void $ async $ do
+                      mimeResult <- peekMimeType url
+                      case mimeResult of
+                        Right mime | "image/" `Text.isPrefixOf` mime || "video/" `Text.isPrefixOf` mime -> do
+                              void $ download url
+                              notify $ emptyUpdates { contentObjectsToSignal = [objRef] }
+                        _ -> pure ()
+                    pure [["text", html]]
 
             _ -> pure [[matchType, processedMatchText]]
 
@@ -629,3 +631,30 @@ findAvailableFilename dir baseFileName = do
       if not exists
         then return tryPath
         else findNextAvailable dir' fileName (counter + 1)
+
+
+-- | Helper to resolve a remote image URL to a local file if downloaded, otherwise trigger async download and signal.
+resolveProfileImage
+  :: ClassesEff es
+  => (PubKeyXO -> Eff es (Maybe Text))
+  -> PubKeyXO
+  -> ObjRef PubKeyXO
+  -> Eff es Text
+resolveProfileImage getField pk obj = do
+  mUrl <- getField pk
+  case mUrl of
+    Just url | "http://" `Text.isPrefixOf` url || "https://" `Text.isPrefixOf` url -> do
+      status <- hasDownload url
+      case status of
+        Ready (cacheFile, mime, _) | "image/" `Text.isPrefixOf` mime ->
+          pure $ "file:///" <> Text.pack cacheFile
+        _ -> do
+          void $ async $ do
+            mimeResult <- peekMimeType url
+            case mimeResult of
+              Right mime | "image/" `Text.isPrefixOf` mime -> do
+                void $ download url
+                notify $ emptyUpdates { profileObjectsToSignal = [obj] }
+              _ -> pure ()
+          pure url
+    _ -> pure $ fromMaybe "" mUrl

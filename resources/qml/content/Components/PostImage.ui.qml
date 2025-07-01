@@ -6,13 +6,14 @@ Image {
     id: postImage
 
     property string value
+    property string original
 
     fillMode: Image.PreserveAspectFit
     Layout.fillWidth: true
     Layout.preferredHeight: sourceSize.height > 0 ? sourceSize.height * (width / sourceSize.width) : 200
 
     onImageClicked: function(url) {
-        stackView.push(imageViewerComponent, {"imageSource": url})
+        stackView.push(imageViewerComponent, {"imageSource": url, "original": original})
     }
 
     Rectangle {
