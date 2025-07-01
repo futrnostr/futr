@@ -9,6 +9,7 @@ Page {
     id: root
 
     required property string imageSource
+    required property string original
     property bool showOriginalSize: false
 
     header: ToolBar {
@@ -64,7 +65,7 @@ Page {
                 icon.source: "qrc:/icons/download.svg"
                 onClicked: {
                     downloadCompleted.connect(imageDownloadCallback)
-                    downloadAsync(root.imageSource)
+                    downloadAsync(root.original)
                     notification.show("Image download started")
                 }
             }
@@ -73,7 +74,7 @@ Page {
                 text: "Copy URL"
                 icon.source: "qrc:/icons/content_copy.svg"
                 onClicked: {
-                    clipboard.copyText(root.imageSource)
+                    clipboard.copyText(root.original)
                     notification.show("URL copied to clipboard")
                 }
             }

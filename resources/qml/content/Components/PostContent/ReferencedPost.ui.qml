@@ -29,14 +29,13 @@ Rectangle {
     border.width: isLoading ? 1 : 0
 
     Component.onCompleted: {
+        var t0 = Date.now();
         if (value) {
             cachedPost = getPost(value)
-
-            if (cachedPost) {
-                referencedPostContent.post = cachedPost
-                isLoading = false
-            }
+            isLoading = !cachedPost
         }
+        var t1 = Date.now();
+        console.log("ReferencedPost.onCompleted took", (t1 - t0), "ms");
     }
 
     RowLayout {
@@ -60,23 +59,63 @@ Rectangle {
         }
     }
 
-    PostContent {
-        id: referencedPostContent
-        post: referencedPostContainer.post
-        isRefPost: true
-        currentUser: referencedPostContainer.currentUser
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 2
-        visible: !isLoading
+    Loader {
+        id: nestedLoader
+        active: !isLoading && cachedPost
+        sourceComponent: postContentComponent
+        width: parent.width
 
-        onPostClicked: {
-            stackView.push("../PostDetails.ui.qml", {
-                "post": referencedPostContainer.post,
-                "isRefPost": true,
-                "currentUser": referencedPostContainer.currentUser
-            })
+        onLoaded: {
+            if (item && cachedPost) {
+                item.post = cachedPost
+                item.currentUser = referencedPostContainer.currentUser
+                item.isRefPost = true
+            }
         }
     }
+
+    Component {
+        id: postContentComponent
+
+        PostContent {
+            width: parent.width
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 2
+            visible: !isLoading
+
+            Component.onCompleted: {
+                var t0 = Date.now();
+                Qt.callLater(function() {
+                    var t1 = Date.now();
+                    console.log("Nested PostContent.onCompleted took", (t1 - t0), "ms");
+                });
+            }
+
+            onPostClicked: {
+                stackView.push("../PostDetails.ui.qml", {
+                    "post": referencedPostContainer.post,
+                    "isRefPost": true,
+                    "currentUser": referencedPostContainer.currentUser
+                })
+            }
+        }
+    }
+
+    function updateNestedPost() {
+        if (nestedLoader.item && cachedPost) {
+            nestedLoader.item.post = cachedPost
+            nestedLoader.item.currentUser = referencedPostContainer.currentUser
+            nestedLoader.item.isRefPost = true
+        }
+    }
+
+    onCachedPostChanged: {
+        if (nestedLoader.item && cachedPost) {
+            nestedLoader.item.post = cachedPost
+        }
+    }
+    onCurrentUserChanged: updateNestedPost()
+    nestedLoader.onLoaded: updateNestedPost()
 }

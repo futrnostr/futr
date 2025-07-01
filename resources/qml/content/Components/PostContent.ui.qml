@@ -119,8 +119,9 @@ Pane {
             }
         }
 
-        RowLayout {
-            Layout.fillWidth: true
+        Row {
+            width: parent.width
+            spacing: Constants.spacing_xs
             visible: showAuthor || isRefPost
 
             Rectangle {
@@ -150,7 +151,7 @@ Pane {
                 }
             }
 
-            ColumnLayout {
+            Column {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 spacing: 2
@@ -191,7 +192,6 @@ Pane {
             }
         }
 
-
         ColumnLayout {
             id: contentLayout
             Layout.fillWidth: true
@@ -200,7 +200,7 @@ Pane {
         }
 
         // Main post actions
-        RowLayout {
+        Row {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
             spacing: Constants.spacing_l
@@ -211,7 +211,7 @@ Pane {
 
             Item { Layout.fillWidth: true }
 
-            RowLayout {
+            Row {
                 spacing: Constants.spacing_s
                 visible: !disableCommentAction
 
@@ -232,7 +232,7 @@ Pane {
                 }
             }
 
-            RowLayout {
+            Row {
                 spacing: Constants.spacing_s
                 visible: disableCommentAction
 
@@ -256,7 +256,7 @@ Pane {
                 }
             }
 
-            RowLayout {
+            Row {
                 spacing: Constants.spacing_s
                 Button {
                     flat: true
@@ -292,7 +292,7 @@ Pane {
             Item { Layout.fillWidth: true }
         }
 
-        RowLayout {
+        Row {
             Layout.fillWidth: true
             Layout.topMargin: 0
             Layout.bottomMargin: 0
@@ -408,14 +408,20 @@ Pane {
     }
 
     function updateContent() {
-        contentLayout.children = [] // Clear existing content first
+        var start = Date.now()
+        contentLayout.children = []
         let parts = contentParts
 
         for (var i = 0; i < parts.length; i++) {
+            var partStart = Date.now()
             var type = parts[i][0]
             var value = parts[i][1]
+            var original = parts[i][2] ?? null
 
+            var createComponentStart = Date.now()
             var component = Qt.createComponent(componentMap[type])
+            var createComponentEnd = Date.now()
+            console.log("updateContent: part", i, "type", type, "createComponent took", (createComponentEnd - createComponentStart), "ms")
 
             if (component.status === Component.Ready) {
                 let args = {}
@@ -427,6 +433,13 @@ Pane {
                         "parent": contentLayout,
                         "Layout.minimumHeight": 100,
                     }
+                } else if (type === "image" || type === "video") {
+                    args = {
+                        "value": value,
+                        "original": original,
+                        "Layout.fillWidth": true,
+                        "parent": contentLayout,
+                    }
                 } else {
                     args = {
                         "value": value,
@@ -434,13 +447,20 @@ Pane {
                         "parent": contentLayout,
                     }
                 }
+                var createObjectStart = Date.now()
                 var item = component.createObject(contentLayout, args)
+                var createObjectEnd = Date.now()
+                console.log("updateContent: part", i, "type", type, "createObject took", (createObjectEnd - createObjectStart), "ms")
+                var partEnd = Date.now()
+                console.log("updateContent: part", i, "type", type, "total took", (partEnd - partStart), "ms")
                 if (item === null) {
-                    console.error("Failed to create object for", value)
+                    console.error("Failed to create object for part", i, "type", type)
                 }
             } else {
-                console.error("Failed to load component:", component.errorString())
+                console.error("Component for type", type, "not ready:", component.errorString())
             }
         }
+        var end = Date.now()
+        console.log("updateContent: total took", (end - start), "ms")
     }
 }

@@ -11,6 +11,7 @@ Item {
     id: root
 
     property string value
+    property string original
 
     property string source: ""
     property bool clickable: true
@@ -52,6 +53,7 @@ Item {
             anchors.fill: parent
             videoSource: root.videoUrl
             isFullscreen: false
+            property string original: root.original
 
             onFullScreenRequested: {
                 videoPlayer.stop()
@@ -63,6 +65,7 @@ Item {
             }
 
             onCopyUrlRequested: {
+                Qt.application.clipboard.setText(original)
                 root.showNotification("URL copied to clipboard")
             }
 

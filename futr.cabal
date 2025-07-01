@@ -29,6 +29,7 @@ executable futr
     hs-source-dirs:   app, src
 
     other-modules:
+        Downloader
         QtQuick
         Futr
         KeyMgmt
@@ -86,6 +87,7 @@ executable futr
         bytestring >=0.11.5.3 && <0.12,
         byteable >=0.1.1 && < 0.2,
         Cabal-syntax,
+        case-insensitive >=1.2.1.0 && <1.3,
         containers >=0.6.7 && <0.7,
         cryptohash-sha256 >=0.11.102.1 && <0.12,
         crypton >=1.0 && <1.1,
@@ -98,6 +100,7 @@ executable futr
         filepath >= 1.4.2 && <1.5,
         haskoin-core,
         hsqml >=0.3.6.0 && <0.4,
+        http-date >= 0.0.11 && <0.1,
         lens >=5.3.2 && <5.4,
         libsecp256k1 >=0.3.1 && <0.4,
         lmdb >= 0.2.5 && < 0.3,

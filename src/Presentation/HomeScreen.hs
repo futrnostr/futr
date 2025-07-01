@@ -4,7 +4,6 @@
 
 module Presentation.HomeScreen where
 
-import Control.Exception (try, SomeException)
 import Control.Lens ((^.))
 import Control.Monad (filterM, void)
 import Data.Aeson (decode, encode)
@@ -18,6 +17,7 @@ import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent.Async (async)
 import Effectful.Dispatch.Dynamic (interpret, send)
+import Effectful.Exception (try, SomeException)
 import Effectful.FileSystem
 import Effectful.State.Static.Shared (get, gets, modify)
 import QtQuick
@@ -27,7 +27,9 @@ import Network.Wreq qualified as Wreq
 import Prelude hiding (drop)
 import System.FilePath ((</>), takeFileName)
 import Text.Read (readMaybe)
+import System.CPUTime (getCPUTime)
 
+import Downloader (DownloadStatus(..), hasDownload)
 import KeyMgmt (AccountId(..), updateProfile)
 import Logging
 import Nostr
@@ -244,11 +246,12 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "getPost" $ \_ input -> do
           runE $ do
+            start <- liftIO getCPUTime
             let fetchByType parseFunc = case parseFunc input of
                     Just eid -> fetchEventObject postsPool eid
                     Nothing -> return Nothing
 
-            case Text.takeWhile (/= '1') input of
+            result <- case Text.takeWhile (/= '1') input of
                 "note"  -> fetchByType noteToEventId
                 "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
                 "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
@@ -257,7 +260,11 @@ runHomeScreen = interpret $ \_ -> \case
                   case meid of
                     Just eid -> do
                       fetchEventObject postsPool eid
-                    Nothing -> return Nothing,
+                    Nothing -> return Nothing
+            end <- liftIO getCPUTime
+            let elapsedMs = fromIntegral (end - start) / 1e9 :: Double
+            logDebug $ "getPost for input " <> input <> " took " <> pack (show elapsedMs) <> " ms (cpuTime)"
+            return result,
 
         defMethod' "convertNprofileToNpub" $ \_ input -> do
           runE $ do
@@ -267,9 +274,7 @@ runHomeScreen = interpret $ \_ -> \case
 
         defSignal "downloadCompleted" (Proxy :: Proxy DownloadCompleted),
 
-        defMethod' "downloadAsync" $ \obj url -> do
-          runE $ do
-            -- Start the download asynchronously
+        defMethod' "downloadAsync" $ \obj url -> runE $ do
             void $ async $ do
               homeDir <- getHomeDirectory
               let downloadDir = homeDir </> "Downloads"
@@ -279,21 +284,26 @@ runHomeScreen = interpret $ \_ -> \case
               filePath <- findAvailableFilename downloadDir (unpack baseFileName)
               let fileName = takeFileName filePath
 
-              result <- liftIO $ try $ do
-                r <- Wreq.get (unpack url)
-                let body = r ^. Wreq.responseBody
-                BSL.writeFile filePath body
-                return filePath
-
-              -- Fire the signal with the result
-              case result of
-                Right _ -> do
-                  liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
-                Left (e :: SomeException) -> do
-                  logError $ "Download failed: " <> pack (show e)
-                  liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
-
-            return (),
+              status <- hasDownload url
+              case status of
+                Ready (cacheFile, _mime, _expiry) -> do
+                  result <- try @SomeException $ copyFile cacheFile filePath
+                  case result of
+                    Right _ -> liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
+                    Left e -> do
+                      logError $ "Copy from cache failed: " <> pack (show e)
+                      liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
+                _ -> do
+                  result <- try @SomeException $ do
+                    r <- liftIO $ Wreq.get (unpack url)
+                    let body = r ^. Wreq.responseBody
+                    liftIO $ BSL.writeFile filePath body
+                    pure filePath
+                  case result of
+                    Right _ -> liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
+                    Left (e :: SomeException) -> do
+                      logError $ "Download failed: " <> pack (show e)
+                      liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e),
 
         defMethod' "cancelLogin" $ \obj -> runE $ cancelLogin obj
       ]

@@ -10,7 +10,7 @@ Dialog {
     modal: true
     anchors.centerIn: parent
     width: 300
-    height: 200
+    height: 180
     closePolicy: Popup.NoAutoClose
 
     ColumnLayout {
