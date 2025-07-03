@@ -20,7 +20,7 @@ Rectangle {
     Layout.fillWidth: true
 
     implicitHeight: !isLoading
-                      ? referencedPostContent.implicitHeight + Constants.spacing_xs
+                      ? (nestedLoader.item ? nestedLoader.item.implicitHeight + Constants.spacing_xs : 40)
                       : 40
 
     color: isLoading ? Material.dialogColor : Material.backgroundColor
@@ -29,13 +29,10 @@ Rectangle {
     border.width: isLoading ? 1 : 0
 
     Component.onCompleted: {
-        var t0 = Date.now();
         if (value) {
             cachedPost = getPost(value)
             isLoading = !cachedPost
         }
-        var t1 = Date.now();
-        console.log("ReferencedPost.onCompleted took", (t1 - t0), "ms");
     }
 
     RowLayout {
@@ -85,14 +82,6 @@ Rectangle {
             anchors.margins: 2
             visible: !isLoading
 
-            Component.onCompleted: {
-                var t0 = Date.now();
-                Qt.callLater(function() {
-                    var t1 = Date.now();
-                    console.log("Nested PostContent.onCompleted took", (t1 - t0), "ms");
-                });
-            }
-
             onPostClicked: {
                 stackView.push("../PostDetails.ui.qml", {
                     "post": referencedPostContainer.post,
@@ -117,5 +106,4 @@ Rectangle {
         }
     }
     onCurrentUserChanged: updateNestedPost()
-    nestedLoader.onLoaded: updateNestedPost()
 }

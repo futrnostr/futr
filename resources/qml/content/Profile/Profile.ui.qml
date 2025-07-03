@@ -59,7 +59,7 @@ Rectangle {
             Layout.rightMargin: 10
 
             ProfilePicture {
-                imageSource: profileData !== null ? Util.getProfilePicture(profileData.picture, npub) : ""
+                imageSource: profileData !== null ? profileData.getProfilePicture(profileData.picture) : ""
                 Layout.preferredWidth: 60
                 Layout.preferredHeight: 60
             }

@@ -9,6 +9,7 @@ Item {
     id: topBar
     required property string currentUserPicture
     required property string currentUser
+    property var currentUserProfile: getProfile(currentUser)
     
     // Set explicit bounds to prevent unnecessary rendering area
     implicitHeight: 80
@@ -37,7 +38,7 @@ Item {
             Image {
                 id: profilePicture
                 anchors.fill: parent
-                source: Util.getProfilePicture(currentUserPicture, currentUser)
+                source: currentUserProfile.getProfilePicture(currentUserPicture)
                 fillMode: Image.PreserveAspectCrop
                 cache: false
                 // Ensure no background

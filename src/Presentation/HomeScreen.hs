@@ -27,7 +27,6 @@ import Network.Wreq qualified as Wreq
 import Prelude hiding (drop)
 import System.FilePath ((</>), takeFileName)
 import Text.Read (readMaybe)
-import System.CPUTime (getCPUTime)
 
 import Downloader (DownloadStatus(..), hasDownload)
 import KeyMgmt (AccountId(..), updateProfile)
@@ -246,12 +245,11 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "getPost" $ \_ input -> do
           runE $ do
-            start <- liftIO getCPUTime
             let fetchByType parseFunc = case parseFunc input of
                     Just eid -> fetchEventObject postsPool eid
                     Nothing -> return Nothing
 
-            result <- case Text.takeWhile (/= '1') input of
+            case Text.takeWhile (/= '1') input of
                 "note"  -> fetchByType noteToEventId
                 "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
                 "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
@@ -260,11 +258,7 @@ runHomeScreen = interpret $ \_ -> \case
                   case meid of
                     Just eid -> do
                       fetchEventObject postsPool eid
-                    Nothing -> return Nothing
-            end <- liftIO getCPUTime
-            let elapsedMs = fromIntegral (end - start) / 1e9 :: Double
-            logDebug $ "getPost for input " <> input <> " took " <> pack (show elapsedMs) <> " ms (cpuTime)"
-            return result,
+                    Nothing -> return Nothing,
 
         defMethod' "convertNprofileToNpub" $ \_ input -> do
           runE $ do

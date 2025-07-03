@@ -92,7 +92,7 @@ Rectangle {
                         spacing: root.isCollapsed ? 0 : 8
 
                         ProfilePicture {
-                            imageSource: Util.getProfilePicture(modelData.picture, modelData.pubkey)
+                            imageSource: modelData.getProfilePicture(modelData.picture)
                         }
 
                         ColumnLayout {
