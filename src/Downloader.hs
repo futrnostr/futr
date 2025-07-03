@@ -213,11 +213,11 @@ removeIfExists f = do
   exists <- doesFileExist f
   when exists $ removeFile f
 
--- | Default cache expiry in seconds (10 minutes)
+-- | Default cache expiry in seconds (5 minutes)
 defaultCacheSeconds :: Int
-defaultCacheSeconds = 600  -- 10 minutes
+defaultCacheSeconds = 300  -- 5 minutes
 
--- | Parse expiry from HTTP headers, fallback to 10 minutes
+-- | Parse expiry from HTTP headers, fallback to defaultCacheSeconds (5 minutes)
 parseExpiry :: Wreq.Response a -> UTCTime -> UTCTime
 parseExpiry resp now =
   let cacheControl = lookupHeader "Cache-Control" resp

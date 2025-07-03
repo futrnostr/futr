@@ -64,6 +64,8 @@ commentClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class (EventId, In
 commentClass changeKey = send $ CommentClass changeKey
 
 
+
+
 -- | SubscriptionEff
 type ClassesEff es =
   ( QtQuick :> es
@@ -120,7 +122,7 @@ runClasses = interpret $ \_ -> \case
                 let pk = fromObjRef obj :: PubKeyXO
                 storeProfileObjRef pk "picture" obj
                 (profile, _) <- getProfile pk
-                resolveProfileImage (const $ pure $ picture profile) pk obj,
+                resolveProfileImage (const $ pure $ picture profile) pk (Just obj),
 
             defPropertySigRO' "nip05" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
@@ -132,7 +134,7 @@ runClasses = interpret $ \_ -> \case
                 let pk = fromObjRef obj :: PubKeyXO
                 storeProfileObjRef pk "banner" obj
                 (profile, _) <- getProfile pk
-                resolveProfileImage (const $ pure $ banner profile) pk obj,
+                resolveProfileImage (const $ pure $ banner profile) pk (Just obj),
 
             defPropertySigRO' "isFollow" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
@@ -151,12 +153,20 @@ runClasses = interpret $ \_ -> \case
                 -}
 
             defPropertySigRO' "followingCount" changeKey' $ \_ -> do
-                return (0 :: Int)
+                return (0 :: Int),
                 {-
                 st <- runE $ get @AppState
                 let pk = fromMaybe (error "No pubkey for current profile") $ currentProfile st
                 runE $ getProfileEventCount subscribeToFollowing pk
                 -}
+
+            defMethod' "getProfilePicture" $ \obj pictureUrl -> runE $ do
+                let pk = fromObjRef obj :: PubKeyXO
+                let url' _ = case pictureUrl of
+                        Nothing -> pure $ Just $ "https://robohash.org/" <> pubKeyXOToBech32 pk <> ".png?size=50x50"
+                        Just "" -> pure $ Just $ "https://robohash.org/" <> pubKeyXOToBech32 pk <> ".png?size=50x50"
+                        Just url -> pure $ Just url
+                resolveProfileImage url' pk (Just obj)
             ]
 
 
@@ -253,9 +263,7 @@ runClasses = interpret $ \_ -> \case
                           return $ "nostr:" <> (eventIdToNote eid'')
                         Nothing -> return ""
                     _ -> return $ content ev
-                  r <- parseContentParts obj content'
-                  logDebug $ "contentParts"
-                  pure r
+                  parseContentParts obj content'
                 Nothing -> pure []
               return value,
 
@@ -376,7 +384,14 @@ runClasses = interpret $ \_ -> \case
                 let pk = pubkey follow
                 runE $ storeProfileObjRef pk "picture" obj
                 (profile, _) <- runE $ getProfile pk
-                runE $ resolveProfileImage (const $ pure $ picture profile) pk obj)
+                runE $ resolveProfileImage (const $ pure $ picture profile) pk (Just obj)),
+            defMethod' "getProfilePicture" $ \obj pictureUrl -> runE $ do
+                let pk = fromObjRef obj :: PubKeyXO
+                let url' _ = case pictureUrl of
+                        Nothing -> pure $ Just $ "https://robohash.org/" <> pubKeyXOToBech32 pk <> ".png?size=50x50"
+                        Just "" -> pure $ Just $ "https://robohash.org/" <> pubKeyXOToBech32 pk <> ".png?size=50x50"
+                        Just url -> pure $ Just url
+                resolveProfileImage url' pk (Just obj)
           ]
 
     CommentClass changeKey' -> createCommentClass changeKey'
@@ -638,9 +653,9 @@ resolveProfileImage
   :: ClassesEff es
   => (PubKeyXO -> Eff es (Maybe Text))
   -> PubKeyXO
-  -> ObjRef PubKeyXO
+  -> Maybe (ObjRef PubKeyXO)
   -> Eff es Text
-resolveProfileImage getField pk obj = do
+resolveProfileImage getField pk mObj = do
   mUrl <- getField pk
   case mUrl of
     Just url | "http://" `Text.isPrefixOf` url || "https://" `Text.isPrefixOf` url -> do
@@ -654,7 +669,9 @@ resolveProfileImage getField pk obj = do
             case mimeResult of
               Right mime | "image/" `Text.isPrefixOf` mime -> do
                 void $ download url
-                notify $ emptyUpdates { profileObjectsToSignal = [obj] }
+                case mObj of
+                  Just obj -> notify $ emptyUpdates { profileObjectsToSignal = [obj] }
+                  Nothing -> pure ()
               _ -> pure ()
           pure url
     _ -> pure $ fromMaybe "" mUrl

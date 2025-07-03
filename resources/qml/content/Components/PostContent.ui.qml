@@ -15,7 +15,7 @@ Pane {
     property var post
     property string currentUser
     property bool isRefPost: false
-    property var author
+    property var author: visible && post && post.authorId ? getProfile(post.authorId) : null
     property bool privateChatMode: false
     property var contentParts: visible && post ? post.contentParts : []
     property var comments: visible && post ? post.comments : []
@@ -43,22 +43,16 @@ Pane {
     }
 
     Component.onCompleted: {
-        if (!post || !visible) {
+        if (!visible || !post) {
             return
-        }
-
-        if (post.authorId) {
-            author = getProfile(post.authorId)
         }
 
         updateContent()
     }
 
     onVisibleChanged: {
-        if (visible && post && !author) {
-            if (post.authorId) {
-                author = getProfile(post.authorId)
-            }
+        if (visible && post && !author && post.authorId) {
+            author = getProfile(post.authorId)
             updateContent()
         }
     }
@@ -119,9 +113,8 @@ Pane {
             }
         }
 
-        Row {
-            width: parent.width
-            spacing: Constants.spacing_xs
+        RowLayout {
+            Layout.fillWidth: true
             visible: showAuthor || isRefPost
 
             Rectangle {
@@ -138,20 +131,20 @@ Pane {
                     cursorShape: Qt.PointingHandCursor
 
                     onClicked: {
-                        personalFeed.npub = author.npub
+                        personalFeed.npub = root.author.npub
                     }
 
                     Image {
                         anchors.fill: parent
                         anchors.margins: Constants.spacing_xs
-                        source: author ? Util.getProfilePicture(author.picture, author.pubkey) : ""
+                        source: root.author ? root.author.getProfilePicture(root.author.picture) : ""
                         fillMode: Image.PreserveAspectCrop
                         cache: false
                     }
                 }
             }
 
-            Column {
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 spacing: 2
@@ -165,7 +158,7 @@ Pane {
                         cursorShape: Qt.PointingHandCursor
 
                         onClicked: {
-                            personalFeed.npub = author.npub
+                            personalFeed.npub = root.author.npub
                         }
                     }
 
@@ -173,7 +166,7 @@ Pane {
                         anchors.left: parent.left
                         anchors.bottom: parent.verticalCenter
                         font: Constants.font
-                        text: author ? (author.displayName || author.name || "") : ""
+                        text: root.author ? (root.author.displayName || root.author.name || "") : ""
                         elide: Text.ElideRight
                         width: parent.width
                         color: Material.primaryTextColor
@@ -182,7 +175,7 @@ Pane {
                     Text {
                         anchors.left: parent.left
                         anchors.top: parent.verticalCenter
-                        text: author ? author.npub : ""
+                        text: root.author ? root.author.npub : ""
                         font.pixelSize: Constants.font.pixelSize * 0.8
                         elide: Text.ElideRight
                         width: parent.width
@@ -192,6 +185,7 @@ Pane {
             }
         }
 
+
         ColumnLayout {
             id: contentLayout
             Layout.fillWidth: true
@@ -200,7 +194,7 @@ Pane {
         }
 
         // Main post actions
-        Row {
+        RowLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
             spacing: Constants.spacing_l
@@ -211,7 +205,7 @@ Pane {
 
             Item { Layout.fillWidth: true }
 
-            Row {
+            RowLayout {
                 spacing: Constants.spacing_s
                 visible: !disableCommentAction
 
@@ -232,7 +226,7 @@ Pane {
                 }
             }
 
-            Row {
+            RowLayout {
                 spacing: Constants.spacing_s
                 visible: disableCommentAction
 
@@ -256,7 +250,7 @@ Pane {
                 }
             }
 
-            Row {
+            RowLayout {
                 spacing: Constants.spacing_s
                 Button {
                     flat: true
@@ -292,7 +286,7 @@ Pane {
             Item { Layout.fillWidth: true }
         }
 
-        Row {
+        RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 0
             Layout.bottomMargin: 0
@@ -408,20 +402,14 @@ Pane {
     }
 
     function updateContent() {
-        var start = Date.now()
-        contentLayout.children = []
+        contentLayout.children = [] // Clear existing content first
         let parts = contentParts
 
         for (var i = 0; i < parts.length; i++) {
-            var partStart = Date.now()
             var type = parts[i][0]
             var value = parts[i][1]
-            var original = parts[i][2] ?? null
 
-            var createComponentStart = Date.now()
             var component = Qt.createComponent(componentMap[type])
-            var createComponentEnd = Date.now()
-            console.log("updateContent: part", i, "type", type, "createComponent took", (createComponentEnd - createComponentStart), "ms")
 
             if (component.status === Component.Ready) {
                 let args = {}
@@ -433,13 +421,6 @@ Pane {
                         "parent": contentLayout,
                         "Layout.minimumHeight": 100,
                     }
-                } else if (type === "image" || type === "video") {
-                    args = {
-                        "value": value,
-                        "original": original,
-                        "Layout.fillWidth": true,
-                        "parent": contentLayout,
-                    }
                 } else {
                     args = {
                         "value": value,
@@ -447,20 +428,13 @@ Pane {
                         "parent": contentLayout,
                     }
                 }
-                var createObjectStart = Date.now()
                 var item = component.createObject(contentLayout, args)
-                var createObjectEnd = Date.now()
-                console.log("updateContent: part", i, "type", type, "createObject took", (createObjectEnd - createObjectStart), "ms")
-                var partEnd = Date.now()
-                console.log("updateContent: part", i, "type", type, "total took", (partEnd - partStart), "ms")
                 if (item === null) {
-                    console.error("Failed to create object for part", i, "type", type)
+                    console.error("Failed to create object for", value)
                 }
             } else {
-                console.error("Component for type", type, "not ready:", component.errorString())
+                console.error("Failed to load component:", component.errorString())
             }
         }
-        var end = Date.now()
-        console.log("updateContent: total took", (end - start), "ms")
     }
 }

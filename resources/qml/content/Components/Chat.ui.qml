@@ -313,7 +313,7 @@ Rectangle {
                         property var author: modelData ? getProfile(modelData.authorId) : null
 
                         ProfilePicture {
-                            imageSource: author ? Util.getProfilePicture(author.picture, author.npub) : ""
+                            imageSource: author ? author.getProfilePicture(author.picture) : ""
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 34
                             visible: author && author.npub != chat.currentUser
@@ -329,7 +329,7 @@ Rectangle {
                         }
 
                         ProfilePicture {
-                            imageSource: author ? Util.getProfilePicture(author.picture, author.npub) : ""
+                            imageSource: author ? author.getProfilePicture(author.picture) : ""
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 34
                             visible: author && author.npub == chat.currentUser

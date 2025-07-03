@@ -56,7 +56,7 @@ ScrollView {
                 spacing: 10
 
                 Image {
-                    source: Util.getProfilePicture(modelData.picture || "", modelData.npub  || "")
+                    source: modelData.getProfilePicture(modelData.picture)
                     Layout.preferredWidth: 40
                     Layout.preferredHeight: 40
                     Layout.alignment: Qt.AlignVCenter

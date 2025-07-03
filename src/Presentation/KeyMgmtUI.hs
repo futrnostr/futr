@@ -17,6 +17,7 @@ import Effectful.State.Static.Shared (State, get, modify, put)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import System.FilePath ((</>))
 
+import Downloader (Downloader)
 import QtQuick
 import KeyMgmt
 import Logging
@@ -24,16 +25,22 @@ import Nostr
 import Nostr.Bech32
 import Nostr.InboxModel
 import Nostr.Keys (keyPairToPubKeyXO)
+import Nostr.ProfileManager (ProfileManager)
 import Nostr.Publisher
 import Nostr.Util
-import Store.Lmdb (LmdbState, initializeLmdbState)
+import Store.Lmdb (LmdbState, LmdbStore, initializeLmdbState)
 import Types (AppState(..), RelayPool(..), initialRelayPool)
+
 
 -- | Key Management UI Effect.
 type KeyMgmgtUIEff es =
   ( State AppState :> es
   , State RelayPool :> es
   , State LmdbState :> es
+  , State QtQuickState :> es
+  , ProfileManager :> es
+  , LmdbStore :> es
+  , Downloader :> es
   , Util :> es
   , Nostr :> es
   , InboxModel :> es
@@ -85,7 +92,17 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
             [ prop "nsec" (secKeyToBech32 . accountSecKey),
               prop "npub" (pubKeyXOToBech32 . accountPubKeyXO),
               mprop "displayName" accountDisplayName,
-              mprop "picture" accountPicture
+              mprop "picture" accountPicture,
+              defMethod' "getProfilePicture" $ \obj pictureUrl -> runE $ do
+                let accountId = fromObjRef obj :: AccountId
+                st <- get
+                let pk = case Map.lookup accountId (accountMap st) of
+                          Just account -> accountPubKeyXO account
+                          Nothing -> error "Account not found"
+                case pictureUrl of
+                        Nothing -> pure $ Just $ "https://robohash.org/" <> pubKeyXOToBech32 pk <> ".png?size=50x50"
+                        Just "" -> pure $ Just $ "https://robohash.org/" <> pubKeyXOToBech32 pk <> ".png?size=50x50"
+                        Just url -> pure $ Just url
             ]
 
         accountPool' <- newFactoryPool (newObject accountClass)
