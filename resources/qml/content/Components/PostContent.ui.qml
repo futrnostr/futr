@@ -42,19 +42,15 @@ Pane {
         updateContent()
     }
 
-    Component.onCompleted: {
-        if (!visible || !post) {
-            return
-        }
-
-        updateContent()
-    }
-
     onVisibleChanged: {
         if (visible && post && !author && post.authorId) {
             author = getProfile(post.authorId)
-            updateContent()
         }
+        if (visible && post) {
+            contentParts = post.contentParts
+            comments = post.comments
+        }
+
     }
 
     Component.onDestruction: {
@@ -402,15 +398,21 @@ Pane {
     }
 
     function updateContent() {
-        contentLayout.children = [] // Clear existing content first
+        // Only update if contentParts has actually changed
+        if (!contentParts || !Array.isArray(contentParts)) {
+            return
+        }
+        // Clear existing content first
+        contentLayout.children = []
         let parts = contentParts
-
         for (var i = 0; i < parts.length; i++) {
             var type = parts[i][0]
             var value = parts[i][1]
-
+            if (!componentMap[type]) {
+                console.error("Unknown content part type:", type)
+                continue
+            }
             var component = Qt.createComponent(componentMap[type])
-
             if (component.status === Component.Ready) {
                 let args = {}
                 if (componentMap[type] === "PostContent/ReferencedPost.ui.qml") {
