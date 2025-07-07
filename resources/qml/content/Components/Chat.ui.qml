@@ -27,6 +27,7 @@ Rectangle {
             var publicChat = mainContentArea.children[1].item
             if (publicChat && publicChat.postsView) {
                 publicChat.postsView.shouldBeAtBottom = true
+                publicChat.postsView.positionViewAtEnd()
             }
         })
     }
