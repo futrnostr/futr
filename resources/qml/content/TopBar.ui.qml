@@ -31,7 +31,6 @@ Item {
             Layout.preferredWidth: 60
             Layout.preferredHeight: 60
             radius: 30
-            // Remove default background
             color: "transparent"
             clip: true
             
@@ -41,7 +40,6 @@ Item {
                 source: currentUserProfile.getProfilePicture(currentUserPicture)
                 fillMode: Image.PreserveAspectCrop
                 cache: false
-                // Ensure no background
                 smooth: true
             }
         }
@@ -54,7 +52,6 @@ Item {
             icon.color: Material.foreground
             onClicked: isDarkTheme = !isDarkTheme
             flat: true
-            // Explicitly remove background
             background: Item {}
 
             ToolTip.visible: hovered
@@ -66,7 +63,6 @@ Item {
             Layout.preferredWidth: 40
             Layout.preferredHeight: 40
             flat: true
-            // Explicitly remove background
             background: Item {}
 
             icon.source: "qrc:/icons/menu.svg"
@@ -112,7 +108,6 @@ Item {
     RowLayout {
         anchors.centerIn: parent
         spacing: 10
-        // Set explicit size to prevent overdraw
         width: implicitWidth
         height: implicitHeight
 
@@ -121,15 +116,13 @@ Item {
             placeholderText: qsTr("Enter npub, nprofile, or NIP-05 (name@domain.com)")
             Layout.preferredWidth: 400
             onAccepted: searchButton.clicked()
-            // Optimize text field rendering
             selectByMouse: true
         }
 
         Button {
             id: searchButton
             text: qsTr("Search")
-            // Remove unnecessary background if flat
-            // background: Item {}
+
             onClicked: {
                 var input = searchInput.text.trim()
                 var result = JSON.parse(search(input))
