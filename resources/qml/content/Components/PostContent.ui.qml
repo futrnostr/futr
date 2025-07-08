@@ -398,11 +398,10 @@ Pane {
     }
 
     function updateContent() {
-        // Only update if contentParts has actually changed
         if (!contentParts || !Array.isArray(contentParts)) {
             return
         }
-        // Clear existing content first
+
         contentLayout.children = []
         let parts = contentParts
         for (var i = 0; i < parts.length; i++) {
@@ -414,21 +413,12 @@ Pane {
             }
             var component = Qt.createComponent(componentMap[type])
             if (component.status === Component.Ready) {
-                let args = {}
+                let args = {
+                    "value": value
+                }
+
                 if (componentMap[type] === "PostContent/ReferencedPost.ui.qml") {
-                    args = {
-                        "value": value,
-                        "Layout.fillWidth": true,
-                        "currentUser": currentUser,
-                        "parent": contentLayout,
-                        "Layout.minimumHeight": 100,
-                    }
-                } else {
-                    args = {
-                        "value": value,
-                        "Layout.fillWidth": true,
-                        "parent": contentLayout,
-                    }
+                    args["currentUser"] = currentUser
                 }
                 var item = component.createObject(contentLayout, args)
                 if (item === null) {
