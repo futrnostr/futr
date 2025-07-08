@@ -12,9 +12,6 @@ import Profile 1.0
 TextEdit {
     property string value
 
-    Layout.fillWidth: true
-    Layout.topMargin: Constants.spacing_xs
-    Layout.bottomMargin: Constants.spacing_xs
     readOnly: true
     selectByMouse: true
     wrapMode: Text.Wrap

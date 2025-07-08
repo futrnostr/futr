@@ -17,9 +17,7 @@ Rectangle {
     property var cachedPost
     property bool isLoading: true
 
-    Layout.fillWidth: true
-
-    implicitHeight: !isLoading
+    height: !isLoading
                       ? (nestedLoader.item ? nestedLoader.item.implicitHeight + Constants.spacing_xs : 40)
                       : 40
 
