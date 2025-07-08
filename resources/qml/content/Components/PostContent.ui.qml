@@ -346,7 +346,7 @@ Pane {
         anchors.centerIn: parent
         width: 350
 
-        ColumnLayout {
+        Column {
             spacing: Constants.spacing_m
             width: parent.width
 
@@ -354,13 +354,13 @@ Pane {
                 text: "Are you sure you want to delete this post?"
                 color: Material.foreground
                 wrapMode: Text.Wrap
-                Layout.fillWidth: true
+                width: parent.width
             }
 
             TextField {
                 id: reasonField
                 placeholderText: "Reason for deletion (optional)"
-                Layout.fillWidth: true
+                width: parent.width
             }
         }
 
