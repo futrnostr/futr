@@ -22,8 +22,6 @@ Item {
     signal fullScreenRequested(string url)
     signal showNotification(string message)
 
-    Layout.fillWidth: true
-
     onFullScreenRequested: function(url) {
         openFullscreenVideo(url)
     }

@@ -103,14 +103,15 @@ Pane {
             }
         }
 
-        RowLayout {
+        Row {
             width: parent.width
             visible: showAuthor || isRefPost
+            spacing: Constants.spacing_s
 
             Rectangle {
-                Layout.preferredWidth: root.isCollapsed ? 30 : 34
-                Layout.preferredHeight: Layout.preferredWidth
-                Layout.alignment: Qt.AlignVCenter
+                width: root.isCollapsed ? 30 : 34
+                height: root.isCollapsed ? 30 : 34
+
                 radius: width/2
                 color: "transparent"
                 border.width: 1
@@ -123,38 +124,32 @@ Pane {
                     onClicked: {
                         personalFeed.npub = root.author.npub
                     }
+                }
 
-                    Image {
-                        anchors.fill: parent
-                        anchors.margins: Constants.spacing_xs
-                        source: root.author ? root.author.getProfilePicture(root.author.picture) : ""
-                        fillMode: Image.PreserveAspectCrop
-                        cache: false
-                    }
+                Image {
+                    anchors.fill: parent
+                    anchors.margins: Constants.spacing_xs
+                    source: root.author ? root.author.getProfilePicture(root.author.picture) : ""
+                    fillMode: Image.PreserveAspectCrop
+                    cache: false
                 }
             }
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                spacing: 2
+            MouseArea {
+                width: parent.width - 50 // Account for profile picture width + spacing
+                height: childrenRect.height
+                cursorShape: Qt.PointingHandCursor
+                anchors.verticalCenter: parent.verticalCenter
 
-                Item {
-                    Layout.fillHeight: true
-                    Layout.fillWidth: true
+                onClicked: {
+                    personalFeed.npub = root.author.npub
+                }
 
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-
-                        onClicked: {
-                            personalFeed.npub = root.author.npub
-                        }
-                    }
+                Column {
+                    spacing: 2
+                    width: parent.width
 
                     Text {
-                        anchors.left: parent.left
-                        anchors.bottom: parent.verticalCenter
                         font: Constants.font
                         text: root.author ? (root.author.displayName || root.author.name || "") : ""
                         elide: Text.ElideRight
@@ -163,8 +158,6 @@ Pane {
                     }
 
                     Text {
-                        anchors.left: parent.left
-                        anchors.top: parent.verticalCenter
                         text: root.author ? root.author.npub : ""
                         font.pixelSize: Constants.font.pixelSize * 0.8
                         elide: Text.ElideRight
@@ -176,7 +169,7 @@ Pane {
         }
 
 
-        ColumnLayout {
+        Column {
             id: contentLayout
             width: parent.width
             spacing: 0
@@ -407,7 +400,8 @@ Pane {
             var component = Qt.createComponent(componentMap[type])
             if (component.status === Component.Ready) {
                 let args = {
-                    "value": value
+                    "value": value,
+                    "width": Qt.binding(function() { return contentLayout.width }),
                 }
 
                 if (componentMap[type] === "PostContent/ReferencedPost.ui.qml") {

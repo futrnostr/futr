@@ -19,8 +19,7 @@ Image {
     cache: false
     asynchronous: true
     fillMode: Image.PreserveAspectFit
-    Layout.fillWidth: true
-    Layout.preferredHeight: sourceSize.height > 0 ? sourceSize.height * (width / sourceSize.width) : 200
+    height: sourceSize.height > 0 ? sourceSize.height * (width / sourceSize.width) : 200
 
     onImageClicked: function(url) {
         stackView.push(imageViewerComponent, {"imageSource": url, "original": original})
