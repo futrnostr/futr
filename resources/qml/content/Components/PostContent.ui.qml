@@ -81,23 +81,19 @@ Pane {
         }
     }
 
-    ColumnLayout {
+    Column {
         id: mainColumn
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.rightMargin: 0
+        anchors.fill: parent
         spacing: Constants.spacing_xs
 
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.bottomMargin: Constants.spacing_xs
+        Row {
+            width: parent.width
             visible: post != null && post != undefined && (post.postType === "quote_repost" || post.postType === "repost")
 
             Image {
                 source: "qrc:/icons/repeat.svg"
                 sourceSize.width: 20
                 sourceSize.height: 20
-                Layout.alignment: Qt.AlignVCenter
             }
 
             Text {
@@ -108,7 +104,7 @@ Pane {
         }
 
         RowLayout {
-            Layout.fillWidth: true
+            width: parent.width
             visible: showAuthor || isRefPost
 
             Rectangle {
@@ -182,24 +178,18 @@ Pane {
 
         ColumnLayout {
             id: contentLayout
-            Layout.fillWidth: true
-            Layout.bottomMargin: Constants.spacing_xs
+            width: parent.width
             spacing: 0
         }
 
         // Main post actions
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignHCenter
+        Row {
+            anchors.horizontalCenter: parent.horizontalCenter
             spacing: Constants.spacing_l
-            Layout.topMargin: 0
-            Layout.bottomMargin: 0
-            Layout.preferredHeight: 36
+            height: 36
             visible: !hideActions && !isRefPost && !privateChatMode
 
-            Item { Layout.fillWidth: true }
-
-            RowLayout {
+            Row {
                 spacing: Constants.spacing_s
                 visible: !disableCommentAction
 
@@ -212,15 +202,18 @@ Pane {
                     implicitHeight: 36
                     padding: 8
                     icon.color: Material.secondaryTextColor
+                    anchors.verticalCenter: parent.verticalCenter
                     onClicked: commentClicked()
                 }
+
                 Text {
                     text: comments.length
                     color: Material.secondaryTextColor
+                    anchors.verticalCenter: parent.verticalCenter
                 }
             }
 
-            RowLayout {
+            Row {
                 spacing: Constants.spacing_s
                 visible: disableCommentAction
 
@@ -229,6 +222,7 @@ Pane {
                     source: "qrc:/icons/comment.svg"
                     width: 20
                     height: 20
+                    anchors.verticalCenter: parent.verticalCenter
 
                     ColorOverlay {
                         anchors.fill: parent
@@ -241,11 +235,13 @@ Pane {
                 Text {
                     text: comments.length
                     color: Material.secondaryTextColor
+                    anchors.verticalCenter: parent.verticalCenter
                 }
             }
 
-            RowLayout {
+            Row {
                 spacing: Constants.spacing_s
+
                 Button {
                     flat: true
                     icon.source: "qrc:/icons/repeat.svg"
@@ -256,10 +252,13 @@ Pane {
                     padding: 8
                     icon.color: post && post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
                     onClicked: repostClicked()
+                    anchors.verticalCenter: parent.verticalCenter
                 }
+
                 Text {
                     text: post ? post.repostCount : "0"
                     color: post && post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
+                    anchors.verticalCenter: parent.verticalCenter
                 }
             }
 
@@ -273,25 +272,20 @@ Pane {
                 padding: 8
                 icon.color: Material.secondaryTextColor
                 visible: post != null && post != undefined && currentUser == post.authorId
+                anchors.verticalCenter: parent.verticalCenter
 
                 onClicked: deleteDialog.open()
             }
-
-            Item { Layout.fillWidth: true }
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.topMargin: 0
-            Layout.bottomMargin: 0
-
-            Item { Layout.fillWidth: true }
+        Row {
+            anchors.right: parent.right
 
             Text {
-                Layout.alignment: Qt.AlignRight
                 text: post ? post.timestamp : ""
                 font: Constants.smallFontMedium
                 color: Material.secondaryTextColor
+                anchors.verticalCenter: parent.verticalCenter
             }
 
             Button {
@@ -302,7 +296,8 @@ Pane {
                 implicitWidth: 28
                 implicitHeight: 28
                 padding: 4
-                Layout.alignment: Qt.AlignRight
+                anchors.verticalCenter: parent.verticalCenter
+
                 onClicked: postMenu.open()
 
                 Menu {
