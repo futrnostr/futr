@@ -56,9 +56,7 @@ Pane {
     Component.onDestruction: {
         author = null
 
-        for(let i = contentLayout.children.length - 1; i >= 0; i--) {
-            contentLayout.children[i].destroy()
-        }
+        contentLayout.children = []
     }
 
     background: Rectangle {
