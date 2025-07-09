@@ -22,14 +22,6 @@ Rectangle {
 
     onNpubChanged: {
         chatTypeSelector.currentIndex = 0
-
-        Qt.callLater(function() {
-            var publicChat = mainContentArea.children[1].item
-            if (publicChat && publicChat.postsView) {
-                publicChat.postsView.shouldBeAtBottom = true
-                publicChat.postsView.positionViewAtEnd()
-            }
-        })
     }
 
     PostDialog {
@@ -208,6 +200,20 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             sourceComponent: chatTypeSelector.currentIndex === 0 ? publicNotesComponent : privateChatComponent
+
+            onSourceComponentChanged: {
+                if (sourceComponent === publicNotesComponent) {
+                    item.postsView.shouldBeAtBottom = true
+                    item.postsView.positionViewAtEnd()
+                }
+            }
+
+            onLoaded: {
+                if (chatTypeSelector.currentIndex === 0) {
+                    item.postsView.shouldBeAtBottom = true
+                    item.postsView.positionViewAtEnd()
+                }
+            }
         }
 
         Component {
@@ -215,6 +221,8 @@ Rectangle {
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+
+                property alias postsView: postsView
 
                 ScrollingListView {
                     id: postsView
