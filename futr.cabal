@@ -59,7 +59,6 @@ executable futr
         RelayMgmt
         Store.Lmdb
         Types
-        TimeFormatter
         Version
 
     default-language: GHC2021

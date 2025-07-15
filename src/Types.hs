@@ -19,6 +19,11 @@ import Nostr.Relay (RelayURI)
 import Version (runtimeVersion)
 
 
+-- | Language options for the application
+data Language = English | Spanish | German
+    deriving (Eq, Show)
+
+
 -- | Status of a publish operation
 data PublishStatus
     = Publishing
@@ -113,16 +118,6 @@ data AppScreen
     deriving (Eq, Read, Show)
 
 
--- | Chat message.
-data ChatMessage = ChatMessage
-  { chatMessageId :: EventId
-  , chatMessage :: Text
-  , author :: PubKeyXO
-  , chatMessageCreatedAt :: Int
-  , timestamp :: Text
-  } deriving (Show)
-
-
 -- | Data type to store event with its relay sources
 data EventWithRelays = EventWithRelays
     { event :: Event
@@ -138,10 +133,39 @@ data InboxModelState
   deriving (Eq, Show)
 
 
+-- | Feed filter.
+-- @todo refactor to be original filter?
+data FeedFilter
+  = PostsFilter PubKeyXO
+  | PrivateMessagesFilter PubKeyXO
+  deriving (Eq, Show)
+
+
+data Post = Post
+  {
+    postId :: EventId
+  , postAuthor :: PubKeyXO
+  , postEvent :: Event
+  , postContent :: Text
+  , postTimestamp :: Text
+  , postType :: Text
+  , referencedPostId :: Maybe EventId
+  } deriving (Eq, Show)
+
+
+-- | Feed.
+data Feed = Feed
+  { feedEvents :: [Post]
+  , feedEventMap :: Map EventId Post
+  , feedFilter :: FeedFilter
+  } deriving (Eq, Show)
+
+
 -- | Application state.
 data AppState = AppState
   { keyPair :: Maybe KeyPair
   , currentScreen :: AppScreen -- @todo remove maybe?
+  , currentFeed :: Maybe Feed
   , currentProfile :: Maybe (PubKeyXO, [SubscriptionId])
   , currentPost :: Maybe EventId
   , version :: Text
@@ -176,6 +200,7 @@ initialState :: AppState
 initialState = AppState
   { keyPair = Nothing
   , currentScreen = KeyMgmt
+  , currentFeed = Nothing
   , currentProfile = Nothing
   , currentPost = Nothing
   , version = pack runtimeVersion

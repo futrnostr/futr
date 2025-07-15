@@ -24,6 +24,7 @@ module Store.Lmdb
     , putEvent
     , recordFailedRelay
     , getEvent
+    , getEvents
     , getEventRelays
     , getFollows
     , getProfile
@@ -50,7 +51,7 @@ import Data.Cache.LRU qualified as LRU
 import Data.List (find)
 import Data.Map qualified as Map
 import Data.Map (Map)
-import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Set (Set)
 import Data.Text.Encoding (encodeUtf8)
@@ -66,7 +67,6 @@ import Lmdb.Types
 import Pipes.Prelude qualified as Pipes
 import Pipes ((>->))
 import System.Directory (doesFileExist, getFileSize)
-import System.DiskSpace (getDiskUsage, diskAvail)
 import System.FilePath ((</>))
 
 -- Windows specific imports and FFI for marking a file as sparse
@@ -160,6 +160,7 @@ data LmdbStore :: Effect where
 
     -- Query operations (read-only)
     GetEvent :: EventId -> LmdbStore m (Maybe Event)
+    GetEvents :: [EventId] -> LmdbStore m [Event]
     GetEventRelays :: EventId -> LmdbStore m (Set RelayURI)
     GetFollows :: PubKeyXO -> LmdbStore m [Follow]
     GetProfile :: PubKeyXO -> LmdbStore m (Profile, Int)
@@ -190,6 +191,9 @@ recordFailedRelay uri = send $ RecordFailedRelay uri
 
 getEvent :: LmdbStore :> es => EventId -> Eff es (Maybe Event)
 getEvent eid = send $ GetEvent eid
+
+getEvents :: LmdbStore :> es => [EventId] -> Eff es [Event]
+getEvents eids = send $ GetEvents eids
 
 getEventRelays :: LmdbStore :> es => EventId -> Eff es (Set RelayURI)
 getEventRelays eid = send $ GetEventRelays eid
@@ -525,7 +529,6 @@ runLmdbStore = interpret $ \_ -> \case
 
                     _ -> return False -- By default, consider other events as not processed
 
-            -- Build final result
             let result = PutEventResult
                   { eventIsNew = isNewEvent && wasProcessed
                   , relaysUpdated = hasNewRelays
@@ -571,6 +574,61 @@ runLmdbStore = interpret $ \_ -> \case
                         modify @LmdbState $ \s -> s { eventCache = LRU.insert eid event' (eventCache s) }
                         pure (Just event')
                     Nothing -> pure Nothing
+
+    GetEvents eids -> do
+        st <- get @LmdbState
+
+        let (newCache, cachedEvents) = foldr
+                (\eid (cache, events) ->
+                    case LRU.lookup eid cache of
+                        (newCache', Just event') -> (newCache', event':events)
+                        (_, Nothing) -> (cache, events))
+                (eventCache st, [])
+                eids
+
+        let cachedIds = Set.fromList $ map eventId cachedEvents
+            missingIds = filter (\eid -> not $ Set.member eid cachedIds) eids
+
+        missingEvents <- if null missingIds
+            then pure []
+            else liftIO $ withTransaction (lmdbEnv st) $ \txn -> do
+                let sortedIds = Set.toAscList $ Set.fromList missingIds
+                    collectRemainingEvents _ acc [] = return acc
+                    collectRemainingEvents cursor acc (targetId:rest) = do
+                        mNext <- LMap.next cursor
+                        case mNext of
+                            Nothing -> return acc
+                            Just kv -> do
+                                let currentId = keyValueKey kv
+                                    currentEvent = keyValueValue kv
+                                if currentId == targetId
+                                    then collectRemainingEvents cursor (currentEvent:acc) rest
+                                    else if currentId > targetId
+                                            then collectRemainingEvents cursor acc rest
+                                            else collectRemainingEvents cursor acc (targetId:rest)
+
+                withCursor txn (eventDb st) $ \cursor -> do
+                    mFirst <- LMap.lookupGte cursor (head sortedIds)
+                    case mFirst of
+                        Nothing -> return []
+                        Just kv -> do
+                            let firstEvent = keyValueValue kv
+                                firstId = keyValueKey kv
+                            if firstId == head sortedIds
+                                then collectRemainingEvents cursor [firstEvent] (tail sortedIds)
+                                else collectRemainingEvents cursor [] sortedIds
+
+        let newEvents = missingEvents
+            finalCache = foldr
+                (\event cache -> LRU.insert (eventId event) event cache)
+                newCache
+                newEvents
+
+        modify @LmdbState $ \s -> s { eventCache = finalCache }
+
+        let eventMap = Map.fromList $
+                [(eventId e, e) | e <- cachedEvents ++ newEvents]
+        return [e | eid <- eids, e <- maybeToList $ Map.lookup eid eventMap]
 
     GetEventRelays eid -> do
         st <- get @LmdbState
