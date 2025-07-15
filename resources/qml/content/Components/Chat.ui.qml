@@ -17,10 +17,18 @@ Rectangle {
     border.width: 1
 
     required property string npub
+    property var feed: null
     required property string currentUser
     required property string currentUserPicture
 
+    property var posts: feed ? feed.events : []
+
+    Component.onCompleted: {
+        feed = loadFeed('public', npub)
+    }
+
     onNpubChanged: {
+        feed = loadFeed('public', npub)
         chatTypeSelector.currentIndex = 0
     }
 
@@ -60,6 +68,14 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 42
             contentWidth: width
+
+            onCurrentIndexChanged: {
+                if (currentIndex === 0) {
+                    feed = loadFeed('public', npub)
+                } else {
+                    feed = loadFeed('private', npub)
+                }
+            }
 
             TabButton {
                 id: publicTab
@@ -309,7 +325,7 @@ Rectangle {
 
                     model: AutoListModel {
                         id: messagesModel
-                        source: privateMessages
+                        source: posts
                         mode: AutoListModel.ByKey
                         equalityTest: function (oldItem, newItem) {
                             return oldItem.id === newItem.id

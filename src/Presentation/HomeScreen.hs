@@ -11,7 +11,7 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Proxy (Proxy(..))
-import Data.Text (pack, unpack)
+import Data.Text (Text, pack, unpack)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
@@ -43,7 +43,7 @@ import Presentation.Classes
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb (LmdbStore, TimelineType(..), getEvent, getFollows, getTimelineIds)
+import Store.Lmdb (LmdbStore, getEvent, getFollows)
 import Types
 
 
@@ -75,7 +75,6 @@ runHomeScreen = interpret $ \_ -> \case
     followPool <- newFactoryPool (newObject followClass')
     profilesPool <- newFactoryPool (newObject profileClass')
     postsPool <- newFactoryPool (newObject postClass')
-    chatPool <- newFactoryPool (newObject postClass')
     publishStatusPool <- newFactoryPool (newObject publishStatusClass')
 
     rootClass <- newClass [
@@ -136,6 +135,22 @@ runHomeScreen = interpret $ \_ -> \case
             res <- search obj input
             return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
 
+        defMethod' "loadFeed" $ \(_ :: ObjRef ()) (feedType :: Text) (input :: Text) -> runE $ do
+          let f = case feedType of
+                "public" -> case bech32ToPubKeyXO input of
+                  Just pubKeyXO -> PostsFilter pubKeyXO
+                  Nothing -> error "Invalid bech32 public key"
+                "private" -> case bech32ToPubKeyXO input of
+                  Just pubKeyXO -> PrivateMessagesFilter pubKeyXO
+                  Nothing -> error "Invalid bech32 public key"
+                _ -> error "Invalid feed type"
+          void $ loadFeed f
+          ck <- gets @QtQuickState signalKey
+          let ck' = fromMaybe (error "Signal key not found") ck
+          feedClass' <- feedClass postsPool ck'
+          feedObj <- liftIO $ newObject feedClass' ()
+          return (feedObj :: ObjRef ()),
+
         defMethod' "saveProfile" $ \_ input -> runE $ do
             let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
             n <- getCurrentTime
@@ -156,24 +171,6 @@ runHomeScreen = interpret $ \_ -> \case
           followedPubKeys <- runE $ getFollows userPubKey
           mapM (getPoolObject followPool) (userPubKey : map pubkey followedPubKeys),
 
-        defPropertySigRO' "posts" changeKey' $ \obj -> do
-          runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { postsObjRef = Just obj } }
-          st <- runE $ get @AppState
-          case currentProfile st of
-            Just (recipient, _) -> do
-                postIds <- runE $ getTimelineIds PostTimeline recipient 1000
-                mapM (getPoolObject postsPool) postIds
-            Nothing -> return [],
-
-        defPropertySigRO' "privateMessages" changeKey' $ \obj -> do
-          runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { privateMessagesObjRef = Just obj } }
-          st <- runE $ get @AppState
-          case currentProfile st of
-            Just (recipient, _) -> do
-                messageIds <- runE $ getTimelineIds ChatTimeline recipient 1000
-                mapM (getPoolObject chatPool) messageIds
-            Nothing -> return [],
-
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
             runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
             st <- runE $ get @RelayPool
@@ -193,11 +190,6 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "unfollow" $ \_ npubText -> do
           runE $ unfollowProfile npubText,
-
-        defMethod' "loadFeed" $ \_ npubText -> do
-          runE $ do
-              let pubKeyXO = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npubText
-              loadFeed pubKeyXO,
 
         defMethod' "sendPrivateMessage" $ \_ input -> do
           runE $ sendPrivateMessage input,

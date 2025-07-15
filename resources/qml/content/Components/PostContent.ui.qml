@@ -232,27 +232,17 @@ Pane {
                 }
             }
 
-            Row {
-                spacing: Constants.spacing_s
-
-                Button {
-                    flat: true
-                    icon.source: "qrc:/icons/repeat.svg"
-                    icon.width: 20
-                    icon.height: 20
-                    implicitWidth: 36
-                    implicitHeight: 36
-                    padding: 8
-                    icon.color: post && post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
-                    onClicked: repostClicked()
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                Text {
-                    text: post ? post.repostCount : "0"
-                    color: post && post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+            Button {
+                flat: true
+                icon.source: "qrc:/icons/repeat.svg"
+                icon.width: 20
+                icon.height: 20
+                implicitWidth: 36
+                implicitHeight: 36
+                padding: 8
+                icon.color: post && post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
+                onClicked: repostClicked()
+                anchors.verticalCenter: parent.verticalCenter
             }
 
             Button {
@@ -393,21 +383,30 @@ Pane {
         for (var i = 0; i < parts.length; i++) {
             var type = parts[i][0]
             var value = parts[i][1]
+
             if (!componentMap[type]) {
                 console.error("Unknown content part type:", type)
                 continue
             }
+
             var component = Qt.createComponent(componentMap[type])
+
             if (component.status === Component.Ready) {
                 let args = {
                     "value": value,
                     "width": Qt.binding(function() { return contentLayout.width }),
                 }
 
+                if (type === "image") {
+                    args["asynchronous"] = true
+                }
+
                 if (componentMap[type] === "PostContent/ReferencedPost.ui.qml") {
                     args["currentUser"] = currentUser
                 }
+
                 var item = component.createObject(contentLayout, args)
+
                 if (item === null) {
                     console.error("Failed to create object for", value)
                 }

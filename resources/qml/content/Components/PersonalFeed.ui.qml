@@ -13,14 +13,6 @@ RowLayout {
     required property var currentUserPicture
     property var editMode: false
 
-    Component.onCompleted: {
-        loadFeed(npub)
-    }
-
-    onNpubChanged: {
-        loadFeed(npub)
-    }
-
     Rectangle {
         Layout.preferredWidth: 60
         Layout.fillHeight: true

@@ -5,11 +5,11 @@ import Data.Aeson (toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (find, sortBy)
+import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Set qualified as Set
-import Data.Text (Text, pack, unpack)
+import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
@@ -17,7 +17,7 @@ import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.FileSystem
-import Effectful.State.Static.Shared (State, get, modify)
+import Effectful.State.Static.Shared (State, get, gets,modify)
 import Graphics.QML
 import System.FilePath ((</>), takeExtension, dropExtension)
 
@@ -25,19 +25,20 @@ import Logging
 import Nostr
 import Nostr.Bech32
 import Nostr.Event (Event(..), EventId(..), Kind(..), Rumor(..), eventIdFromHex)
+import Nostr.Event qualified as NE
 import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (ProfileManager, getProfile)
-import Nostr.Util (Util, getCurrentTime, getKeyPair)
+import Nostr.Util (Util, formatDateTime, getKeyPair)
 import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..), storeProfileContentRef, notify, emptyUpdates, UIUpdates(..))
 import Store.Lmdb (LmdbStore, getCommentsWithIndentationLevel, getEvent, getEventRelays, getFollows)
-import TimeFormatter
-import Types (AppState(..), Follow(..), PublishStatus(..), RelayPool(..))
+import Types (AppState(..), Feed(..), Follow(..), Language(..), Post(..), PublishStatus(..), RelayPool(..))
 import Downloader (Downloader(..), DownloadStatus(..), hasDownload, download, peekMimeType)
 
 
 -- Effect for creating C++ classes for usage in QtQuick QML
 data Classes :: Effect where
+    FeedClass :: FactoryPool EventId -> SignalKey (IO ()) -> Classes m (Class ())
     ProfileClass :: SignalKey (IO ()) -> Classes m (Class PubKeyXO)
     PostClass :: SignalKey (IO ()) -> Classes m (Class EventId)
     PublishStatusClass :: SignalKey (IO ()) -> Classes m (Class EventId)
@@ -47,6 +48,9 @@ data Classes :: Effect where
 
 type instance DispatchOf Classes = Dynamic
 
+
+feedClass :: Classes :> es => FactoryPool EventId -> SignalKey (IO ()) -> Eff es (Class ())
+feedClass postsPool changeKey = send $ FeedClass postsPool changeKey
 
 profileClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class PubKeyXO)
 profileClass changeKey = send $ ProfileClass changeKey
@@ -62,8 +66,6 @@ followClass changeKey = send $ FollowClass changeKey
 
 commentClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class (EventId, Int))
 commentClass changeKey = send $ CommentClass changeKey
-
-
 
 
 -- | SubscriptionEff
@@ -83,12 +85,57 @@ type ClassesEff es =
   )
 
 
+-- | Helper to load a post from the current feed
+loadPostFromFeed :: ClassesEff es => EventId -> Eff es (Maybe Post)
+loadPostFromFeed eid = do
+    feed <- gets @AppState currentFeed
+    case feed of
+        Just feed' -> case Map.lookup eid (feedEventMap feed') of
+            Just post -> return $ Just post
+            Nothing -> do
+                mp <- loadPost eid
+                case mp of
+                    Just p -> do
+                        updateFeed eid p
+                        return $ Just p
+                    Nothing -> return Nothing
+        Nothing -> do
+            mp <- loadPost eid
+            case mp of
+                Just p -> do
+                    updateFeed eid p
+                    return $ Just p
+                Nothing -> return Nothing
+    where
+        loadPost :: ClassesEff es => EventId -> Eff es (Maybe Post)
+        loadPost eid' = do
+            mev <- getEvent eid'
+            case mev of
+                Just ev -> do
+                    post <- createPost ev
+                    return $ Just $ post
+                Nothing -> return Nothing
+
+        updateFeed :: ClassesEff es => EventId -> Post -> Eff es ()
+        updateFeed eid' p = modify @AppState $ \st -> do
+            let feed' = fromMaybe (error "No feed") $ currentFeed st
+            st { currentFeed = Just $ feed' { feedEventMap = Map.insert eid' p (feedEventMap feed') } }
+
 -- | Handler for subscription effects.
 runClasses
   :: ClassesEff es
   => Eff (Classes : es) a
   -> Eff es a
 runClasses = interpret $ \_ -> \case
+    FeedClass postsPool changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
+        newClass [
+            defPropertySigRO' "events" changeKey' $ \_ -> do
+                cf <- runE $ gets @AppState currentFeed
+                case cf of
+                  Just feed -> mapM (getPoolObject postsPool) [postId post | post <- feedEvents feed]
+                  Nothing -> return []
+            ]
+
     ProfileClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
         newClass [
             defPropertySigRO' "id" changeKey' $ \obj -> do
@@ -171,17 +218,6 @@ runClasses = interpret $ \_ -> \case
 
 
     PostClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-        let getRootReference evt =
-                case find (\case ("e":_:"root":_) -> True; _ -> False) (tags evt) of
-                    Just ("e":eidHex:_) -> return $ eventIdFromHex eidHex
-                    _ -> return Nothing
-
-            getParentReference evt =
-                case find (\case ("e":_:"reply":_) -> True; _ -> False) (tags evt) of
-                    Just ("e":eidHex:_) -> return $ eventIdFromHex eidHex
-                    _ -> return Nothing
-
-
         newClass [
             defPropertyRO' "id" $ \obj -> do
               let eid = fromObjRef obj :: EventId
@@ -190,20 +226,18 @@ runClasses = interpret $ \_ -> \case
 
             defPropertyRO' "nevent" $ \obj -> do
               let eid = fromObjRef obj :: EventId
-              eventMaybe <- runE $ getEvent eid
-              case eventMaybe of
-                Just e -> do
-                  relaysSet <- runE $ getEventRelays eid
-                  let r = if Set.null relaysSet then "" else head $ Set.toList relaysSet
-                  return $ eventToNevent e [r]
+              postMaybe <- runE $ loadPostFromFeed eid
+              case postMaybe of
+                Just post' -> return $ eventToNevent (postEvent post') []
                 Nothing -> return "",
 
             defPropertySigRO' "raw" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
-              eventMaybe <- runE $ getEvent eid
-              case eventMaybe of
-                Just e -> do
-                  let prettyConfig = defConfig {
+              postMaybe <- runE $ loadPostFromFeed eid
+              case postMaybe of
+                Just p -> do
+                  let e = postEvent p
+                      prettyConfig = defConfig {
                         confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
                           `mappend` compare
                       }
@@ -227,102 +261,41 @@ runClasses = interpret $ \_ -> \case
 
             defPropertySigRO' "postType" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
-              eventMaybe <- runE $ getEvent eid
-              let value = case eventMaybe of
-                    Just e ->
-                        pack $ case kind e of
-                            ShortTextNote ->
-                                if any (\t -> case t of
-                                              ("q":_) -> True
-                                              _ -> False) (tags e)
-                                then "quote_repost"
-                                else "short_text_note"
-                            Repost -> "repost"
-                            Comment -> "comment"
-                            GiftWrap -> "gift_wrap"
-                            _ -> "unknown"
-                    Nothing -> "unknown"
-              return value,
+              postMaybe <- runE $ loadPostFromFeed eid
+              case postMaybe of
+                Just p -> return $ postType p
+                Nothing -> return "unknown",
 
-            defPropertySigRO' "contentParts" changeKey' $ \obj -> do
+            defPropertySigRO' "contentParts" changeKey' $ \obj -> runE $ do
               let eid = fromObjRef obj :: EventId
-              runE $ storePostObjRef eid "contentParts" obj
-              value <- runE $ getEvent eid >>= \case
-                Just ev -> do
-                  content' <- case kind ev of
-                    GiftWrap -> do
-                      kp <- getKeyPair
-                      sealed <- unwrapGiftWrap ev kp
-                      rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
-                      return $ fromMaybe "" $ rumorContent <$> rumor
-                    Repost -> do
-                      let repostedId = listToMaybe [ eidStr | ("e":eidStr:_) <- tags ev ]
-                      case repostedId of
-                        Just eid' -> do
-                          let eid'' = read (unpack eid') :: EventId
-                          return $ "nostr:" <> (eventIdToNote eid'')
-                        Nothing -> return ""
-                    _ -> return $ content ev
-                  parseContentParts obj content'
-                Nothing -> pure []
-              return value,
+              storePostObjRef eid "contentParts" obj
+              postMaybe <- loadPostFromFeed eid
+              case postMaybe of
+                Just post -> parseContentParts obj (postContent post)
+                Nothing -> pure [],
 
             defPropertySigRO' "timestamp" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
-              eventMaybe <- runE $ getEvent eid
-              value <- case eventMaybe of
-                Just e -> do
-                  now <- runE getCurrentTime
-                  return $ Just $ formatDateTime English now (createdAt e)
-                Nothing -> return Nothing
-              return value,
+              postMaybe <- runE $ loadPostFromFeed eid
+              case postMaybe of
+                Just post -> return $ postTimestamp post
+                Nothing -> return "",
 
             defPropertySigRO' "authorId" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
-              runE $ getEvent eid >>= \case
-                Just ev -> do
-                  case kind ev of
-                    GiftWrap -> do
-                      kp <- getKeyPair
-                      sealed <- unwrapGiftWrap ev kp
-                      rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
-                      return $ pubKeyXOToBech32 <$> (rumorPubKey <$> rumor)
-                    _ -> return $ Just $ pubKeyXOToBech32 $ pubKey ev
-                Nothing -> return Nothing,
-
-            defPropertySigRO' "root" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              eventMaybe <- runE $ getEvent eid
-              case eventMaybe of
-                Just e -> runE $ getRootReference e >>= \case
-                  Just refId -> return $ Just $ eventIdToNote refId
-                  Nothing -> return Nothing
-                Nothing -> return Nothing,
-
-            defPropertySigRO' "parent" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              eventMaybe <- runE $ getEvent eid
-              case eventMaybe of
-                Just e -> do
-                  parentId <- runE $ getParentReference e
-                  rootId <- runE $ getRootReference e
-                  case (parentId, rootId) of
-                    (Just p, Just r) | p /= r -> return $ Just $ eventIdToNote p
-                    _ -> return Nothing
+              postMaybe <- runE $ loadPostFromFeed eid
+              case postMaybe of
+                Just post -> return $ Just $ pubKeyXOToBech32 $ postAuthor post
                 Nothing -> return Nothing,
 
             defPropertySigRO' "referencedPostId" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
-              eventMaybe <- runE $ getEvent eid
-              case eventMaybe of
-                Just e | kind e == Repost -> do
-                  let tags' = tags e
-                      repostedId = listToMaybe [eidStr | ("e":eidStr:_) <- tags']
-                  return repostedId
-                _ -> return Nothing,
-
-            defPropertySigRO' "repostCount" changeKey' $ \_ -> do
-                return (0 :: Int),
+              postMaybe <- runE $ loadPostFromFeed eid
+              case postMaybe of
+                Just post-> case referencedPostId post of
+                  Just eid' -> return $ Just $ eventIdToNote eid'
+                  Nothing -> return Nothing
+                Nothing -> return Nothing,
 
             defPropertySigRO' "comments" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
@@ -675,3 +648,44 @@ resolveProfileImage getField pk mObj = do
               _ -> pure ()
           pure url
     _ -> pure $ fromMaybe "" mUrl
+
+
+-- | Create a post from an event.
+-- @todo code duplication with Futr.hs
+createPost :: ClassesEff es => Event -> Eff es Post
+createPost ev = do
+  (authorPubKey, content', ts) <- case kind ev of
+      NE.GiftWrap -> do
+        kp <- getKeyPair
+        sealed <- unwrapGiftWrap ev kp
+        rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
+        return $ (fromMaybe (pubKey ev) (rumorPubKey <$> rumor), fromMaybe "" $ rumorContent <$> rumor, fromMaybe 0 $ rumorCreatedAt <$> rumor)
+      NE.Repost -> do
+        let repostedId = listToMaybe [ fromMaybe (error "Invalid event ID") $ eventIdFromHex eidStr | ("e":eidStr:_) <- tags ev ]
+        case repostedId of
+            Just eid' -> do
+              return $ (pubKey ev, "nostr:" <> eventIdToNote eid', createdAt ev)
+            Nothing -> return (pubKey ev, "", createdAt ev)
+      _ -> return (pubKey ev, content ev, createdAt ev)
+  formattedTime <- formatDateTime English ts
+  pure Post
+    { postId = eventId ev
+    , postAuthor = authorPubKey
+    , postEvent = ev
+    , postContent = content'
+    , postTimestamp = formattedTime
+    , postType = case kind ev of
+        NE.ShortTextNote ->
+          if any (\t -> case t of
+                        ("q":_) -> True
+                        _ -> False) (tags ev)
+          then "quote_repost"
+          else "short_text_note"
+        NE.Repost -> "repost"
+        NE.Comment -> "comment"
+        NE.GiftWrap -> "gift_wrap"
+        _ -> "unknown"
+    , referencedPostId = case kind ev of
+        NE.Repost -> listToMaybe [ fromMaybe (error "Invalid event ID") $ eventIdFromHex eidStr | ("e":eidStr:_) <- tags ev ]
+        _ -> Nothing
+    }

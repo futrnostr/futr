@@ -9,7 +9,7 @@ import Control.Monad (forever, forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
 import Data.Text (Text, isPrefixOf, pack, unpack)
@@ -39,9 +39,9 @@ import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
 import Nostr
 import Nostr.Bech32
-import Nostr.Event ( Event(..), EventId, UnsignedEvent(..)
+import Nostr.Event ( Event(..), EventId, Rumor(..), UnsignedEvent(..)
                    , createComment, createEventDeletion, createFollowList
-                   , createRepost, createRumor, createShortTextNote, eventIdToHex
+                   , createRepost, createRumor, createShortTextNote, eventIdFromHex, eventIdToHex
                    )
 import Nostr.Event qualified as NE
 import Nostr.EventHandler (EventHandler, handleEvent)
@@ -61,8 +61,8 @@ import Presentation.Classes (Classes)
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
-import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
-                  , getEvent, getEventRelays, getFollows, getGeneralRelays )
+import Store.Lmdb ( LmdbState(..), LmdbStore, TimelineType(..), initialLmdbState, initializeLmdbState
+                  , getEvent, getEvents, getEventRelays, getFollows, getGeneralRelays, getTimelineIds )
 import Types
 
 -- | Signal key class for LoginStatusChanged.
@@ -106,7 +106,7 @@ data Futr :: Effect where
   SetCurrentPost :: Maybe EventId -> Futr m ()
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
-  LoadFeed :: PubKeyXO -> Futr m ()
+  LoadFeed :: FeedFilter -> Futr m Feed
   SendPrivateMessage :: Text -> Futr m ()
   SendShortTextNote :: Text -> Futr m ()
   Logout :: ObjRef () -> Futr m ()
@@ -136,8 +136,8 @@ followProfile npub' = send $ FollowProfile npub'
 unfollowProfile :: Futr :> es => Text -> Eff es ()
 unfollowProfile npub' = send $ UnfollowProfile npub'
 
-loadFeed :: Futr :> es => PubKeyXO -> Eff es ()
-loadFeed pk = send $ LoadFeed pk
+loadFeed :: Futr :> es => FeedFilter -> Eff es Feed
+loadFeed f = send $ LoadFeed f
 
 sendPrivateMessage :: Futr :> es => Text -> Eff es ()
 sendPrivateMessage input = send $ SendPrivateMessage input
@@ -321,15 +321,34 @@ runFutr = interpret $ \_ -> \case
             notify $ emptyUpdates { myFollowsChanged = True }
         Nothing -> return ()
 
-  LoadFeed pk -> do
+  LoadFeed f -> do
+
+    let pk = case f of
+          PostsFilter pk' -> pk'
+          PrivateMessagesFilter pk' -> pk'
+
     st <- get @AppState
 
     case currentProfile st of
       Just (_, subIds) -> forM_ subIds $ \subId' -> stopSubscription subId'
-      _ -> return ()
+      _ -> pure ()
 
     modify @AppState $ \st' -> st' { currentProfile = Just (pk, []) }
+    -- @todo refactor below !!
     notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
+
+    eventIds <- case f of
+      PostsFilter pk' -> do
+        getTimelineIds PostTimeline pk' 100
+      PrivateMessagesFilter pk' -> do
+        getTimelineIds ChatTimeline pk' 100
+
+    events <- getEvents eventIds
+    posts <- mapM createPost events
+
+    let feed = Feed posts (Map.fromList [(postId p, p) | p <- posts]) f
+
+    modify @AppState $ \st' -> st' { currentFeed = Just feed }
 
     void $ async $ do
       kp <- getKeyPair
@@ -339,6 +358,8 @@ runFutr = interpret $ \_ -> \case
       when (not (pk `elem` map pubkey follows)) $ do
         subIds <- subscribeToProfilesAndPostsFor pk
         modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
+
+    pure feed
 
   SendPrivateMessage input -> do
     st <- get @AppState
@@ -627,3 +648,42 @@ fullAppCleanup = do
   put @LmdbState initialLmdbState
   put @AppState initialState
   put @RelayPool initialRelayPool
+
+
+createPost :: FutrEff es => Event -> Eff es Post
+createPost ev = do
+  (authorPubKey, content', ts) <- case kind ev of
+      NE.GiftWrap -> do
+        kp <- getKeyPair
+        sealed <- unwrapGiftWrap ev kp
+        rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
+        return $ (fromMaybe (pubKey ev) (rumorPubKey <$> rumor), fromMaybe "" $ rumorContent <$> rumor, fromMaybe 0 $ rumorCreatedAt <$> rumor)
+      NE.Repost -> do
+        let repostedId = listToMaybe [ fromMaybe (error "Invalid event ID") $ eventIdFromHex eidStr | ("e":eidStr:_) <- tags ev ]
+        case repostedId of
+            Just eid' -> do
+              return $ (pubKey ev, "nostr:" <> eventIdToNote eid', createdAt ev)
+            Nothing -> return (pubKey ev, "", createdAt ev)
+      _ -> return (pubKey ev, content ev, createdAt ev)
+  formattedTime <- formatDateTime English ts
+  pure Post
+    { postId = eventId ev
+    , postAuthor = authorPubKey
+    , postEvent = ev
+    , postContent = content'
+    , postTimestamp = formattedTime
+    , postType = case kind ev of
+        NE.ShortTextNote ->
+          if any (\t -> case t of
+                        ("q":_) -> True
+                        _ -> False) (tags ev)
+          then "quote_repost"
+          else "short_text_note"
+        NE.Repost -> "repost"
+        NE.Comment -> "comment"
+        NE.GiftWrap -> "gift_wrap"
+        _ -> "unknown"
+    , referencedPostId = case kind ev of
+        NE.Repost -> listToMaybe [ fromMaybe (error "Invalid event ID") $ eventIdFromHex eidStr | ("e":eidStr:_) <- tags ev ]
+        _ -> Nothing
+    }
