@@ -18,8 +18,8 @@ Rectangle {
     property bool isLoading: true
 
     height: !isLoading
-                      ? (nestedLoader.item ? nestedLoader.item.implicitHeight + Constants.spacing_xs : 40)
-                      : 40
+                ? (nestedLoader.item ? nestedLoader.item.implicitHeight + Constants.spacing_xs : 40)
+                : 40
 
     color: isLoading ? Material.dialogColor : Material.backgroundColor
     radius: Constants.radius_m
@@ -28,8 +28,12 @@ Rectangle {
 
     Component.onCompleted: {
         if (value) {
-            cachedPost = getPost(value)
-            isLoading = !cachedPost
+            var result = getPost(value)
+
+            if (result && Array.isArray(result) && result.length > 0) {
+                cachedPost = result
+                isLoading = false
+            }
         }
     }
 
@@ -56,7 +60,7 @@ Rectangle {
 
     Loader {
         id: nestedLoader
-        active: !isLoading && cachedPost
+        active: !isLoading && cachedPost && cachedPost != null
         sourceComponent: postContentComponent
         width: parent.width
 
@@ -91,7 +95,7 @@ Rectangle {
     }
 
     function updateNestedPost() {
-        if (nestedLoader.item && cachedPost) {
+        if (nestedLoader.item && cachedPost && cachedPost != null) {
             nestedLoader.item.post = cachedPost
             nestedLoader.item.currentUser = referencedPostContainer.currentUser
             nestedLoader.item.isRefPost = true
@@ -99,9 +103,18 @@ Rectangle {
     }
 
     onCachedPostChanged: {
-        if (nestedLoader.item && cachedPost) {
+        if (cachedPost) {
+            isLoading = false
+        }
+        
+        if (nestedLoader.item && cachedPost && cachedPost != null) {
             nestedLoader.item.post = cachedPost
         }
     }
-    onCurrentUserChanged: updateNestedPost()
+    
+    onCurrentUserChanged: {
+        if (cachedPost && cachedPost != null) {
+            updateNestedPost()
+        }
+    }
 }

@@ -79,6 +79,20 @@ instance SignalKeyClass DownloadCompleted where
     type SignalParams DownloadCompleted = Bool -> Text -> IO ()
 
 
+-- | Signal key class for MediaPeekCompleted.
+data MediaPeekCompleted deriving Typeable
+
+instance SignalKeyClass MediaPeekCompleted where
+    type SignalParams MediaPeekCompleted = Text -> Text -> IO ()  -- url -> mimeType -> IO ()
+
+
+-- | Signal key class for MediaCacheCompleted.
+data MediaCacheCompleted deriving Typeable
+
+instance SignalKeyClass MediaCacheCompleted where
+    type SignalParams MediaCacheCompleted = Text -> Bool -> Text -> IO ()  -- url -> success -> pathOrError -> IO ()
+
+
 -- | Search result.
 data SearchResult
   = ProfileResult { npub :: Text, relayUris :: [Text] }
