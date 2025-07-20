@@ -149,15 +149,17 @@ runDownloader = interpret $ \_ -> \case
     where
       startDownload = do
         modify $ \s -> s { inProgress = Map.insert url Downloading (inProgress s) }
-        void $ async $ do
-          now <- liftIO getCurrentTime
-          result <- downloadAndCache url now
-          case result of
-            Right (cacheFile, mime, expiry) ->
-              modify $ \s -> s { inProgress = Map.insert url (Ready (cacheFile, mime, expiry)) (inProgress s) }
-            Left err ->
-              modify $ \s -> s { inProgress = Map.insert url (Failed err) (inProgress s) }
-        pure Downloading
+        now <- liftIO getCurrentTime
+        result <- downloadAndCache url now
+        case result of
+          Right (cacheFile, mime, expiry) -> do
+            let readyStatus = Ready (cacheFile, mime, expiry)
+            modify $ \s -> s { inProgress = Map.insert url readyStatus (inProgress s) }
+            pure readyStatus
+          Left err -> do
+            let failedStatus = Failed err
+            modify $ \s -> s { inProgress = Map.insert url failedStatus (inProgress s) }
+            pure failedStatus
 
   PeekMimeType url -> do
     headResult <- liftIO $ try $ headWith defaults (T.unpack url)
@@ -188,23 +190,38 @@ runDownloader = interpret $ \_ -> \case
 --   Returns error on failure
 downloadAndCache :: (Util :> es, FileSystem :> es, IOE :> es) => Text -> UTCTime -> Eff es (Either DownloadError (FilePath, Text, UTCTime))
 downloadAndCache url now = do
+  liftIO $ putStrLn $ "*** Starting downloadAndCache for: " ++ T.unpack url
   cacheDir <- getCacheDirForCurrentUser
   let cacheFile = cacheDir </> urlToCacheFile url
       metaFile  = cacheFile ++ ".meta"
   createDirectoryIfMissing True cacheDir
+  
+  liftIO $ putStrLn $ "*** About to start HEAD request for: " ++ T.unpack url
   headResult <- liftIO $ try $ headWith defaults (T.unpack url)
+  liftIO $ putStrLn $ "*** HEAD request completed for: " ++ T.unpack url
+  
   case headResult of
-    Left (e :: SomeException) -> pure $ Left $ DownloadError (T.pack $ show e)
+    Left (e :: SomeException) -> do
+      liftIO $ putStrLn $ "*** HEAD request failed: " ++ show e
+      pure $ Left $ DownloadError (T.pack $ show e)
     Right resp -> do
       let mime = T.pack $ BS.unpack $ resp ^. responseHeader "Content-Type"
           expiry = parseExpiry resp now
+      liftIO $ putStrLn $ "*** HEAD successful, MIME: " ++ T.unpack mime ++ ", starting GET request"
+      
       getResult <- liftIO $ try $ getWith defaults (T.unpack url)
+      liftIO $ putStrLn $ "*** GET request completed for: " ++ T.unpack url
+      
       case getResult of
-        Left (e :: SomeException) -> pure $ Left $ DownloadError (T.pack $ show e)
+        Left (e :: SomeException) -> do
+          liftIO $ putStrLn $ "*** GET request failed: " ++ show e
+          pure $ Left $ DownloadError (T.pack $ show e)
         Right getResp -> do
+          liftIO $ putStrLn $ "*** GET successful, writing to cache"
           let body = getResp ^. responseBody
           liftIO $ BL.writeFile cacheFile body
           liftIO $ writeMetaFile metaFile mime expiry
+          liftIO $ putStrLn $ "*** Cache write completed"
           pure $ Right (cacheFile, mime, expiry)
 
 -- | Get the per-user cache directory for media downloads

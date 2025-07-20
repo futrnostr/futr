@@ -6,8 +6,11 @@ module Presentation.HomeScreen where
 
 import Control.Lens ((^.))
 import Control.Monad (filterM, void)
-import Data.Aeson (decode, encode)
+import Data.Aeson (decode, encode, toJSON)
+import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
+import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
+import Data.Set qualified as Set
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Proxy (Proxy(..))
@@ -28,23 +31,26 @@ import Prelude hiding (drop)
 import System.FilePath ((</>), takeFileName)
 import Text.Read (readMaybe)
 
-import Downloader (DownloadStatus(..), hasDownload)
+import Downloader (DownloadStatus(..), hasDownload, peekMimeType, download)
 import KeyMgmt (AccountId(..), updateProfile)
 import Logging
 import Nostr
-import Nostr.Bech32
-import Nostr.Event (Event(..), EventId(..), createMetadata)
+import Nostr.Bech32 (pubKeyXOToBech32, eventToNevent, eventIdToNote, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
+import Nostr.Event (Event(..), EventId(..), createMetadata, getEventId)
+import Nostr.Event qualified as NE
 import Nostr.Publisher
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (fetchProfile, getProfile)
 import Nostr.Util
-import Presentation.Classes
+import Presentation.Classes qualified as Classes
+import Presentation.Classes (findAvailableFilename)
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb (LmdbStore, getEvent, getFollows)
-import Types
+import Futr (MediaPeekCompleted, MediaCacheCompleted)
+import Store.Lmdb (LmdbStore, getEvent, getFollows, getEventRelays)
+import Types (Post(..), AppState(..), AppScreen(..), RelayPool(..), FeedFilter(..), Follow(..))
 
 
 -- | HomeScren Effect for creating QML UI.
@@ -67,10 +73,10 @@ runHomeScreen = interpret $ \_ -> \case
     keyMgmtObj <- runE $ KeyMgmtUI.createUI changeKey'
     relayMgmtObj <- runE $ RelayMgmtUI.createUI changeKey'
 
-    followClass' <- runE $ followClass changeKey'
-    profileClass' <- runE $ profileClass changeKey'
-    postClass' <- runE $ postClass changeKey'
-    publishStatusClass' <- runE $ publishStatusClass changeKey'
+    followClass' <- runE $ Classes.followClass changeKey'
+    profileClass' <- runE $ Classes.profileClass changeKey'
+    postClass' <- runE $ Classes.postClass changeKey'
+    publishStatusClass' <- runE $ Classes.publishStatusClass changeKey'
 
     followPool <- newFactoryPool (newObject followClass')
     profilesPool <- newFactoryPool (newObject profileClass')
@@ -147,7 +153,7 @@ runHomeScreen = interpret $ \_ -> \case
           void $ loadFeed f
           ck <- gets @QtQuickState signalKey
           let ck' = fromMaybe (error "Signal key not found") ck
-          feedClass' <- feedClass postsPool ck'
+          feedClass' <- Classes.feedClass postsPool ck'
           feedObj <- liftIO $ newObject feedClass' ()
           return (feedObj :: ObjRef ()),
 
@@ -237,8 +243,32 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "getPost" $ \_ input -> do
           runE $ do
+            let fetchByEventId eid = do
+                  eventMaybe <- getEvent eid
+                  case eventMaybe of
+                    Just event -> do
+                      post <- Classes.createPost event
+                      -- Flatten post like in Classes.hs
+                      relaysSet <- getEventRelays (postId post)
+                      let prettyConfig = defConfig {
+                          confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
+                              `mappend` compare
+                          }
+                      return [
+                          TE.decodeUtf8 $ B16.encode $ getEventId $ postId post,  -- id
+                          eventToNevent (postEvent post) [],                      -- nevent
+                          TE.decodeUtf8 $ BSL.toStrict $ encodePretty' prettyConfig $ toJSON $ postEvent post, -- raw
+                          Text.intercalate "," $ Set.toList relaysSet,           -- relays
+                          postType post,                                          -- postType
+                          postContent post,                                       -- content
+                          postTimestamp post,                                     -- timestamp
+                          pubKeyXOToBech32 $ postAuthor post,                    -- authorId
+                          maybe "" eventIdToNote (referencedPostId post)        -- referencedPostId
+                          ]
+                    Nothing -> return []
+
             let fetchByType parseFunc = case parseFunc input of
-                    Just eid -> fetchEventObject postsPool eid
+                    Just eid -> fmap Just (fetchByEventId eid)
                     Nothing -> return Nothing
 
             case Text.takeWhile (/= '1') input of
@@ -248,8 +278,7 @@ runHomeScreen = interpret $ \_ -> \case
                 _ -> do
                   let meid = readMaybe (unpack input) :: Maybe EventId
                   case meid of
-                    Just eid -> do
-                      fetchEventObject postsPool eid
+                    Just eid -> fmap Just (fetchByEventId eid)
                     Nothing -> return Nothing,
 
         defMethod' "convertNprofileToNpub" $ \_ input -> do
@@ -259,6 +288,45 @@ runHomeScreen = interpret $ \_ -> \case
               _ -> return Nothing,
 
         defSignal "downloadCompleted" (Proxy :: Proxy DownloadCompleted),
+        
+        defSignal "mediaPeekCompleted" (Proxy :: Proxy MediaPeekCompleted),
+        
+        defSignal "mediaCacheCompleted" (Proxy :: Proxy MediaCacheCompleted),
+
+        defMethod' "hasDownload" $ \_ url -> runE $ do
+            status <- hasDownload url
+            case status of
+                Ready (cacheFile, mime, _) -> return [pack cacheFile, mime]
+                _ -> return [],
+
+        defMethod' "peekMimeType" $ \obj url -> runE $ do
+            void $ async $ do
+                result <- peekMimeType url
+                case result of
+                    Right mime -> liftIO $ QML.fireSignal (Proxy :: Proxy MediaPeekCompleted) obj url mime
+                    Left _ -> pure () -- Could add error signal here if needed
+            return (),
+
+        defMethod' "cacheMedia" $ \obj url -> runE $ do
+            logInfo $ "*** Caching media: ORIGIN: " <> url
+            void $ async $ do
+                logInfo $ "*** Caching media ASYNC: " <> url
+                result <- try @SomeException $ download url  -- This caches the media
+                case result of
+                    Left e -> do
+                        logError $ "*** Exception during download: " <> pack (show e)
+                        liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show e)
+                    Right status -> case status of
+                        Ready (cacheFile, mime, _) -> do
+                            logInfo $ "*** Cached media: OK"
+                            liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url True ("file:///" <> pack cacheFile)
+                        Failed err -> do
+                            logError $ "*** Failed to cache media: " <> pack (show err)
+                            liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show err)
+                        _ -> do
+                            logError $ "*** Unexpected download status: " <> pack (show status)
+                            liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False "Unexpected status"
+            return (),
 
         defMethod' "downloadAsync" $ \obj url -> runE $ do
             void $ async $ do

@@ -13,23 +13,43 @@ Pane {
     id: root
 
     property var post
+
+    property var post_id: post ? post[0] : null
+    property var post_nevent: post ? post[1] : null
+    property var post_raw: post ? post[2] : null
+    property var post_relays: post ? post[3] : null
+    property var post_postType: post ? post[4] : null
+    property var post_content: post ? post[5] : null
+    property var post_timestamp: post ? post[6] : null
+    property var post_authorId: post ? post[7] : null
+    property var post_referencedPostId: post ? post[8] : null
+
     property string currentUser
     property bool isRefPost: false
-    property var author: visible && post && post.authorId ? getProfile(post.authorId) : null
+    property var author: post_authorId ? getProfile(post_authorId) : null
     property bool privateChatMode: false
-    property var contentParts: visible && post ? post.contentParts : []
-    property var comments: visible && post ? post.comments : []
+
+    property var contentParts: []
+    property var comments: [] // @todo
     property bool hideActions: false
     property bool showAuthor: false
     property bool disableCommentAction: false
 
+    property var processedUrls: {}
+    property string lastProcessedContent: ""
+    property string lastProcessedPostId: ""
+    property bool isInitialLoad: true
+    property bool contentParsed: false
+
     property var componentMap: {
         "text": "PostContent/TextComponent.ui.qml",
-        "image": "PostContent/PostImage.ui.qml",
+        "image": "PostContent/PostImage.ui.qml", 
         "video": "PostContent/PostVideo.ui.qml",
         "note": "PostContent/ReferencedPost.ui.qml",
         "nevent": "PostContent/ReferencedPost.ui.qml",
         "naddr": "PostContent/ReferencedPost.ui.qml",
+        "url": "PostContent/TextComponent.ui.qml",
+        "profile": "PostContent/TextComponent.ui.qml"
     }
 
     signal commentClicked()
@@ -38,25 +58,161 @@ Pane {
 
     padding: Constants.spacing_xs
 
-    onContentPartsChanged: {
+    onPost_contentChanged: {
+        if (post_content !== lastProcessedContent) {
+            lastProcessedContent = post_content || ""
+
+            renderInitialText()
+
+            if (post_content) {
+                Qt.callLater(parseContent)
+            }
+        }
+    }
+
+    onPostChanged: {
+        var currentPostId = post ? post[0] : null
+
+        if (currentPostId && currentPostId !== lastProcessedPostId) {
+            lastProcessedPostId = currentPostId
+            isInitialLoad = true
+            contentParsed = false
+
+            if (post && post_content && post_content !== lastProcessedContent) {
+                lastProcessedContent = post_content || ""
+
+                renderInitialText()
+
+                Qt.callLater(parseContent)
+            }
+        } else if (currentPostId === null && lastProcessedPostId !== null) {
+            lastProcessedPostId = null
+            isInitialLoad = true
+            contentParsed = false
+        }
+    }
+
+    function renderInitialText() {
+        if (!post_content) {
+            contentLayout.children = []
+            return
+        }
+
+        contentLayout.children = []
+
+        var component = Qt.createComponent(componentMap["text"])
+
+        if (component.status === Component.Ready) {
+            var item = component.createObject(contentLayout, {
+                "width": Qt.binding(function() { return contentLayout.width }),
+                "value": replaceNewlines(post_content)
+            })
+
+            if (!item) {
+                console.error("Failed to create initial text component for post:", post_id)
+            }
+        } else {
+            console.error("Failed to load text component:", component.errorString())
+        }
+
+        isInitialLoad = false
+    }
+
+    function parseContent() {
+        if (!post_content || contentParsed) {
+            return
+        }
+
+        var parts = parseContentParts(post_content)
+        contentParts = parts
+        contentParsed = true
+
         updateContent()
     }
 
-    onVisibleChanged: {
-        if (visible && post && !author && post.authorId) {
-            author = getProfile(post.authorId)
-        }
-        if (visible && post) {
-            contentParts = post.contentParts
-            comments = post.comments
+    function mediaPeekCallback(url, mimeType) {
+        if (!post_id) {
+            return
         }
 
+        if (!processedUrls) {
+            processedUrls = ({})
+        }
+
+        processedUrls[url] = {type: "checked", mimeType: mimeType}
+
+        if (mimeType.indexOf("image/") === 0 || mimeType.indexOf("video/") === 0) {
+            processedUrls[url] = {type: "caching", mimeType: mimeType}
+
+            mediaCacheCompleted.connect(mediaCacheCallback)
+            cacheMedia(url)
+        } else {
+            if (post_id) {
+                updateContent()
+            }
+        }
+
+        mediaPeekCompleted.disconnect(mediaPeekCallback)
+    }
+
+    function mediaCacheCallback(url, success, pathOrError) {
+        if (!post_id) {
+            return
+        }
+
+        if (!processedUrls) {
+            processedUrls = ({})
+        }
+
+        if (success) {
+            if (processedUrls.hasOwnProperty(url) && processedUrls[url]) {
+                processedUrls[url].type = "cached"
+                processedUrls[url].cachePath = pathOrError
+            }
+
+            var mimeType = processedUrls[url].mimeType || ""
+            var mediaType = ""
+
+            if (mimeType.indexOf("image/") === 0) {
+                mediaType = "image"
+            } else if (mimeType.indexOf("video/") === 0) {
+                mediaType = "video"
+            }
+
+            if (mediaType && post_id) {
+                splitContentAroundResolvedMedia(url, mediaType, pathOrError, url)
+            } else {
+                if (post_id) {
+                    updateContent()
+                }
+            }
+        } else {
+            if (processedUrls.hasOwnProperty(url) && processedUrls[url]) {
+                processedUrls[url].type = "failed"
+            }
+        }
+
+        mediaCacheCompleted.disconnect(mediaCacheCallback)
     }
 
     Component.onDestruction: {
+        post_id = null
+        post_content = null
+        lastProcessedPostId = null
+        contentParsed = false
+
+        if (processedUrls) {
+            processedUrls = ({})
+        }
+
         author = null
 
-        contentLayout.children = []
+        if (contentLayout && contentLayout.children) {
+            contentLayout.children = []
+        }
+
+        mediaPeekCompleted.disconnect(mediaPeekCallback)        
+        mediaCacheCompleted.disconnect(mediaCacheCallback)
     }
 
     background: Rectangle {
@@ -88,7 +244,7 @@ Pane {
 
         Row {
             width: parent.width
-            visible: post != null && post != undefined && (post.postType === "quote_repost" || post.postType === "repost")
+            visible: post != null && post != undefined && (post_postType === "quote_repost" || post_postType === "repost")
 
             Image {
                 source: "qrc:/icons/repeat.svg"
@@ -97,7 +253,7 @@ Pane {
             }
 
             Text {
-                text: post && post.postType === "repost" ? qsTr("Reposted") : qsTr("Quote Reposted")
+                text: post && post_postType === "repost" ? qsTr("Reposted") : qsTr("Quote Reposted")
                 font: Constants.smallFontMedium
                 color: Material.secondaryTextColor
             }
@@ -136,7 +292,7 @@ Pane {
             }
 
             MouseArea {
-                width: parent.width - 50 // Account for profile picture width + spacing
+                width: parent.width - 50
                 height: childrenRect.height
                 cursorShape: Qt.PointingHandCursor
                 anchors.verticalCenter: parent.verticalCenter
@@ -167,7 +323,6 @@ Pane {
                 }
             }
         }
-
 
         Column {
             id: contentLayout
@@ -240,7 +395,7 @@ Pane {
                 implicitWidth: 36
                 implicitHeight: 36
                 padding: 8
-                icon.color: post && post.repostCount > 0 ? Material.primary : Material.secondaryTextColor
+                icon.color: Material.secondaryTextColor
                 onClicked: repostClicked()
                 anchors.verticalCenter: parent.verticalCenter
             }
@@ -254,7 +409,7 @@ Pane {
                 implicitHeight: 36
                 padding: 8
                 icon.color: Material.secondaryTextColor
-                visible: post != null && post != undefined && currentUser == post.authorId
+                visible: post != null && post != undefined && currentUser == post_authorId
                 anchors.verticalCenter: parent.verticalCenter
 
                 onClicked: deleteDialog.open()
@@ -265,7 +420,7 @@ Pane {
             anchors.right: parent.right
 
             Text {
-                text: post ? post.timestamp : ""
+                text: post_timestamp ? post_timestamp : ""
                 font: Constants.smallFontMedium
                 color: Material.secondaryTextColor
                 anchors.verticalCenter: parent.verticalCenter
@@ -290,7 +445,7 @@ Pane {
                     MenuItem {
                         text: qsTr("Copy Event ID")
                         onTriggered: {
-                            clipboard.copyText(post.nevent)
+                            clipboard.copyText(post_nevent)
                         }
                     }
 
@@ -341,7 +496,7 @@ Pane {
         }
 
         onAccepted: {
-            deleteEvent(post.id, reasonField.text)
+            deleteEvent(post_id, reasonField.text)
             reasonField.text = ""
         }
     }
@@ -373,45 +528,242 @@ Pane {
         downloadCompleted.disconnect(videoDownloadCallback)
     }
 
+    function parseContentParts(contentText) {
+        if (!contentText || contentText.length === 0) {
+            return []
+        }
+
+        var parts = []
+        var currentPos = 0
+
+        var urlRegex = /(https?:\/\/[^\s<>"'()[\]{},;]+)/g
+        var nostrRegex = /(nostr:[a-zA-Z0-9]+)/g
+        var allMatches = []
+
+        var match
+        while ((match = urlRegex.exec(contentText)) !== null) {
+            allMatches.push({
+                start: match.index,
+                end: match.index + match[0].length,
+                text: match[0],
+                type: "url"
+            })
+        }
+
+        while ((match = nostrRegex.exec(contentText)) !== null) {
+            var nostrText = match[0]
+            var bech32Part = nostrText.substring(6) // Remove "nostr:"
+             var type = "note"
+             if (bech32Part.indexOf("npub1") === 0) type = "npub"
+             else if (bech32Part.indexOf("nprof") === 0) type = "nprofile" 
+             else if (bech32Part.indexOf("neven") === 0) type = "nevent"
+             else if (bech32Part.indexOf("naddr") === 0) type = "naddr"
+
+            allMatches.push({
+                start: match.index,
+                end: match.index + match[0].length,
+                text: nostrText,
+                bech32: bech32Part,
+                type: type
+            })
+        }
+
+        allMatches.sort(function(a, b) { return a.start - b.start })
+
+        for (var i = 0; i < allMatches.length; i++) {
+            var match = allMatches[i]
+
+            if (match.start > currentPos) {
+                var textBefore = contentText.substring(currentPos, match.start)
+                if (textBefore.length > 0) {
+                    parts.push(["text", replaceNewlines(textBefore)])
+                }
+            }
+
+            if (match.type === "url") {
+                parts.push(["url", match.text, match.text]) // [type, url, originalUrl]
+            } else if (match.type === "npub" || match.type === "nprofile") {
+                parts.push(["profile", match.bech32])
+            } else {
+                parts.push([match.type, match.bech32])
+            }
+
+            currentPos = match.end
+        }
+
+        if (currentPos < contentText.length) {
+            var remaining = contentText.substring(currentPos)
+            if (remaining.length > 0) {
+                parts.push(["text", replaceNewlines(remaining)])
+            }
+        }
+
+        return parts
+    }
+
+    function replaceNewlines(text) {
+        return text.replace(/\n/g, "<br>")
+    }
+
     function updateContent() {
-        if (!contentParts || !Array.isArray(contentParts)) {
+        if (!post_id || !contentParsed || !contentParts || contentParts.length === 0) {
             return
         }
 
         contentLayout.children = []
-        let parts = contentParts
+        renderContentParts(contentParts)
+    }
+
+    function renderContentParts(parts) {
         for (var i = 0; i < parts.length; i++) {
-            var type = parts[i][0]
-            var value = parts[i][1]
+            var part = parts[i]
+            var type = part[0]
+            var value = part[1]
+            var originalUrl = part.length > 2 ? part[2] : value
 
             if (!componentMap[type]) {
-                console.error("Unknown content part type:", type)
                 continue
             }
 
-            var component = Qt.createComponent(componentMap[type])
+            var finalType = type
+            var args = {
+                "width": Qt.binding(function() { return contentLayout.width }),
+            }
+
+            if (type === "text") {
+                args["value"] = value
+            } else if (type === "profile") {
+                var profile = getProfile(value)
+                var displayName = profile && (profile.displayName || profile.name) ? 
+                                 (profile.displayName || profile.name) : 
+                                 (value.substring(0, 8) + "...")
+                args["value"] = "<a href=\"profile://" + value + 
+                               "\" style=\"color: #9C27B0\">@" + displayName + "</a>"
+            } else if (type === "url") {
+                var downloadStatus = hasDownload(value) || []
+
+                if (downloadStatus && downloadStatus.length === 2) {
+                    var cacheFile = downloadStatus[0]  
+                    var mimeType = downloadStatus[1]   
+
+                    if (mimeType.indexOf("image/") === 0) {
+                        finalType = "image"
+                        args["value"] = "file:///" + cacheFile
+                        args["original"] = originalUrl
+                    } else if (mimeType.indexOf("video/") === 0) {
+                        finalType = "video" 
+                        args["value"] = "file:///" + cacheFile
+                        args["original"] = originalUrl
+                    } else {
+                        args["value"] = "<a href=\"" + value + "\" style=\"color: #9C27B0\">" + value + "</a>"
+                    }
+                } else {
+                    if (!processedUrls) {
+                        processedUrls = ({})
+                    }
+
+                    var urlInfo = processedUrls.hasOwnProperty(value) ? processedUrls[value] : null
+
+                    if (urlInfo && urlInfo.type === "cached") {
+                        if (urlInfo.mimeType.indexOf("image/") === 0) {
+                            finalType = "image"
+                            args["value"] = urlInfo.cachePath
+                            args["original"] = originalUrl
+                        } else if (urlInfo.mimeType.indexOf("video/") === 0) {
+                            finalType = "video" 
+                            args["value"] = urlInfo.cachePath
+                            args["original"] = originalUrl
+                        } else {
+                            args["value"] = "<a href=\"" + value + "\" style=\"color: #9C27B0\">" + value + "</a>"
+                        }
+                    } else if (!urlInfo || urlInfo.type === "failed") {
+                        args["value"] = "<a href=\"" + value + "\" style=\"color: #9C27B0\">" + value + "</a>"
+
+                        if (!urlInfo) {
+                            processedUrls[value] = {type: "checking"}
+                            mediaPeekCompleted.connect(mediaPeekCallback)
+                            peekMimeType(value)
+                        }
+                    } else {
+                        args["value"] = "<a href=\"" + value + "\" style=\"color: #9C27B0\">" + value + "</a>"
+                    }
+                }
+            } else if (type === "image") {
+                finalType = "image"
+                args["value"] = value
+                args["original"] = originalUrl
+            } else if (type === "video") {
+                finalType = "video"
+                args["value"] = value
+                args["original"] = originalUrl
+            } else {
+                args["value"] = value
+            }
+
+            var component = Qt.createComponent(componentMap[finalType])
 
             if (component.status === Component.Ready) {
-                let args = {
-                    "value": value,
-                    "width": Qt.binding(function() { return contentLayout.width }),
-                }
-
-                if (type === "image") {
+                if (finalType === "image") {
                     args["asynchronous"] = true
                 }
 
-                if (componentMap[type] === "PostContent/ReferencedPost.ui.qml") {
+                if (componentMap[finalType] === "PostContent/ReferencedPost.ui.qml") {
                     args["currentUser"] = currentUser
                 }
 
                 var item = component.createObject(contentLayout, args)
 
                 if (item === null) {
-                    console.error("Failed to create object for", value)
+                    console.error("Failed to create object for:", value)
                 }
             } else {
                 console.error("Failed to load component:", component.errorString())
+            }
+        }
+    }
+
+    function splitContentAroundResolvedMedia(url, mediaType, cachePath, originalUrl) {
+        if (!post_id || !contentParts || contentParts.length === 0) {
+            return
+        }
+
+        var newParts = []
+        var foundUrl = false
+
+        for (var i = 0; i < contentParts.length; i++) {
+            var part = contentParts[i]
+            var partType = part[0]
+            var partValue = part[1]
+
+            if (partType === "text" && partValue.indexOf(url) !== -1) {
+                foundUrl = true
+                var urlIndex = partValue.indexOf(url)
+
+                if (urlIndex > 0) {
+                    var textBefore = partValue.substring(0, urlIndex)
+                    newParts.push(["text", textBefore])
+                }
+
+                newParts.push([mediaType, cachePath, originalUrl])
+
+                var urlEndIndex = urlIndex + url.length
+                if (urlEndIndex < partValue.length) {
+                    var textAfter = partValue.substring(urlEndIndex)
+                    newParts.push(["text", textAfter])
+                }
+            } else if (partType === "url" && partValue === url) {
+                foundUrl = true
+                newParts.push([mediaType, cachePath, originalUrl])
+            } else {
+                newParts.push(part)
+            }
+        }
+
+        if (foundUrl) {
+            contentParts = newParts
+            contentLayout.children = []
+            if (post_id && contentParts) {
+                renderContentParts(contentParts)
             }
         }
     }

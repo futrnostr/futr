@@ -132,9 +132,31 @@ runClasses = interpret $ \_ -> \case
             defPropertySigRO' "events" changeKey' $ \_ -> do
                 cf <- runE $ gets @AppState currentFeed
                 case cf of
-                  Just feed -> mapM (getPoolObject postsPool) [postId post | post <- feedEvents feed]
+                  Just feed -> do
+                    let posts = feedEvents feed
+                    runE $ mapM flattenPost posts
                   Nothing -> return []
             ]
+        where
+            flattenPost :: ClassesEff es => Post -> Eff es [Text]
+            flattenPost post = do
+                relaysSet <- getEventRelays (postId post)
+                let prettyConfig = defConfig {
+                    confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
+                        `mappend` compare
+                    }
+                return [
+                    TE.decodeUtf8 $ B16.encode $ getEventId $ postId post,  -- id
+                    eventToNevent (postEvent post) [],                      -- nevent
+                    TE.decodeUtf8 $ BSL.toStrict $ encodePretty' prettyConfig $ toJSON $ postEvent post, -- raw
+                    Text.intercalate "," $ Set.toList relaysSet,           -- relays
+                    postType post,                                          -- postType
+                    postContent post,                                       -- content
+                    postTimestamp post,                                     -- timestamp
+                    pubKeyXOToBech32 $ postAuthor post,                    -- authorId
+                    maybe "" eventIdToNote (referencedPostId post) -- referencedPostId
+                    ]
+
 
     ProfileClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
         newClass [
@@ -271,8 +293,8 @@ runClasses = interpret $ \_ -> \case
               storePostObjRef eid "contentParts" obj
               postMaybe <- loadPostFromFeed eid
               case postMaybe of
-                Just post -> parseContentParts obj (postContent post)
-                Nothing -> pure [],
+                Just post -> pure [] -- parseContentParts obj (postContent post)
+                Nothing -> pure [] :: Eff es [[Text]],
 
             defPropertySigRO' "timestamp" changeKey' $ \obj -> do
               let eid = fromObjRef obj :: EventId
@@ -432,8 +454,8 @@ storePostObjRef evId propName obj = withEffToIO (ConcUnlift Persistent Unlimited
 
 
 -- | Parse content into parts (text, images, URLs, and nostr references)
-parseContentParts :: ClassesEff es => ObjRef EventId -> Text -> Eff es [[Text]]
-parseContentParts objRef contentText
+parseContentParts :: ClassesEff es => Text -> Eff es [[Text]]
+parseContentParts contentText
     | Text.null contentText = pure []
     | otherwise = do
         let matches = findMatches contentText
@@ -530,7 +552,7 @@ parseContentParts objRef contentText
                 case bech32ToPubKeyXO processedMatchText of
                     Just profilePubKey -> do
                         (profile, _) <- getProfile profilePubKey
-                        storeProfileContentRef profilePubKey objRef
+                        --storeProfileContentRef profilePubKey objRef
                         let profileDisplayName = fromMaybe (Text.take 8 processedMatchText <> "...") $
                                               getDisplayName profile
                             html = "<a href=\"profile://" <> processedMatchText <>
@@ -542,7 +564,7 @@ parseContentParts objRef contentText
                 case nprofileToPubKeyXO processedMatchText of
                     Just (profilePubKey, _) -> do
                         (profile, _) <- getProfile profilePubKey
-                        storeProfileContentRef profilePubKey objRef
+                        --storeProfileContentRef profilePubKey objRef
                         let profileDisplayName = fromMaybe (Text.take 8 processedMatchText <> "...") $
                                               getDisplayName profile
                             html = "<a href=\"profile://" <> processedMatchText <>
@@ -565,7 +587,7 @@ parseContentParts objRef contentText
                       case mimeResult of
                         Right mime | "image/" `Text.isPrefixOf` mime || "video/" `Text.isPrefixOf` mime -> do
                               void $ download url
-                              notify $ emptyUpdates { contentObjectsToSignal = [objRef] }
+                              --notify $ emptyUpdates { contentObjectsToSignal = [objRef] }
                         _ -> pure ()
                     pure [["text", html]]
 
