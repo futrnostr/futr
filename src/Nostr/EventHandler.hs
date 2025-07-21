@@ -23,9 +23,9 @@ import KeyMgmt (AccountId(..), KeyMgmt, updateProfile)
 import Logging
 import Nostr (Nostr, unwrapGiftWrap, unwrapSeal)
 import Nostr.Bech32 (pubKeyXOToBech32)
-import Nostr.Event ( Event(..), EventId(..), Kind(..), Rumor(..), eventIdFromHex
+import Nostr.Event ( Event(..), Kind(..), Rumor(..), eventIdFromHex
                    , getAllPubKeysFromPTags, isComment, validateEvent )
-import Nostr.Keys (byteStringToHex, keyPairToPubKeyXO)
+import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Relay (RelayURI)
 import Nostr.Util
 import QtQuick
@@ -67,7 +67,7 @@ runEventHandler = interpret $ \_ -> \case
     HandleEvent mr event' -> do
         updates <- if not (validateEvent event')
             then do
-                logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
+                --logWarning $ "Invalid event seen: " <> (byteStringToHex $ getEventId (eventId event'))
                 pure emptyUpdates
             else do
                 --logDebug $ "Seen event: " <> pack (show $ kind event') <> " " <> pack (show $ eventId event') <> " on relay: " <> r
@@ -214,9 +214,7 @@ runEventHandler = interpret $ \_ -> \case
                                         { profileObjectsToSignal = profileObjRefs
                                         , contentObjectsToSignal = contentRefs }
 
-                                Left err -> do
-                                    logWarning $ "Failed to decode metadata: " <> pack err
-                                    pure emptyUpdates
+                                Left _ -> pure emptyUpdates
 
                         FollowList -> do
                             kp <- getKeyPair

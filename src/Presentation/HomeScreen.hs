@@ -18,6 +18,7 @@ import Data.Text (Text, pack, unpack)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
+import Effectful.Concurrent (Concurrent, threadDelay)
 import Effectful.Concurrent.Async (async)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.Exception (try, SomeException)
@@ -31,13 +32,12 @@ import Prelude hiding (drop)
 import System.FilePath ((</>), takeFileName)
 import Text.Read (readMaybe)
 
-import Downloader (DownloadStatus(..), hasDownload, peekMimeType, download)
+import Downloader (Downloader, DownloadStatus(..), hasDownload, peekMimeType, download)
 import KeyMgmt (AccountId(..), updateProfile)
 import Logging
 import Nostr
 import Nostr.Bech32 (pubKeyXOToBech32, eventToNevent, eventIdToNote, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
 import Nostr.Event (Event(..), EventId(..), createMetadata, getEventId)
-import Nostr.Event qualified as NE
 import Nostr.Publisher
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
@@ -48,7 +48,6 @@ import Presentation.Classes (findAvailableFilename)
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Futr (MediaPeekCompleted, MediaCacheCompleted)
 import Store.Lmdb (LmdbStore, getEvent, getFollows, getEventRelays)
 import Types (Post(..), AppState(..), AppScreen(..), RelayPool(..), FeedFilter(..), Follow(..))
 
@@ -89,13 +88,9 @@ runHomeScreen = interpret $ \_ -> \case
           return $ version st
         ),
 
-        defPropertyConst' "ctxKeyMgmt" (\_ -> do
-          return keyMgmtObj
-        ),
+        defPropertyConst' "ctxKeyMgmt" (\_ -> return keyMgmtObj),
 
-        defPropertyConst' "ctxRelayMgmt" (\_ -> do
-          return relayMgmtObj
-        ),
+        defPropertyConst' "ctxRelayMgmt" (\_ -> return relayMgmtObj),
 
         defPropertyConst' "currentProfile" (\_ -> do
           mp <- runE $ gets @AppState currentProfile
@@ -106,16 +101,16 @@ runHomeScreen = interpret $ \_ -> \case
             Nothing -> return Nothing),
 
         defPropertySigRW' "currentScreen" changeKey'
-            (\_ -> do
-              st <- runE $ get @AppState
-              return $ pack $ show $ currentScreen st)
-            (\obj newScreen -> do
-                case readMaybe (unpack newScreen) :: Maybe AppScreen of
-                    Just s -> do
-                        runE $ do
-                          modify $ \st -> st { currentScreen = s }
-                          fireSignal obj
-                    Nothing -> return ()),
+          (\_ -> do
+            st <- runE $ get @AppState
+            return $ pack $ show $ currentScreen st)
+          (\obj newScreen -> do
+              case readMaybe (unpack newScreen) :: Maybe AppScreen of
+                  Just s -> do
+                      runE $ do
+                        modify $ \st -> st { currentScreen = s }
+                        fireSignal obj
+                  Nothing -> return ()),
 
         defPropertySigRO' "mynpub" changeKey' $ \_ -> do
           kp <- runE $ getKeyPair
@@ -138,8 +133,8 @@ runHomeScreen = interpret $ \_ -> \case
         defMethod' "logout" $ \obj -> runE $ logout obj,
 
         defMethod' "search" $ \obj input -> runE $ do
-            res <- search obj input
-            return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
+          res <- search obj input
+          return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
 
         defMethod' "loadFeed" $ \(_ :: ObjRef ()) (feedType :: Text) (input :: Text) -> runE $ do
           let f = case feedType of
@@ -158,17 +153,17 @@ runHomeScreen = interpret $ \_ -> \case
           return (feedObj :: ObjRef ()),
 
         defMethod' "saveProfile" $ \_ input -> runE $ do
-            let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
-            n <- getCurrentTime
-            kp <- getKeyPair
-            let unsigned = createMetadata profile (keyPairToPubKeyXO kp) n
-            signedMaybe <- signEvent unsigned kp
-            case signedMaybe of
-              Just signed -> do
-                broadcast signed
-                let aid = AccountId $ pubKeyXOToBech32 (keyPairToPubKeyXO kp)
-                updateProfile aid profile
-              Nothing -> logWarning "Failed to sign profile update event",
+          let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
+          n <- getCurrentTime
+          kp <- getKeyPair
+          let unsigned = createMetadata profile (keyPairToPubKeyXO kp) n
+          signedMaybe <- signEvent unsigned kp
+          case signedMaybe of
+            Nothing -> error "Failed to sign profile update event"
+            Just signed -> do
+              broadcast signed
+              let aid = AccountId $ pubKeyXOToBech32 (keyPairToPubKeyXO kp)
+              updateProfile aid profile,
 
         defPropertySigRO' "followList" changeKey' $ \obj -> do
           runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
@@ -178,59 +173,50 @@ runHomeScreen = interpret $ \_ -> \case
           mapM (getPoolObject followPool) (userPubKey : map pubkey followedPubKeys),
 
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
-            runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
-            st <- runE $ get @RelayPool
-            now <- runE getCurrentTime
-            -- Filter statuses where event is newer than 10 seconds
-            let statusMap = publishStatus st
-            recentEids <- filterM (\eid -> do
-                eventMaybe <- runE $ getEvent eid
-                case eventMaybe of
-                    Just event ->
-                        return $ createdAt event  + 10 > now
-                    Nothing -> return False) (Map.keys statusMap)
-            mapM (getPoolObject publishStatusPool) recentEids,
+          runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
+          st <- runE $ get @RelayPool
+          now <- runE getCurrentTime
+          -- Filter statuses where event is newer than 10 seconds
+          let statusMap = publishStatus st
+          recentEids <- filterM (\eid -> do
+              eventMaybe <- runE $ getEvent eid
+              case eventMaybe of
+                  Just event ->
+                      return $ createdAt event  + 10 > now
+                  Nothing -> return False) (Map.keys statusMap)
+          mapM (getPoolObject publishStatusPool) recentEids,
 
-        defMethod' "follow" $ \_ npubText -> do
-          runE $ followProfile npubText,
+        defMethod' "follow" $ \_ npubText -> runE $ followProfile npubText,
 
-        defMethod' "unfollow" $ \_ npubText -> do
-          runE $ unfollowProfile npubText,
+        defMethod' "unfollow" $ \_ npubText -> runE $ unfollowProfile npubText,
 
-        defMethod' "sendPrivateMessage" $ \_ input -> do
-          runE $ sendPrivateMessage input,
+        defMethod' "sendPrivateMessage" $ \_ input -> runE $ sendPrivateMessage input,
 
-        defMethod' "sendShortTextNote" $ \_ input -> do
-          runE $ sendShortTextNote input,
+        defMethod' "sendShortTextNote" $ \_ input -> runE $ sendShortTextNote input,
 
-        defMethod' "repost" $ \_ eid -> do
-          runE $ do
-            let eid' = read (unpack eid) :: EventId
-            repost eid',
+        defMethod' "repost" $ \_ eid -> runE $ do
+          let eid' = read (unpack eid) :: EventId
+          repost eid',
 
-        defMethod' "quoteRepost" $ \_ eid quote -> do
-          runE $ do
-            let eid' = read (unpack eid) :: EventId
-            quoteRepost eid' quote,
+        defMethod' "quoteRepost" $ \_ eid quote -> runE $ do
+          let eid' = read (unpack eid) :: EventId
+          quoteRepost eid' quote,
 
-        defMethod' "comment" $ \_ eid input -> do
-          runE $ do
-            let eid' = read (unpack eid) :: EventId
-            comment eid' input,
+        defMethod' "comment" $ \_ eid input -> runE $ do
+          let eid' = read (unpack eid) :: EventId
+          comment eid' input,
 
-        defMethod' "deleteEvent" $ \_ eid input -> do
-          runE $ do
-            let eid' = read (unpack eid) :: EventId
-            deleteEvent eid' input,
+        defMethod' "deleteEvent" $ \_ eid input -> runE $ do
+          let eid' = read (unpack eid) :: EventId
+          deleteEvent eid' input,
 
-        defMethod' "setCurrentPost" $ \_ meid -> do
-          runE $ do
-            case meid of
-              Just eid -> do
-                case readMaybe (unpack eid) of
-                  Just eid' -> setCurrentPost $ Just eid'
-                  Nothing -> logError $ "Invalid event ID format: " <> eid
-              Nothing -> setCurrentPost Nothing,
+        defMethod' "setCurrentPost" $ \_ meid -> runE $ do
+          case meid of
+            Just eid -> do
+              case readMaybe (unpack eid) of
+                Just eid' -> setCurrentPost $ Just eid'
+                Nothing -> logError $ "Invalid event ID format: " <> eid
+            Nothing -> setCurrentPost Nothing,
 
         defMethod' "getProfile" $ \_ input -> do
           result <- case parseNprofileOrNpub input of
@@ -241,51 +227,49 @@ runHomeScreen = interpret $ \_ -> \case
             _ -> return Nothing
           return result,
 
-        defMethod' "getPost" $ \_ input -> do
-          runE $ do
-            let fetchByEventId eid = do
-                  eventMaybe <- getEvent eid
-                  case eventMaybe of
-                    Just event -> do
-                      post <- Classes.createPost event
-                      -- Flatten post like in Classes.hs
-                      relaysSet <- getEventRelays (postId post)
-                      let prettyConfig = defConfig {
-                          confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
-                              `mappend` compare
-                          }
-                      return [
-                          TE.decodeUtf8 $ B16.encode $ getEventId $ postId post,  -- id
-                          eventToNevent (postEvent post) [],                      -- nevent
-                          TE.decodeUtf8 $ BSL.toStrict $ encodePretty' prettyConfig $ toJSON $ postEvent post, -- raw
-                          Text.intercalate "," $ Set.toList relaysSet,           -- relays
-                          postType post,                                          -- postType
-                          postContent post,                                       -- content
-                          postTimestamp post,                                     -- timestamp
-                          pubKeyXOToBech32 $ postAuthor post,                    -- authorId
-                          maybe "" eventIdToNote (referencedPostId post)        -- referencedPostId
-                          ]
-                    Nothing -> return []
+        defMethod' "getPost" $ \_ input -> runE $ do
+          let fetchByEventId eid = do
+                eventMaybe <- getEvent eid
+                case eventMaybe of
+                  Just event -> do
+                    post <- Classes.createPost event
+                    -- Flatten post like in Classes.hs
+                    relaysSet <- getEventRelays (postId post)
+                    let prettyConfig = defConfig {
+                        confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
+                            `mappend` compare
+                        }
+                    return [
+                        TE.decodeUtf8 $ B16.encode $ getEventId $ postId post,  -- id
+                        eventToNevent (postEvent post) [],                      -- nevent
+                        TE.decodeUtf8 $ BSL.toStrict $ encodePretty' prettyConfig $ toJSON $ postEvent post, -- raw
+                        Text.intercalate "," $ Set.toList relaysSet,           -- relays
+                        postType post,                                          -- postType
+                        postContent post,                                       -- content
+                        postTimestamp post,                                     -- timestamp
+                        pubKeyXOToBech32 $ postAuthor post,                    -- authorId
+                        maybe "" eventIdToNote (referencedPostId post)        -- referencedPostId
+                        ]
+                  Nothing -> return []
 
-            let fetchByType parseFunc = case parseFunc input of
-                    Just eid -> fmap Just (fetchByEventId eid)
-                    Nothing -> return Nothing
+          let fetchByType parseFunc = case parseFunc input of
+                  Just eid -> fmap Just (fetchByEventId eid)
+                  Nothing -> return Nothing
 
-            case Text.takeWhile (/= '1') input of
-                "note"  -> fetchByType noteToEventId
-                "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
-                "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
-                _ -> do
-                  let meid = readMaybe (unpack input) :: Maybe EventId
-                  case meid of
-                    Just eid -> fmap Just (fetchByEventId eid)
-                    Nothing -> return Nothing,
+          case Text.takeWhile (/= '1') input of
+              "note"  -> fetchByType noteToEventId
+              "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
+              "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
+              _ -> do
+                let meid = readMaybe (unpack input) :: Maybe EventId
+                case meid of
+                  Just eid -> fmap Just (fetchByEventId eid)
+                  Nothing -> return Nothing,
 
-        defMethod' "convertNprofileToNpub" $ \_ input -> do
-          runE $ do
-            case parseNprofileOrNpub input of
-              Just (pk, _) -> return $ Just $ pubKeyXOToBech32 pk
-              _ -> return Nothing,
+        defMethod' "convertNprofileToNpub" $ \_ input -> runE $ do
+          case parseNprofileOrNpub input of
+            Just (pk, _) -> return $ Just $ pubKeyXOToBech32 pk
+            _ -> return Nothing,
 
         defSignal "downloadCompleted" (Proxy :: Proxy DownloadCompleted),
         
@@ -294,70 +278,78 @@ runHomeScreen = interpret $ \_ -> \case
         defSignal "mediaCacheCompleted" (Proxy :: Proxy MediaCacheCompleted),
 
         defMethod' "hasDownload" $ \_ url -> runE $ do
-            status <- hasDownload url
-            case status of
-                Ready (cacheFile, mime, _) -> return [pack cacheFile, mime]
-                _ -> return [],
+          status <- hasDownload url
+          case status of
+              Ready (cacheFile, mime, _) -> return [pack cacheFile, mime]
+              _ -> return [],
 
         defMethod' "peekMimeType" $ \obj url -> runE $ do
-            void $ async $ do
-                result <- peekMimeType url
-                case result of
-                    Right mime -> liftIO $ QML.fireSignal (Proxy :: Proxy MediaPeekCompleted) obj url mime
-                    Left _ -> pure () -- Could add error signal here if needed
-            return (),
+          void $ async $ do
+              result <- peekMimeType url
+              case result of
+                  Right mime -> liftIO $ QML.fireSignal (Proxy :: Proxy MediaPeekCompleted) obj url mime
+                  Left _ -> pure () -- Could add error signal here if needed
+          return (),
 
         defMethod' "cacheMedia" $ \obj url -> runE $ do
-            logInfo $ "*** Caching media: ORIGIN: " <> url
-            void $ async $ do
-                logInfo $ "*** Caching media ASYNC: " <> url
-                result <- try @SomeException $ download url  -- This caches the media
-                case result of
-                    Left e -> do
-                        logError $ "*** Exception during download: " <> pack (show e)
-                        liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show e)
-                    Right status -> case status of
-                        Ready (cacheFile, mime, _) -> do
-                            logInfo $ "*** Cached media: OK"
-                            liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url True ("file:///" <> pack cacheFile)
-                        Failed err -> do
-                            logError $ "*** Failed to cache media: " <> pack (show err)
-                            liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show err)
-                        _ -> do
-                            logError $ "*** Unexpected download status: " <> pack (show status)
-                            liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False "Unexpected status"
-            return (),
+          void $ async $ do
+              result <- try @SomeException $ download url  -- This caches the media
+              case result of
+                  Left e -> do
+                      liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show e)
+                  Right status -> case status of
+                      Ready (cacheFile, _, _) -> do
+                          liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url True ("file:///" <> pack cacheFile)
+                      Failed err -> do
+                          liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show err)
+                      Downloading -> do
+                          logInfo $ "*** Media download in progress, waiting for completion"
+                          -- Poll until download completes
+                          finalStatus <- waitForDownloadCompletion url
+                          case finalStatus of
+                              Ready (cacheFile, _, _) -> do
+                                  logInfo $ "*** Download completed successfully"
+                                  liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url True ("file:///" <> pack cacheFile)
+                              Failed err -> do
+                                  logError $ "*** Download failed after waiting"
+                                  liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show err)
+                              _ -> do
+                                  logError $ "*** Unexpected final status after waiting"
+                                  liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False "Unexpected final status"
+                      NotStarted -> do
+                          liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False "Download not started"
+          return (),
 
         defMethod' "downloadAsync" $ \obj url -> runE $ do
-            void $ async $ do
-              homeDir <- getHomeDirectory
-              let downloadDir = homeDir </> "Downloads"
-              createDirectoryIfMissing True downloadDir
-              let baseFileName = fromMaybe "downloaded_file" $
-                                listToMaybe $ reverse $ Text.splitOn "/" $ Text.takeWhileEnd (/= '?') url
-              filePath <- findAvailableFilename downloadDir (unpack baseFileName)
-              let fileName = takeFileName filePath
+          void $ async $ do
+            homeDir <- getHomeDirectory
+            let downloadDir = homeDir </> "Downloads"
+            createDirectoryIfMissing True downloadDir
+            let baseFileName = fromMaybe "downloaded_file" $
+                              listToMaybe $ reverse $ Text.splitOn "/" $ Text.takeWhileEnd (/= '?') url
+            filePath <- findAvailableFilename downloadDir (unpack baseFileName)
+            let fileName = takeFileName filePath
 
-              status <- hasDownload url
-              case status of
-                Ready (cacheFile, _mime, _expiry) -> do
-                  result <- try @SomeException $ copyFile cacheFile filePath
-                  case result of
-                    Right _ -> liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
-                    Left e -> do
-                      logError $ "Copy from cache failed: " <> pack (show e)
-                      liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
-                _ -> do
-                  result <- try @SomeException $ do
-                    r <- liftIO $ Wreq.get (unpack url)
-                    let body = r ^. Wreq.responseBody
-                    liftIO $ BSL.writeFile filePath body
-                    pure filePath
-                  case result of
-                    Right _ -> liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
-                    Left (e :: SomeException) -> do
-                      logError $ "Download failed: " <> pack (show e)
-                      liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e),
+            status <- hasDownload url
+            case status of
+              Ready (cacheFile, _mime, _expiry) -> do
+                result <- try @SomeException $ copyFile cacheFile filePath
+                case result of
+                  Right _ -> liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
+                  Left e -> do
+                    logError $ "Copy from cache failed: " <> pack (show e)
+                    liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
+              _ -> do
+                result <- try @SomeException $ do
+                  r <- liftIO $ Wreq.get (unpack url)
+                  let body = r ^. Wreq.responseBody
+                  liftIO $ BSL.writeFile filePath body
+                  pure filePath
+                case result of
+                  Right _ -> liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
+                  Left (e :: SomeException) -> do
+                    logError $ "Download failed: " <> pack (show e)
+                    liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e),
 
         defMethod' "cancelLogin" $ \obj -> runE $ cancelLogin obj
       ]
@@ -374,3 +366,13 @@ fetchEventObject pool eid = do
             obj <- liftIO (getPoolObject pool eid)
             return (Just obj)
         Nothing -> return Nothing
+
+-- Helper function to wait for download completion by polling status
+waitForDownloadCompletion :: (Futr :> es, Downloader :> es, Concurrent :> es) => Text -> Eff es DownloadStatus
+waitForDownloadCompletion url = do
+    status <- hasDownload url
+    case status of
+        Downloading -> do
+            threadDelay 100000  -- 100ms
+            waitForDownloadCompletion url
+        _ -> return status

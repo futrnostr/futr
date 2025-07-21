@@ -67,26 +67,23 @@ runSubscriptionHandler = interpret $ \_ -> \case
     HandleSubscription subId' -> do
         subs <- gets @RelayPool subscriptions
         case Map.lookup subId' subs of
+            Nothing -> pure ()
             Just sub -> do
                 let q = responseQueue sub
                 processQueue False subId' q
-            Nothing -> do
-                logWarning $ "Subscription " <> pack (show subId') <> " not found"
 
     HandleSubscriptionUntilEOSE subId' -> do
         subs <- gets @RelayPool subscriptions
         case Map.lookup subId' subs of
+            Nothing -> pure ()
             Just sub -> do
                 let q = responseQueue sub
                 processQueue True subId' q
-            Nothing -> do
-                logWarning $ "Subscription " <> pack (show subId') <> " not found"
 
     HandlePaginationSubscription subId' -> do
         subs <- gets @RelayPool subscriptions
         case Map.lookup subId' subs of
-            Nothing -> do
-                logWarning $ "Subscription " <> pack (show subId') <> " not found"
+            Nothing -> pure ()
             Just sub -> do
                 let q = responseQueue sub
                     filter' = subscriptionFilter sub
@@ -94,7 +91,7 @@ runSubscriptionHandler = interpret $ \_ -> \case
 
                 st <- get @RelayPool
                 case Map.lookup relayUri' (activeConnections st) of
-                    Nothing -> logWarning $ "Relay " <> pack (show relayUri') <> " not found in active connections"
+                    Nothing -> pure ()
                     Just rd -> do
                         let liveSubId = subId' <> "_live"
                             liveFilter = filter' { until = Nothing }
@@ -162,7 +159,7 @@ runSubscriptionHandler = interpret $ \_ -> \case
                                             then do
                                                 st' <- get @RelayPool
                                                 case Map.lookup relayUri' (activeConnections st') of
-                                                    Nothing -> logWarning $ "Relay " <> pack (show relayUri') <> " not found in active connections"
+                                                    Nothing -> pure ()
                                                     Just rd -> do
                                                         currentTime <- getCurrentTime
 
@@ -187,7 +184,7 @@ runSubscriptionHandler = interpret $ \_ -> \case
                                             else do
                                                 st' <- get @RelayPool
                                                 case Map.lookup relayUri' (activeConnections st') of
-                                                    Nothing -> logWarning $ "Relay " <> pack (show relayUri') <> " not found in active connections"
+                                                    Nothing -> pure ()
                                                     Just rd -> do
                                                         let channel = requestChannel rd
                                                         atomically $ writeTChan channel (NT.Close subId')
