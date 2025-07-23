@@ -26,7 +26,7 @@ Pane {
 
     property string currentUser
     property bool isRefPost: false
-    property var author: post_authorId ? getProfile(post_authorId) : null
+    property var author: null
     property bool privateChatMode: false
 
     property var contentParts: []
@@ -122,6 +122,8 @@ Pane {
         if (!post_content || contentParsed) {
             return
         }
+
+        author = post_authorId ? getProfile(post_authorId) : null
 
         var parts = parseContentParts(post_content)
         contentParts = parts
@@ -426,6 +428,10 @@ Pane {
                 anchors.verticalCenter: parent.verticalCenter
             }
 
+            Item {
+                width: Constants.spacing_m
+            }
+
             Button {
                 flat: true
                 icon.source: "qrc:/icons/menu.svg"
@@ -452,8 +458,13 @@ Pane {
                     MenuItem {
                         text: qsTr("Show Event JSON")
                         onTriggered: {
-                            eventJsonDialog.targetPost = post
-                            eventJsonDialog.open()
+                            if (post_id) {
+                                var rawData = getRaw(post_id)
+                                eventJsonDialog.targetPost = {
+                                    raw: rawData
+                                }
+                                eventJsonDialog.open()
+                            }
                         }
                     }
 

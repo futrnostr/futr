@@ -16,10 +16,10 @@ Page {
     property var post: null
     required property string currentUser
     required property string currentUserPicture
-    property var comments: post ? post.comments : []
+    property var comments: [] // @todo
 
     Component.onCompleted: {
-        setCurrentPost(post ? post.id : null)
+        setCurrentPost(post ? post[0] : null)
     }
 
     Component.onDestruction: {
@@ -27,7 +27,7 @@ Page {
     }
 
     onPostChanged: {
-        setCurrentPost(post ? post.id : null)
+        setCurrentPost(post ? post[0] : null)
     }
 
     header: ToolBar {
@@ -162,7 +162,7 @@ Page {
                 }
 
                 Text {
-                    text: post ? post.relays.join(", ") : ""
+                    text: post ? post[3] : ""
                     color: Material.foreground
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true

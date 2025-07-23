@@ -82,17 +82,6 @@ ListView {
         }
     }
 
-    onVisibleChanged: {
-        if (visible) {
-            shouldBeAtBottom = true
-            if (verticalLayoutDirection === ListView.BottomToTop) {
-                positionViewAtBeginning()
-            } else {
-                positionViewAtEnd()
-            }
-        }
-    }
-
     ScrollBar.vertical: ScrollBar {
         id: verticalScrollBar
         active: true
@@ -119,18 +108,8 @@ ListView {
         }
 
         onPressedChanged: {
-            if (pressed) {
-                root.shouldBeAtBottom = false
-            } else {
-                if (root.verticalLayoutDirection === ListView.BottomToTop) {
-                    if (root.atYBeginning) {
-                        root.shouldBeAtBottom = true
-                    }
-                } else {
-                    if (root.atYEnd) {
-                        root.shouldBeAtBottom = true
-                    }
-                }
+            if (pressed && verticalLayoutDirection !== ListView.BottomToTop) {
+                root.shouldBeAtBottom = root.atYEnd
             }
         }
 
