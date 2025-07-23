@@ -24,23 +24,24 @@ import System.FilePath ((</>), takeExtension, dropExtension)
 import Logging
 import Nostr
 import Nostr.Bech32
-import Nostr.Event (Event(..), EventId(..), Kind(..), Rumor(..), eventIdFromHex)
+import Nostr.Event (Event(..), EventId(..), Rumor(..), eventIdFromHex)
 import Nostr.Event qualified as NE
 import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (ProfileManager, getProfile)
 import Nostr.Util (Util, formatDateTime, getKeyPair)
-import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..), storeProfileContentRef, notify, emptyUpdates, UIUpdates(..))
-import Store.Lmdb (LmdbStore, getCommentsWithIndentationLevel, getEvent, getEventRelays, getFollows)
-import Types (AppState(..), Feed(..), Follow(..), Language(..), Post(..), PublishStatus(..), RelayPool(..))
+import QtQuick ( QtQuick, PropertyMap(..), PropertyName, QtQuickState(..)
+               , UIReferences(..), UIUpdates(..), emptyUpdates, notify )
+import Store.Lmdb (LmdbStore, TimelineType(..), getCommentsWithIndentationLevel, getEvent, getEvents, getEventRelays, getFollows, getTimelineIds)
+import Types (AppState(..), Feed(..), FeedFilter(..), Follow(..), Language(..), Post(..), PublishStatus(..), RelayPool(..))
 import Downloader (Downloader(..), DownloadStatus(..), hasDownload, download, peekMimeType)
 
 
 -- Effect for creating C++ classes for usage in QtQuick QML
 data Classes :: Effect where
-    FeedClass :: FactoryPool EventId -> SignalKey (IO ()) -> Classes m (Class ())
+    FeedClass :: SignalKey (IO ()) -> Classes m (Class ())
+    CommentFeedClass :: SignalKey (IO ()) -> Classes m (Class ())
     ProfileClass :: SignalKey (IO ()) -> Classes m (Class PubKeyXO)
-    PostClass :: SignalKey (IO ()) -> Classes m (Class EventId)
     PublishStatusClass :: SignalKey (IO ()) -> Classes m (Class EventId)
     FollowClass :: SignalKey (IO ()) -> Classes m (Class PubKeyXO)
     CommentClass :: SignalKey (IO ()) -> Classes m (Class (EventId, Int))
@@ -49,14 +50,14 @@ data Classes :: Effect where
 type instance DispatchOf Classes = Dynamic
 
 
-feedClass :: Classes :> es => FactoryPool EventId -> SignalKey (IO ()) -> Eff es (Class ())
-feedClass postsPool changeKey = send $ FeedClass postsPool changeKey
+feedClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class ())
+feedClass changeKey = send $ FeedClass changeKey
+
+commentFeedClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class ())
+commentFeedClass changeKey = send $ CommentFeedClass changeKey
 
 profileClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class PubKeyXO)
 profileClass changeKey = send $ ProfileClass changeKey
-
-postClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class EventId)
-postClass changeKey = send $ PostClass changeKey
 
 publishStatusClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class EventId)
 publishStatusClass changeKey = send $ PublishStatusClass changeKey
@@ -127,14 +128,25 @@ runClasses
   => Eff (Classes : es) a
   -> Eff es a
 runClasses = interpret $ \_ -> \case
-    FeedClass postsPool changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
+    FeedClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
         newClass [
-            defPropertySigRO' "events" changeKey' $ \_ -> do
-                cf <- runE $ gets @AppState currentFeed
+            defPropertySigRO' "events" changeKey' $ \obj -> runE $ do
+                modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { mainFeedEventsObjRef = Just obj } }
+                cf <- gets @AppState currentFeed
                 case cf of
                   Just feed -> do
-                    let posts = feedEvents feed
-                    runE $ mapM flattenPost posts
+                    case feedFilter feed of
+                      PostsFilter pk -> do
+                        eventIds <- getTimelineIds PostTimeline pk 100
+                        events <- getEvents eventIds
+                        posts <- mapM createPost events
+                        mapM flattenPost posts
+                      PrivateMessagesFilter pk -> do
+                        eventIds <- getTimelineIds ChatTimeline pk 100  
+                        events <- getEvents eventIds
+                        posts <- mapM createPost events
+                        mapM flattenPost posts
+                      CommentsFilter _ -> error "CommentsFilter not supported for main feed"
                   Nothing -> return []
             ]
         where
@@ -238,96 +250,6 @@ runClasses = interpret $ \_ -> \case
                 resolveProfileImage url' pk (Just obj)
             ]
 
-
-    PostClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-        newClass [
-            defPropertyRO' "id" $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              let value = TE.decodeUtf8 $ B16.encode $ getEventId eid
-              return value,
-
-            defPropertyRO' "nevent" $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              postMaybe <- runE $ loadPostFromFeed eid
-              case postMaybe of
-                Just post' -> return $ eventToNevent (postEvent post') []
-                Nothing -> return "",
-
-            defPropertySigRO' "raw" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              postMaybe <- runE $ loadPostFromFeed eid
-              case postMaybe of
-                Just p -> do
-                  let e = postEvent p
-                      prettyConfig = defConfig {
-                        confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
-                          `mappend` compare
-                      }
-                      prettyEncode x = TE.decodeUtf8 . BSL.toStrict $ encodePretty' prettyConfig (toJSON x)
-                  case kind e of
-                    GiftWrap -> do
-                      kp <- runE getKeyPair
-                      sealed <- runE $ unwrapGiftWrap e kp
-                      rumor <- runE $ maybe (return Nothing) (\s -> unwrapSeal s kp) sealed
-                      return $ [prettyEncode e]
-                           ++ maybe [] ((:[]) . prettyEncode) sealed
-                           ++ maybe [] ((:[]) . prettyEncode) rumor
-                    _ -> return [prettyEncode e]
-                Nothing -> return [],
-
-            defPropertySigRO' "relays" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              runE $ storePostObjRef eid "relays" obj
-              relaysSet <- runE $ getEventRelays eid
-              return $ Set.toList relaysSet,
-
-            defPropertySigRO' "postType" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              postMaybe <- runE $ loadPostFromFeed eid
-              case postMaybe of
-                Just p -> return $ postType p
-                Nothing -> return "unknown",
-
-            defPropertySigRO' "contentParts" changeKey' $ \obj -> runE $ do
-              let eid = fromObjRef obj :: EventId
-              storePostObjRef eid "contentParts" obj
-              postMaybe <- loadPostFromFeed eid
-              case postMaybe of
-                Just post -> pure [] -- parseContentParts obj (postContent post)
-                Nothing -> pure [] :: Eff es [[Text]],
-
-            defPropertySigRO' "timestamp" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              postMaybe <- runE $ loadPostFromFeed eid
-              case postMaybe of
-                Just post -> return $ postTimestamp post
-                Nothing -> return "",
-
-            defPropertySigRO' "authorId" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              postMaybe <- runE $ loadPostFromFeed eid
-              case postMaybe of
-                Just post -> return $ Just $ pubKeyXOToBech32 $ postAuthor post
-                Nothing -> return Nothing,
-
-            defPropertySigRO' "referencedPostId" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              postMaybe <- runE $ loadPostFromFeed eid
-              case postMaybe of
-                Just post-> case referencedPostId post of
-                  Just eid' -> return $ Just $ eventIdToNote eid'
-                  Nothing -> return Nothing
-                Nothing -> return Nothing,
-
-            defPropertySigRO' "comments" changeKey' $ \obj -> do
-              let eid = fromObjRef obj :: EventId
-              runE $ storePostObjRef eid "comments" obj
-              runE $ modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { currentPostCommentsObjRef = Just obj } }
-              commentIds <- runE $ getCommentsWithIndentationLevel eid
-              commentClass' <- runE $ createCommentClass changeKey'
-              mapM (newObject commentClass') commentIds
-          ]
-
     PublishStatusClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
         newClass [
             defPropertySigRO' "eventId" changeKey' $ \obj -> do
@@ -391,6 +313,44 @@ runClasses = interpret $ \_ -> \case
 
     CommentClass changeKey' -> createCommentClass changeKey'
 
+    CommentFeedClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
+        newClass [
+            defPropertySigRO' "events" changeKey' $ \obj -> runE $ do
+                modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { commentFeedEventsObjRef = Just obj } }
+                cf <- gets @AppState currentCommentFeed
+                case cf of
+                  Just feed -> do
+                    -- Refresh comment feed data from database
+                    case feedFilter feed of
+                      CommentsFilter eid -> do
+                        commentIds <- getCommentsWithIndentationLevel eid
+                        let commentEventIds = map fst commentIds
+                        events <- getEvents commentEventIds
+                        posts <- mapM createPost events
+                        mapM flattenPost posts
+                      _ -> error "Invalid feed filter"
+                  Nothing -> return []
+            ]
+        where
+            flattenPost :: ClassesEff es => Post -> Eff es [Text]
+            flattenPost post = do
+                relaysSet <- getEventRelays (postId post)
+                let prettyConfig = defConfig {
+                    confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
+                        `mappend` compare
+                    }
+                return [
+                    TE.decodeUtf8 $ B16.encode $ getEventId $ postId post,  -- id
+                    eventToNevent (postEvent post) [],                      -- nevent
+                    TE.decodeUtf8 $ BSL.toStrict $ encodePretty' prettyConfig $ toJSON $ postEvent post, -- raw
+                    Text.intercalate "," $ Set.toList relaysSet,           -- relays
+                    postType post,                                          -- postType
+                    postContent post,                                       -- content
+                    postTimestamp post,                                     -- timestamp
+                    pubKeyXOToBech32 $ postAuthor post,                    -- authorId
+                    maybe "" eventIdToNote (referencedPostId post) -- referencedPostId
+                    ]
+
 
 
 createCommentClass :: ClassesEff es => SignalKey (IO ()) -> Eff es (Class (EventId, Int))
@@ -425,29 +385,6 @@ storeProfileObjRef pk propName obj = withEffToIO (ConcUnlift Persistent Unlimite
             let currentMap = profileObjRefs (propertyMap st')
                 updatedMap = Map.delete pk currentMap
             in st' { propertyMap = (propertyMap st') { profileObjRefs = updatedMap } }
-
-
-    addObjFinaliser finalizer obj
-
--- | Store a post object reference in the property map
-storePostObjRef :: ClassesEff es => EventId -> PropertyName -> ObjRef EventId -> Eff es ()
-storePostObjRef evId propName obj = withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-    weakObjRef <- toWeakObjRef obj
-
-    runE $ modify @QtQuickState $ \st ->
-        let currentMap = postObjRefs (propertyMap st)
-            updatedMap = Map.alter (Just . maybe 
-                                         (Map.singleton propName weakObjRef)
-                                         (Map.insert propName weakObjRef)) 
-                                 evId 
-                                 currentMap
-        in st { propertyMap = (propertyMap st) { postObjRefs = updatedMap } }
-
-    finalizer <- newObjFinaliser $ \_ -> do
-        runE $ modify @QtQuickState $ \st' ->
-            let currentMap = postObjRefs (propertyMap st')
-                updatedMap = Map.delete evId currentMap
-            in st' { propertyMap = (propertyMap st') { postObjRefs = updatedMap } }
 
 
     addObjFinaliser finalizer obj
