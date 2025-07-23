@@ -91,7 +91,7 @@ runRelayMgmt = interpret $ \_ -> \case
                         signed <- signEvent unsigned kp
                         case signed of
                             Just signed' -> broadcast signed'
-                            Nothing -> logError $ "Failed to sign relay list metadata event"
+                            Nothing -> error "Failed to sign relay list metadata event"
                         notifyRelayStatus
                         return True
 
@@ -107,7 +107,7 @@ runRelayMgmt = interpret $ \_ -> \case
         signed <- signEvent unsigned kp
         case signed of
             Just signed' -> broadcast signed'
-            Nothing -> logError $ "Failed to sign relay list metadata event"
+            Nothing -> error "Failed to sign relay list metadata event"
         notifyRelayStatus
 
     AddDMRelay pk r -> do
@@ -122,7 +122,7 @@ runRelayMgmt = interpret $ \_ -> \case
                 signed <- signEvent unsigned kp
                 case signed of
                     Just signed' -> broadcast signed'
-                    Nothing -> logError $ "Failed to sign preferred DM relays event"
+                    Nothing -> error "Failed to sign preferred DM relays event"
                 notifyRelayStatus
                 return True
 
@@ -136,17 +136,17 @@ runRelayMgmt = interpret $ \_ -> \case
         signed <- signEvent unsigned kp
         case signed of
             Just signed' -> broadcast signed'
-            Nothing -> logError $ "Failed to sign preferred DM relays event"
+            Nothing -> error "Failed to sign preferred DM relays event"
         notifyRelayStatus
 
     SetDefaultGeneralRelays -> do
-        logInfo "Setting default general relays..."
+        --logInfo "Setting default general relays..."
         kp <- getKeyPair
         let xo = keyPairToPubKeyXO kp
         now <- getCurrentTime
         let (allRelays, _) = defaultGeneralRelays
-        when (null allRelays) $
-            logError "No default relays configured"
+--        when (null allRelays) $
+--            logError "No default relays configured"
         shuffledRelays <- shuffleList allRelays
         let relays = case shuffledRelays of
               [] -> error "No default relays available"
@@ -157,18 +157,18 @@ runRelayMgmt = interpret $ \_ -> \case
         case signed of
             Just event -> do
                 broadcast event
-                logInfo "Successfully set default general relays"
-            Nothing ->
-                logError "Failed to sign relay list metadata event"
+                --logInfo "Successfully set default general relays"
+            Nothing -> pure ()
+                --logError "Failed to sign relay list metadata event"
 
     SetDefaultDMRelays -> do
-        logInfo "Setting default DM relays..."
+        --logInfo "Setting default DM relays..."
         kp <- getKeyPair
         let xo = keyPairToPubKeyXO kp
         now <- getCurrentTime
         let (dmRelays, _) = defaultDMRelays
-        when (null dmRelays) $
-            logError "No default DM relays configured"
+--        when (null dmRelays) $
+--            logError "No default DM relays configured"
         shuffledRelays <- shuffleList dmRelays
         let relays = case shuffledRelays of
               [] -> error "No default DM relays available"
@@ -179,9 +179,9 @@ runRelayMgmt = interpret $ \_ -> \case
         case signed of
             Just event -> do
                 broadcast event
-                logInfo "Successfully set default DM relays"
-            Nothing ->
-                logError "Failed to sign preferred DM relays event"
+                --logInfo "Successfully set default DM relays"
+            Nothing -> pure ()
+                --logError "Failed to sign preferred DM relays event"
 
 
 -- | Normalize a Relay by normalizing its URI

@@ -186,19 +186,19 @@ runQtQuick = interpret $ \_ -> \case
         st <- get
         case signalKey st of
             Just key -> liftIO $ QML.fireSignal key objRef
-            Nothing -> logError "No signal key available"
+            Nothing -> error "No signal key available"
 
     SignalPost objRef -> do
         st <- get
         case signalKey st of
             Just key -> liftIO $ QML.fireSignal key objRef
-            Nothing -> logError "No signal key available"
+            Nothing -> error "No signal key available"
 
     SignalProfile objRef -> do
         st <- get
         case signalKey st of
             Just key -> liftIO $ QML.fireSignal key objRef
-            Nothing -> logError "No signal key available"
+            Nothing -> error "No signal key available"
 
     NotifyRelayStatus -> do
         st <- get
@@ -206,13 +206,13 @@ runQtQuick = interpret $ \_ -> \case
           Just q -> do
             let updates = emptyUpdates { dmRelaysChanged = True, generalRelaysChanged = True, tempRelaysChanged = True }
             atomically $ writeTQueue q updates
-          Nothing -> logError "No queue available"
+          Nothing -> error "No queue available"
 
     Notify u -> do
         st <- get
         case queue st of
           Just q -> atomically $ writeTQueue q u
-          Nothing -> logError "No queue available"
+          Nothing -> error "No queue available"
 
 
 -- | Check if the UI updates have any changes.

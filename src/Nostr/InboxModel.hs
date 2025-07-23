@@ -11,7 +11,6 @@ import Data.List.Split (chunksOf)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Set qualified as Set
-import Data.Text (pack)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, cancel, forConcurrently)
@@ -313,7 +312,7 @@ continueWithRelays inboxRelays = do
       failedPubkeys = concatMap (\r -> Map.findWithDefault [] r followRelayMap) failedRelays
 
   unless (null failedPubkeys) $ do
-    logInfo $ "Rebalancing subscriptions for pubkeys: " <> pack (show failedPubkeys)
+    --logInfo $ "Rebalancing subscriptions for pubkeys: " <> pack (show failedPubkeys)
     rebalanceSubscriptions failedPubkeys ownInboxRelayURIs
 
 
@@ -347,7 +346,7 @@ rebalanceSubscriptions pubkeys availableInboxURIs = do
   else do
     let newAvailable = filter (`notElem` failedRelays) availableInboxURIs
     if null newAvailable
-      then logError $ "Rebalancing failed: no fallback relays available for pubkeys: " <> pack (show newFailedPubkeys)
+      then pure () -- logError $ "Rebalancing failed: no fallback relays available for pubkeys: " <> pack (show newFailedPubkeys)
       else rebalanceSubscriptions newFailedPubkeys newAvailable
 
 
