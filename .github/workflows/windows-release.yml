@@ -113,7 +113,16 @@ jobs:
           which ghc || echo "GHC not found in PATH"
           which cabal || echo "Cabal not found in PATH"
           
+          # Verify LMDB is available
+          echo "Checking LMDB library:"
+          ls -la /mingw64/lib/liblmdb* || echo "LMDB libraries not found"
+          ls -la /mingw64/include/lmdb.h || echo "LMDB header not found"
+          
           cabal update
+          
+          # Configure with correct Windows library paths (overrides cabal file)
+          cabal configure --extra-lib-dirs=/mingw64/lib --extra-include-dirs=/mingw64/include
+          
           cabal build
 
       - name: Get version from tag
