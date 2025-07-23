@@ -1,0 +1,196 @@
+name: Windows Build and Release (Stable)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-build-and-release:
+    name: Windows Build and Release
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-qt5-base
+            mingw-w64-x86_64-qt5-declarative
+            mingw-w64-x86_64-qt5-graphicaleffects
+            mingw-w64-x86_64-qt5-imageformats
+            mingw-w64-x86_64-qt5-multimedia
+            mingw-w64-x86_64-qt5-quickcontrols2
+            mingw-w64-x86_64-qt5-svg
+            mingw-w64-x86_64-qt5-tools
+            mingw-w64-x86_64-qt5-translations
+            mingw-w64-x86_64-qt5-winextras
+            mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-angleproject
+            mingw-w64-x86_64-lmdb
+            mingw-w64-x86_64-libunwind
+            mingw-w64-x86_64-toolchain
+            autoconf
+            autogen
+            automake
+            libtool
+            git
+            make
+
+      - name: Setup GHCUp and Haskell
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          try { 
+            Invoke-Command -ScriptBlock ([ScriptBlock]::Create((Invoke-WebRequest https://www.haskell.org/ghcup/sh/bootstrap-haskell.ps1 -UseBasicParsing))) -ArgumentList $true 
+          } catch { 
+            Write-Error $_ 
+          }
+
+      - name: Install and Configure GHC and Cabal
+        shell: powershell
+        run: |
+          ghcup install ghc 9.6.7
+          ghcup install cabal 3.10.3.0
+          ghcup set ghc 9.6.7
+          ghcup set cabal 3.10.3.0
+
+      - name: Cache Cabal packages
+        uses: actions/cache@v4.2.3
+        with:
+          path: |
+            C:\cabal\packages
+            C:\cabal\store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc-9.6.7-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-9.6.7-cabal-
+
+      - name: Build secp256k1
+        run: |
+          git clone https://github.com/bitcoin-core/secp256k1
+          cd secp256k1
+          git checkout v0.5.1
+          ./autogen.sh
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery
+          make
+          make install
+          cd ..
+
+      - name: Update Cabal and Build
+        run: |
+          export PATH=/mingw64/bin:$PATH
+          cabal update
+          cabal build
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}  # Extract version from tag
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Deploy Qt dependencies
+        run: |
+          export PATH=/mingw64/bin:$PATH
+          VERSION="${{ steps.version.outputs.version }}"
+          BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$VERSION/build/futr"
+          windeployqt.exe "$BUILD_DIR/futr.exe" --qmldir=resources/qml
+
+      - name: Copy additional DLLs
+        run: |
+          export PATH=/mingw64/bin:$PATH
+          VERSION="${{ steps.version.outputs.version }}"
+          BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$VERSION/build/futr"
+          
+          # Use the generated copy-dlls.sh script
+          if [ -f "platform/windows/copy-dlls.sh" ]; then
+            bash platform/windows/copy-dlls.sh
+          else
+            echo "Warning: copy-dlls.sh not found, copying essential DLLs manually"
+            cp /mingw64/bin/libgcc_s_seh-1.dll "$BUILD_DIR/"
+            cp /mingw64/bin/libstdc++-6.dll "$BUILD_DIR/"
+            cp /mingw64/bin/libwinpthread-1.dll "$BUILD_DIR/"
+          fi
+
+      - name: Clean up temporary files
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$VERSION/build/futr"
+          rm -rf "$BUILD_DIR/futr-tmp" || true
+
+      - name: Setup Inno Setup
+        shell: powershell
+        run: |
+          # Download and install Inno Setup
+          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "innosetup.exe"
+          Start-Process -FilePath "innosetup.exe" -ArgumentList "/VERYSILENT /NORESTART" -Wait
+
+      - name: Create Windows Installer
+        shell: powershell
+        run: |
+          $innoPath = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (Test-Path $innoPath) {
+            & $innoPath "platform\windows\innosetup.iss"
+          } else {
+            Write-Error "Inno Setup not found at expected location"
+            exit 1
+          }
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-${{ steps.version.outputs.tag_version }}
+          path: dist/futr-*-setup.exe
+          retention-days: 30
+
+      - name: Upload Build Directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-${{ steps.version.outputs.tag_version }}
+          path: dist-newstyle/build/x86_64-windows/ghc-*/futr-*/build/futr/
+          retention-days: 30
+
+      - name: Create Stable Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/futr-*-setup.exe
+          prerelease: false
+          name: "Release ${{ github.ref_name }} (Windows)"
+          body: |
+            **Official Windows release ${{ github.ref_name }}**
+            
+            **Version:** ${{ steps.version.outputs.version }}
+            **Platform:** Windows (x64)
+            **Installer:** `futr-${{ steps.version.outputs.version }}-setup.exe`
+            
+            ### Installation
+            1. Download the installer above
+            2. Run the installer as administrator
+            3. Follow the installation wizard
+            4. Launch futr from the Start Menu or Desktop shortcut
+            
+            ### What's Included
+            - futr application executable
+            - Qt5 runtime libraries
+            - All required dependencies bundled
+            
+            For the latest development build, see the [continuous Windows release](https://github.com/${{ github.repository }}/releases/tag/windows-continuous).
+            For Linux builds, see the [main releases](https://github.com/${{ github.repository }}/releases).
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }} 
