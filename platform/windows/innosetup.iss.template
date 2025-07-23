@@ -37,8 +37,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\..\dist-newstyle\build\x86_64-windows\ghc-9.6.7\futr-@VERSION@\build\futr\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\dist-newstyle\build\x86_64-windows\ghc-9.6.7\futr-@VERSION@\build\futr\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist-newstyle\build\x86_64-windows\ghc-9.6.5\futr-@VERSION@\build\futr\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist-newstyle\build\x86_64-windows\ghc-9.6.5\futr-@VERSION@\build\futr\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
