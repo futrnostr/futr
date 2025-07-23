@@ -2,7 +2,7 @@ name: Windows Build and Release (Continuous)
 
 on:
   push:
-    branches: ["master", "windows"]
+    branches: ["master", "windows2"]
 
 permissions:
   contents: write
