@@ -22,7 +22,7 @@ Dialog {
         spacing: Constants.spacing_m
 
         Repeater {
-            model: seenOnRelaysDialog.targetPost ? seenOnRelaysDialog.targetPost.relays : []
+            model: seenOnRelaysDialog.targetPost && seenOnRelaysDialog.targetPost[3] ? seenOnRelaysDialog.targetPost[3].split(",") : []
             delegate: ColumnLayout {
                 Layout.fillWidth: true
                 spacing: Constants.spacing_s
@@ -38,7 +38,10 @@ Dialog {
                     Layout.fillWidth: true
                     height: 1
                     color: Material.dividerColor
-                    visible: seenOnRelaysDialog.targetPost && seenOnRelaysDialog.targetPost.relays.length > 1 && index < seenOnRelaysDialog.targetPost.relays.length - 1
+                    visible: seenOnRelaysDialog.targetPost 
+                        && seenOnRelaysDialog.targetPost[3]
+                        && seenOnRelaysDialog.targetPost[3].split(",").length > 1
+                        && index < seenOnRelaysDialog.targetPost[3].split(",").length - 1
                 }
             }
         }
