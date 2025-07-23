@@ -7,7 +7,7 @@ import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy (fromStrict)
 import Data.List (sort)
 import Data.Map qualified as Map
-import Data.Text (pack, unpack)
+import Data.Text (unpack)
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
 import Effectful.Concurrent
@@ -96,7 +96,7 @@ runEventHandler = interpret $ \_ -> \case
                             _ -> return $ RawEvent event'
                     _ -> return $ RawEvent event'
 
-                PutEventResult{eventIsNew, relaysUpdated} <- putEvent eventInput mr
+                PutEventResult{eventIsNew} <- putEvent eventInput mr
 
                 if not eventIsNew then
                     pure emptyUpdates
@@ -167,7 +167,7 @@ runEventHandler = interpret $ \_ -> \case
                                             else
                                                 emptyUpdates
                                         Nothing -> emptyUpdates
-                                
+
                                 -- Check if comments for current post are being deleted
                                 let commentUpdate = case currentPost st of
                                         Just _ ->
@@ -176,7 +176,7 @@ runEventHandler = interpret $ \_ -> \case
                                             else
                                                 emptyUpdates
                                         Nothing -> emptyUpdates
-                                
+
                                 pure $ feedUpdate <> commentUpdate
 
                         Metadata -> do
@@ -240,7 +240,7 @@ runEventHandler = interpret $ \_ -> \case
                             pure $ emptyUpdates { dmRelaysChanged = pk == pubKey ev }
 
                         _ -> do
-                            logDebug $ "Ignoring event of kind: " <> pack (show (kind ev))
+                            --logDebug $ "Ignoring event of kind: " <> pack (show (kind ev))
                             pure $ emptyUpdates
 
         when (myFollowsChanged updates || dmRelaysChanged updates || generalRelaysChanged updates) $ do

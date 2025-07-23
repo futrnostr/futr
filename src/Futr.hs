@@ -12,7 +12,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
-import Data.Text (Text, isPrefixOf, pack, unpack)
+import Data.Text (Text, isPrefixOf, unpack)
 import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
@@ -216,7 +216,7 @@ runFutr = interpret $ \_ -> \case
       kst <- get @KeyMgmtState
       case Map.lookup (AccountId input) (accountMap kst) of
         Nothing -> do
-          logError $ "Account not found: " <> input
+          --logError $ "Account not found: " <> input
           return ()
         Just a -> do
           let pk = accountPubKeyXO a
@@ -229,10 +229,7 @@ runFutr = interpret $ \_ -> \case
               put @LmdbState lmdbState
 
           case dbResult of
-            Left e -> do
-              logError $ "Database initialization failed: " <> pack (show e)
-              liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Database initialization failed"
-              return ()
+            Left e -> error $ "Database initialization failed: " <> show e
             Right _ -> do
               loginWithAccount obj a
 
@@ -380,8 +377,8 @@ runFutr = interpret $ \_ -> \case
               giftWrapResult <- createGiftWrap seal' recipient'
               case giftWrapResult of
                 Just (gw, _) -> return (Just gw)
-                Nothing -> logError "Failed to create gift wrap" >> return Nothing
-            Nothing -> logError "Failed to create seal" >> return Nothing
+                Nothing -> return Nothing
+            Nothing -> return Nothing
 
         let validGiftWraps = catMaybes giftWraps
 
@@ -389,8 +386,8 @@ runFutr = interpret $ \_ -> \case
           publishGiftWrap gw senderPubKeyXO recipient
         notify $ emptyUpdates { feedChanged = True }
 
-      (Nothing, _) -> logError "No key pair found"
-      (_, Nothing) -> logError "No current chat recipient"
+      (Nothing, _) -> error "No key pair found"
+      (_, Nothing) -> error "No current chat recipient"
 
   SendShortTextNote input -> do
     kp <- getKeyPair
@@ -401,11 +398,11 @@ runFutr = interpret $ \_ -> \case
       Just s -> do
         publishToOutbox s
         notify $ emptyUpdates { feedChanged = True }
-      Nothing -> logError "Failed to sign short text note"
+      Nothing -> error "Failed to sign short text note"
 
   Logout obj -> do
     fullAppCleanup
-    logInfo "User logged out successfully"
+    --logInfo "User logged out successfully"
     fireSignal obj
 
     -- Stop cache clearer thread if running
@@ -418,13 +415,13 @@ runFutr = interpret $ \_ -> \case
     now <- getCurrentTime
     mEvent <- getEvent eid
     case mEvent of
-      Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
+      Nothing -> pure ()
       Just event -> do
         relays <- getEventRelays eid
         let e = createRepost event (Set.findMin relays) (keyPairToPubKeyXO kp) now
         signed <- signEvent e kp
         case signed of
-          Nothing -> logError "Failed to sign repost"
+          Nothing -> error "Failed to sign repost"
           Just s -> do
             publishToOutbox s
             mEventAndRelays <- getEvent eid
@@ -452,13 +449,13 @@ runFutr = interpret $ \_ -> \case
     now <- getCurrentTime
     mEvent <- getEvent eid
     case mEvent of
-      Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
+      Nothing -> pure ()
       Just event -> do
         relays <- getEventRelays $ eventId event
         let q = createQuoteRepost event (Set.findMin relays) quote (keyPairToPubKeyXO kp) now
         signed <- signEvent q kp
         case signed of
-          Nothing -> logError "Failed to sign quote repost"
+          Nothing -> error "Failed to sign quote repost"
           Just s -> do
             publishToOutbox s
             notify $ emptyUpdates { feedChanged = True }
@@ -479,12 +476,12 @@ runFutr = interpret $ \_ -> \case
     now <- getCurrentTime
     mEvent <- getEvent eid
     case mEvent of
-      Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
+      Nothing -> pure ()
       Just ev -> do
         let c = createComment ev comment' (keyPairToPubKeyXO kp) now
         signed <- signEvent c kp
         case signed of
-          Nothing -> logError "Failed to sign comment"
+          Nothing -> error "Failed to sign comment"
           Just s -> do
             publishToOutbox s
             mEventAndRelays <- getEvent eid
@@ -512,12 +509,12 @@ runFutr = interpret $ \_ -> \case
       now <- getCurrentTime
       mEvent <- getEvent eid
       case mEvent of
-          Nothing -> logError $ "Failed to fetch event " <> pack (show eid)
+          Nothing -> pure ()
           Just ev -> do
               let deletion = createEventDeletion ev reason (keyPairToPubKeyXO kp) now
               signed <- signEvent deletion kp
               case signed of
-                  Nothing -> logError "Failed to sign event deletion"
+                  Nothing -> error "Failed to sign event deletion"
                   Just s -> do
                       publishToOutbox s
                       notify $ emptyUpdates { feedChanged = True }
@@ -525,7 +522,7 @@ runFutr = interpret $ \_ -> \case
   CancelLogin obj -> do
     fullAppCleanup
     liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Login cancelled"
-    logInfo "Login cancelled"
+    --logInfo "Login cancelled"
     fireSignal obj
 
     -- Stop cache clearer thread if running
@@ -576,7 +573,7 @@ sendFollowListEvent follows = do
     case signedEvent of
         Just signedEvent' -> do
             publishToOutbox signedEvent'
-        Nothing -> logError "Failed to sign follow list event"
+        Nothing -> error "Failed to sign follow list event"
 
 
 -- | Search for a profile in relays.

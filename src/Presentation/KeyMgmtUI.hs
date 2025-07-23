@@ -158,9 +158,7 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                     void $ async $ startInboxModel
                     return True
 
-                  Nothing -> do
-                    logError "Failed to get keypair after generating seedphrase"
-                    return False
+                  Nothing -> error "Failed to get keypair after generating seedphrase"
 
             ]
 

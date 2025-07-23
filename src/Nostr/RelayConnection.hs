@@ -237,8 +237,8 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
                     notify updates
                     receiveLoop conn'
                 Left err -> do
-                    logError $ "Could not decode server response from " <> r <> ": " <> T.pack err
-                    logError $ "Msg: " <> T.pack (show msg')
+                    --logError $ "Could not decode server response from " <> r <> ": " <> T.pack err
+                    --logError $ "Msg: " <> T.pack (show msg')
                     receiveLoop conn'
 
     sendLoop conn' = do
@@ -250,9 +250,8 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
             NT.SendEvent event -> do
                 result <- liftIO $ try @SomeException $ WS.sendTextData conn' $ encode msg
                 case result of
-                    Left ex -> do
-                        logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
-                        return ()
+                    Left ex -> pure ()
+                        --logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
                     Right _ -> do
                         -- Store the event in the state for potential retry
                         modify @RelayPool $ \st ->
@@ -265,9 +264,8 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
             _ -> do
                 result <- liftIO $ try @SomeException $ WS.sendTextData conn' $ encode msg
                 case result of
-                    Left ex -> do
-                        logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
-                        return ()
+                    Left ex -> pure ()
+                        --logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
                     Right _ -> sendLoop conn'
 
 
@@ -312,7 +310,7 @@ handleResponse relayURI' r = case r of
                                 , NT.filter = subscriptionFilter subDetails
                                 }
                         handleAuthRequired relayURI' (NT.Subscribe subscription)
-                    Nothing -> logError $ "No subscription found for " <> T.pack (show subId')
+                    Nothing -> pure () --logError $ "No subscription found for " <> T.pack (show subId')
             else do
                 st <- get @RelayPool
                 case Map.lookup subId' (subscriptions st) of
@@ -346,9 +344,9 @@ handleResponse relayURI' r = case r of
                         case eventId' of
                             Just eid -> case find (\e -> eventId e == eid) (pendingEvents rd) of
                                 Just event -> handleAuthRequired relayURI' (NT.SendEvent event)
-                                Nothing -> logDebug $ "No pending event found for " <> T.pack (show eid)
-                            Nothing -> logError "Received auth-required but no event ID"
-                    Nothing -> logError $ "Received auth-required but no connection found: " <> relayURI'
+                                Nothing -> pure () --logDebug $ "No pending event found for " <> T.pack (show eid)
+                            Nothing -> pure () --logError "Received auth-required but no event ID"
+                    Nothing -> pure () --logError $ "Received auth-required but no connection found: " <> relayURI'
             else do
                 st <- get @RelayPool
                 case Map.lookup relayURI' (activeConnections st) of
@@ -380,7 +378,7 @@ handleResponse relayURI' r = case r of
                                 forM_ pendingReqs $ \req -> atomically $ writeTChan (requestChannel rd) req
 
                             _ -> pure ()
-                    Nothing -> logError $ "Received OK but no connection found: " <> relayURI'
+                    Nothing -> pure () --logError $ "Received OK but no connection found: " <> relayURI'
 
         return $ emptyUpdates { publishStatusChanged = True }
 
@@ -412,10 +410,10 @@ handleResponse relayURI' r = case r of
                         atomically $ writeTChan (requestChannel rd) (NT.Authenticate signedEvent)
                         return emptyUpdates
                     Nothing -> do
-                        logError "Failed to sign canonical authentication event"
+                        --logError "Failed to sign canonical authentication event"
                         return emptyUpdates
             Nothing -> do
-                logError $ "Error handling relay authentication, no channel found: " <> relayURI'
+                --logError $ "Error handling relay authentication, no channel found: " <> relayURI'
                 return emptyUpdates
 
     where

@@ -34,7 +34,6 @@ import Text.Read (readMaybe)
 
 import Downloader (Downloader, DownloadStatus(..), hasDownload, peekMimeType, download)
 import KeyMgmt (AccountId(..), updateProfile)
-import Logging
 import Nostr
 import Nostr.Bech32 (pubKeyXOToBech32, eventToNevent, eventIdToNote, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
 import Nostr.Event (Event(..), EventId(..), Kind(..), createMetadata, getEventId)
@@ -214,7 +213,7 @@ runHomeScreen = interpret $ \_ -> \case
             Just eid -> do
               case readMaybe (unpack eid) of
                 Just eid' -> setCurrentPost $ Just eid'
-                Nothing -> logError $ "Invalid event ID format: " <> eid
+                Nothing -> error $ "Invalid event ID format: " <> show eid
             Nothing -> setCurrentPost Nothing,
 
         defMethod' "getCommentFeed" $ \_ eid -> runE $ do
@@ -288,9 +287,9 @@ runHomeScreen = interpret $ \_ -> \case
             _ -> return Nothing,
 
         defSignal "downloadCompleted" (Proxy :: Proxy DownloadCompleted),
-        
+
         defSignal "mediaPeekCompleted" (Proxy :: Proxy MediaPeekCompleted),
-        
+
         defSignal "mediaCacheCompleted" (Proxy :: Proxy MediaCacheCompleted),
 
         defMethod' "hasDownload" $ \_ url -> runE $ do
@@ -348,7 +347,7 @@ runHomeScreen = interpret $ \_ -> \case
                 case result of
                   Right _ -> liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
                   Left e -> do
-                    logError $ "Copy from cache failed: " <> pack (show e)
+                    --logError $ "Copy from cache failed: " <> pack (show e)
                     liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e)
               _ -> do
                 result <- try @SomeException $ do
@@ -359,7 +358,7 @@ runHomeScreen = interpret $ \_ -> \case
                 case result of
                   Right _ -> liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj True (pack fileName)
                   Left (e :: SomeException) -> do
-                    logError $ "Download failed: " <> pack (show e)
+                    --logError $ "Download failed: " <> pack (show e)
                     liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e),
 
         defMethod' "cancelLogin" $ \obj -> runE $ cancelLogin obj,

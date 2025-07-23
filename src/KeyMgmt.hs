@@ -213,9 +213,7 @@ runKeyMgmt = interpret $ \_ -> \case
         let npubStr = unpack $ pubKeyXOToBech32 $ accountPubKeyXO account
         dir <- getXdgDirectory XdgData $ "futrnostr/" ++ npubStr
         BL.writeFile (dir </> "profile.json") (encode profile)
-      Nothing -> do
-        logError $ "Account not found: " <> accountId aid
-        return ()
+      Nothing -> error $ "Account not found: " <> show (accountId aid)
 
 
 -- | Load all accounts from the Nostr data directory.
