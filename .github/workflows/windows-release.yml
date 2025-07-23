@@ -54,19 +54,33 @@ jobs:
         run: |
           Set-ExecutionPolicy Bypass -Scope Process -Force
           [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-          try { 
-            Invoke-Command -ScriptBlock ([ScriptBlock]::Create((Invoke-WebRequest https://www.haskell.org/ghcup/sh/bootstrap-haskell.ps1 -UseBasicParsing))) -ArgumentList $true 
-          } catch { 
-            Write-Error $_ 
+          
+          # Set environment variables for non-interactive installation
+          $env:BOOTSTRAP_HASKELL_NONINTERACTIVE = "1"
+          $env:BOOTSTRAP_HASKELL_MINIMAL = "1"
+          
+          try {
+            Invoke-Command -ScriptBlock ([ScriptBlock]::Create((Invoke-WebRequest https://www.haskell.org/ghcup/sh/bootstrap-haskell.ps1 -UseBasicParsing))) -ArgumentList $true,$true,$true,$true,$true,$true,$true
+          } catch {
+            Write-Host "GHCup installation failed or already exists, continuing..."
           }
 
       - name: Install and Configure GHC and Cabal
         shell: powershell
         run: |
-          ghcup install ghc 9.6.7
-          ghcup install cabal 3.10.3.0
+          # Add GHCup to PATH for this step and future steps
+          $env:PATH = "C:\ghcup\bin;$env:PATH"
+          Add-Content $env:GITHUB_PATH "C:\ghcup\bin"
+          
+          # Install GHC and Cabal with --force flag to avoid prompts
+          ghcup install ghc 9.6.7 --force
+          ghcup install cabal 3.10.3.0 --force
           ghcup set ghc 9.6.7
           ghcup set cabal 3.10.3.0
+          
+          # Verify installation
+          ghc --version
+          cabal --version
 
       - name: Cache Cabal packages
         uses: actions/cache@v4.2.3
@@ -92,7 +106,13 @@ jobs:
 
       - name: Update Cabal and Build
         run: |
-          export PATH=/mingw64/bin:$PATH
+          # Add both MinGW64 and GHCup to PATH
+          export PATH=/mingw64/bin:/c/ghcup/bin:$PATH
+          
+          # Verify tools are available
+          which ghc || echo "GHC not found in PATH"
+          which cabal || echo "Cabal not found in PATH"
+          
           cabal update
           cabal build
 
@@ -107,14 +127,14 @@ jobs:
 
       - name: Deploy Qt dependencies
         run: |
-          export PATH=/mingw64/bin:$PATH
+          export PATH=/mingw64/bin:/c/ghcup/bin:$PATH
           VERSION="${{ steps.version.outputs.version }}"
           BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$VERSION/build/futr"
           windeployqt.exe "$BUILD_DIR/futr.exe" --qmldir=resources/qml
 
       - name: Copy additional DLLs
         run: |
-          export PATH=/mingw64/bin:$PATH
+          export PATH=/mingw64/bin:/c/ghcup/bin:$PATH
           VERSION="${{ steps.version.outputs.version }}"
           BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$VERSION/build/futr"
           
