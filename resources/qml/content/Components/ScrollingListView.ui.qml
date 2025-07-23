@@ -108,8 +108,10 @@ ListView {
         }
 
         onPressedChanged: {
-            if (pressed && verticalLayoutDirection !== ListView.BottomToTop) {
-                root.shouldBeAtBottom = root.atYEnd
+            if (pressed) {
+                root.shouldBeAtBottom = false
+            } else if (root.atYEnd) {
+                root.shouldBeAtBottom = true
             }
         }
 

@@ -148,10 +148,8 @@ Pane {
 
             mediaCacheCompleted.connect(mediaCacheCallback)
             cacheMedia(url)
-        } else {
-            if (post_id) {
-                updateContent()
-            }
+        } else if (post_id) {
+            updateContent()
         }
 
         mediaPeekCompleted.disconnect(mediaPeekCallback)
@@ -170,28 +168,24 @@ Pane {
             if (processedUrls.hasOwnProperty(url) && processedUrls[url]) {
                 processedUrls[url].type = "cached"
                 processedUrls[url].cachePath = pathOrError
-            }
 
-            var mimeType = processedUrls[url].mimeType || ""
-            var mediaType = ""
+                var mimeType = processedUrls[url].mimeType || ""
+                var mediaType = ""
 
-            if (mimeType.indexOf("image/") === 0) {
-                mediaType = "image"
-            } else if (mimeType.indexOf("video/") === 0) {
-                mediaType = "video"
-            }
+                if (mimeType.indexOf("image/") === 0) {
+                    mediaType = "image"
+                } else if (mimeType.indexOf("video/") === 0) {
+                    mediaType = "video"
+                }
 
-            if (mediaType && post_id) {
-                splitContentAroundResolvedMedia(url, mediaType, pathOrError, url)
-            } else {
-                if (post_id) {
+                if (mediaType && post_id) {
+                    splitContentAroundResolvedMedia(url, mediaType, pathOrError, url)
+                } else if (post_id) {
                     updateContent()
                 }
             }
-        } else {
-            if (processedUrls.hasOwnProperty(url) && processedUrls[url]) {
-                processedUrls[url].type = "failed"
-            }
+        } else if (processedUrls.hasOwnProperty(url) && processedUrls[url]) {
+            processedUrls[url].type = "failed"
         }
 
         mediaCacheCompleted.disconnect(mediaCacheCallback)
