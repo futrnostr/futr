@@ -2,7 +2,7 @@
 
 # Script to copy required DLLs to the build directory
 
-BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-@VERSION@/build/futr"
+BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-@VERSION@/build/futr"
 
 # Check if build directory exists
 if [ ! -d "$BUILD_DIR" ]; then
@@ -12,17 +12,50 @@ fi
 
 echo "Copying DLLs to $BUILD_DIR"
 
-# Copy Qt DLLs
-cp /mingw64/bin/Qt5Core.dll "$BUILD_DIR/"
-cp /mingw64/bin/Qt5Gui.dll "$BUILD_DIR/"
-cp /mingw64/bin/Qt5Network.dll "$BUILD_DIR/"
-cp /mingw64/bin/Qt5Qml.dll "$BUILD_DIR/"
-cp /mingw64/bin/Qt5Quick.dll "$BUILD_DIR/"
-cp /mingw64/bin/Qt5Widgets.dll "$BUILD_DIR/"
+# Function to copy DLL with error handling
+copy_dll() {
+    local dll_name="$1"
+    if [ -f "/ucrt64/bin/$dll_name" ]; then
+        cp "/ucrt64/bin/$dll_name" "$BUILD_DIR/"
+        echo "✓ Copied $dll_name"
+    else
+        echo "⚠ Warning: $dll_name not found in /ucrt64/bin/"
+    fi
+}
 
-# Copy other required DLLs
-cp /mingw64/bin/libgcc_s_seh-1.dll "$BUILD_DIR/"
-cp /mingw64/bin/libstdc++-6.dll "$BUILD_DIR/"
-cp /mingw64/bin/libwinpthread-1.dll "$BUILD_DIR/"
+# Copy other required DLLs from UCRT64
+copy_dll libgcc_s_seh-1.dll
+copy_dll libstdc++-6.dll
+copy_dll libwinpthread-1.dll
+copy_dll libbrotlicommon.dll
+copy_dll libbrotlidec.dll
+copy_dll libbz2-1.dll
+copy_dll libc++.dll
+copy_dll libdouble-conversion.dll
+copy_dll libfreetype-6.dll
+copy_dll libglib-2.0-0.dll
+copy_dll libgraphite2.dll
+copy_dll libharfbuzz-0.dll
+copy_dll libiconv-2.dll
+copy_dll libicudt75.dll
+copy_dll libicuin75.dll
+copy_dll libicuuc75.dll
+copy_dll libintl-8.dll
+copy_dll liblmdb.dll
+copy_dll libmd4c.dll
+copy_dll libpcre2-8-0.dll
+copy_dll libpcre2-16-0.dll
+copy_dll libpng16-16.dll
+copy_dll libsecp256k1-2.dll
+copy_dll libzstd.dll
+copy_dll zlib1.dll
+copy_dll libwebp-7.dll
+copy_dll libwebpdecoder-3.dll
+copy_dll libwebpdemux-2.dll
+copy_dll libwebpmux-3.dll
+copy_dll libjpeg-8.dll
+copy_dll libturbojpeg.dll
+copy_dll libgif-7.dll
+
 
 echo "DLL copying completed."
