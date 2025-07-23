@@ -9,7 +9,7 @@ import Control.Monad (forever, forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import Data.Maybe (catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
 import Data.Text (Text, isPrefixOf, pack, unpack)
@@ -39,9 +39,9 @@ import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
 import Nostr
 import Nostr.Bech32
-import Nostr.Event ( Event(..), EventId, Rumor(..), UnsignedEvent(..)
+import Nostr.Event ( Event(..), EventId, UnsignedEvent(..)
                    , createComment, createEventDeletion, createFollowList
-                   , createRepost, createRumor, createShortTextNote, eventIdFromHex, eventIdToHex
+                   , createRepost, createRumor, createShortTextNote, eventIdToHex
                    )
 import Nostr.Event qualified as NE
 import Nostr.EventHandler (EventHandler, handleEvent)
@@ -57,7 +57,7 @@ import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Subscription
 import Nostr.SubscriptionHandler (SubscriptionHandler)
 import Nostr.Util
-import Presentation.Classes (Classes)
+import Presentation.Classes (Classes, createPost)
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
@@ -293,23 +293,12 @@ runFutr = interpret $ \_ -> \case
     modify @AppState $ \st -> st { currentPost = eid }
 
     case (eid, previousPost) of
-      (Just newId, Just oldId) -> do
-        if newId == oldId
-          then pure()
-          else do
-            unsubscribeToCommentsFor oldId
-            subscribeToCommentsFor newId
-      (Just newId, Nothing) -> do
-        subscribeToCommentsFor newId
-      (Nothing, Just oldId) -> do
-        clearCommentsRef
-        unsubscribeToCommentsFor oldId
-      (Nothing, Nothing) -> do
-        clearCommentsRef
-    where
-      clearCommentsRef =
-        modify @QtQuickState $ \st ->
-          st { uiRefs = (uiRefs st) { currentPostCommentsObjRef = Nothing } }
+      (Just newId, Just oldId) -> when (newId == oldId) $ do
+          unsubscribeToCommentsFor oldId
+          subscribeToCommentsFor newId
+      (Just newId, Nothing) -> subscribeToCommentsFor newId
+      (Nothing, Just oldId) -> unsubscribeToCommentsFor oldId
+      (Nothing, Nothing) -> pure ()
 
   FollowProfile npub' -> do
     let targetPK = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
@@ -336,10 +325,10 @@ runFutr = interpret $ \_ -> \case
         Nothing -> return ()
 
   LoadFeed f -> do
-
     let pk = case f of
           PostsFilter pk' -> pk'
           PrivateMessagesFilter pk' -> pk'
+          CommentsFilter _ -> error "LoadFeed not supported for CommentsFilter - use getCommentFeed instead"
 
     st <- get @AppState
 
@@ -348,14 +337,14 @@ runFutr = interpret $ \_ -> \case
       _ -> pure ()
 
     modify @AppState $ \st' -> st' { currentProfile = Just (pk, []) }
-    -- @todo refactor below !!
-    notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
+    notify $ emptyUpdates { feedChanged = True }
 
     eventIds <- case f of
       PostsFilter pk' -> do
         getTimelineIds PostTimeline pk' 100
       PrivateMessagesFilter pk' -> do
         getTimelineIds ChatTimeline pk' 100
+      CommentsFilter _ -> error "LoadFeed not supported for CommentsFilter - use getCommentFeed instead"
 
     events <- getEvents eventIds
     posts <- mapM createPost events
@@ -398,7 +387,7 @@ runFutr = interpret $ \_ -> \case
 
         forM_ validGiftWraps $ \gw -> do
           publishGiftWrap gw senderPubKeyXO recipient
-        notify $ emptyUpdates { privateMessagesChanged = True }
+        notify $ emptyUpdates { feedChanged = True }
 
       (Nothing, _) -> logError "No key pair found"
       (_, Nothing) -> logError "No current chat recipient"
@@ -411,7 +400,7 @@ runFutr = interpret $ \_ -> \case
     case signed of
       Just s -> do
         publishToOutbox s
-        notify $ emptyUpdates { postsChanged = True }
+        notify $ emptyUpdates { feedChanged = True }
       Nothing -> logError "Failed to sign short text note"
 
   Logout obj -> do
@@ -456,7 +445,7 @@ runFutr = interpret $ \_ -> \case
 
                 forM_ (Set.toList targetUris) $ \relay ->
                   publishToRelay s relay
-                notify $ emptyUpdates { postsChanged = True }
+                notify $ emptyUpdates { feedChanged = True }
 
   QuoteRepost eid quote -> do
     kp <- getKeyPair
@@ -472,7 +461,7 @@ runFutr = interpret $ \_ -> \case
           Nothing -> logError "Failed to sign quote repost"
           Just s -> do
             publishToOutbox s
-            notify $ emptyUpdates { postsChanged = True }
+            notify $ emptyUpdates { feedChanged = True }
     where
       createQuoteRepost :: Event -> RelayURI -> Text -> PubKeyXO -> Int -> UnsignedEvent
       createQuoteRepost event relayUrl quote' xo t =
@@ -515,7 +504,7 @@ runFutr = interpret $ \_ -> \case
 
                 forM_ (Set.toList targetUris) $ \relay ->
                   publishToRelay s relay
-                notify $ emptyUpdates { postsChanged = True }
+                notify $ emptyUpdates { feedChanged = True }
               Nothing -> return ()
 
   Futr.DeleteEvent eid reason -> do
@@ -531,7 +520,7 @@ runFutr = interpret $ \_ -> \case
                   Nothing -> logError "Failed to sign event deletion"
                   Just s -> do
                       publishToOutbox s
-                      notify $ emptyUpdates { postsChanged = True, privateMessagesChanged = True }
+                      notify $ emptyUpdates { feedChanged = True }
 
   CancelLogin obj -> do
     fullAppCleanup
@@ -662,42 +651,3 @@ fullAppCleanup = do
   put @LmdbState initialLmdbState
   put @AppState initialState
   put @RelayPool initialRelayPool
-
-
-createPost :: FutrEff es => Event -> Eff es Post
-createPost ev = do
-  (authorPubKey, content', ts) <- case kind ev of
-      NE.GiftWrap -> do
-        kp <- getKeyPair
-        sealed <- unwrapGiftWrap ev kp
-        rumor <- maybe (return Nothing) (unwrapSeal `flip` kp) sealed
-        return $ (fromMaybe (pubKey ev) (rumorPubKey <$> rumor), fromMaybe "" $ rumorContent <$> rumor, fromMaybe 0 $ rumorCreatedAt <$> rumor)
-      NE.Repost -> do
-        let repostedId = listToMaybe [ fromMaybe (error "Invalid event ID") $ eventIdFromHex eidStr | ("e":eidStr:_) <- tags ev ]
-        case repostedId of
-            Just eid' -> do
-              return $ (pubKey ev, "nostr:" <> eventIdToNote eid', createdAt ev)
-            Nothing -> return (pubKey ev, "", createdAt ev)
-      _ -> return (pubKey ev, content ev, createdAt ev)
-  formattedTime <- formatDateTime English ts
-  pure Post
-    { postId = eventId ev
-    , postAuthor = authorPubKey
-    , postEvent = ev
-    , postContent = content'
-    , postTimestamp = formattedTime
-    , postType = case kind ev of
-        NE.ShortTextNote ->
-          if any (\t -> case t of
-                        ("q":_) -> True
-                        _ -> False) (tags ev)
-          then "quote_repost"
-          else "short_text_note"
-        NE.Repost -> "repost"
-        NE.Comment -> "comment"
-        NE.GiftWrap -> "gift_wrap"
-        _ -> "unknown"
-    , referencedPostId = case kind ev of
-        NE.Repost -> listToMaybe [ fromMaybe (error "Invalid event ID") $ eventIdFromHex eidStr | ("e":eidStr:_) <- tags ev ]
-        _ -> Nothing
-    }

@@ -153,7 +153,19 @@ runInboxModel = interpret $ \_ -> \case
     put @RelayPool initialRelayPool
     changeInboxModelState Stopped
 
-  AwaitAtLeastOneConnected -> awaitAtLeastOneConnected'
+  AwaitAtLeastOneConnected -> do
+    let maxAttempts = 300  -- 15 seconds total (300 * 50ms)
+        loop :: InboxModelEff es => Int -> Eff es Bool
+        loop 0 = return False  -- No more attempts left
+        loop n = do
+            st <- get @RelayPool
+            let states = map (connectionState . snd) $ Map.toList $ activeConnections st
+            if any (== Connected) states
+                then return True
+                else do
+                    threadDelay 50000  -- 50ms delay
+                    loop (n - 1)
+    loop maxAttempts
 
   SubscribeToProfilesAndPostsFor xo -> do
       kp <- getKeyPair
@@ -214,22 +226,6 @@ changeInboxModelState state = do
   modify @AppState $ \s -> s { inboxModelState = state }
   notify $ emptyUpdates { inboxModelStateChanged = True }
 
-
--- | Wait up to 3 seconds for at least one relay to connect
-awaitAtLeastOneConnected' :: InboxModelEff es => Eff es Bool
-awaitAtLeastOneConnected' = do
-    let maxAttempts = 300  -- 15 seconds total (300 * 50ms)
-        loop :: InboxModelEff es => Int -> Eff es Bool
-        loop 0 = return False  -- No more attempts left
-        loop n = do
-            st <- get @RelayPool
-            let states = map (connectionState . snd) $ Map.toList $ activeConnections st
-            if any (== Connected) states
-                then return True
-                else do
-                    threadDelay 50000  -- 50ms delay
-                    loop (n - 1)
-    loop maxAttempts
 
 -- | Initialize using default relays when no relay configuration exists
 initializeWithDefaultRelays :: InboxModelEff es => PubKeyXO -> Eff es ()

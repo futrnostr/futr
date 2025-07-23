@@ -37,19 +37,19 @@ import KeyMgmt (AccountId(..), updateProfile)
 import Logging
 import Nostr
 import Nostr.Bech32 (pubKeyXOToBech32, eventToNevent, eventIdToNote, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
-import Nostr.Event (Event(..), EventId(..), createMetadata, getEventId)
+import Nostr.Event (Event(..), EventId(..), Kind(..), createMetadata, getEventId)
 import Nostr.Publisher
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (fetchProfile, getProfile)
 import Nostr.Util
 import Presentation.Classes qualified as Classes
-import Presentation.Classes (findAvailableFilename)
+import Presentation.Classes (findAvailableFilename, createPost)
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb (LmdbStore, getEvent, getFollows, getEventRelays)
-import Types (Post(..), AppState(..), AppScreen(..), RelayPool(..), FeedFilter(..), Follow(..))
+import Store.Lmdb (LmdbStore, getEvent, getEvents, getFollows, getEventRelays, getCommentsWithIndentationLevel)
+import Types (Post(..), AppState(..), AppScreen(..), RelayPool(..), FeedFilter(..), Follow(..), Feed(..))
 
 
 -- | HomeScren Effect for creating QML UI.
@@ -74,12 +74,11 @@ runHomeScreen = interpret $ \_ -> \case
 
     followClass' <- runE $ Classes.followClass changeKey'
     profileClass' <- runE $ Classes.profileClass changeKey'
-    postClass' <- runE $ Classes.postClass changeKey'
     publishStatusClass' <- runE $ Classes.publishStatusClass changeKey'
+    commentFeedClass' <- runE $ Classes.commentFeedClass changeKey'
 
     followPool <- newFactoryPool (newObject followClass')
     profilesPool <- newFactoryPool (newObject profileClass')
-    postsPool <- newFactoryPool (newObject postClass')
     publishStatusPool <- newFactoryPool (newObject publishStatusClass')
 
     rootClass <- newClass [
@@ -148,7 +147,7 @@ runHomeScreen = interpret $ \_ -> \case
           void $ loadFeed f
           ck <- gets @QtQuickState signalKey
           let ck' = fromMaybe (error "Signal key not found") ck
-          feedClass' <- Classes.feedClass postsPool ck'
+          feedClass' <- Classes.feedClass ck'
           feedObj <- liftIO $ newObject feedClass' ()
           return (feedObj :: ObjRef ()),
 
@@ -218,6 +217,24 @@ runHomeScreen = interpret $ \_ -> \case
                 Nothing -> logError $ "Invalid event ID format: " <> eid
             Nothing -> setCurrentPost Nothing,
 
+        defMethod' "getCommentFeed" $ \_ eid -> runE $ do
+          let eid' = read (unpack eid) :: EventId
+          commentIds <- getCommentsWithIndentationLevel eid'
+
+          let commentEventIds = map fst commentIds
+          commentEvents <- getEvents commentEventIds
+          commentPosts <- mapM createPost commentEvents
+          let commentEventMap = Map.fromList [(postId p, p) | p <- commentPosts]
+              commentsFeed = Feed
+                  { feedEvents = commentPosts
+                  , feedEventMap = commentEventMap
+                  , feedFilter = CommentsFilter eid'
+                  }
+
+          modify @AppState $ \st -> st { currentCommentFeed = Just commentsFeed }
+          commentsFeedObj <- liftIO $ newObject commentFeedClass' ()
+          return commentsFeedObj,
+
         defMethod' "getProfile" $ \_ input -> do
           result <- case parseNprofileOrNpub input of
             Just (pk, relayHints) -> do
@@ -232,8 +249,7 @@ runHomeScreen = interpret $ \_ -> \case
                 eventMaybe <- getEvent eid
                 case eventMaybe of
                   Just event -> do
-                    post <- Classes.createPost event
-                    -- Flatten post like in Classes.hs
+                    post <- createPost event
                     relaysSet <- getEventRelays (postId post)
                     let prettyConfig = defConfig {
                         confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
@@ -293,7 +309,7 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "cacheMedia" $ \obj url -> runE $ do
           void $ async $ do
-              result <- try @SomeException $ download url  -- This caches the media
+              result <- try @SomeException $ download url
               case result of
                   Left e -> do
                       liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show e)
@@ -303,18 +319,13 @@ runHomeScreen = interpret $ \_ -> \case
                       Failed err -> do
                           liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show err)
                       Downloading -> do
-                          logInfo $ "*** Media download in progress, waiting for completion"
-                          -- Poll until download completes
                           finalStatus <- waitForDownloadCompletion url
                           case finalStatus of
                               Ready (cacheFile, _, _) -> do
-                                  logInfo $ "*** Download completed successfully"
                                   liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url True ("file:///" <> pack cacheFile)
                               Failed err -> do
-                                  logError $ "*** Download failed after waiting"
                                   liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False (pack $ show err)
                               _ -> do
-                                  logError $ "*** Unexpected final status after waiting"
                                   liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False "Unexpected final status"
                       NotStarted -> do
                           liftIO $ QML.fireSignal (Proxy :: Proxy MediaCacheCompleted) obj url False "Download not started"
@@ -351,7 +362,28 @@ runHomeScreen = interpret $ \_ -> \case
                     logError $ "Download failed: " <> pack (show e)
                     liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e),
 
-        defMethod' "cancelLogin" $ \obj -> runE $ cancelLogin obj
+        defMethod' "cancelLogin" $ \obj -> runE $ cancelLogin obj,
+
+        defMethod' "getRaw" $ \_ eid -> runE $ do
+          let eid' = read (unpack eid) :: EventId
+          eventMaybe <- getEvent eid'
+          case eventMaybe of
+              Just e -> do
+                  let prettyConfig = defConfig {
+                          confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
+                          `mappend` compare
+                      }
+                      prettyEncode x = TE.decodeUtf8 . BSL.toStrict $ encodePretty' prettyConfig (toJSON x)
+                  case kind e of
+                      GiftWrap -> do
+                          kp <- getKeyPair
+                          sealed <- unwrapGiftWrap e kp
+                          rumor <- maybe (return Nothing) (\s -> unwrapSeal s kp) sealed
+                          return $ [prettyEncode e]
+                              ++ maybe [] ((:[]) . prettyEncode) sealed
+                              ++ maybe [] ((:[]) . prettyEncode) rumor
+                      _ -> return [prettyEncode e]
+              Nothing -> return []
       ]
 
     newObject rootClass ()

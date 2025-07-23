@@ -7,7 +7,6 @@ import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy (fromStrict)
 import Data.List (sort)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes, fromMaybe)
 import Data.Text (pack, unpack)
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
@@ -99,24 +98,15 @@ runEventHandler = interpret $ \_ -> \case
 
                 PutEventResult{eventIsNew, relaysUpdated} <- putEvent eventInput mr
 
-                relayObjRefs <- if relaysUpdated then do
-                    pmap <- gets @QtQuickState propertyMap
-                    case Map.lookup (eventId event') (postObjRefs pmap) >>= Map.lookup "relays" of
-                        Just weakRef -> do
-                            objRef <- liftIO $ QML.fromWeakObjRef weakRef
-                            pure [objRef]
-                        Nothing -> pure []
-                else pure []
-
                 if not eventIsNew then
-                    pure emptyUpdates { postObjectsToSignal = relayObjRefs }
+                    pure emptyUpdates
                 else case eventInput of
                     DecryptedGiftWrapEvent _ decrypted -> do
                         st <- get @AppState
                         case currentProfile st of
                             Just (pk, _) ->
                                 if pk `elem` participants decrypted then
-                                    pure $ emptyUpdates { privateMessagesChanged = True }
+                                    pure $ emptyUpdates { feedChanged = True }
                                 else
                                     pure emptyUpdates
                             Nothing ->
@@ -130,23 +120,21 @@ runEventHandler = interpret $ \_ -> \case
                                                 , Just eid <- [eventIdFromHex eidHex]
                                                 ]
 
-                                pmap <- gets @QtQuickState propertyMap
-                                commentObjRefs <- do
-                                    refs <- forM parentIds $ \parentId -> do
-                                        case Map.lookup parentId (postObjRefs pmap) >>= Map.lookup "comments" of
-                                            Just weakRef -> do
-                                                objRef <- liftIO $ QML.fromWeakObjRef weakRef
-                                                pure $ Just objRef
-                                            Nothing -> pure Nothing
-                                    pure $ catMaybes refs
-
-                                pure $ emptyUpdates { postObjectsToSignal = commentObjRefs }
+                                st <- get @AppState
+                                case currentPost st of
+                                    Just currentPostId ->
+                                        if currentPostId `elem` parentIds then
+                                            pure $ emptyUpdates { commentFeedChanged = True }
+                                        else
+                                            pure $ emptyUpdates
+                                    Nothing ->
+                                        pure $ emptyUpdates
                             else do
                                 st <- get @AppState
                                 case currentProfile st of
                                     Just (pk, _) -> do
                                         if pk == pubKey ev then
-                                            pure $ emptyUpdates { postsChanged = True }
+                                            pure $ emptyUpdates { feedChanged = True }
                                         else
                                             pure $ emptyUpdates
                                     Nothing -> do
@@ -156,8 +144,8 @@ runEventHandler = interpret $ \_ -> \case
                             st <- get @AppState
                             case currentProfile st of
                                 Just (pk, _) -> do
-                                    if pk == pubKey ev then do
-                                        pure $ emptyUpdates { postsChanged = True }
+                                    if pk == pubKey ev then
+                                        pure $ emptyUpdates { feedChanged = True }
                                     else
                                         pure $ emptyUpdates
                                 Nothing -> do
@@ -169,21 +157,27 @@ runEventHandler = interpret $ \_ -> \case
 
                             if any (== 1059) kTags then
                                 -- GiftWrap (1059) - always trigger update for encrypted messages
-                                pure $ emptyUpdates { privateMessagesChanged = True }
+                                pure $ emptyUpdates { feedChanged = True }
                             else do
                                 st <- get @AppState
-                                case currentProfile st of
-                                    Just (pk', _) -> do
-                                        if pk' == pubKey ev then
-                                            if any (\k -> k == 1 || k == 6) kTags then
-                                                -- ShortTextNote (1) or Repost (6)
-                                                pure $ emptyUpdates { postsChanged = True }
+                                let feedUpdate = case currentProfile st of
+                                        Just (pk', _) -> 
+                                            if pk' == pubKey ev && any (\k -> k == 1 || k == 6) kTags then
+                                                 emptyUpdates { feedChanged = True }
                                             else
-                                                pure $ emptyUpdates
-                                        else
-                                            pure $ emptyUpdates
-                                    Nothing ->
-                                        pure $ emptyUpdates
+                                                emptyUpdates
+                                        Nothing -> emptyUpdates
+                                
+                                -- Check if comments for current post are being deleted
+                                let commentUpdate = case currentPost st of
+                                        Just _ ->
+                                            if any (== 1) kTags then  -- ShortTextNote (1) could be comments
+                                                emptyUpdates { commentFeedChanged = True }
+                                            else
+                                                emptyUpdates
+                                        Nothing -> emptyUpdates
+                                
+                                pure $ feedUpdate <> commentUpdate
 
                         Metadata -> do
                             case eitherDecode (fromStrict $ encodeUtf8 $ content ev) of
@@ -204,15 +198,7 @@ runEventHandler = interpret $ \_ -> \case
                                             liftIO $ QML.fromWeakObjRef weakRef
                                         pure refs
 
-                                    -- Get content refs that reference this profile
-                                    contentRefs <- do
-                                        let contentWeakRefs = fromMaybe [] $ Map.lookup (pubKey ev) $ profileContentRefs pmap
-                                        forM contentWeakRefs $ \weakRef -> do
-                                            liftIO $ QML.fromWeakObjRef weakRef
-
-                                    pure $ emptyUpdates
-                                        { profileObjectsToSignal = profileObjRefs
-                                        , contentObjectsToSignal = contentRefs }
+                                    pure $ emptyUpdates { profileObjectsToSignal = profileObjRefs }
 
                                 Left _ -> pure emptyUpdates
 
@@ -237,13 +223,8 @@ runEventHandler = interpret $ \_ -> \case
 
                                                         st <- get @AppState
                                                         case currentProfile st of
-                                                            Just (pk, _) -> do
-                                                                if pk `elem` pListPks then do
-                                                                    pure $ emptyUpdates { privateMessagesChanged = True }
-                                                                else
-                                                                    pure $ emptyUpdates
-                                                            Nothing -> do
-                                                                pure $ emptyUpdates
+                                                            Just (pk, _) -> pure $ emptyUpdates { feedChanged = pk `elem` pListPks }
+                                                            Nothing -> pure emptyUpdates
                                                 _ -> pure $ emptyUpdates
                                         _ -> pure $ emptyUpdates
                                 _ -> pure $ emptyUpdates

@@ -105,8 +105,9 @@ runDownloader = interpret $ \_ -> \case
   HasDownload url -> do
     st <- get
     case Map.lookup url (inProgress st) of
-      Just status@(Ready _)  -> pure status
-      Just status@(Failed _) -> pure status
+      Just status@(Ready _)     -> pure status
+      Just status@(Failed _)    -> pure status
+      Just status@Downloading   -> pure status
       _ -> do
         cacheDir <- getCacheDirForCurrentUser
         let cacheFile = cacheDir </> urlToCacheFile url

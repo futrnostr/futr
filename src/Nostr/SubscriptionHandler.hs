@@ -4,7 +4,6 @@ import Control.Monad (forM_, unless, when)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
 import Data.Set qualified as Set
-import Data.Text (pack)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTVarIO, readTQueue

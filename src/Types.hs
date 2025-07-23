@@ -138,6 +138,7 @@ data InboxModelState
 data FeedFilter
   = PostsFilter PubKeyXO
   | PrivateMessagesFilter PubKeyXO
+  | CommentsFilter EventId
   deriving (Eq, Show)
 
 
@@ -166,6 +167,7 @@ data AppState = AppState
   { keyPair :: Maybe KeyPair
   , currentScreen :: AppScreen -- @todo remove maybe?
   , currentFeed :: Maybe Feed
+  , currentCommentFeed :: Maybe Feed
   , currentProfile :: Maybe (PubKeyXO, [SubscriptionId])
   , currentPost :: Maybe EventId
   , version :: Text
@@ -201,6 +203,7 @@ initialState = AppState
   { keyPair = Nothing
   , currentScreen = KeyMgmt
   , currentFeed = Nothing
+  , currentCommentFeed = Nothing
   , currentProfile = Nothing
   , currentPost = Nothing
   , version = pack runtimeVersion
