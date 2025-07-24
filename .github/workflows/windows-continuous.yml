@@ -103,6 +103,18 @@ jobs:
           make install
           cd ..
 
+      - name: Clone Windows dependencies and setup cabal.project
+        run: |
+          # Clone hsc2hs parallel to futr (as required by Windows build)
+          cd ..
+          git clone https://github.com/prolic/hsc2hs
+          cd hsc2hs
+          git checkout 339a832b7bfa4d8072bfc3911af7d2f4b03c432d
+          cd ../futr
+          
+          # Use Windows-specific cabal.project (as mentioned in Setup.md step 5)
+          cp cabal.project.windows cabal.project
+
       - name: Update Cabal and Build
         run: |
           # Add both MinGW64 and GHCup to PATH
