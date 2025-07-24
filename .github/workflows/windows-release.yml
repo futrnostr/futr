@@ -114,14 +114,33 @@ jobs:
           which cabal || echo "Cabal not found in PATH"
           
           # Verify LMDB is available
-          echo "Checking LMDB library:"
+          echo "Checking LMDB library files:"
           ls -la /mingw64/lib/liblmdb* || echo "LMDB libraries not found"
           ls -la /mingw64/include/lmdb.h || echo "LMDB header not found"
           
+          # Check for different possible LMDB library names
+          echo "Looking for any lmdb-related files:"
+          find /mingw64/lib -name "*lmdb*" -type f || echo "No LMDB files found"
+          find /mingw64/include -name "*lmdb*" -type f || echo "No LMDB headers found"
+          
+          # Check what pacman thinks is installed
+          echo "Checking pacman for LMDB package:"
+          pacman -Ql mingw-w64-x86_64-lmdb | head -20
+          
           cabal update
           
-          # Configure with correct Windows library paths (overrides cabal file)
+          # Try different approaches to link LMDB
+          echo "Attempting different LMDB linking strategies..."
+          
+          # Strategy 1: Standard approach
+          echo "Strategy 1: Standard library paths"
           cabal configure --extra-lib-dirs=/mingw64/lib --extra-include-dirs=/mingw64/include
+          
+          # Strategy 2: If that fails, try with specific library names
+          if ! cabal build --dry-run; then
+            echo "Strategy 1 failed, trying strategy 2: Explicit LMDB library"
+            cabal configure --extra-lib-dirs=/mingw64/lib --extra-include-dirs=/mingw64/include --constraint="lmdb +system-lmdb"
+          fi
           
           cabal build
 
