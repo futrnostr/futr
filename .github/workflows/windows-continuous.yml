@@ -105,12 +105,10 @@ jobs:
 
       - name: Clone Windows dependencies and setup cabal.project
         run: |
-          # Clone hsc2hs parallel to futr (as required by Windows build)
+          # Clone HsQML parallel to futr (as required by Windows build - Setup.md step 5)
           cd ..
-          git clone https://github.com/prolic/hsc2hs
-          cd hsc2hs
-          git checkout 339a832b7bfa4d8072bfc3911af7d2f4b03c432d
-          cd ../futr
+          git clone https://github.com/prolic/HsQML
+          cd futr
           
           # Use Windows-specific cabal.project (as mentioned in Setup.md step 5)
           cp cabal.project.windows cabal.project
