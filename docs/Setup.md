@@ -217,7 +217,7 @@ https://jrsoftware.org/isdl.php
 
 ```bash
 export PATH=/mingw64/bin:$PATH
-windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-0.3.0.0/build/futr/futr.exe --qmldir=resources/qml
+windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-0.4.0.0/build/futr/futr.exe --qmldir=resources/qml
 ```
 
 8.2. Copy further dependencies
@@ -229,7 +229,7 @@ bash ./platform/windows/copy-dlls.sh
 8.3. Clean up temporary build artifacts
 
 ```bash
-rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-0.3.0.0/build/futr/futr-tmp
+rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-0.4.0.0/build/futr/futr-tmp
 ```
 
 8.4. Create Installer Binary
