@@ -13,9 +13,6 @@
 -- The functions provided in this module ensure secure message encryption and decryption,
 -- following the NIP-44 standard for key derivation.
 
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module Nostr.Encryption (decrypt, encrypt, getConversationKey) where
 
 import Crypto.Hash (SHA256(..))

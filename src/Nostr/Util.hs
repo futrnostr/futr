@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 module Nostr.Util where
 
 import Data.Text (Text)

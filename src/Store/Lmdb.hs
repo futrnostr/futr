@@ -1,15 +1,8 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleInstances #-}
 
 module Store.Lmdb
     ( LmdbStore(..)
@@ -44,7 +37,6 @@ import Control.Monad (forM, forM_, unless, when)
 import Control.Monad (forM, forM_, when)
 #endif
 import Data.Aeson (FromJSON, ToJSON, encode, decode, eitherDecode)
-import Data.Bits (shiftL, shiftR, (.|.))
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Cache.LRU qualified as LRU
@@ -55,7 +47,6 @@ import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe, maybeTo
 import Data.Set qualified as Set
 import Data.Set (Set)
 import Data.Text.Encoding (encodeUtf8)
-import Data.Word (Word8)
 import Effectful
 import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Shared (State, get, modify)

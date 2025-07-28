@@ -1,8 +1,6 @@
 -- | Module: Nostr.Nip05Search
 -- NIP-05 search functionality for finding users by DNS-based internet identifiers
 
-{-# LANGUAGE DeriveGeneric #-}
-
 module Nostr.Nip05Search
   ( Nip05SearchResult(..)
   , searchNip05

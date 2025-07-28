@@ -1,6 +1,4 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 
 module Presentation.HomeScreen where
 

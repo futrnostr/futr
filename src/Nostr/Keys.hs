@@ -19,10 +19,6 @@
 -- The functions provided in this module ensure secure and efficient cryptographic operations
 -- for key management and transaction signing in the Nostr network.
 
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Nostr.Keys (
     -- * Types
       KeyPair(..)

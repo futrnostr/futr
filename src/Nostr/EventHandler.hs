@@ -1,5 +1,3 @@
-{-# LANGUAGE NamedFieldPuns #-}
-
 module Nostr.EventHandler where
 
 import Control.Monad (forM, when)
