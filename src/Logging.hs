@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 module Logging where
 
 import Data.Text (Text)

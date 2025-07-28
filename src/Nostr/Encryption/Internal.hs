@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module Nostr.Encryption.Internal where
 
 import Control.Monad (unless, when)

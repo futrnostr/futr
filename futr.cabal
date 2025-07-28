@@ -69,7 +69,6 @@ executable futr
         -Wincomplete-record-updates
     default-extensions: DataKinds,
                         GADTs,
-                        ImportQualifiedPost,
                         LambdaCase,
                         OverloadedStrings,
                         TypeFamilies

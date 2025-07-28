@@ -1,8 +1,6 @@
 -- | Module: Nostr.Profile
 -- Defines types and instances for profiles in the Nostr protocol.
 
-{-# LANGUAGE DeriveGeneric #-}
-
 module Nostr.Profile
   ( Profile(..)
   , emptyProfile

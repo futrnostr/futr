@@ -1,7 +1,6 @@
 -- | Module: Nostr.Event
 -- Defines functions related to events in the Nostr protocol.
 
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Nostr.Event where
