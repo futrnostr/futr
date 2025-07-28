@@ -176,6 +176,7 @@ connectWithRetry r maxRetries requestChan = do
                 case result of
                     Right _ -> return ()
                     Left e -> runE $ do
+                        --logError $ "Connection failed for relay " <> r <> ": " <> T.pack (show e)
                         atomically $ putTMVar connectionMVar False
                         st' <- get @RelayPool
                         when (Map.member r (activeConnections st')) $

@@ -1,10 +1,9 @@
 module Nostr.EventHandler where
 
-import Control.Monad (forM, when)
+import Control.Monad (when)
 import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy (fromStrict)
 import Data.List (sort)
-import Data.Map qualified as Map
 import Data.Text (unpack)
 import Data.Text.Encoding (encodeUtf8)
 import Effectful
@@ -12,7 +11,6 @@ import Effectful.Concurrent
 import Effectful.Concurrent.STM (atomically, writeTQueue)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, gets)
-import Graphics.QML qualified as QML
 import Prelude hiding (until)
 import Text.Read (readMaybe)
 
@@ -27,7 +25,7 @@ import Nostr.Relay (RelayURI)
 import Nostr.Util
 import QtQuick
 import Store.Lmdb
-import Types (AppState(..), RelayPool(..))
+import Types (AppState(..), InboxModelState(..), RelayPool(..))
 
 -- | Event handler effects
 data EventHandler :: Effect where
@@ -100,8 +98,8 @@ runEventHandler = interpret $ \_ -> \case
                     pure emptyUpdates
                 else case eventInput of
                     DecryptedGiftWrapEvent _ decrypted -> do
-                        st <- get @AppState
-                        case currentProfile st of
+                        st' <- get @AppState
+                        case currentProfile st' of
                             Just (pk, _) ->
                                 if pk `elem` participants decrypted then
                                     pure $ emptyUpdates { feedChanged = True }
@@ -118,8 +116,8 @@ runEventHandler = interpret $ \_ -> \case
                                                 , Just eid <- [eventIdFromHex eidHex]
                                                 ]
 
-                                st <- get @AppState
-                                case currentPost st of
+                                st' <- get @AppState
+                                case currentPost st' of
                                     Just currentPostId ->
                                         if currentPostId `elem` parentIds then
                                             pure $ emptyUpdates { commentFeedChanged = True }
@@ -128,8 +126,8 @@ runEventHandler = interpret $ \_ -> \case
                                     Nothing ->
                                         pure $ emptyUpdates
                             else do
-                                st <- get @AppState
-                                case currentProfile st of
+                                st' <- get @AppState
+                                case currentProfile st' of
                                     Just (pk, _) -> do
                                         if pk == pubKey ev then
                                             pure $ emptyUpdates { feedChanged = True }
@@ -139,8 +137,8 @@ runEventHandler = interpret $ \_ -> \case
                                         pure $ emptyUpdates
 
                         Repost -> do
-                            st <- get @AppState
-                            case currentProfile st of
+                            st' <- get @AppState
+                            case currentProfile st' of
                                 Just (pk, _) -> do
                                     if pk == pubKey ev then
                                         pure $ emptyUpdates { feedChanged = True }
@@ -157,8 +155,8 @@ runEventHandler = interpret $ \_ -> \case
                                 -- GiftWrap (1059) - always trigger update for encrypted messages
                                 pure $ emptyUpdates { feedChanged = True }
                             else do
-                                st <- get @AppState
-                                let feedUpdate = case currentProfile st of
+                                st' <- get @AppState
+                                let feedUpdate = case currentProfile st' of
                                         Just (pk', _) -> 
                                             if pk' == pubKey ev && any (\k -> k == 1 || k == 6) kTags then
                                                  emptyUpdates { feedChanged = True }
@@ -167,7 +165,7 @@ runEventHandler = interpret $ \_ -> \case
                                         Nothing -> emptyUpdates
 
                                 -- Check if comments for current post are being deleted
-                                let commentUpdate = case currentPost st of
+                                let commentUpdate = case currentPost st' of
                                         Just _ ->
                                             if any (== 1) kTags then  -- ShortTextNote (1) could be comments
                                                 emptyUpdates { commentFeedChanged = True }
@@ -188,15 +186,8 @@ runEventHandler = interpret $ \_ -> \case
                                         let aid = AccountId $ pubKeyXOToBech32 (pubKey ev)
                                         updateProfile aid profile
 
-                                    -- signal profile object changes
-                                    pmap <- gets @QtQuickState propertyMap
-                                    profileObjRefs <- do
-                                        let profileWeakRefs = concatMap Map.elems $ Map.lookup (pubKey ev) $ profileObjRefs pmap
-                                        refs <- forM profileWeakRefs $ \weakRef ->
-                                            liftIO $ QML.fromWeakObjRef weakRef
-                                        pure refs
-
-                                    pure $ emptyUpdates { profileObjectsToSignal = profileObjRefs }
+                                    -- Defer expensive Qt operations to batching system - just record the pubkey
+                                    pure $ emptyUpdates { profilePubkeysToUpdate = [pubKey ev] }
 
                                 Left _ -> pure emptyUpdates
 
@@ -219,8 +210,8 @@ runEventHandler = interpret $ \_ -> \case
                                                         let tags' = rumorTags decryptedRumor
                                                             pListPks = getAllPubKeysFromPTags tags'
 
-                                                        st <- get @AppState
-                                                        case currentProfile st of
+                                                        st' <- get @AppState
+                                                        case currentProfile st' of
                                                             Just (pk, _) -> pure $ emptyUpdates { feedChanged = pk `elem` pListPks }
                                                             Nothing -> pure emptyUpdates
                                                 _ -> pure $ emptyUpdates
@@ -230,7 +221,8 @@ runEventHandler = interpret $ \_ -> \case
                         RelayListMetadata -> do
                             kp <- getKeyPair
                             let pk = keyPairToPubKeyXO kp
-                            pure $ emptyUpdates { generalRelaysChanged = pk == pubKey ev }
+                            let isOwnEvent = pk == pubKey ev
+                            pure $ emptyUpdates { generalRelaysChanged = isOwnEvent }
 
                         PreferredDMRelays -> do
                             kp <- getKeyPair

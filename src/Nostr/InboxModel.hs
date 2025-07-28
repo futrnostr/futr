@@ -22,7 +22,7 @@ import Logging
 import Nostr
 import Nostr.Event (EventId, Kind(..))
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Relay (Relay(..), RelayURI, defaultGeneralRelays, getUri, isInboxCapable, isOutboxCapable)
+import Nostr.Relay (Relay(..), RelayURI, defaultDMRelays, defaultGeneralRelays, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.RelayConnection (RelayConnection, connect, disconnect, normalizeRelayURI)
 import Nostr.Subscription
     ( Subscription
@@ -44,6 +44,7 @@ import Store.Lmdb ( LmdbStore, getFollows, getGeneralRelays, getDMRelays
                   , getLatestTimestamp, getFailedRelaysWithinLastNDays, recordFailedRelay )
 import Types ( AppState(..), ConnectionState(..), Follow(..), InboxModelState(..), SubscriptionState(..)
              , RelayPool(..), RelayData(..), initialRelayPool )
+import qualified Data.Text as T
 
 
 -- | InboxModel effects
@@ -114,30 +115,32 @@ runInboxModel = interpret $ \_ -> \case
     updateQueue' <- newTQueueIO
     inBootstrapVar <- atomically $ newTVar True  -- Local variable, not stored in RelayPool
     updateThread' <- async $ forever $ do
-      void $ atomically $ readTQueue updateQueue'
-
       inBootstrap <- atomically $ readTVar inBootstrapVar
-      unless inBootstrap $ do
-        void $ atomically $ flushTQueue updateQueue'
-        updateSubscriptions xo
-
-      threadDelay 10000000  -- Relay updates are processed every 10 seconds
+      if inBootstrap
+        then do
+          threadDelay 1000000  -- Check every 1 second during bootstrap
+        else do
+          void $ atomically $ readTQueue updateQueue'
+          void $ atomically $ flushTQueue updateQueue'
+          updateSubscriptions xo
+          threadDelay 5000000  -- Relay updates are processed every 5 seconds
 
     modify @RelayPool $ \s -> s
         { updateQueue = updateQueue'
         , updateThread = Just updateThread'
         }
 
-    -- initialize the inbox model
     inboxRelays <- getGeneralRelays xo
     changeInboxModelState InitialBootstrap
-    if null inboxRelays
-      then initializeWithDefaultRelays xo
-      else continueWithRelays inboxRelays
 
-    -- Once initial setup is complete, exit bootstrap mode
+    when (null inboxRelays) $ initializeWithDefaultRelays xo
+
     atomically $ writeTVar inBootstrapVar False
-    changeInboxModelState LiveProcessing
+    atomically $ writeTQueue updateQueue' ()
+
+    inboxRelays' <- getGeneralRelays xo
+    unless (null inboxRelays') $ do
+      continueWithRelays inboxRelays'
 
   StopInboxModel -> do
     st <- get @RelayPool
@@ -232,11 +235,11 @@ initializeWithDefaultRelays xo = do
   let (defaultRelays, _) = defaultGeneralRelays
 
   connectionResults <- forConcurrently defaultRelays $ \r -> do
-    connected <- connect (getUri r)
+    connected <- connect $ getUri r
     return (r, connected)
 
   let connectedRelays = [r | (r, success) <- connectionResults, success]
-  let bootstrapFilter = inboxRelayTopologyFilter [xo]
+      bootstrapFilter = inboxRelayTopologyFilter [xo]
 
   void $ forConcurrently connectedRelays $ \r -> do
       subId' <- subscribe (getUri r) bootstrapFilter
@@ -250,11 +253,10 @@ initializeWithDefaultRelays xo = do
   myGeneralRelays <- getGeneralRelays xo
   myDMRelays <- getDMRelays xo
 
-  when (null myGeneralRelays) setDefaultGeneralRelays
-  when (null myDMRelays) setDefaultDMRelays
-
-  myGeneralRelays' <- getGeneralRelays xo
-  continueWithRelays myGeneralRelays'
+  when (null myGeneralRelays) $ do
+    setDefaultGeneralRelays
+  when (null myDMRelays) $ do
+    setDefaultDMRelays
 
 
 -- | Calculate timestamp maps for a list of pubkeys
@@ -301,8 +303,10 @@ continueWithRelays inboxRelays = do
     results <- forConcurrently chunk $ \(relayUri, pubkeys) -> do
       connected <- connect relayUri
       if connected
-        then void $ subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
-        else recordFailedRelay relayUri
+        then do
+          void $ subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
+        else do
+          recordFailedRelay relayUri
       return (relayUri, connected)
     -- Add delay between chunks to avoid overwhelming the network
     threadDelay 250000  -- 250ms delay between chunks
@@ -312,8 +316,9 @@ continueWithRelays inboxRelays = do
       failedPubkeys = concatMap (\r -> Map.findWithDefault [] r followRelayMap) failedRelays
 
   unless (null failedPubkeys) $ do
-    --logInfo $ "Rebalancing subscriptions for pubkeys: " <> pack (show failedPubkeys)
     rebalanceSubscriptions failedPubkeys ownInboxRelayURIs
+
+  changeInboxModelState LiveProcessing
 
 
 -- | Recursively rebalances subscriptions by re-computing the grouping for the given pubkeys using
@@ -327,6 +332,7 @@ rebalanceSubscriptions
   => [PubKeyXO]  -- ^ Pubkeys that still need to connect.
   -> [RelayURI]  -- ^ Current available inbox relay URIs.
   -> Eff es ()
+rebalanceSubscriptions _ [] = pure ()
 rebalanceSubscriptions pubkeys availableInboxURIs = do
   newRelayMap <- buildRelayPubkeyMap pubkeys availableInboxURIs
 
@@ -341,13 +347,8 @@ rebalanceSubscriptions pubkeys availableInboxURIs = do
       return (relayUri, connected)
   let failedRelays    = [ relayUri | (relayUri, connected) <- newResults, not connected ]
       newFailedPubkeys = concatMap (\r -> Map.findWithDefault [] r newRelayMap) failedRelays
-  if null newFailedPubkeys then
-    return ()
-  else do
-    let newAvailable = filter (`notElem` failedRelays) availableInboxURIs
-    if null newAvailable
-      then pure () -- logError $ "Rebalancing failed: no fallback relays available for pubkeys: " <> pack (show newFailedPubkeys)
-      else rebalanceSubscriptions newFailedPubkeys newAvailable
+      newAvailable = filter (`notElem` failedRelays) availableInboxURIs
+  rebalanceSubscriptions newFailedPubkeys newAvailable
 
 
 -- | Subscribe to Giftwrap events on a relay
@@ -432,10 +433,17 @@ getSubscriptionTimestamp pks ks = do
 buildRelayPubkeyMap :: InboxModelEff es => [PubKeyXO] -> [RelayURI] -> Eff es (Map.Map RelayURI [PubKeyXO])
 buildRelayPubkeyMap pks ownInboxRelays = do
   recentlyFailedRelays <- getFailedRelaysWithinLastNDays 1
+  kp <- getKeyPair
+  let ownPubkey = keyPairToPubKeyXO kp
+
   relayPubkeyPairs <- forM pks $ \pk -> do
     relays <- getGeneralRelays pk
     let outboxRelayURIs = [ normalizeRelayURI (getUri r) | r <- relays, isOutboxCapable r ]
-        workingRelays = filter (`notElem` recentlyFailedRelays) outboxRelayURIs
+        -- Filter localhost for contacts (but allow for own pubkey)
+        filteredRelays = if pk == ownPubkey
+                        then outboxRelayURIs
+                        else filter (not . isLocalhostRelay) outboxRelayURIs
+        workingRelays = filter (`notElem` recentlyFailedRelays) filteredRelays
         workingInboxRelays = filter (`notElem` recentlyFailedRelays)
                            $ map normalizeRelayURI ownInboxRelays
         selectedRelays =
@@ -456,6 +464,14 @@ buildRelayPubkeyMap pks ownInboxRelays = do
         relayPubkeyPairs
 
   return $ Map.map Set.toList relayToPubkeysMap
+
+
+-- | Check if a relay URI is localhost
+isLocalhostRelay :: RelayURI -> Bool
+isLocalhostRelay uri =
+  "127.0.0.1" `T.isInfixOf` uri ||
+  "localhost" `T.isInfixOf` uri ||
+  "::1" `T.isInfixOf` uri
 
 
 -- | Maximum number of outbox relays to consider per contact
@@ -495,13 +511,20 @@ updateGeneralSubscriptions xo = do
   -- Build new relay-pubkey mapping for follows
   newRelayPubkeyMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
 
+  dmRelayURIs <- getDMRelays xo
+  let (defaultDMRelayURIs, _) = defaultDMRelays
+      allDMRelays = Set.fromList (dmRelayURIs ++ defaultDMRelayURIs)
+
   st <- get @RelayPool
   let currentRelays = Map.keysSet (activeConnections st)
-  let newRelays = Map.keysSet newRelayPubkeyMap
+      currentGeneralRelays = Set.difference currentRelays allDMRelays
+      newOutboxRelays = Map.keysSet newRelayPubkeyMap
+      newInboxRelays = Set.fromList [ normalizeRelayURI (getUri r) | r <- inboxRelays, isInboxCapable r ]
+      allNeededGeneralRelays = Set.union newOutboxRelays newInboxRelays
+      relaysToAdd = Set.difference newOutboxRelays currentRelays
+      relaysToRemove = Set.difference currentGeneralRelays allNeededGeneralRelays
+      relaysToUpdate = Set.intersection currentRelays newOutboxRelays
 
-  let relaysToAdd = Set.difference newRelays currentRelays
-  let relaysToRemove = Set.difference currentRelays newRelays
-  let relaysToUpdate = Set.intersection currentRelays newRelays
   -- Remove old connections
   void $ forConcurrently (Set.toList relaysToRemove) $ \relayUri -> do
     disconnect relayUri
