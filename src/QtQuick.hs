@@ -2,7 +2,7 @@
 
 module QtQuick where
 
-import Control.Monad (forever, forM_, void, when)
+import Control.Monad (forever, forM, forM_, unless, void, when)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -63,6 +63,7 @@ data UIUpdates = UIUpdates
   , noticesChanged :: Bool
   , inboxModelStateChanged :: Bool
   , profileObjectsToSignal :: [QML.ObjRef PubKeyXO]
+  , profilePubkeysToUpdate :: [PubKeyXO]
   }
 
 
@@ -78,6 +79,7 @@ instance Semigroup UIUpdates where
     , noticesChanged = noticesChanged a || noticesChanged b
     , inboxModelStateChanged = inboxModelStateChanged a || inboxModelStateChanged b
     , profileObjectsToSignal = profileObjectsToSignal a ++ profileObjectsToSignal b
+    , profilePubkeysToUpdate = profilePubkeysToUpdate a ++ profilePubkeysToUpdate b
     }
 
 
@@ -88,7 +90,7 @@ instance Monoid UIUpdates where
 -- | Empty UI updates.
 emptyUpdates :: UIUpdates
 emptyUpdates = UIUpdates
-  False False False False False False False False False []
+  False False False False False False False False False [] []
 
 
 -- | Initial effectful QML state.
@@ -175,7 +177,17 @@ runQtQuick = interpret $ \_ -> \case
           forM_ (profileObjectsToSignal combinedUpdates) $ \objRef ->
             liftIO $ QML.fireSignal changeKey objRef
 
-          threadDelay 1200000  -- 0.2 second delay for UI updates
+          unless (null $ profilePubkeysToUpdate combinedUpdates) $ do
+            pmap <- gets propertyMap
+            let uniquePubkeys = Map.keys $ Map.fromList $ zip (profilePubkeysToUpdate combinedUpdates) (repeat ())
+            forM_ uniquePubkeys $ \pubKey -> do
+              let profileWeakRefs = concatMap Map.elems $ Map.lookup pubKey $ profileObjRefs pmap
+              profileRefs <- forM profileWeakRefs $ \weakRef ->
+                liftIO $ QML.fromWeakObjRef weakRef
+              forM_ profileRefs $ \objRef ->
+                liftIO $ QML.fireSignal changeKey objRef
+
+          threadDelay 200000  -- 0.2 second delay for UI updates
 
         liftIO $ QML.runEngineLoop config
 
@@ -226,4 +238,5 @@ hasUpdates u =
     publishStatusChanged u ||
     noticesChanged u ||
     inboxModelStateChanged u ||
-    not (null (profileObjectsToSignal u))
+    not (null (profileObjectsToSignal u)) ||
+    not (null (profilePubkeysToUpdate u))
