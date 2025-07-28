@@ -236,7 +236,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
                     updates <- handleResponse r response
                     notify updates
                     receiveLoop conn'
-                Left err -> do
+                Left _ -> do
                     --logError $ "Could not decode server response from " <> r <> ": " <> T.pack err
                     --logError $ "Msg: " <> T.pack (show msg')
                     receiveLoop conn'
@@ -250,7 +250,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
             NT.SendEvent event -> do
                 result <- liftIO $ try @SomeException $ WS.sendTextData conn' $ encode msg
                 case result of
-                    Left ex -> pure ()
+                    Left _ -> pure ()
                         --logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
                     Right _ -> do
                         -- Store the event in the state for potential retry
@@ -264,7 +264,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
             _ -> do
                 result <- liftIO $ try @SomeException $ WS.sendTextData conn' $ encode msg
                 case result of
-                    Left ex -> pure ()
+                    Left _ -> pure ()
                         --logError $ "Error sending data to " <> r <> ": " <> T.pack (show ex)
                     Right _ -> sendLoop conn'
 

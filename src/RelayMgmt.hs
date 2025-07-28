@@ -2,7 +2,6 @@
 
 module RelayMgmt where
 
-import Control.Monad (when)
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret, send)
 
