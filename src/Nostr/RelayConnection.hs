@@ -203,21 +203,17 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
                 r
                 (activeConnections st)
             }
+        void $ atomically $ putTMVar connectionMVar True
         notifyRelayStatus
 
-        -- Handle pending subscriptions
         st <- get @RelayPool
         let pendingSubs = pendingSubscriptions st
         forM_ (Map.toList pendingSubs) $ \(subId', details) -> do
             atomically $ writeTChan requestChan (NT.Subscribe $ NT.Subscription subId' (subscriptionFilter details))
-
-        -- Move pending subscriptions to active subscriptions
         modify @RelayPool $ \st' ->
             st' { subscriptions = Map.union (subscriptions st') pendingSubs
                 , pendingSubscriptions = Map.empty
-                }
-
-        void $ atomically $ putTMVar connectionMVar True
+                }       
 
         receiveThread <- async $ receiveLoop conn'
         sendThread <- async $ sendLoop conn'
@@ -225,7 +221,6 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
         modify @RelayPool $ \st' ->
             st' { activeConnections = Map.adjust (\d -> d { connectionState = Disconnected }) r (activeConnections st') }
         notifyRelayStatus
-
   where
     receiveLoop conn' = do
         msg <- liftIO (try (WS.receiveData conn') :: IO (Either SomeException BSL.ByteString))

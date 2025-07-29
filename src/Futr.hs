@@ -546,8 +546,8 @@ loginWithAccount obj a = do
         , npubView = pubKeyXOToBech32 $ derivePublicKeyXO $ accountSecKey a
         }
 
+    void $ async startInboxModel
     void $ async $ do
-      startInboxModel
       atLeastOneConnected <- awaitAtLeastOneConnected
 
       if atLeastOneConnected
