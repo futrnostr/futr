@@ -56,6 +56,7 @@ copy_dll libwebpmux-3.dll
 copy_dll libjpeg-8.dll
 copy_dll libturbojpeg.dll
 copy_dll libgif-7.dll
-
+copy_dll libssl-3-x64.dll
+copy_dll libcrypto-3-x64.dll
 
 echo "DLL copying completed."
