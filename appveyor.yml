@@ -88,18 +88,28 @@ build_script:
       $template = Get-Content "platform\windows\innosetup.iss.template"
       $script = $template -replace "@VERSION@", $version
       $script | Set-Content "platform\windows\innosetup.iss"
+
+      # Prepare copy-dlls script from template
+      $template = Get-Content "platform\windows\copy-dlls.sh.template"
+      $script = $template -replace "@VERSION@", $version
+      $script | Set-Content "platform\windows\copy-dlls.sh"
+
+      # Prepare Windows resource file from template
+      $template = Get-Content "platform\windows\futr.rc.template"
+      $script = $template -replace "@VERSION@", $version
+      $script | Set-Content "platform\windows\futr.rc"
       
       # Create dist directory if it doesn't exist
       if (-not (Test-Path "dist")) { New-Item -ItemType Directory -Path "dist" }
       
       # Deploy Qt dependencies
-      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-0.4.0.0/build/futr/futr.exe --qmldir=resources/qml"
+      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:`$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
       
       # Copy additional DLLs
       C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && bash ./platform/windows/copy-dlls.sh"
       
       # Clean up temporary build artifacts
-      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-0.4.0.0/build/futr/futr-tmp"
+      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-$version/build/futr/futr-tmp"
       
       # Create Installer Binary
       & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "platform\windows\innosetup.iss"
@@ -125,14 +135,14 @@ deploy:
     on:
       branch: 
         - master
-  
+
   # Tagged releases
   - provider: GitHub
     tag: $(APPVEYOR_REPO_TAG_NAME)
     release: Futr $(APPVEYOR_REPO_TAG_NAME)
     description: |
       🎉 Stable release of Futr $(APPVEYOR_REPO_TAG_NAME)
-      
+
       This is a stable release build. See the changelog for details about what's new in this version.
     artifact: futr-windows-installer
     auth_token: $(GITHUB_TOKEN)

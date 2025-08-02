@@ -119,7 +119,7 @@ The easiest way to get Windows binaries is through our automated CI/CD pipeline 
 
 The automated builds use:
 - GHC 9.6.5
-- Cabal 3.10.2.0  
+- Cabal 3.10.2.0
 - UCRT64 environment
 - Qt5 with all required modules
 - Inno Setup for Windows installer creation
@@ -215,7 +215,7 @@ Note: Don't ask me why, just do it. If you can solve it without doing this stupi
 git clone https://github.com/prolic/hsc2hs
 cd hsc2hs && git checkout 339a832b7bfa4d8072bfc3911af7d2f4b03c432d && cd ..
 
-# Clone HsQML dependency  
+# Clone HsQML dependency
 git clone https://github.com/prolic/HsQML
 ```
 
