@@ -133,8 +133,8 @@ deploy:
     prerelease: true
     force_update: true
     on:
-      branch: 
-        - master
+      branch: master
+      APPVEYOR_PULL_REQUEST_NUMBER: undefined
 
   # Tagged releases
   - provider: GitHub
