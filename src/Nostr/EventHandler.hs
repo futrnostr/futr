@@ -25,7 +25,7 @@ import Nostr.Relay (RelayURI)
 import Nostr.Util
 import QtQuick
 import Store.Lmdb
-import Types (AppState(..), InboxModelState(..), RelayPool(..))
+import Types (AppState(..), RelayPool(..))
 
 -- | Event handler effects
 data EventHandler :: Effect where
