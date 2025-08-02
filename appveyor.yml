@@ -10,6 +10,10 @@ branches:
 # Skip builds for pull requests to prevent interfering with continuous releases
 skip_branch_with_pr: true
 
+# Additional safeguard: exit early if this is a PR build
+init:
+  - ps: if ($env:APPVEYOR_PULL_REQUEST_NUMBER) { Write-Host "Skipping build for pull request #$env:APPVEYOR_PULL_REQUEST_NUMBER"; Exit-AppVeyorBuild }
+
 # Use MSYS2 environment  
 environment:
   matrix:
