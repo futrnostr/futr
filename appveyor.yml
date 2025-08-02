@@ -7,6 +7,9 @@ branches:
     - master
     - /v\d+\.\d+\.\d+.*/
 
+# Skip builds for pull requests to prevent interfering with continuous releases
+skip_branch_with_pr: true
+
 # Use MSYS2 environment  
 environment:
   matrix:
