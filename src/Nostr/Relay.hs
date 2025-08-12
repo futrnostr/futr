@@ -13,13 +13,31 @@ import Data.Function (on)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Vector qualified as V
+import Data.List (dropWhileEnd)
 import GHC.Generics (Generic)
-import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme)
+import Network.URI (URI(..), parseURI, uriAuthority, uriRegName, uriScheme, uriPort, uriPath, uriQuery, uriFragment)
 import Prelude hiding (until)
 import Text.Read (readMaybe)
 
 -- | Represents a relay URI.
 type RelayURI = Text
+
+
+-- | Normalize a relay URI according to RFC 3986
+normalizeRelayURI :: RelayURI -> RelayURI
+normalizeRelayURI uri = case parseURI (T.unpack uri) of
+    Just uri' -> T.pack $
+        (if uriScheme uri' == "wss:" then "wss://" else "ws://") ++
+        maybe "" (\auth ->
+            let hostPort = uriRegName auth ++
+                    case uriPort auth of
+                        ":80" | uriScheme uri' == "ws:" -> ""
+                        ":443" | uriScheme uri' == "wss:" -> ""
+                        p -> p
+            in hostPort
+        ) (uriAuthority uri') ++
+        dropWhileEnd (== '/') (uriPath uri' ++ uriQuery uri' ++ uriFragment uri')
+    Nothing -> uri
 
 
 -- | Represents a relay with its URI and type combined.

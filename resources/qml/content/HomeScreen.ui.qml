@@ -5,7 +5,6 @@ import QtQuick.Layouts 1.15
 import QtGraphicalEffects 1.15
 
 import Components 1.0
-import Dialogs 1.0
 import HsQML.Model 1.0
 import Futr 1.0
 import Profile 1.0
@@ -27,6 +26,7 @@ Item {
             height: 80
             currentUser: homeScreen.currentUserNpub
             currentUserPicture: homeScreen.currentUserPicture
+            stackView: stackView
         }
 
         Item {
@@ -208,9 +208,6 @@ Item {
         }
     }
 
-    RelayMgmtDialog {
-        id: relayMgmtDialog
-    }
 
     ShowKeysDialog {
         id: showKeysDialog

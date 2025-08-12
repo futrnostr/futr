@@ -24,20 +24,28 @@ ApplicationWindow {
     Material.accent: accentColor
     Material.primary: Material.BlueGrey
 
-    ClipboardHelper {
-        id: clipboard
-    }
+    // ClipboardHelper {
+    //     id: clipboard
+    // }
 
-    Loader {
-        id: screenLoader
-        anchors.fill: parent
-        source: {
-            switch (activeScreen) {
-                case "Home": return "HomeScreen.ui.qml";
-                case "KeyMgmt": return "KeyMgmtScreen.ui.qml";
-                default: return "";
-            }
-        }
-        active: activeScreen === "Home" || activeScreen === "KeyMgmt"
+
+
+    // Loader {
+    //     id: screenLoader
+    //     anchors.fill: parent
+    //     source: {
+    //         switch (activeScreen) {
+    //             case "Home": return "HomeScreen.ui.qml";
+    //             case "KeyMgmt": return "KeyMgmtScreen.ui.qml";
+    //             default: return "";
+    //         }
+    //     }
+    //     active: activeScreen === "Home" || activeScreen === "KeyMgmt"
+    // }
+
+    Component.onCompleted: {
+        console.log("App.qml loaded, logging in...")
+        login("npub18wxf0t5jsmcpy57ylzx595twskx8eyj382lj7wp9rtlhzdg5hnnqvt4xra")
+        console.log("Logged in")
     }
 }

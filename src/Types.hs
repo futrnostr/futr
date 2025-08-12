@@ -11,11 +11,16 @@ import Data.Text (Text, pack)
 import Control.Concurrent.Async (Async)
 import Effectful.Concurrent.STM (TChan, TQueue)
 import GHC.Generics (Generic)
+
 import Nostr.Event (Event, EventId)
 import Nostr.Keys (KeyPair, PubKeyXO)
-import Nostr.Types (Filter, Request, SubscriptionId)
 import Nostr.Relay (RelayURI)
+import Nostr.Types (Filter, Request, SubscriptionId)
 import Version (runtimeVersion)
+
+-- | Global cap for request/event queues per relay
+queueMax :: Int
+queueMax = 200
 
 
 -- | Language options for the application
@@ -30,41 +35,6 @@ data PublishStatus
     | Success
     | Failure Text
     deriving (Eq, Show)
-
-
--- | Subscription events
-data SubscriptionEvent
-    = EventAppeared Event
-    | SubscriptionEose SubscriptionId
-    | SubscriptionClosed Text
-    deriving (Show)
-
-
--- | State for RelayPool handling.
-data RelayPool = RelayPool
-    { activeConnections :: Map RelayURI RelayData
-    , subscriptions :: Map SubscriptionId SubscriptionState
-    , pendingSubscriptions :: Map SubscriptionId SubscriptionState
-    , publishStatus :: Map EventId (Map RelayURI PublishStatus)
-    , updateQueue :: TQueue ()
-    , updateThread :: Maybe (Async ())
-    , commentSubscriptions :: Map EventId [SubscriptionId]
-    }
-
-
--- | Subscription details.
-data SubscriptionState = SubscriptionState
-    { subscriptionFilter :: Filter
-    , responseQueue :: TQueue (RelayURI, SubscriptionEvent)
-    , relay :: RelayURI
-    , eventsProcessed :: Int
-    , oldestCreatedAt :: Int
-    }
-
-
--- | Create a new subscription state.
-newSubscriptionState :: Filter -> TQueue (RelayURI, SubscriptionEvent) -> RelayURI -> SubscriptionState
-newSubscriptionState f q r = SubscriptionState f q r 0 (maxBound :: Int)
 
 
 -- | Connection errors.
@@ -84,30 +54,10 @@ data ConnectionState = Connected | Disconnected | Connecting
   deriving (Show, Eq)
 
 
--- | Data for each relay.
-data RelayData = RelayData
-  { connectionState :: ConnectionState
-  , requestChannel :: TChan Request
-  , notices        :: [Text]
-  , lastError      :: Maybe ConnectionError
-  , connectionAttempts :: Int
-  , pendingRequests :: [Request]
-  , pendingEvents :: [Event]
-  , pendingAuthId :: Maybe EventId
-  }
+-- Moved pool/state types to Nostr.RelayPool
 
 
--- | Initial state for RelayPool.
-initialRelayPool :: RelayPool
-initialRelayPool = RelayPool
-  { activeConnections = Map.empty
-  , subscriptions = Map.empty
-  , pendingSubscriptions = Map.empty
-  , publishStatus = Map.empty
-  , updateQueue = undefined
-  , updateThread = Nothing
-  , commentSubscriptions = Map.empty
-  }
+-- Moved pool/state types to Nostr.RelayPool
 
 
 -- | Application screens
