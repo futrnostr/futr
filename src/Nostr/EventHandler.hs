@@ -26,7 +26,7 @@ import Nostr.Util
 import QtQuick
 import Store.Lmdb
 import Types (AppState(..))
-import Nostr.RelayPool (RelayPool, RelayPoolState(..))
+import Nostr.RelayPool (RelayPoolState(..))
 
 -- | Event handler effects
 data EventHandler :: Effect where

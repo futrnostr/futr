@@ -42,7 +42,7 @@ import Nostr.Event ( Event(..), EventId, UnsignedEvent(..)
                    , createRepost, createRumor, createShortTextNote, eventIdToHex
                    )
 import Nostr.Event qualified as NE
-import Nostr.EventHandler (EventHandler, handleEvent)
+import Nostr.EventHandler (EventHandler)
 import Nostr.InboxModel ( InboxModel, awaitAtLeastOneConnected, startInboxModel
                         , stopInboxModel, subscribeToProfilesAndPostsFor
                         , subscribeToCommentsFor, unsubscribeToCommentsFor )

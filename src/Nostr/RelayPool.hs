@@ -63,6 +63,9 @@ module Nostr.RelayPool
   , setReconcileThread
   , setLastStatsSnapshot
   , setLastRelayPubkeyMap
+  , registerAggregatedDedup
+  , unregisterAggregatedDedup
+  , isDuplicateAndMark
   ) where
 
 import Effectful
@@ -70,6 +73,7 @@ import Effectful.Dispatch.Dynamic (send, interpret)
 import Effectful.State.Static.Shared (State, get, modify)
 
 import Data.Map.Strict qualified as Map
+import qualified Data.Set as Set
 import Control.Concurrent.Async (Async)
 import Effectful.Concurrent.STM (TChan, TQueue)
 
@@ -123,6 +127,9 @@ data RelayPool :: Effect where
   SetLastRelayPubkeyMap :: Map.Map RelayURI [PubKeyXO] -> RelayPool m ()
   InsertCommentSubscription :: EventId -> NT.SubscriptionId -> RelayPool m ()
   DeleteCommentSubscription :: EventId -> RelayPool m ()
+  RegisterAggregatedDedup :: NT.SubscriptionId -> RelayPool m ()
+  UnregisterAggregatedDedup :: NT.SubscriptionId -> RelayPool m ()
+  IsDuplicateAndMark :: NT.SubscriptionId -> EventId -> RelayPool m Bool
 
 type instance DispatchOf RelayPool = Dynamic
 
@@ -165,6 +172,8 @@ data RelayData = RelayData
   , pendingEvents :: [Event]
   , queuedRequests :: [NT.Request]
   , pendingAuthId :: Maybe EventId
+  , authInProgress :: Bool
+  , authed :: Bool
   , recentFailure :: Bool
   , successCount :: Int
   , failureCount :: Int
@@ -194,6 +203,7 @@ data RelayPoolState = RelayPoolState
     , lastStatsSnapshotAt :: Maybe Int
     , excludedRelays :: Map.Map RelayURI Int
     , avoidSpamOnUnsafeRelays :: Bool
+  , aggregatedDedup :: Map.Map NT.SubscriptionId (Set.Set EventId)
     }
 
 -- | Initial state for the pool
@@ -213,6 +223,7 @@ initialRelayPool = RelayPoolState
   , lastStatsSnapshotAt = Nothing
   , excludedRelays = Map.empty
   , avoidSpamOnUnsafeRelays = False
+  , aggregatedDedup = Map.empty
   }
 
 -- API helpers
@@ -324,6 +335,15 @@ setSubscriptionLastSentFilter sid f = send (SetSubscriptionLastSentFilter sid f)
 
 setLastRelayPubkeyMap :: RelayPool :> es => Map.Map RelayURI [PubKeyXO] -> Eff es ()
 setLastRelayPubkeyMap m = send (SetLastRelayPubkeyMap m)
+
+registerAggregatedDedup :: RelayPool :> es => NT.SubscriptionId -> Eff es ()
+registerAggregatedDedup sid = send (RegisterAggregatedDedup sid)
+
+unregisterAggregatedDedup :: RelayPool :> es => NT.SubscriptionId -> Eff es ()
+unregisterAggregatedDedup sid = send (UnregisterAggregatedDedup sid)
+
+isDuplicateAndMark :: RelayPool :> es => NT.SubscriptionId -> EventId -> Eff es Bool
+isDuplicateAndMark sid eid = send (IsDuplicateAndMark sid eid)
 
 insertCommentSubscription :: RelayPool :> es => EventId -> NT.SubscriptionId -> Eff es ()
 insertCommentSubscription eid sid = send (InsertCommentSubscription eid sid)
@@ -456,3 +476,17 @@ runRelayPool = interpret $ \_ -> \case
 
   DeleteCommentSubscription eid ->
     modify @RelayPoolState $ \st -> st { commentSubscriptions = Map.delete eid (commentSubscriptions st) }
+
+  RegisterAggregatedDedup sid ->
+    modify @RelayPoolState $ \st -> st { aggregatedDedup = Map.insert sid Set.empty (aggregatedDedup st) }
+
+  UnregisterAggregatedDedup sid ->
+    modify @RelayPoolState $ \st -> st { aggregatedDedup = Map.delete sid (aggregatedDedup st) }
+
+  IsDuplicateAndMark sid eid -> do
+    st <- get @RelayPoolState
+    let current = Map.findWithDefault Set.empty sid (aggregatedDedup st)
+        already = Set.member eid current
+        newSet = Set.insert eid current
+    modify @RelayPoolState $ \st' -> st' { aggregatedDedup = Map.insert sid newSet (aggregatedDedup st') }
+    pure already

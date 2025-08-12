@@ -35,7 +35,7 @@ import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 #ifdef mingw32_HOST_OS
 import Control.Monad (forM, forM_, unless, when)
 #else
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM_, when)
 #endif
 import Data.Aeson (FromJSON, ToJSON, encode, decode, eitherDecode)
 import Data.Bits (shiftL, shiftR, (.|.))
@@ -45,7 +45,7 @@ import Data.Cache.LRU qualified as LRU
 import Data.List (find)
 import Data.Map qualified as Map
 import Data.Map (Map)
-import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe, maybeToList)
+import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Set (Set)
 import Data.Text (Text)
@@ -1025,6 +1025,8 @@ initialLmdbState = LmdbState
     , dmRelaysDb = error "LMDB not initialized"
     -- latestTimestampDb removed
     , commentDb = error "LMDB not initialized"
+    , relayStatsDb = error "LMDB not initialized"
+    , feedAnchorsDb = error "LMDB not initialized"
     , eventCache = LRU.newLRU (Just cacheSize)
     , eventRelaysCache = LRU.newLRU (Just cacheSize)
     , profileCache = LRU.newLRU (Just smallCacheSize)
@@ -1033,6 +1035,7 @@ initialLmdbState = LmdbState
     , generalRelaysCache = LRU.newLRU (Just smallCacheSize)
     , dmRelaysCache = LRU.newLRU (Just smallCacheSize)
     , latestTimestampCache = LRU.newLRU (Just smallCacheSize)
+    , feedAnchorsCache = LRU.newLRU (Just smallCacheSize)
     , commentCache = LRU.newLRU (Just miniCacheSize)
     }
 

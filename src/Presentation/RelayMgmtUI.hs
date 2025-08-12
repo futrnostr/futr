@@ -19,7 +19,7 @@ import Nostr.Util
 import RelayMgmt (RelayMgmt, addDMRelay, addGeneralRelay, removeDMRelay, removeGeneralRelay)
 import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
 import Types (AppState(..), ConnectionState(..))
-import Nostr.RelayPool (RelayPool, RelayPoolState(..), RelayData(..), SubscriptionState(..))
+import Nostr.RelayPool (RelayPoolState(..), RelayData(..))
 
 
 data RelayType = DMRelays | InboxRelays | OutboxRelays

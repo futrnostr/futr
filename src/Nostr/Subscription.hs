@@ -28,7 +28,7 @@ import Nostr.Util
 import RelayMgmt
 import Store.Lmdb
 import Types
-import Nostr.RelayPool (RelayPoolState(..), SubscriptionState(..))
+import Nostr.RelayPool (RelayPoolState(..), SubscriptionState(..), registerAggregatedDedup, unregisterAggregatedDedup, isDuplicateAndMark)
 
 -- | Subscription effects
 data Subscription :: Effect where
@@ -270,6 +270,8 @@ awaitAllEose
   -> Int          -- ^ timeout in seconds
   -> Eff es Bool
 awaitAllEose subIds timeoutSeconds = do
+  -- enable aggregated dedup for these multi-relay subs
+  mapM_ registerAggregatedDedup subIds
   start <- getCurrentTime
   let loop = do
         now <- getCurrentTime
@@ -286,13 +288,16 @@ awaitAllEose subIds timeoutSeconds = do
                    loop
   result <- loop
   -- On timeout, proactively close remaining subs
-  if result
-    then pure True
-    else do
-      st <- get @RelayPool.RelayPoolState
-      let stillOpen = [ sid | sid <- subIds, Map.member sid (subscriptions st) ]
-      mapM_ closeSubInline stillOpen
-      pure False
+  final <- if result
+             then pure True
+             else do
+               st <- get @RelayPool.RelayPoolState
+               let stillOpen = [ sid | sid <- subIds, Map.member sid (subscriptions st) ]
+               mapM_ closeSubInline stillOpen
+               pure False
+  -- cleanup dedup state then return result
+  mapM_ unregisterAggregatedDedup subIds
+  pure final
   where
     closeSubInline :: SubscriptionEff es => SubscriptionId -> Eff es ()
     closeSubInline subId' = do

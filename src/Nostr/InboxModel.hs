@@ -25,7 +25,7 @@ import Prelude hiding (until)
 import Logging
 import Nostr
 import Nostr.Event (EventId, Kind(..), getEventId)
-import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, exportPubKeyXO, byteStringToHex)
+import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Relay (Relay(..), RelayURI, defaultDMRelays, defaultGeneralRelays, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Relay (normalizeRelayURI)
@@ -198,6 +198,26 @@ runInboxModel = interpret $ \_ -> \case
           _ -> pure ()
       threadDelay (30 * 1000000) -- every 30s
     RelayPool.setReconcileThread (Just reconcileThread')
+
+    -- Immediate reassignment monitor: quickly reassign pubkeys when a relay disconnects
+    -- to avoid coverage gaps. This complements the periodic reconcile.
+    _reassignThread <- async $ forever $ do
+      stDis <- get @RelayPoolState
+      let disconnectedRelays = [ uri
+                               | (uri, rd) <- Map.toList (activeConnections stDis)
+                               , connectionState rd /= Connected ]
+          assignedMap = lastRelayPubkeyMap stDis
+          impactedPubkeys = concat [ Map.findWithDefault [] uri assignedMap | uri <- disconnectedRelays ]
+      when (not (null impactedPubkeys)) $ do
+        kp2 <- getKeyPair
+        let myXO2 = keyPairToPubKeyXO kp2
+        inboxRelays2 <- getGeneralRelays myXO2
+        let ownInboxRelayURIs2 = [ getUri r | r <- inboxRelays2, isInboxCapable r ]
+        rebalanceSubscriptions impactedPubkeys ownInboxRelayURIs2
+        -- Clear entries for disconnected relays to avoid repeating until mapping refreshes
+        let assignedMap' = foldr Map.delete assignedMap disconnectedRelays
+        RelayPool.setLastRelayPubkeyMap assignedMap'
+      threadDelay 1000000 -- 1s
 
     inboxRelays <- getGeneralRelays xo
     changeInboxModelState InitialBootstrap
@@ -556,7 +576,7 @@ assignRelays candidates = do
 
   personToRelays <- buildPersonCandidates candidates
   ranked <- rankPerPerson personToRelays
-  loop connectedSet Map.empty ranked
+  loop connectedSet Map.empty Map.empty ranked
 
   where
     -- Build person -> candidate relays map from relay -> [persons]
@@ -585,30 +605,88 @@ assignRelays candidates = do
         Just untilTs | untilTs > now -> pure Nothing
         _ -> case Map.lookup r (activeConnections pool) of
                -- Unknown relay: slightly optimistic default to allow exploration
-               Nothing -> pure (Just (r, 0.25, 0))
-               Just rd -> case avoidUntil rd of
+                Nothing -> pure (Just (r, 0.25 + nip65Boost r, 0))
+                Just rd -> case avoidUntil rd of
                             Just t | t > now -> pure Nothing
                             _ -> do
                                let attempts = successCount rd + failureCount rd
                                    sr :: Double
                                    sr = if attempts <= 0 then 0.6 else fromIntegral (successCount rd) / fromIntegral attempts
+
                                    connectedBonus :: Double
                                    connectedBonus = if connectionState rd == Connected then 0.2 else 0.0
+
                                    eoseBonus :: Double
                                    eoseBonus = case lastEoseAt rd of
                                                  Just ts -> let age = max 0 (now - ts)
                                                             in if age <= 3600 then 0.2 else if age <= 86400 then 0.1 else 0.0
                                                  Nothing -> 0.0
-                                   base = min 1.0 (0.6 * sr + connectedBonus + eoseBonus)
+
+                                   noticePenalty :: Double
+                                   noticePenalty = min 0.3 (fromIntegral (noticeCount rd) / 5000.0)
+
+                                   base :: Double
+                                   base = min 1.0 (0.6 * sr + connectedBonus + eoseBonus + nip65Boost r - noticePenalty)
                                pure (Just (r, base, 0))
+    -- Boost for relays appearing in our own declared general relays (NIP-65 like preference)
+    nip65Boost :: RelayURI -> Double
+    nip65Boost r =
+      -- Lightweight: prefer known inbox relays slightly
+      if any (\x -> r == getUri x) defaultGeneralRelaysList then 0.05 else 0.0
+
+    defaultGeneralRelaysList :: [Relay]
+    defaultGeneralRelaysList = fst defaultGeneralRelays
+
+    -- Desired replication factor per author
+    desiredReplica :: Int
+    desiredReplica = 2
+
+    -- Soft capacity per relay (authors assigned). 0 means unlimited.
+    softRelayCapacity :: Int
+    softRelayCapacity = 200
 
     -- Loop picking relays
     loop :: InboxModelEff es
          => Set.Set RelayURI
-         -> Map.Map RelayURI [PubKeyXO]
+         -> Map.Map RelayURI [PubKeyXO]              -- accumulated assignments
+         -> Map.Map PubKeyXO Int                     -- assigned counts per author
          -> Map.Map PubKeyXO [(RelayURI, Double, Int)]
          -> Eff es (Map.Map RelayURI [PubKeyXO])
-    loop connectedSet acc remainingRanks = do
+    loop connectedSet acc assignedCounts remainingRanks = do
+      -- Stop if everyone reached desired replication or no ranks left
+      let allAssigned = Map.null remainingRanks || all (>= desiredReplica) (Map.elems (assignedCountsFor remainingRanks assignedCounts))
+      if allAssigned
+         then pure acc
+         else do
+           let bestChoices :: [(PubKeyXO, (RelayURI, Double, Int))]
+               bestChoices = [ (pk, r1)
+                             | (pk, rlist) <- Map.toList remainingRanks
+                             , let already = Map.findWithDefault 0 pk assignedCounts
+                             , already < desiredReplica
+                             , r1 : _ <- [rlist] ]
+               scoreboard :: Map.Map RelayURI Double
+               scoreboard = foldr (\(_, (r, s, _)) m -> Map.insertWith (+) r s m) Map.empty bestChoices
+
+           if Map.null scoreboard
+             then pure acc
+             else do
+               let (winner, _) = maximumByFst (Map.toList scoreboard)
+                   capReached = case softRelayCapacity of
+                                  0 -> False
+                                  n -> length (Map.findWithDefault [] winner acc) >= n
+                   (toAssign, remaining') = partitionByWinner winner remainingRanks assignedCounts
+                   -- filter out authors who already reached replication
+                   toAssign' = filter (\pk -> Map.findWithDefault 0 pk assignedCounts < desiredReplica) toAssign
+                   -- domain diversity: avoid assigning the same provider/domain to the same author replica
+                   toAssignDiversified = filter (\pk -> not (violatesDiversity pk winner acc)) toAssign'
+                   acc' = foldr (\pk m -> Map.insertWith (++) winner [pk] m) acc toAssignDiversified
+                   assignedCounts' = foldr (\pk m -> Map.insertWith (+) pk 1 m) assignedCounts toAssignDiversified
+                   -- For assigned authors, drop their top choice to use next-best next rounds
+                   remaining'' = dropTopForAssigned toAssignDiversified remaining'
+               if null toAssignDiversified || capReached
+                 then pure acc
+                 else loop connectedSet acc' assignedCounts' remaining''
+
       -- Build scoreboard: sum each person's current best relay score
       let bestChoices :: [(PubKeyXO, (RelayURI, Double, Int))]
           bestChoices = [ (pk, r1)
@@ -627,11 +705,12 @@ assignRelays candidates = do
             else do
               let (winner, _) = maximumByFst allowed
                   -- assign all persons whose current best equals the winner
-                  (toAssign, remaining') = partitionByWinner winner remainingRanks
+                  (toAssign, remaining') = partitionByWinner winner remainingRanks assignedCounts
                   acc' = foldr (\pk m -> Map.insertWith (++) winner [pk] m) acc toAssign
+                  assignedCounts' = foldr (\pk m -> Map.insertWith (+) pk 1 m) assignedCounts toAssign
               if null toAssign
                 then pure acc -- no progress
-                else loop connectedSet acc' remaining'
+                else loop connectedSet acc' assignedCounts' remaining'
 
     maximumByFst :: Ord b => [(a,b)] -> (a,b)
     maximumByFst (x:xs) = foldr (\p acc -> if snd p > snd acc then p else acc) x xs
@@ -639,13 +718,36 @@ assignRelays candidates = do
 
     partitionByWinner :: RelayURI
                       -> Map.Map PubKeyXO [(RelayURI, Double, Int)]
+                      -> Map.Map PubKeyXO Int
                       -> ([PubKeyXO], Map.Map PubKeyXO [(RelayURI, Double, Int)])
-    partitionByWinner winner = Map.foldrWithKey step ([], Map.empty)
+    partitionByWinner winner ranks assigned = Map.foldrWithKey step ([], Map.empty) ranks
       where
-        step pk ranks (as, rest) =
-          case ranks of
-            (r,_,_):rs | r == winner -> (pk:as, rest)
-            _ -> (as, Map.insert pk ranks rest)
+        step pk rs (as, rest) =
+          let already = Map.findWithDefault 0 pk assigned in
+          if already >= desiredReplica then (as, Map.insert pk rs rest)
+          else case rs of
+                 (r,_,_):_ | r == winner -> (pk:as, rest)
+                 _ -> (as, Map.insert pk rs rest)
+
+    dropTopForAssigned :: [PubKeyXO]
+                       -> Map.Map PubKeyXO [(RelayURI, Double, Int)]
+                       -> Map.Map PubKeyXO [(RelayURI, Double, Int)]
+    dropTopForAssigned assigs m = foldr (\pk acc -> Map.adjust drop1 pk acc) m assigs
+      where
+        drop1 [] = []
+        drop1 (_:xs) = xs
+
+    violatesDiversity :: PubKeyXO -> RelayURI -> Map.Map RelayURI [PubKeyXO] -> Bool
+    violatesDiversity pk newRelay acc =
+      let newDom = relayDomain newRelay
+          existing = [ r | (r, pks) <- Map.toList acc, pk `elem` pks ]
+      in any (\r -> relayDomain r == newDom) existing
+
+    relayDomain :: RelayURI -> T.Text
+    relayDomain uriText = T.takeWhile (/='/') $ T.dropWhile (=='/') $ T.dropWhile (=='/') uriText
+
+    assignedCountsFor :: Map.Map PubKeyXO [(RelayURI, Double, Int)] -> Map.Map PubKeyXO Int -> Map.Map PubKeyXO Int
+    assignedCountsFor ranks assigned = Map.unionWith (+) assigned (Map.fromList [ (pk,0) | pk <- Map.keys ranks ])
 
 -- | Check if a relay URI is localhost
 isLocalhostRelay :: RelayURI -> Bool
