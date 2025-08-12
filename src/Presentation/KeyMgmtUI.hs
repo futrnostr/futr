@@ -22,17 +22,20 @@ import Nostr
 import Nostr.Bech32
 import Nostr.InboxModel
 import Nostr.Keys (keyPairToPubKeyXO)
-import Nostr.ProfileManager (ProfileManager)
-import Nostr.Publisher
-import Nostr.Util
 import Store.Lmdb (LmdbState, LmdbStore, initializeLmdbState)
-import Types (AppState(..), RelayPool(..), initialRelayPool)
+import Nostr.ProfileManager (ProfileManager)
+import Nostr.RelayPool qualified as RelayPool
+import Nostr.Publisher
+import Nostr.RelayPool (RelayPoolState(..))
+import Nostr.Util
+import Types (AppState(..))
 
 
 -- | Key Management UI Effect.
 type KeyMgmgtUIEff es =
   ( State AppState :> es
-  , State RelayPool :> es
+  , State RelayPoolState :> es
+  , RelayPool.RelayPool :> es
   , State LmdbState :> es
   , State QtQuickState :> es
   , ProfileManager :> es
@@ -129,7 +132,7 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                     return $ errorMsg st
                 )
                 ( \obj newErrorMsg -> runE $ do
-                    modify $ \st -> st {errorMsg = newErrorMsg}
+                    modify $ \st -> st { errorMsg = newErrorMsg }
                     fireSignal obj
                     return ()
                 ),
@@ -140,7 +143,7 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                 case mkp of
                   Just kp -> do
                     modify @AppState $ \s -> s { keyPair = Just kp }
-                    modify @RelayPool $ const initialRelayPool
+                    RelayPool.reset
 
                     -- Create the directory for the account
                     let pk = keyPairToPubKeyXO kp

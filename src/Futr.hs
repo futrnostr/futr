@@ -15,7 +15,7 @@ import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, cancel)
-import Effectful.Concurrent.STM (atomically, flushTQueue, newTVarIO, readTQueue, readTVar, writeTVar)
+import Effectful.Concurrent.STM (atomically, flushTQueue, newTVarIO, readTVar, writeTVar)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.Exception (SomeException, try)
 import Effectful.FileSystem
@@ -52,8 +52,9 @@ import Nostr.ProfileManager (ProfileManager)
 import Nostr.Publisher
 import Nostr.Relay (RelayURI, getUri, isInboxCapable, isValidRelayURI)
 import Nostr.RelayConnection (RelayConnection, connect, disconnect)
+import Nostr.RelayPool (RelayPool, RelayPoolState(..), reset)
 import Nostr.Subscription
-import Nostr.SubscriptionHandler (SubscriptionHandler)
+import Nostr.SubscriptionHandler (SubscriptionHandler, handleSubscriptionUntilEOSE)
 import Nostr.Util
 import Presentation.Classes (Classes, createPost)
 import Presentation.KeyMgmtUI (KeyMgmtUI)
@@ -195,7 +196,8 @@ type FutrEff es =
   , SubscriptionHandler :> es
   , Publisher :> es
   , State KeyMgmtState :> es
-  , State RelayPool :> es
+  , State RelayPoolState :> es
+  , RelayPool :> es
   , State QtQuickState :> es
   , QtQuick :> es
   , Classes :> es
@@ -344,7 +346,7 @@ runFutr = interpret $ \_ -> \case
     events <- getEvents eventIds
     posts <- mapM createPost events
 
-    let feed = Feed posts (Map.fromList [(postId p, p) | p <- posts]) f
+    let feed = Feed posts (Map.fromList [(postId p, p) | p <- posts]) f -- @todo do we need posts???
 
     modify @AppState $ \st' -> st' { currentFeed = Just feed }
 
@@ -579,7 +581,7 @@ searchInRelays :: FutrEff es => PubKeyXO -> [RelayURI] -> Eff es ()
 searchInRelays xo relayUris = do
     manuallyConnected <- case relayUris of
         [relayUri] -> do
-            conns <- gets @RelayPool activeConnections
+            conns <- gets @RelayPoolState activeConnections
             if Map.member relayUri conns
                 then return False
                 else do
@@ -588,7 +590,7 @@ searchInRelays xo relayUris = do
         _ -> return False
 
     relays <- getGeneralRelays xo
-    conns <- gets @RelayPool activeConnections
+    conns <- gets @RelayPoolState activeConnections
 
     let searchRelays = case relayUris of
             [relayUri] -> [relayUri]
@@ -596,37 +598,7 @@ searchInRelays xo relayUris = do
 
     forM_ searchRelays $ \relayUri' -> do
         when (Map.member relayUri' conns) $ do
-            subId' <- subscribe relayUri' (metadataFilter [xo])
-            subs <- gets @RelayPool subscriptions
-            let q = case Map.lookup subId' subs of
-                      Just sub -> responseQueue sub
-                      Nothing -> error $ "Subscription " <> show subId' <> " not found"
-            -- @todo duplicated from subscription handler, but closes unneeded connections
-
-            void $ async $ do
-                shouldStopVar <- newTVarIO False
-                let loop = do
-                        e <- atomically $ readTQueue q
-                        es <- atomically $ flushTQueue q
-
-                        forM_ (e:es) $ \(relayUri, e') -> do
-                            case e' of
-                                EventAppeared event' -> handleEvent (Just relayUri) event'
-
-                                SubscriptionEose _ -> do
-                                  stopSubscription subId'
-                                  when (manuallyConnected && relayUri' `elem` relayUris) $ do
-                                    disconnect relayUri'
-
-                                SubscriptionClosed _ -> do
-                                  atomically $ writeTVar shouldStopVar True
-                                  when (manuallyConnected && relayUri' `elem` relayUris) $ do
-                                    disconnect relayUri'
-
-                        shouldStop <- atomically $ readTVar shouldStopVar
-                        unless shouldStop loop
-
-                loop
+            void $ subscribeTemporary relayUri' (metadataFilter [xo])
 
 
 -- | Helper to fully clean up app state, disconnect all relays, and fire signal
@@ -634,7 +606,7 @@ fullAppCleanup :: FutrEff es => Eff es ()
 fullAppCleanup = do
   stopInboxModel
 
-  relayPool <- get @RelayPool
+  relayPool <- get @RelayPoolState
   let relayUris = Map.keys (activeConnections relayPool)
   forM_ relayUris disconnect
 
@@ -645,4 +617,4 @@ fullAppCleanup = do
 
   put @LmdbState initialLmdbState
   put @AppState initialState
-  put @RelayPool initialRelayPool
+  reset

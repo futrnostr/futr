@@ -9,6 +9,8 @@ Item {
     id: topBar
     required property string currentUserPicture
     required property string currentUser
+    // Reference to the main StackView in the host screen
+    property var stackView
     property var currentUserProfile: getProfile(currentUser)
     
     // Set explicit bounds to prevent unnecessary rendering area
@@ -84,7 +86,9 @@ Item {
             text: qsTr("Relay Management")
             onTriggered: {
                 profileMenu.close()
-                relayMgmtDialog.open()
+                if (stackView) {
+                    stackView.push("qrc:/qml/content/RelaysScreen.ui.qml")
+                }
             }
         }
 

@@ -18,7 +18,8 @@ import Nostr.Relay (RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.Util
 import RelayMgmt (RelayMgmt, addDMRelay, addGeneralRelay, removeDMRelay, removeGeneralRelay)
 import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
-import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPool(..))
+import Types (AppState(..), ConnectionState(..))
+import Nostr.RelayPool (RelayPool, RelayPoolState(..), RelayData(..), SubscriptionState(..))
 
 
 data RelayType = DMRelays | InboxRelays | OutboxRelays
@@ -26,7 +27,7 @@ data RelayType = DMRelays | InboxRelays | OutboxRelays
 -- | Relay Management UI Effect.
 type RelayMgmgtUIEff es =
   ( State AppState :> es
-  , State RelayPool :> es
+  , State RelayPoolState :> es
   , State QtQuickState :> es
   , RelayMgmt :> es
   , LmdbStore :> es
@@ -61,22 +62,78 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
             defPropertySigRO' "connectionState" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              pst <- get @RelayPool
+              pst <- get @RelayPoolState
               return $ getConnectionStateText uri' pst,
 
             defPropertySigRO' "connectionRetries" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              pst <- get @RelayPool
+              pst <- get @RelayPoolState
               return $ case Map.lookup uri' (activeConnections pst) of
                 Just rd -> connectionAttempts rd
                 Nothing -> 0,
 
             defPropertySigRO' "notices" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              pst <- get @RelayPool
+              pst <- get @RelayPoolState
               return $ case Map.lookup uri' (activeConnections pst) of
                 Just rd -> notices rd
                 Nothing -> []
+            ,
+            defPropertySigRO' "messagesReceived" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> messagesReceived rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "eventsReceived" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> eventsReceived rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "successCount" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> successCount rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "failureCount" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> failureCount rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "lastConnectedAt" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> maybe 0 id (lastConnectedAt rd)
+                Nothing -> 0
+            ,
+            defPropertySigRO' "lastEoseAt" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> maybe 0 id (lastEoseAt rd)
+                Nothing -> 0
+            ,
+            defPropertySigRO' "authRequiredCount" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> authRequiredCount rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "noticeCount" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> noticeCount rd
+                Nothing -> 0
             ]
 
         relayClass <- newClass [
@@ -84,7 +141,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
             defPropertySigRO' "connectionState" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              pst <- get @RelayPool
+              pst <- get @RelayPoolState
               return $ getConnectionStateText uri' pst,
 
             defPropertySigRO' "isInbox" changeKey $ \obj -> runE $ do
@@ -113,17 +170,73 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
             defPropertySigRO' "connectionRetries" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              pst <- get @RelayPool
+              pst <- get @RelayPoolState
               return $ case Map.lookup uri' (activeConnections pst) of
                 Just rd -> connectionAttempts rd
                 Nothing -> 0,
 
             defPropertySigRO' "notices" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              pst <- get @RelayPool
+              pst <- get @RelayPoolState
               return $ case Map.lookup uri' (activeConnections pst) of
                 Just rd -> notices rd
                 Nothing -> []
+            ,
+            defPropertySigRO' "messagesReceived" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> messagesReceived rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "eventsReceived" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> eventsReceived rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "successCount" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> successCount rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "failureCount" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> failureCount rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "lastConnectedAt" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> maybe 0 id (lastConnectedAt rd)
+                Nothing -> 0
+            ,
+            defPropertySigRO' "lastEoseAt" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> maybe 0 id (lastEoseAt rd)
+                Nothing -> 0
+            ,
+            defPropertySigRO' "authRequiredCount" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> authRequiredCount rd
+                Nothing -> 0
+            ,
+            defPropertySigRO' "noticeCount" changeKey $ \obj -> runE $ do
+              let uri' = fromObjRef obj
+              pst <- get @RelayPoolState
+              return $ case Map.lookup uri' (activeConnections pst) of
+                Just rd -> noticeCount rd
+                Nothing -> 0
             ]
 
         dmRelayPool <- newFactoryPool (newObject dmRelayClass)
@@ -159,7 +272,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
             runE $ modify @QtQuickState $ \s -> s {
               uiRefs = (uiRefs s) { tempRelaysObjRef = Just obj }
             }
-            poolState <- runE $ get @RelayPool
+            poolState <- runE $ get @RelayPoolState
             appState <- runE $ get @AppState
 
             let activeURIs = Map.keys (activeConnections poolState)
@@ -196,7 +309,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
 
 -- | Helper function to get connection state text
-getConnectionStateText :: RelayURI -> RelayPool -> Text
+getConnectionStateText :: RelayURI -> RelayPoolState -> Text
 getConnectionStateText uri pst = case Map.lookup uri (activeConnections pst) of
   Just rd -> case connectionState rd of
     Connected -> "Connected"

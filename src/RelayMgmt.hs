@@ -11,8 +11,8 @@ import Nostr
 import Nostr.Event (createPreferredDMRelaysEvent, createRelayListMetadataEvent)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Publisher
-import Nostr.Relay (Relay(..), RelayURI, defaultDMRelays, defaultGeneralRelays, getUri)
-import Nostr.RelayConnection
+import Nostr.Relay (Relay(..), RelayURI, defaultDMRelays, defaultGeneralRelays, getUri, normalizeRelayURI)
+import Nostr.RelayConnection (RelayConnection, connect, disconnect)
 import Nostr.Util
 import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
 

@@ -28,11 +28,12 @@ import Nostr.Event qualified as NE
 import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (ProfileManager, getProfile)
+import Nostr.RelayPool (RelayPool, RelayPoolState(..))
 import Nostr.Util (Util, formatDateTime, getKeyPair)
 import QtQuick ( QtQuick, PropertyMap(..), PropertyName, QtQuickState(..)
                , UIReferences(..), UIUpdates(..), emptyUpdates, notify )
 import Store.Lmdb (LmdbStore, TimelineType(..), getCommentsWithIndentationLevel, getEvent, getEvents, getEventRelays, getFollows, getTimelineIds)
-import Types (AppState(..), Feed(..), FeedFilter(..), Follow(..), Language(..), Post(..), PublishStatus(..), RelayPool(..))
+import Types (AppState(..), Feed(..), FeedFilter(..), Follow(..), Language(..), Post(..), PublishStatus(..))
 import Downloader (Downloader(..), DownloadStatus(..), hasDownload, download, peekMimeType)
 
 
@@ -72,7 +73,8 @@ commentClass changeKey = send $ CommentClass changeKey
 type ClassesEff es =
   ( QtQuick :> es
   , State QtQuickState :> es
-  , State RelayPool :> es
+  , State RelayPoolState :> es
+  , RelayPool :> es
   , State AppState :> es
   , ProfileManager :> es
   , LmdbStore :> es
@@ -257,7 +259,7 @@ runClasses = interpret $ \_ -> \case
 
             defPropertySigRO' "relayStatuses" changeKey' $ \obj -> do
                 let eid = fromObjRef obj :: EventId
-                st <- runE $ get @RelayPool
+                st <- runE $ get @RelayPoolState
                 return $ case Map.lookup eid (publishStatus st) of
                     Just statusMap ->
                         [ [relay, if status == Success then ("" :: Text) else

@@ -14,6 +14,7 @@ import Nostr.Event (Kind(..))
 import Nostr.Keys (PubKeyXO)
 import Nostr.Profile (Profile)
 import Nostr.Relay (RelayURI)
+import Nostr.RelayPool (RelayPool, RelayPoolState(..), RelayData(..), SubscriptionState(..), initialRelayPool)
 import Nostr.Subscription (Subscription, metadataFilter, subscribe)
 import Nostr.SubscriptionHandler (SubscriptionHandler, handleSubscriptionUntilEOSE)
 import Nostr.Types (Filter(..))
@@ -53,7 +54,7 @@ type ProfileManagerEff es =
     , SubscriptionHandler :> es
     , Util :> es
     , State ProfileManagerState :> es
-    , State RelayPool :> es
+    , State RelayPoolState :> es
     , Concurrent :> es
     )
 
@@ -71,7 +72,7 @@ fetchProfileImpl pk relayHints = do
         currentTime <- getCurrentTime
         st <- get @ProfileManagerState
 
-        relayPoolSt <- get @RelayPool
+        relayPoolSt <- get @RelayPoolState
         let isActiveFetch = any (\sub ->
               let filter' = subscriptionFilter sub
               in pk `elem` fromMaybe [] (authors filter')

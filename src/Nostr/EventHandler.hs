@@ -25,7 +25,8 @@ import Nostr.Relay (RelayURI)
 import Nostr.Util
 import QtQuick
 import Store.Lmdb
-import Types (AppState(..), RelayPool(..))
+import Types (AppState(..))
+import Nostr.RelayPool (RelayPool, RelayPoolState(..))
 
 -- | Event handler effects
 data EventHandler :: Effect where
@@ -43,7 +44,7 @@ type EventHandlerEff es =
   ( LmdbStore :> es
   , KeyMgmt :> es
   , Nostr :> es
-  , State RelayPool :> es
+  , State RelayPoolState :> es
   , State AppState :> es
   , State QtQuickState :> es
   , Util :> es
@@ -234,7 +235,7 @@ runEventHandler = interpret $ \_ -> \case
                             pure $ emptyUpdates
 
         when (myFollowsChanged updates || dmRelaysChanged updates || generalRelaysChanged updates) $ do
-            q <- gets @RelayPool updateQueue
+            q <- gets @RelayPoolState updateQueue
             atomically $ writeTQueue q ()
 
         --logDebug $ "Event: " <> pack (show event')

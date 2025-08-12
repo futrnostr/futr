@@ -4,7 +4,7 @@ module Version where
 
 -- | Version string extracted from cabal file
 versionString :: String
-versionString = "0.4.2.0"
+versionString = "0.4.2.1"
 
 -- | Runtime version in 'v0.4.0' format
 runtimeVersion :: String

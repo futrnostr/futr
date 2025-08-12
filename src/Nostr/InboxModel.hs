@@ -8,43 +8,46 @@ module Nostr.InboxModel where
 
 import Control.Monad (forever, forM, forM_, unless, void, when)
 import Data.List.Split (chunksOf)
+import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Set qualified as Set
+import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, cancel, forConcurrently)
 import Effectful.Concurrent.STM
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, gets, put, modify)
+import qualified Nostr.RelayPool as RelayPool
+import Prelude hiding (until)
 
 import Logging
 import Nostr
-import Nostr.Event (EventId, Kind(..))
-import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
+import Nostr.Event (EventId, Kind(..), getEventId)
+import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO, exportPubKeyXO, byteStringToHex)
 import Nostr.Relay (Relay(..), RelayURI, defaultDMRelays, defaultGeneralRelays, getUri, isInboxCapable, isOutboxCapable)
-import Nostr.RelayConnection (RelayConnection, connect, disconnect, normalizeRelayURI)
-import Nostr.Subscription
-    ( Subscription
-    , giftWrapFilter
-    , mentionsFilter
-    , profilesFilter
-    , stopAllSubscriptions
-    , stopSubscription
-    , subscribe
-    , userPostsFilter
-    , commentsFilter
-    )
+import Nostr.RelayConnection (RelayConnection, connect, disconnect)
+import Nostr.Relay (normalizeRelayURI)
+import Nostr.Subscription ( Subscription
+                          , stopAllSubscriptions, stopSubscription
+                          , subscribe, subscribeTemporary
+                          , subscribeMultiTemporary, awaitAllEose
+                          , giftWrapFilter)
+import Nostr.FilterSet (inboxMentionsFilter, profilesFilterFS, userPostsFilterFS, commentsFilterFS, filtersStructurallyChanged)
+import Nostr.FeedKeys (feedKeyForPosts, feedKeyForMentions, feedKeyForComments)
+import qualified Data.ByteString.Base16 as B16
+import Data.Text.Encoding (decodeUtf8)
 import Nostr.SubscriptionHandler
 import Nostr.Types (Filter(..), SubscriptionId, emptyFilter)
+import Nostr.Types qualified as NT
 import Nostr.Util
 import QtQuick (QtQuick, UIUpdates(..), emptyUpdates, notify)
 import RelayMgmt
 import Store.Lmdb ( LmdbStore, getFollows, getGeneralRelays, getDMRelays
-                  , getLatestTimestamp, getFailedRelaysWithinLastNDays, recordFailedRelay )
-import Types ( AppState(..), ConnectionState(..), Follow(..), InboxModelState(..), SubscriptionState(..)
-             , RelayPool(..), RelayData(..), initialRelayPool )
-import qualified Data.Text as T
+                  , getOrSeedAnchor )
+import Types ( AppState(..), ConnectionState(..), Follow(..), InboxModelState(..) )
+import Nostr.RelayPool (RelayPool, RelayPoolState(..), RelayData(..), SubscriptionState(..), initialRelayPool)
 
 
 -- | InboxModel effects
@@ -80,7 +83,8 @@ unsubscribeToCommentsFor eid = send $ UnsubscribeToCommentsFor eid
 
 type InboxModelEff es =
   ( State AppState :> es
-  , State RelayPool :> es
+  , State RelayPoolState :> es
+  , RelayPool :> es
   , LmdbStore :> es
   , Subscription :> es
   , SubscriptionHandler :> es
@@ -125,10 +129,75 @@ runInboxModel = interpret $ \_ -> \case
           updateSubscriptions xo
           threadDelay 5000000  -- Relay updates are processed every 5 seconds
 
-    modify @RelayPool $ \s -> s
-        { updateQueue = updateQueue'
-        , updateThread = Just updateThread'
-        }
+    RelayPool.setUpdateThread (Just updateThread')
+
+    -- Periodic stats logger
+    statsThread' <- async $ forever $ do
+      st <- get @RelayPoolState
+      let conns = Map.size (activeConnections st)
+          subs  = Map.size (subscriptions st)
+          pend  = Map.size (pendingSubscriptions st)
+      logDebug $ "STATS: conns=" <> T.pack (show conns)
+              <> ", subs=" <> T.pack (show subs)
+              <> ", pendingSubs=" <> T.pack (show pend)
+      -- per-relay brief stats with deltas
+      let prev = lastStatsSnapshot st
+      let (newSnapshot, linesOut) = foldl (\(accSnap, accLines) (uri, rd) ->
+              let prevVals = Map.lookup uri prev
+                  msgs = messagesReceived rd
+                  evts = eventsReceived rd
+                  (dMsgs, dEvts) = case prevVals of
+                                    Just (pm, pe) -> (msgs - pm, evts - pe)
+                                    Nothing -> (msgs, evts)
+                  prSz = length (pendingRequests rd)
+                  peSz = length (pendingEvents rd)
+                  line = "RELAY: " <> uri <>
+                         " msgs=" <> T.pack (show msgs) <>
+                         "(d=" <> T.pack (show dMsgs) <> ") evts=" <> T.pack (show evts) <>
+                         "(d=" <> T.pack (show dEvts) <> ") notices=" <> T.pack (show (noticeCount rd)) <>
+                         " pr=" <> T.pack (show prSz) <>
+                         " pe=" <> T.pack (show peSz)
+              in (Map.insert uri (msgs, evts) accSnap, line:accLines)
+            ) (Map.empty, []) (Map.toList $ activeConnections st)
+      mapM_ logDebug (reverse linesOut)
+      RelayPool.setLastStatsSnapshot newSnapshot
+      -- coverage audit: are all follows assigned to at least one relay?
+      kp <- getKeyPair
+      let myXO = keyPairToPubKeyXO kp
+      follows <- getFollows myXO
+      inboxRelays' <- getGeneralRelays myXO
+      let ownInboxRelayURIs = [ getUri r | r <- inboxRelays', isInboxCapable r ]
+          followPks = map pubkey follows
+      relayMap <- pickRelaysForAuthors followPks ownInboxRelayURIs
+      let covered = Set.fromList (concat (Map.elems relayMap))
+          totalFollows = length followPks
+          coveredCount = Set.size covered
+          uncoveredCount = totalFollows - coveredCount
+          perRelayCounts = [ (uri, length pks) | (uri, pks) <- Map.toList relayMap ]
+      logDebug $ "COVERAGE: follows=" <> T.pack (show totalFollows)
+              <> ", covered=" <> T.pack (show coveredCount)
+              <> ", uncovered=" <> T.pack (show uncoveredCount)
+      logDebug $ "COVERAGE_PER_RELAY: " <> T.pack (show perRelayCounts)
+      threadDelay (10 * 1000000)
+    RelayPool.setStatsThread (Just statsThread')
+
+    -- Periodic reconciliation: refresh relay mapping and resubscribe when needed
+    reconcileThread' <- async $ forever $ do
+      kp <- getKeyPair
+      let myXO = keyPairToPubKeyXO kp
+      updateGeneralSubscriptions myXO
+      -- Re-evaluate existing subscriptions' lastSentFilter vs current filter and resend if structural change
+      stRes <- get @RelayPoolState
+      forM_ (Map.toList (subscriptions stRes)) $ \(sid, sd) -> do
+        let oldF = lastSentFilter sd
+            newF = subscriptionFilter sd
+        case (oldF, Map.lookup (relay sd) (activeConnections stRes)) of
+          (Just ofilt, Just rd) | filtersStructurallyChanged ofilt newF -> do
+            atomically $ writeTChan (requestChannel rd) (NT.Subscribe $ NT.Subscription sid newF)
+            RelayPool.setSubscriptionLastSentFilter sid newF
+          _ -> pure ()
+      threadDelay (30 * 1000000) -- every 30s
+    RelayPool.setReconcileThread (Just reconcileThread')
 
     inboxRelays <- getGeneralRelays xo
     changeInboxModelState InitialBootstrap
@@ -143,16 +212,18 @@ runInboxModel = interpret $ \_ -> \case
       continueWithRelays inboxRelays'
 
   StopInboxModel -> do
-    st <- get @RelayPool
+    st <- get @RelayPoolState
 
     forM_ (updateThread st) cancel
+    forM_ (statsThread st) cancel
+    forM_ (reconcileThread st) cancel
 
-    modify @RelayPool $ \s -> s { updateThread = Nothing }
+    RelayPool.setUpdateThread Nothing
 
     forM_ (Map.keys $ activeConnections st) $ \relayUri -> do
       disconnect relayUri
 
-    put @RelayPool initialRelayPool
+    put @RelayPoolState initialRelayPool
     changeInboxModelState Stopped
 
   AwaitAtLeastOneConnected -> do
@@ -160,7 +231,7 @@ runInboxModel = interpret $ \_ -> \case
         loop :: InboxModelEff es => Int -> Eff es Bool
         loop 0 = return False  -- No more attempts left
         loop n = do
-            st <- get @RelayPool
+            st <- get @RelayPoolState
             let states = map (connectionState . snd) $ Map.toList $ activeConnections st
             if any (== Connected) states
                 then return True
@@ -172,19 +243,15 @@ runInboxModel = interpret $ \_ -> \case
   SubscribeToProfilesAndPostsFor xo -> do
       kp <- getKeyPair
       let myXO = keyPairToPubKeyXO kp
-      conns <- gets @RelayPool activeConnections
+      conns <- gets @RelayPoolState activeConnections
 
       let connectedRelays = Map.keys $ Map.filter (\rd -> connectionState rd == Connected) conns
       let bootstrapFilter = inboxRelayTopologyFilter [xo]
 
-      -- Handle bootstrap subscriptions - we don't collect these IDs since they're already terminated
-      forM_ connectedRelays $ \r -> do
-          subId' <- subscribe r bootstrapFilter
-          void $ handleSubscriptionUntilEOSE subId'
+      forM_ connectedRelays $ \r -> void $ subscribe r bootstrapFilter
 
       ownInboxRelayURIs <- map getUri <$> getGeneralRelays myXO
-      followRelayMap <- buildRelayPubkeyMap [xo] ownInboxRelayURIs
-      pubkeyTimestamps <- getPubkeyTimestamps [xo]
+      followRelayMap <- pickRelaysForAuthors [xo] ownInboxRelayURIs
 
       let currentConnections = Map.keysSet $ Map.filter (\rd -> connectionState rd == Connected) conns
 
@@ -194,33 +261,33 @@ runInboxModel = interpret $ \_ -> \case
               void $ connect relayUri
 
       allSubIds <- fmap concat $ forM (Map.toList followRelayMap) $ \(relayUri, pubkeys) -> do
-          st <- get @RelayPool
+          st <- get @RelayPoolState
           let isConnected = case Map.lookup relayUri (activeConnections st) of
                               Just rd -> connectionState rd == Connected
                               Nothing -> False
           if isConnected
-              then subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
+              then do sid <- subscribeToProfilesAndPosts relayUri pubkeys
+                      return [sid]
               else return []
 
       return allSubIds
 
   SubscribeToCommentsFor eid -> do
-    pool <- get @RelayPool
+    pool <- get @RelayPoolState
     let activeRelays = Map.keys $ activeConnections pool
-
     forM_ activeRelays $ \relayUri -> do
-      subId' <- subscribe relayUri (commentsFilter eid)
-      modify @RelayPool $ \s -> s { commentSubscriptions = Map.insertWith (++) eid [subId'] (commentSubscriptions s) }
-      void $ async $ handlePaginationSubscription subId'
+      let key = feedKeyForComments (decodeUtf8 $ B16.encode $ getEventId eid)
+      a0 <- getOrSeedAnchor relayUri key
+      let baseFilter = commentsFilterFS eid
+          anchoredFilter = baseFilter { since = Just a0 }
+      subId' <- subscribe relayUri anchoredFilter
+      RelayPool.insertCommentSubscription eid subId'
 
   UnsubscribeToCommentsFor eid -> do
-    pool <- get @RelayPool
+    pool <- get @RelayPoolState
     let subIds = Map.findWithDefault [] eid (commentSubscriptions pool)
-
     forM_ subIds stopSubscription
-
-    modify @RelayPool $ \s ->
-      s { commentSubscriptions = Map.delete eid (commentSubscriptions pool) }
+    RelayPool.deleteCommentSubscription eid
 
 
 changeInboxModelState :: InboxModelEff es => InboxModelState -> Eff es ()
@@ -242,30 +309,17 @@ initializeWithDefaultRelays xo = do
       bootstrapFilter = inboxRelayTopologyFilter [xo]
 
   void $ forConcurrently connectedRelays $ \r -> do
-      subId' <- subscribe (getUri r) bootstrapFilter
-      void $ handleSubscriptionUntilEOSE subId'
+      void $ subscribe (getUri r) bootstrapFilter
       follows <- getFollows xo
       unless (null follows) $ do
         let followFilter = inboxRelayTopologyFilter $ map pubkey follows
-        subId'' <- subscribe (getUri r) followFilter
-        void $ handleSubscriptionUntilEOSE subId''
+        void $ subscribe (getUri r) followFilter
 
   myGeneralRelays <- getGeneralRelays xo
   myDMRelays <- getDMRelays xo
 
-  when (null myGeneralRelays) $ do
-    setDefaultGeneralRelays
-  when (null myDMRelays) $ do
-    setDefaultDMRelays
-
-
--- | Calculate timestamp maps for a list of pubkeys
--- Returns a map from pubkey to (profileTimestamp, postsTimestamp)
-getPubkeyTimestamps :: InboxModelEff es => [PubKeyXO] -> Eff es (Map.Map PubKeyXO (Maybe Int, Maybe Int))
-getPubkeyTimestamps pubkeys = Map.fromList <$> forM pubkeys \pk -> do
-    profileTs <- getLatestTimestamp pk [RelayListMetadata, PreferredDMRelays, FollowList, Metadata]
-    postsTs <- getLatestTimestamp pk [ShortTextNote, Repost, EventDeletion]
-    return (pk, (profileTs, postsTs))
+  when (null myGeneralRelays) setDefaultGeneralRelays
+  when (null myDMRelays) setDefaultDMRelays
 
 
 -- | Continue with discovered relays
@@ -289,31 +343,40 @@ continueWithRelays inboxRelays = do
   void $ forConcurrently inboxRelays $ \r -> do
     when (isInboxCapable r) $ do
       let relayUri = getUri r
-      connected <- connect relayUri -- no fallback for inbox relays
-      when connected $ subscribeToMentions relayUri xo
+      isAlreadyConnected <- RelayPool.isActiveConnection relayUri
+      connected <- if isAlreadyConnected then pure True else connect relayUri -- no fallback for inbox relays
+      when connected $ do
+        -- Only add mentions subs once per relay; avoid duplicates across update cycles
+        st1 <- get @RelayPoolState
+        let hasMentions = any (\(_, sd) -> relay sd == relayUri && isMentionsFilter (subscriptionFilter sd)) (Map.toList $ subscriptions st1)
+        unless hasMentions $ subscribeToMentions relayUri xo
 
-  followRelayMap <- buildRelayPubkeyMap (xo : followList) ownInboxRelayURIs
+  -- Compute assignments using the picker pipeline
+  pickedMap <- pickRelaysForAuthors followList ownInboxRelayURIs
 
-  -- Pre-calculate timestamps for each pubkey
-  pubkeyTimestamps <- getPubkeyTimestamps (xo : followList)
+  -- Chunk authors per relay to avoid multi-author caps
+  let chunkAuthors n as = chunksOf n as
+      chunkedRelayMap = Map.fromList
+        [ (relayUri, chunkAuthors 20 pks) | (relayUri, pks) <- Map.toList pickedMap ]
 
   -- Connect to follow relays with rate limiting (max 7 concurrent new connections)
-  let relayChunks = chunksOf 7 (Map.toList followRelayMap)
+  let relayChunks = chunksOf 7 (Map.toList chunkedRelayMap)
   connectedRelays <- fmap concat $ forM relayChunks $ \chunk -> do
-    results <- forConcurrently chunk $ \(relayUri, pubkeys) -> do
+    results <- forConcurrently chunk $ \(relayUri, pkChunks) -> do
       connected <- connect relayUri
       if connected
         then do
-          void $ subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
-        else do
-          recordFailedRelay relayUri
+          -- subscribe per chunk
+          void $ forM pkChunks $ \pks ->
+            void $ subscribeToProfilesAndPosts relayUri pks
+        else pure ()
       return (relayUri, connected)
     -- Add delay between chunks to avoid overwhelming the network
     threadDelay 250000  -- 250ms delay between chunks
     return results
 
   let failedRelays  = [ relayUri | (relayUri, connected) <- connectedRelays, not connected ]
-      failedPubkeys = concatMap (\r -> Map.findWithDefault [] r followRelayMap) failedRelays
+      failedPubkeys = concatMap (\r -> Map.findWithDefault [] r pickedMap) failedRelays
 
   unless (null failedPubkeys) $ do
     rebalanceSubscriptions failedPubkeys ownInboxRelayURIs
@@ -334,16 +397,13 @@ rebalanceSubscriptions
   -> Eff es ()
 rebalanceSubscriptions _ [] = pure ()
 rebalanceSubscriptions pubkeys availableInboxURIs = do
-  newRelayMap <- buildRelayPubkeyMap pubkeys availableInboxURIs
-
-  -- Calculate timestamps for each pubkey
-  pubkeyTimestamps <- getPubkeyTimestamps pubkeys
+  newRelayMap <- pickRelaysForAuthors pubkeys availableInboxURIs
 
   newResults <- forConcurrently (Map.toList newRelayMap) $ \(relayUri, pkList) -> do
       connected <- connect relayUri
       if connected
-        then void $ subscribeToProfilesAndPosts relayUri pkList pubkeyTimestamps
-        else recordFailedRelay relayUri
+        then void $ subscribeToProfilesAndPosts relayUri pkList
+        else pure ()
       return (relayUri, connected)
   let failedRelays    = [ relayUri | (relayUri, connected) <- newResults, not connected ]
       newFailedPubkeys = concatMap (\r -> Map.findWithDefault [] r newRelayMap) failedRelays
@@ -354,46 +414,84 @@ rebalanceSubscriptions pubkeys availableInboxURIs = do
 -- | Subscribe to Giftwrap events on a relay
 subscribeToGiftwraps :: InboxModelEff es => RelayURI -> PubKeyXO -> Eff es ()
 subscribeToGiftwraps relayUri xo = do
-  lastTimestamp <- getSubscriptionTimestamp [xo] [GiftWrap]
-  let lastTimestamp' = fmap (\ts -> ts - (2 * 24 * 60 * 60)) lastTimestamp  -- 2 days in seconds
-      f = (giftWrapFilter xo lastTimestamp') { limit = Just 2000 }
-  subId' <- subscribe relayUri f
-  void $ async $ handlePaginationSubscription subId'
+  -- Seed anchor for giftwraps per relay and author, then backdate 2 days for safety
+  let key = feedKeyForMentions xo -- optional: create dedicated feedKeyForGiftwraps if desired
+  a0 <- getOrSeedAnchor relayUri key
+  let sinceTs = max 0 (a0 - 2 * 24 * 60 * 60)
+      f = (giftWrapFilter xo (Just sinceTs)) { limit = Just 2000 }
+  void $ subscribe relayUri f
 
 
 -- | Subscribe to mentions on a relay
 subscribeToMentions :: InboxModelEff es => RelayURI -> PubKeyXO -> Eff es ()
 subscribeToMentions relayUri xo = do
-  lastTimestamp <- getSubscriptionTimestamp [xo] [ShortTextNote, Repost, Comment, EventDeletion]
-  subId' <- subscribe relayUri (mentionsFilter xo lastTimestamp)
-  void $ async $ handlePaginationSubscription subId'
+  now <- getCurrentTime
+  a0 <- getOrSeedAnchor relayUri (feedKeyForMentions xo)
+  st <- get @RelayPoolState
+  follows <- getFollows xo
+  let followerAuthors = xo : map pubkey follows
+  -- If spam-safety is enabled, restrict authors to follows for this subscription
+  let maybeAuthors = if avoidSpamOnUnsafeRelays st then Just followerAuthors else Nothing
+  -- Live mentions (since now)
+  let liveBase = (inboxMentionsFilter xo (Just now)) { limit = Nothing }
+      liveFilter = liveBase { authors = chooseAuthors maybeAuthors (authors liveBase) }
+  void $ subscribe relayUri liveFilter
+  -- Historic mentions up to now (finite, temporary)
+  let histBase = (inboxMentionsFilter xo (Just a0)) { until = Just now, limit = Just 2000 }
+      histFilter = histBase { authors = chooseAuthors maybeAuthors (authors histBase) }
+  void $ subscribeTemporary relayUri histFilter
+
+  where
+    chooseAuthors :: Maybe [PubKeyXO] -> Maybe [PubKeyXO] -> Maybe [PubKeyXO]
+    chooseAuthors (Just xs) _ = Just xs
+    chooseAuthors Nothing b  = b
+
+-- Identify if a filter is a mentions filter (by presence of 'p' tag and kinds)
+isMentionsFilter :: Filter -> Bool
+isMentionsFilter f =
+  case (kinds f, fTags f) of
+    (Just ks, Just tags) ->
+      let hasKinds = all (`elem` ks) [ShortTextNote, Repost, Comment, EventDeletion]
+          hasPTags = Map.member 'p' tags
+      in hasKinds && hasPTags
+    _ -> False
 
 
 -- | Subscribe to profiles and posts with pre-calculated timestamps for each pubkey
 subscribeToProfilesAndPosts :: InboxModelEff es
                             => RelayURI
                             -> [PubKeyXO]
-                            -> Map.Map PubKeyXO (Maybe Int, Maybe Int)  -- Map of (profileTs, postsTs)
-                            -> Eff es [SubscriptionId]
-subscribeToProfilesAndPosts relayUri pks timestampMap = do
+                            -> Eff es SubscriptionId
+subscribeToProfilesAndPosts relayUri pks = do
     -- Subscribe to profiles - Metadata generally doesn't need timestamp filtering
-    let profileFilter = profilesFilter pks
+    st <- get @RelayPoolState
+    kp <- getKeyPair
+    let xo = keyPairToPubKeyXO kp
+    follows <- getFollows xo
+    let followerAuthors = xo : map pubkey follows
+    let profileBase = profilesFilterFS pks
+        profileFilter = if avoidSpamOnUnsafeRelays st then profileBase { authors = Just followerAuthors } else profileBase
     --logDebug $ "Subscribing to profiles for " <> pack (show pks) <> " on relay " <> relayUri
     --logDebug $ "Profile filter: " <> pack (show profileFilter)
-    subId' <- subscribe relayUri profileFilter
-    void $ async $ handlePaginationSubscription subId'
+    void $ subscribe relayUri profileFilter
 
-    -- Subscribe to posts with precise timestamps for each pubkey
-    -- Get the effective timestamps for this specific set of pubkeys
-    let postsTimestamps = [ts | pk <- pks, Just ts <- [snd =<< Map.lookup pk timestampMap]]
-        effectivePostsTimestamp = if null postsTimestamps then Nothing else Just (maximum postsTimestamps)
+    -- Concurrent live + historic posts subscriptions
+    now <- getCurrentTime
 
-    let postsFilter = userPostsFilter pks effectivePostsTimestamp Nothing
-    subId'' <- subscribe relayUri postsFilter
-    void $ async $ handlePaginationSubscription subId''
+    -- Live: after 'now' to capture new events that arrive while we paginate history
+    let liveBase = (userPostsFilterFS pks (Just now) Nothing) { limit = Nothing }
+        liveFilter = if avoidSpamOnUnsafeRelays st then liveBase { authors = Just followerAuthors } else liveBase
+    liveSubId <- subscribe relayUri liveFilter
+    -- No pagination for live
 
-    -- Return both subscription IDs
-    return [subId', subId'']
+    -- Historic: anchors-only. Use per-relay feed anchor for this author group (seeded if absent)
+    anchor <- getOrSeedAnchor relayUri (feedKeyForPosts pks)
+    let base0 = userPostsFilterFS pks (Just anchor) Nothing
+        historicBase = if avoidSpamOnUnsafeRelays st then base0 { authors = Just followerAuthors } else base0
+        historicFilter = historicBase { until = Just now }
+    void $ subscribeTemporary relayUri historicFilter
+
+    return liveSubId
 
 
 -- | Creates a filter to track changes in the relay network topology of contacts.
@@ -416,55 +514,138 @@ inboxRelayTopologyFilter pks = emptyFilter
     }
 
 
--- | Get the latest timestamp for a given pubkey and kind
-getSubscriptionTimestamp :: InboxModelEff es => [PubKeyXO] -> [Kind] -> Eff es (Maybe Int)
-getSubscriptionTimestamp pks ks = do
-  timestamps <- forM pks $ \pk -> do
-    r <- getLatestTimestamp pk ks
-    return r
-  if null timestamps
-    then return Nothing
-    else case catMaybes timestamps of
-      [] -> return Nothing
-      ts -> return $ Just $ maximum ts
-
-
--- | Build a map from relay URI to pubkeys, using inbox relays only as fallback
-buildRelayPubkeyMap :: InboxModelEff es => [PubKeyXO] -> [RelayURI] -> Eff es (Map.Map RelayURI [PubKeyXO])
-buildRelayPubkeyMap pks ownInboxRelays = do
-  recentlyFailedRelays <- getFailedRelaysWithinLastNDays 1
+-- | End-to-end picker: derive candidates from follows and assign using global picker
+pickRelaysForAuthors :: InboxModelEff es => [PubKeyXO] -> [RelayURI] -> Eff es (Map.Map RelayURI [PubKeyXO])
+pickRelaysForAuthors pks ownInboxRelays = do
   kp <- getKeyPair
   let ownPubkey = keyPairToPubKeyXO kp
 
+  -- Derive candidates per author from outbox lists
   relayPubkeyPairs <- forM pks $ \pk -> do
     relays <- getGeneralRelays pk
     let outboxRelayURIs = [ normalizeRelayURI (getUri r) | r <- relays, isOutboxCapable r ]
-        -- Filter localhost for contacts (but allow for own pubkey)
-        filteredRelays = if pk == ownPubkey
-                        then outboxRelayURIs
-                        else filter (not . isLocalhostRelay) outboxRelayURIs
-        workingRelays = filter (`notElem` recentlyFailedRelays) filteredRelays
-        workingInboxRelays = filter (`notElem` recentlyFailedRelays)
-                           $ map normalizeRelayURI ownInboxRelays
-        selectedRelays =
-          if null workingRelays
-            then workingInboxRelays
-            else take maxRelaysPerContact workingRelays
-
-    return (pk, selectedRelays)
+        filteredRelays = if pk == ownPubkey then outboxRelayURIs else filter (not . isLocalhostRelay) outboxRelayURIs
+    -- Score/allow only acceptable relays; fallback to own inbox relays if none
+    allowed <- fmap catMaybes $ forM filteredRelays $ \uri -> do
+      mscore <- scoreRelay uri
+      case mscore of
+        Just _ -> pure (Just uri)
+        Nothing -> pure Nothing
+    let selected = if null allowed then ownInboxRelays else allowed
+    pure (pk, selected)
 
   let relayToPubkeysMap = foldr
         (\(pk, relays) acc ->
-          foldr
-            (\r acc' -> Map.insertWith Set.union r (Set.singleton pk) acc')
-            acc
-            relays
-        )
+          foldr (\r acc' -> Map.insertWith Set.union r (Set.singleton pk) acc') acc relays)
         Map.empty
         relayPubkeyPairs
 
-  return $ Map.map Set.toList relayToPubkeysMap
+  -- Global assignment (can evolve to multi-relay per author later)
+  assignRelays (Map.map Set.toList relayToPubkeysMap)
 
+
+-- | Assign relays to pubkeys given a candidate map RelayURI -> [PubKeyXO].
+--   Uses per-person ranking (by relay health), sums scores to pick winner relays, and assigns
+--   pubkeys whose current best relay is the winner. Respects avoid/penalties and a soft global
+--   capacity that prefers already-connected relays when exceeded.
+assignRelays :: InboxModelEff es => Map.Map RelayURI [PubKeyXO] -> Eff es (Map.Map RelayURI [PubKeyXO])
+assignRelays candidates = do
+  pool <- get @RelayPoolState
+  let connectedSet :: Set.Set RelayURI
+      connectedSet = Map.keysSet $ Map.filter (\rd -> connectionState rd == Connected) (activeConnections pool)
+
+  personToRelays <- buildPersonCandidates candidates
+  ranked <- rankPerPerson personToRelays
+  loop connectedSet Map.empty ranked
+
+  where
+    -- Build person -> candidate relays map from relay -> [persons]
+    buildPersonCandidates :: InboxModelEff es => Map.Map RelayURI [PubKeyXO] -> Eff es (Map.Map PubKeyXO (Set.Set RelayURI))
+    buildPersonCandidates m = do
+      let pairs = [ (pk, relay)
+                  | (relay, pks) <- Map.toList m
+                  , pk <- pks ]
+      pure $ foldr (\(pk, r) acc -> Map.insertWith Set.union pk (Set.singleton r) acc) Map.empty pairs
+
+    -- Rank relays per person by relay score (descending)
+    rankPerPerson :: InboxModelEff es => Map.Map PubKeyXO (Set.Set RelayURI) -> Eff es (Map.Map PubKeyXO [(RelayURI, Double, Int)])
+    rankPerPerson m = do
+      now <- getCurrentTime
+      pool <- get @RelayPoolState
+      let rankOne pk rels = do
+            scored <- fmap catMaybes $ mapM (scoreRelay' now pool) (Set.toList rels)
+            let sorted = reverse $ sortOn (\(_, s, _) -> s) scored
+            pure (pk, sorted)
+      fmap Map.fromList $ mapM (\(pk, rels) -> rankOne pk rels) (Map.toList m)
+
+    -- Score a relay; Nothing if excluded/avoided.
+    scoreRelay' :: Int -> RelayPoolState -> RelayURI -> Eff es (Maybe (RelayURI, Double, Int))
+    scoreRelay' now pool r = do
+      case Map.lookup r (excludedRelays pool) of
+        Just untilTs | untilTs > now -> pure Nothing
+        _ -> case Map.lookup r (activeConnections pool) of
+               -- Unknown relay: slightly optimistic default to allow exploration
+               Nothing -> pure (Just (r, 0.25, 0))
+               Just rd -> case avoidUntil rd of
+                            Just t | t > now -> pure Nothing
+                            _ -> do
+                               let attempts = successCount rd + failureCount rd
+                                   sr :: Double
+                                   sr = if attempts <= 0 then 0.6 else fromIntegral (successCount rd) / fromIntegral attempts
+                                   connectedBonus :: Double
+                                   connectedBonus = if connectionState rd == Connected then 0.2 else 0.0
+                                   eoseBonus :: Double
+                                   eoseBonus = case lastEoseAt rd of
+                                                 Just ts -> let age = max 0 (now - ts)
+                                                            in if age <= 3600 then 0.2 else if age <= 86400 then 0.1 else 0.0
+                                                 Nothing -> 0.0
+                                   base = min 1.0 (0.6 * sr + connectedBonus + eoseBonus)
+                               pure (Just (r, base, 0))
+
+    -- Loop picking relays
+    loop :: InboxModelEff es
+         => Set.Set RelayURI
+         -> Map.Map RelayURI [PubKeyXO]
+         -> Map.Map PubKeyXO [(RelayURI, Double, Int)]
+         -> Eff es (Map.Map RelayURI [PubKeyXO])
+    loop connectedSet acc remainingRanks = do
+      -- Build scoreboard: sum each person's current best relay score
+      let bestChoices :: [(PubKeyXO, (RelayURI, Double, Int))]
+          bestChoices = [ (pk, r1)
+                        | (pk, rlist) <- Map.toList remainingRanks
+                        , r1 : _ <- [rlist] ]
+          scoreboard :: Map.Map RelayURI Double
+          scoreboard = foldr (\(_, (r, s, _)) m -> Map.insertWith (+) r s m) Map.empty bestChoices
+
+      if Map.null scoreboard
+        then pure acc
+        else do
+          let allowed :: [(RelayURI, Double)]
+              allowed = Map.toList scoreboard
+          if null allowed
+            then pure acc
+            else do
+              let (winner, _) = maximumByFst allowed
+                  -- assign all persons whose current best equals the winner
+                  (toAssign, remaining') = partitionByWinner winner remainingRanks
+                  acc' = foldr (\pk m -> Map.insertWith (++) winner [pk] m) acc toAssign
+              if null toAssign
+                then pure acc -- no progress
+                else loop connectedSet acc' remaining'
+
+    maximumByFst :: Ord b => [(a,b)] -> (a,b)
+    maximumByFst (x:xs) = foldr (\p acc -> if snd p > snd acc then p else acc) x xs
+    maximumByFst [] = error "maximumByFst on empty list"
+
+    partitionByWinner :: RelayURI
+                      -> Map.Map PubKeyXO [(RelayURI, Double, Int)]
+                      -> ([PubKeyXO], Map.Map PubKeyXO [(RelayURI, Double, Int)])
+    partitionByWinner winner = Map.foldrWithKey step ([], Map.empty)
+      where
+        step pk ranks (as, rest) =
+          case ranks of
+            (r,_,_):rs | r == winner -> (pk:as, rest)
+            _ -> (as, Map.insert pk ranks rest)
 
 -- | Check if a relay URI is localhost
 isLocalhostRelay :: RelayURI -> Bool
@@ -474,9 +655,36 @@ isLocalhostRelay uri =
   "::1" `T.isInfixOf` uri
 
 
--- | Maximum number of outbox relays to consider per contact
-maxRelaysPerContact :: Int
-maxRelaysPerContact = 2
+-- | Score a relay URI for selection. Higher is better.
+-- Prefers connected relays, higher success rate; excludes relays under avoidUntil.
+scoreRelay :: InboxModelEff es => RelayURI -> Eff es (Maybe Double)
+scoreRelay relayUri = do
+  st <- get @RelayPoolState
+  now <- getCurrentTime
+  -- Exclude relays in penalty box (excludedRelays)
+  case Map.lookup relayUri (excludedRelays st) of
+    Just untilTs | untilTs > now -> pure Nothing
+    _ -> case Map.lookup relayUri (activeConnections st) of
+           -- Unknown relay: slightly optimistic default to allow exploration
+           Nothing -> pure (Just 0.25)
+           Just rd -> do
+             case avoidUntil rd of
+               Just t | t > now -> pure Nothing -- excluded for now
+               _ -> do
+                 let attempts = successCount rd + failureCount rd
+                     sr :: Double
+                     sr = if attempts <= 0 then 0.6 else fromIntegral (successCount rd) / fromIntegral attempts
+                     connectedBonus :: Double
+                     connectedBonus = if connectionState rd == Connected then 0.2 else 0.0
+                     eoseBonus :: Double
+                     eoseBonus = case lastEoseAt rd of
+                                   Just ts -> let age = max 0 (now - ts)
+                                              in if age <= 3600 then 0.2
+                                                 else if age <= 86400 then 0.1
+                                                 else 0.0
+                                   Nothing -> 0.0
+                     base = min 1.0 (0.6 * sr + connectedBonus + eoseBonus)
+                 pure (Just base)
 
 
 -- | Update subscriptions when follows or preferred DM relays change
@@ -495,30 +703,38 @@ updateGeneralSubscriptions xo = do
   inboxRelays <- getGeneralRelays xo
   let ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
 
-  pubkeyTimestamps <- getPubkeyTimestamps followList
-
   -- Handle mentions subscriptions for inbox-capable relays
   void $ forConcurrently inboxRelays $ \relay' -> do
     when (isInboxCapable relay') $ do
       let relayUri = getUri relay'
-      st <- get @RelayPool
+      st <- get @RelayPoolState
       let isAlreadyConnected = Map.member relayUri (activeConnections st)
       connected <- if isAlreadyConnected
                     then pure True
                     else connect relayUri  -- No fallback for inbox relays
-      when connected $ subscribeToMentions relayUri xo
+      when connected $ do
+        subsForRelay <- RelayPool.getSubscriptionsForRelay relayUri
+        let hasMentions = any (\(_, sd) -> isMentionsFilter (subscriptionFilter sd)) subsForRelay
+        unless hasMentions $ subscribeToMentions relayUri xo
 
-  -- Build new relay-pubkey mapping for follows
-  newRelayPubkeyMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
+  -- Build candidates then run through picker
+  candidates <- pickRelaysForAuthors followList ownInboxRelayURIs
+  -- candidates already assigned by picker; skip extra filtering
+  let newRelayPubkeyMap' = candidates
+  -- Only update connections/subscriptions when the mapping actually changed (avoid churn)
+  stPrev <- get @RelayPoolState
+  let prevMap = lastRelayPubkeyMap stPrev
+  when (prevMap /= newRelayPubkeyMap') $ do
+    RelayPool.setLastRelayPubkeyMap newRelayPubkeyMap'
 
   dmRelayURIs <- getDMRelays xo
   let (defaultDMRelayURIs, _) = defaultDMRelays
       allDMRelays = Set.fromList (dmRelayURIs ++ defaultDMRelayURIs)
 
-  st <- get @RelayPool
+  st <- get @RelayPoolState
   let currentRelays = Map.keysSet (activeConnections st)
       currentGeneralRelays = Set.difference currentRelays allDMRelays
-      newOutboxRelays = Map.keysSet newRelayPubkeyMap
+      newOutboxRelays = Map.keysSet newRelayPubkeyMap'
       newInboxRelays = Set.fromList [ normalizeRelayURI (getUri r) | r <- inboxRelays, isInboxCapable r ]
       allNeededGeneralRelays = Set.union newOutboxRelays newInboxRelays
       relaysToAdd = Set.difference newOutboxRelays currentRelays
@@ -531,33 +747,31 @@ updateGeneralSubscriptions xo = do
 
   -- Add new connections
   void $ forConcurrently (Set.toList relaysToAdd) $ \relayUri -> do
-    let pubkeys = Map.findWithDefault [] relayUri newRelayPubkeyMap
+    let pubkeys = Map.findWithDefault [] relayUri newRelayPubkeyMap'
+    let pkChunks = chunksOf 20 pubkeys
     stopAllSubscriptions relayUri
-    st' <- get @RelayPool
-    let isAlreadyConnected = Map.member relayUri (activeConnections st')
+    isAlreadyConnected <- RelayPool.isActiveConnection relayUri
     connected <- if isAlreadyConnected
                   then pure True
                   else connect relayUri
     if connected
-      then void $ subscribeToProfilesAndPosts relayUri pubkeys pubkeyTimestamps
-      else do
-        recordFailedRelay relayUri
-        rebalanceSubscriptions pubkeys ownInboxRelayURIs
+      then void $ forM pkChunks $ \pks -> subscribeToProfilesAndPosts relayUri pks
+      else rebalanceSubscriptions pubkeys ownInboxRelayURIs
 
-  -- Update existing connections
+  -- Update existing connections (only when pubkey set changed for that relay)
   void $ forConcurrently (Set.toList relaysToUpdate) $ \relayUri -> do
-    let newPubkeys = Map.findWithDefault [] relayUri newRelayPubkeyMap
-    stopAllSubscriptions relayUri
-    st' <- get @RelayPool
-    let isAlreadyConnected = Map.member relayUri (activeConnections st')
-    connected <- if isAlreadyConnected
-                  then pure True
-                  else connect relayUri
-    if connected
-      then void $ subscribeToProfilesAndPosts relayUri newPubkeys pubkeyTimestamps
-      else do
-        recordFailedRelay relayUri
-        rebalanceSubscriptions newPubkeys ownInboxRelayURIs
+    let newPubkeys = Map.findWithDefault [] relayUri newRelayPubkeyMap'
+    let oldPubkeys = Map.findWithDefault [] relayUri prevMap
+    when (Set.fromList newPubkeys /= Set.fromList oldPubkeys) $ do
+      let pkChunks = chunksOf 20 newPubkeys
+      stopAllSubscriptions relayUri
+      isAlreadyConnected <- RelayPool.isActiveConnection relayUri
+      connected <- if isAlreadyConnected
+                    then pure True
+                    else connect relayUri
+      if connected
+        then void $ forM pkChunks $ \pks -> subscribeToProfilesAndPosts relayUri pks
+        else rebalanceSubscriptions newPubkeys ownInboxRelayURIs
 
 
 -- | Update DM subscriptions
@@ -570,7 +784,7 @@ updateDMSubscriptions xo = do
         dmRelayURIs <- getDMRelays xo
 
         let dmRelaySet = Set.fromList dmRelayURIs
-        st <- get @RelayPool
+        st <- get @RelayPoolState
 
         let giftwrapSubs =
               [ (relayUri, subId)
@@ -592,8 +806,7 @@ updateDMSubscriptions xo = do
         let relaysToAdd = Set.difference dmRelaySet currentRelaySet
 
         void $ forConcurrently (Set.toList relaysToAdd) $ \relayUri -> do
-            st' <- get @RelayPool
-            let isAlreadyConnected = Map.member relayUri (activeConnections st')
+            isAlreadyConnected <- RelayPool.isActiveConnection relayUri
 
             connected <- if isAlreadyConnected
                           then return True
@@ -602,4 +815,4 @@ updateDMSubscriptions xo = do
                 then do
                     stopAllSubscriptions relayUri
                     subscribeToGiftwraps relayUri xo
-                else recordFailedRelay relayUri
+                else pure ()

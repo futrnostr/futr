@@ -15,7 +15,6 @@ module Store.Lmdb
     , initializeLmdbState
     , runLmdbStore
     , putEvent
-    , recordFailedRelay
     , getEvent
     , getEvents
     , getEventRelays
@@ -24,10 +23,12 @@ module Store.Lmdb
     , getTimelineIds
     , getGeneralRelays
     , getDMRelays
-    , getLatestTimestamp
     , getCommentTree
     , getCommentsWithIndentationLevel
-    , getFailedRelaysWithinLastNDays
+    , putRelayStats
+    , getRelayStats
+    , putFeedAnchor
+    , getOrSeedAnchor
     ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
@@ -47,6 +48,7 @@ import Data.Map (Map)
 import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Set (Set)
+import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word8)
 import Effectful
@@ -74,10 +76,10 @@ import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..)
                    , eventIdFromHex, validateEvent )
 import Nostr.Keys (PubKeyXO, pubKeyXOFromHex)
 import Nostr.Profile (Profile, emptyProfile)
-import Nostr.Relay (Relay(..), RelayURI, isValidRelayURI)
-import Nostr.RelayConnection (normalizeRelayURI)
+import Nostr.Relay (Relay(..), RelayURI, isValidRelayURI, normalizeRelayURI)
 import Nostr.Util
 import Types (Follow(..))
+import Nostr.RelayPool (RelayStats(..))
 
 
 -- | Timeline types
@@ -99,9 +101,9 @@ data LmdbState = LmdbState
     , followsDb :: Database PubKeyXO [Follow]
     , generalRelaysDb :: Database PubKeyXO ([Relay], Int)
     , dmRelaysDb :: Database PubKeyXO ([RelayURI], Int)
-    , latestTimestampDb :: Database (PubKeyXO, Kind) Int
     , commentDb :: Database CommentKey ()
-    , failedRelaysDb :: Database RelayURI Int
+    , relayStatsDb :: Database RelayURI RelayStats
+    , feedAnchorsDb :: Database (RelayURI, Text) Int
     , eventCache :: LRU.LRU EventId Event
     , eventRelaysCache :: LRU.LRU EventId (Set RelayURI)
     , profileCache :: LRU.LRU PubKeyXO (Profile, Int)
@@ -110,6 +112,7 @@ data LmdbState = LmdbState
     , generalRelaysCache :: LRU.LRU PubKeyXO ([Relay], Int)
     , dmRelaysCache :: LRU.LRU PubKeyXO ([RelayURI], Int)
     , latestTimestampCache :: LRU.LRU (PubKeyXO, Kind) Int
+    , feedAnchorsCache :: LRU.LRU (RelayURI, Text) Int
     , commentCache :: LRU.LRU EventId [CommentTree]
     } deriving (Generic)
 
@@ -149,7 +152,8 @@ data CommentTree = CommentTree
 data LmdbStore :: Effect where
     -- Event operations
     PutEvent :: PutEventInput -> Maybe RelayURI -> LmdbStore m PutEventResult
-    RecordFailedRelay:: RelayURI -> LmdbStore m () -- Int: timestamp
+    PutRelayStats :: RelayURI -> RelayStats -> LmdbStore m ()
+    PutFeedAnchor :: RelayURI -> Text -> Int -> LmdbStore m ()
 
     -- Query operations (read-only)
     GetEvent :: EventId -> LmdbStore m (Maybe Event)
@@ -160,10 +164,10 @@ data LmdbStore :: Effect where
     GetTimelineIds :: TimelineType -> PubKeyXO -> Int -> LmdbStore m [EventId]
     GetGeneralRelays :: PubKeyXO -> LmdbStore m [Relay]
     GetDMRelays :: PubKeyXO -> LmdbStore m [RelayURI]
-    GetLatestTimestamp :: PubKeyXO -> [Kind] -> LmdbStore m (Maybe Int)
     GetCommentTree :: EventId -> LmdbStore m (Maybe [CommentTree])
     GetCommentsWithIndentationLevel :: EventId -> LmdbStore m [(EventId, Int)]
-    GetFailedRelaysWithinLastNDays :: Int -> LmdbStore m [RelayURI] -- Int: number of days to look back
+    GetRelayStats :: RelayURI -> LmdbStore m (Maybe RelayStats)
+    GetOrSeedAnchor :: RelayURI -> Text -> LmdbStore m Int
 
 
 type instance DispatchOf LmdbStore = Dynamic
@@ -179,8 +183,14 @@ type LmdbStoreEff es = ( Util :> es
 putEvent :: LmdbStore :> es => PutEventInput -> Maybe RelayURI -> Eff es PutEventResult
 putEvent input mUri = send $ PutEvent input mUri
 
-recordFailedRelay :: LmdbStore :> es => RelayURI -> Eff es ()
-recordFailedRelay uri = send $ RecordFailedRelay uri
+
+-- | Persist relay stats for a given relay URI
+putRelayStats :: LmdbStore :> es => RelayURI -> RelayStats -> Eff es ()
+putRelayStats uri stats = send $ PutRelayStats uri stats
+
+-- | Persist a per-relay, per-feed anchor (e.g., last seen boundary)
+putFeedAnchor :: LmdbStore :> es => RelayURI -> Text -> Int -> Eff es ()
+putFeedAnchor uri feedKey ts = send $ PutFeedAnchor uri feedKey ts
 
 getEvent :: LmdbStore :> es => EventId -> Eff es (Maybe Event)
 getEvent eid = send $ GetEvent eid
@@ -206,17 +216,20 @@ getGeneralRelays pk = send $ GetGeneralRelays pk
 getDMRelays :: LmdbStore :> es => PubKeyXO -> Eff es [RelayURI]
 getDMRelays pk = send $ GetDMRelays pk
 
-getLatestTimestamp :: LmdbStore :> es => PubKeyXO -> [Kind] -> Eff es (Maybe Int)
-getLatestTimestamp pk kinds = send $ GetLatestTimestamp pk kinds
-
 getCommentTree :: LmdbStore :> es => EventId -> Eff es (Maybe [CommentTree])
 getCommentTree eid = send $ GetCommentTree eid
 
 getCommentsWithIndentationLevel :: LmdbStore :> es => EventId -> Eff es [(EventId, Int)]
 getCommentsWithIndentationLevel eid = send $ GetCommentsWithIndentationLevel eid
 
-getFailedRelaysWithinLastNDays :: LmdbStore :> es => Int -> Eff es [RelayURI]
-getFailedRelaysWithinLastNDays days = send $ GetFailedRelaysWithinLastNDays days
+
+-- | Load persisted relay stats for a given relay URI, if any
+getRelayStats :: LmdbStore :> es => RelayURI -> Eff es (Maybe RelayStats)
+getRelayStats uri = send $ GetRelayStats uri
+
+-- | Return existing anchor or seed with current time
+getOrSeedAnchor :: LmdbStore :> es => RelayURI -> Text -> Eff es Int
+getOrSeedAnchor uri key = send $ GetOrSeedAnchor uri key
 
 
 -- | Run LmdbEffect
@@ -224,11 +237,17 @@ runLmdbStore :: LmdbStoreEff es
              => Eff (LmdbStore : es) a
              -> Eff es a
 runLmdbStore = interpret $ \_ -> \case
-    RecordFailedRelay relayUri -> do
-        ts <- getCurrentTime
+
+    PutRelayStats uri stats -> do
         st <- get @LmdbState
         liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-            LMap.repsert' txn (failedRelaysDb st) relayUri ts
+            LMap.repsert' txn (relayStatsDb st) uri stats
+
+    PutFeedAnchor uri feedKey ts -> do
+        st <- get @LmdbState
+        liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+            LMap.repsert' txn (feedAnchorsDb st) (uri, feedKey) ts
+        modify @LmdbState $ \s -> s { feedAnchorsCache = LRU.insert (uri, feedKey) ts (feedAnchorsCache s) }
 
     PutEvent eventInput mr -> do
         let (event', mDecrypted) = case eventInput of
@@ -449,7 +468,7 @@ runLmdbStore = interpret $ \_ -> \case
                                                 (_:name:_) -> Just name  -- Skip relay URL, get petname
                                                 _ -> Nothing
                                         ]
-                        existingTimestamp' <- LMap.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
+                        let existingTimestamp' = Nothing
                         case existingTimestamp' of
                             Just existingTs ->
                                 if eventTimestamp > existingTs then do
@@ -526,16 +545,6 @@ runLmdbStore = interpret $ \_ -> \case
                   { eventIsNew = isNewEvent && wasProcessed
                   , relaysUpdated = hasNewRelays
                   }
-
-            -- Update latest timestamp if needed
-            when isNewEvent $ do
-                existingTimestamp <- LMap.lookup' (readonly txn) (latestTimestampDb currentState) (author, eventKind)
-                case existingTimestamp of
-                    Just existingTs ->
-                        when (eventTimestamp > existingTs) $
-                            LMap.repsert' txn (latestTimestampDb currentState) (author, eventKind) eventTimestamp
-                    Nothing ->
-                        LMap.repsert' txn (latestTimestampDb currentState) (author, eventKind) eventTimestamp
 
             -- Update cache
             when ((eventIsNew result) || (relaysUpdated result)) $
@@ -709,24 +718,6 @@ runLmdbStore = interpret $ \_ -> \case
                     Nothing -> do
                         pure []
 
-    GetLatestTimestamp pubKey kinds -> do
-        st <- get @LmdbState
-        timestamps <- forM kinds $ \k -> do
-            let key = (pubKey, k)
-            case LRU.lookup key (latestTimestampCache st) of
-                (_, Just ts) -> return (Just ts)
-                (_, Nothing) -> do
-                    mts <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-                        LMap.lookup' (readonly txn) (latestTimestampDb st) key
-                    case mts of
-                        Just ts -> do
-                            modify @LmdbState $ \s -> s { latestTimestampCache = LRU.insert key ts (latestTimestampCache s) }
-                            return (Just ts)
-                        Nothing -> return Nothing
-
-        let validTimestamps = catMaybes timestamps
-        return $ if null validTimestamps then Nothing else Just (maximum validTimestamps)
-
     GetCommentTree eventId -> do
         comments <- getComments eventId
         pure $ Just comments
@@ -735,23 +726,29 @@ runLmdbStore = interpret $ \_ -> \case
         comments <- getComments eventId
         pure $ flattenComments comments 0
 
-    GetFailedRelaysWithinLastNDays days -> do
+    GetRelayStats uri -> do
         st <- get @LmdbState
-        now <- getCurrentTime
-        let threshold = now - (days * 86400)
-        failedUris <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
-            withCursor (readonly txn) (failedRelaysDb st) $ \cursor -> do
-                pairs <- Pipes.toListM (LMap.firstForward cursor)
-                forM pairs $ \kv ->
-                    let uri = keyValueKey kv
-                        ts = keyValueValue kv
-                    in if ts >= threshold
-                       then return (Just uri)
-                       else do
-                           -- Clean up old entries
-                           LMap.delete' txn (failedRelaysDb st) uri
-                           return Nothing
-        pure $ catMaybes failedUris
+        liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+            LMap.lookup' (readonly txn) (relayStatsDb st) uri
+
+    GetOrSeedAnchor uri feedKey -> do
+        st <- get @LmdbState
+        -- fast path via cache
+        case LRU.lookup (uri, feedKey) (feedAnchorsCache st) of
+          (_, Just ts) -> pure ts
+          (_, Nothing) -> do
+            mts <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+                LMap.lookup' (readonly txn) (feedAnchorsDb st) (uri, feedKey)
+            case mts of
+              Just ts -> do
+                modify @LmdbState $ \s -> s { feedAnchorsCache = LRU.insert (uri, feedKey) ts (feedAnchorsCache s) }
+                pure ts
+              Nothing -> do
+                now <- getCurrentTime
+                liftIO $ withTransaction (lmdbEnv st) $ \txn ->
+                    LMap.repsert' txn (feedAnchorsDb st) (uri, feedKey) now
+                modify @LmdbState $ \s -> s { feedAnchorsCache = LRU.insert (uri, feedKey) now (feedAnchorsCache s) }
+                pure now
 
 
 -- Helper function for timeline entries within a transaction
@@ -806,7 +803,7 @@ maxReaders :: Int
 maxReaders = 120
 
 maxDbs :: Int
-maxDbs = 11
+maxDbs = 20
 
 
 -- Windows specific imports and FFI for marking a file as sparse
@@ -885,19 +882,7 @@ followsDbSettings = makeSettings
 
 
 -- | Settings for the latest timestamp database
-latestTimestampDbSettings :: DatabaseSettings (PubKeyXO, Kind) Int
-latestTimestampDbSettings = makeSettings
-    (SortCustom $ CustomSortSafe compare)
-    (Codec.throughByteString
-        (\(pk, k) -> toStrict $ encode (pk, k))
-        (\bs -> case eitherDecode (fromStrict bs) of
-            Right key -> Just key
-            Left _ -> Nothing))
-    (Codec.throughByteString
-        (toStrict . encode)
-        (\bs -> case eitherDecode (fromStrict bs) of
-            Right ts -> Just ts
-            Left _ -> Nothing))
+-- removed latestTimestampDbSettings
 
 
 -- | Settings for the event relays database
@@ -978,9 +963,10 @@ initializeLmdbState dbPath = do
         chatTimelineDb' <- openDatabase txn (Just "chat_timeline") defaultJsonSettings
         generalRelaysDb' <- openDatabase txn (Just "general_relays") defaultJsonSettings
         dmRelaysDb' <- openDatabase txn (Just "dm_relays") defaultJsonSettings
-        latestTimestampDb' <- openDatabase txn (Just "latest_timestamps") latestTimestampDbSettings
+        -- latest_timestamps DB removed
         commentDb' <- openDatabase txn (Just "comments") commentDbSettings
-        failedRelaysDb' <- openDatabase txn (Just "failed_relays") defaultJsonSettings
+        relayStatsDb' <- openDatabase txn (Just "relay_stats") defaultJsonSettings
+        feedAnchorsDb' <- openDatabase txn (Just "feed_anchors") defaultJsonSettings
 
         pure $ LmdbState
             { lmdbLock = lock
@@ -993,9 +979,10 @@ initializeLmdbState dbPath = do
             , followsDb = followsDb'
             , generalRelaysDb = generalRelaysDb'
             , dmRelaysDb = dmRelaysDb'
-            , latestTimestampDb = latestTimestampDb'
+            -- latestTimestampDb removed
             , commentDb = commentDb'
-            , failedRelaysDb = failedRelaysDb'
+            , relayStatsDb = relayStatsDb'
+            , feedAnchorsDb = feedAnchorsDb'
             , eventCache = LRU.newLRU (Just cacheSize)
             , eventRelaysCache = LRU.newLRU (Just cacheSize)
             , profileCache = LRU.newLRU (Just smallCacheSize)
@@ -1005,17 +992,23 @@ initializeLmdbState dbPath = do
             , dmRelaysCache = LRU.newLRU (Just smallCacheSize)
             , latestTimestampCache = LRU.newLRU (Just smallCacheSize)
             , commentCache = LRU.newLRU (Just cacheSize)
+            , feedAnchorsCache = LRU.newLRU (Just smallCacheSize)
             }
 
--- | Cache size constants
+
+-- | Cache size for general use
 cacheSize :: Integer
 cacheSize = 5000
 
+-- | Small cache size for general use
 smallCacheSize :: Integer
 smallCacheSize = 500
 
+
+-- | Mini cache size for comment subscriptions
 miniCacheSize :: Integer
 miniCacheSize = 50
+
 
 -- | Initial LMDB state before login
 initialLmdbState :: LmdbState
@@ -1030,9 +1023,8 @@ initialLmdbState = LmdbState
     , followsDb = error "LMDB not initialized"
     , generalRelaysDb = error "LMDB not initialized"
     , dmRelaysDb = error "LMDB not initialized"
-    , latestTimestampDb = error "LMDB not initialized"
+    -- latestTimestampDb removed
     , commentDb = error "LMDB not initialized"
-    , failedRelaysDb = error "LMDB not initialized"
     , eventCache = LRU.newLRU (Just cacheSize)
     , eventRelaysCache = LRU.newLRU (Just cacheSize)
     , profileCache = LRU.newLRU (Just smallCacheSize)

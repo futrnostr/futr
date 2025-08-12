@@ -39,6 +39,7 @@ import Nostr.Publisher
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (fetchProfile, getProfile)
+import Nostr.RelayPool (RelayPoolState(..))
 import Nostr.Util
 import Presentation.Classes qualified as Classes
 import Presentation.Classes (findAvailableFilename, createPost)
@@ -46,7 +47,7 @@ import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
 import Store.Lmdb (LmdbStore, getEvent, getEvents, getFollows, getEventRelays, getCommentsWithIndentationLevel)
-import Types (Post(..), AppState(..), AppScreen(..), RelayPool(..), FeedFilter(..), Follow(..), Feed(..))
+import Types (Post(..), AppState(..), AppScreen(..), FeedFilter(..), Follow(..), Feed(..))
 
 
 -- | HomeScren Effect for creating QML UI.
@@ -170,7 +171,7 @@ runHomeScreen = interpret $ \_ -> \case
 
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
-          st <- runE $ get @RelayPool
+          st <- runE $ get @RelayPoolState
           now <- runE getCurrentTime
           -- Filter statuses where event is newer than 10 seconds
           let statusMap = publishStatus st

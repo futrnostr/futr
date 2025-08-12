@@ -7,9 +7,11 @@ import Data.Map.Strict qualified as Map
 import Data.Text.Encoding (decodeUtf8)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.STM (atomically, newTQueueIO, writeTChan, writeTQueue)
+import Effectful.Concurrent.Async (forConcurrently)
+import Effectful.Concurrent.STM (atomically, writeTChan)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, modify)
+import qualified Nostr.RelayPool as RelayPool
 import Prelude hiding (until)
 import System.Random (randomIO)
 
@@ -26,12 +28,13 @@ import Nostr.Util
 import RelayMgmt
 import Store.Lmdb
 import Types
+import Nostr.RelayPool (RelayPoolState(..), SubscriptionState(..))
 
 -- | Subscription effects
 data Subscription :: Effect where
     Subscribe :: RelayURI -> Filter -> Subscription m SubscriptionId
+    SubscribeTemporary :: RelayURI -> Filter -> Subscription m SubscriptionId
     StopSubscription :: SubscriptionId -> Subscription m ()
-    --HandleEvent :: RelayURI -> Event -> Subscription m UIUpdates
     StopAllSubscriptions :: RelayURI -> Subscription m ()
 
 
@@ -40,6 +43,9 @@ type instance DispatchOf Subscription = Dynamic
 
 subscribe :: Subscription :> es => RelayURI -> Filter -> Eff es SubscriptionId
 subscribe uri filter' = send $ Subscribe uri filter'
+
+subscribeTemporary :: Subscription :> es => RelayURI -> Filter -> Eff es SubscriptionId
+subscribeTemporary uri filter' = send $ SubscribeTemporary uri filter'
 
 stopSubscription :: Subscription :> es => SubscriptionId -> Eff es ()
 stopSubscription subId = send $ StopSubscription subId
@@ -51,7 +57,8 @@ stopAllSubscriptions uri = send $ StopAllSubscriptions uri
 -- | SubscriptionEff
 type SubscriptionEff es =
   ( State AppState :> es
-  , State RelayPool :> es
+  , State RelayPool.RelayPoolState :> es
+  , RelayPool.RelayPool :> es
   , LmdbStore :> es
   , RelayConnection :> es
   , KeyMgmt :> es
@@ -71,54 +78,57 @@ runSubscription
   -> Eff es a
 runSubscription = interpret $ \_ -> \case
     Subscribe r f -> do
-        q <- newTQueueIO
-        subId' <- generateRandomSubscriptionId
-        let sub = newSubscriptionState f q r
-        registerSubscription r subId' sub f
+        registerNewSub False r f
+
+    SubscribeTemporary r f -> do
+        registerNewSub True r f
 
     StopSubscription subId' -> do
-        st <- get @RelayPool
+        st <- get @RelayPool.RelayPoolState
 
         case Map.lookup subId' (subscriptions st) of
             Just subDetails -> do
                 let relayUri = relay subDetails
                 case Map.lookup relayUri (activeConnections st) of
-                    Just rd -> atomically $ writeTChan (requestChannel rd) (NT.Close subId')
+                    Just rd -> atomically $ writeTChan (RelayPool.requestChannel rd) (NT.Close subId')
                     Nothing -> pure ()
 
-                atomically $ writeTQueue (responseQueue subDetails) (relayUri, SubscriptionClosed "Subscription stopped")
-                modify @RelayPool $ \s -> s { subscriptions = Map.delete subId' (subscriptions s) }
+                RelayPool.deleteSubscriptionId subId'
             Nothing -> pure ()
 
         case Map.lookup subId' (pendingSubscriptions st) of
-            Just subDetails -> do
-                atomically $ writeTQueue (responseQueue subDetails) (relay subDetails, SubscriptionClosed "Subscription stopped")
-                modify @RelayPool $ \s -> s { pendingSubscriptions = Map.delete subId' (pendingSubscriptions s) }
+            Just _ -> do
+                RelayPool.setPendingSubscriptions (Map.delete subId' (pendingSubscriptions st))
             Nothing -> pure ()
 
     StopAllSubscriptions relayUri -> do
-        st <- get @RelayPool
+        st <- get @RelayPool.RelayPoolState
         case Map.lookup relayUri (activeConnections st) of
             Just rd -> do
-                let relaySubIds = [ subId
-                                | (subId, subDetails) <- Map.toList (subscriptions st)
-                                , relay subDetails == relayUri
-                                ]
+                relaySubIds <- RelayPool.listSubscriptionIdsForRelay relayUri
 
                 forM_ relaySubIds $ \subId -> do
-                    atomically $ writeTChan (requestChannel rd) (NT.Close subId)
+                    atomically $ writeTChan (RelayPool.requestChannel rd) (NT.Close subId)
+                -- Remove all subscriptions for this relay from state immediately.
+                -- Relying on relays to send CLOSED leads to leaks because Nostr servers
+                -- are not required to acknowledge client CLOSE with a CLOSED message.
+                RelayPool.deleteSubscriptionsBulk relaySubIds
             Nothing -> return ()
 
         let affectedPendingSubs = [ subDetails
                                  | (_, subDetails) <- Map.toList (pendingSubscriptions st)
                                  , relay subDetails == relayUri
                                  ]
+        -- No queue to notify; simply remove them
 
-        forM_ affectedPendingSubs $ \subDetails ->
-            atomically $ writeTQueue (responseQueue subDetails) (relay subDetails, SubscriptionClosed "Subscription stopped")
+        RelayPool.filterPendingSubscriptionsByRelay relayUri
 
-        modify @RelayPool $ \s -> s
-            { pendingSubscriptions = Map.filterWithKey (\_ v -> relay v /= relayUri) (pendingSubscriptions s) }
+-- | Helper to create and register a new subscription, toggling temporary flag.
+registerNewSub :: SubscriptionEff es => Bool -> RelayURI -> Filter -> Eff es SubscriptionId
+registerNewSub isTemp r f = do
+    subId' <- generateRandomSubscriptionId
+    let sub = SubscriptionState f r 0 (maxBound :: Int) False isTemp (Just f)
+    registerSubscription r subId' sub f
 
 -- | Generate a random subscription ID
 generateRandomSubscriptionId :: SubscriptionEff es => Eff es SubscriptionId
@@ -224,19 +234,77 @@ registerSubscription
     :: SubscriptionEff es
     => RelayURI
     -> SubscriptionId
-    -> SubscriptionState
+    -> RelayPool.SubscriptionState
     -> Filter
     -> Eff es SubscriptionId
 registerSubscription r subId' sub f = do
-    st <- get @RelayPool
+    st <- get @RelayPool.RelayPoolState
     case Map.lookup r (activeConnections st) of
         Just rd -> do
-            let channel = requestChannel rd
-            modify @RelayPool $ \st' ->
-                st' { subscriptions = Map.insert subId' sub (subscriptions st') }
+            let channel = RelayPool.requestChannel rd
+            RelayPool.insertSubscription subId' sub
             atomically $ writeTChan channel (NT.Subscribe $ NT.Subscription subId' f)
             return subId'
         Nothing -> do
-            modify @RelayPool $ \st' ->
-                st' { pendingSubscriptions = Map.insert subId' sub (pendingSubscriptions st') }
+            -- Optimization: if relay is disconnected but has an active channel, we still register pending
+            RelayPool.insertPendingSubscription subId' sub
             return subId'
+
+
+-- | Subscribe the same temporary filter to multiple relays concurrently.
+--   Returns the list of created SubscriptionIds (one per relay).
+subscribeMultiTemporary
+  :: SubscriptionEff es
+  => [RelayURI]
+  -> Filter
+  -> Eff es [SubscriptionId]
+subscribeMultiTemporary relayUris f = do
+  forConcurrently relayUris $ \uri -> registerNewSub True uri f
+
+
+-- | Await until all given subscriptions have reached EOSE (or were removed) or until timeout (seconds) expires.
+--   Returns True if all finished before timeout, False otherwise. On timeout, sends CLOSE to any remaining subs.
+awaitAllEose
+  :: SubscriptionEff es
+  => [SubscriptionId]
+  -> Int          -- ^ timeout in seconds
+  -> Eff es Bool
+awaitAllEose subIds timeoutSeconds = do
+  start <- getCurrentTime
+  let loop = do
+        now <- getCurrentTime
+        st <- get @RelayPool.RelayPoolState
+        let done sid = case Map.lookup sid (subscriptions st) of
+                         Nothing -> True                   -- already closed/removed → treat as done
+                         Just sd -> eoseReceived sd == True
+        if all done subIds
+          then pure True
+          else if now - start >= timeoutSeconds
+                 then pure False
+                 else do
+                   threadDelay 100000  -- 100ms
+                   loop
+  result <- loop
+  -- On timeout, proactively close remaining subs
+  if result
+    then pure True
+    else do
+      st <- get @RelayPool.RelayPoolState
+      let stillOpen = [ sid | sid <- subIds, Map.member sid (subscriptions st) ]
+      mapM_ closeSubInline stillOpen
+      pure False
+  where
+    closeSubInline :: SubscriptionEff es => SubscriptionId -> Eff es ()
+    closeSubInline subId' = do
+      st <- get @RelayPool.RelayPoolState
+      case Map.lookup subId' (subscriptions st) of
+        Just subDetails -> do
+          let relayUri = relay subDetails
+          case Map.lookup relayUri (activeConnections st) of
+            Just rd -> atomically $ writeTChan (RelayPool.requestChannel rd) (NT.Close subId')
+            Nothing -> pure ()
+          RelayPool.deleteSubscriptionId subId'
+        Nothing -> pure ()
+      case Map.lookup subId' (pendingSubscriptions st) of
+        Just _ -> RelayPool.setPendingSubscriptions (Map.delete subId' (pendingSubscriptions st))
+        Nothing -> pure ()

@@ -17,6 +17,7 @@ import Nostr.InboxModel (runInboxModel)
 import Nostr.ProfileManager (ProfileManagerState, initialProfileManagerState, runProfileManager)
 import Nostr.Publisher (runPublisher)
 import Nostr.RelayConnection (runRelayConnection)
+import Nostr.RelayPool (RelayPool(..), RelayPoolState(..), runRelayPool, initialRelayPool)
 import Nostr.Subscription (runSubscription)
 import Nostr.SubscriptionHandler (runSubscriptionHandler)
 import Nostr.Util (runUtil)
@@ -27,7 +28,7 @@ import Presentation.RelayMgmtUI (runRelayMgmtUI)
 import QtQuick
 import RelayMgmt (runRelayMgmt)
 import Store.Lmdb (LmdbState, initialLmdbState, runLmdbStore)
-import Types (AppState(..), RelayPool(..), initialState, initialRelayPool)
+import Types (AppState(..), initialState)
 
 
 -- | Main function for the app.
@@ -48,8 +49,9 @@ main = do
         -- nostr related
         . runNostr
         . runKeyMgmt
-        . runRelayConnection
         . runEventHandler
+        . runRelayPool
+        . runRelayConnection
         . runPublisher
         . runRelayMgmt
         . runSubscription
@@ -87,7 +89,7 @@ main = do
 withInitialState
     :: Eff ( State DownloaderState
            : State QtQuickState
-           : State RelayPool
+           : State RelayPoolState
            : State KeyMgmtState
            : State AppState
            : State LmdbState

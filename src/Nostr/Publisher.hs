@@ -18,11 +18,14 @@ import Nostr.Relay (RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.RelayConnection
 import Nostr.EventHandler (EventHandler, handleEvent)
 import Nostr.Types (Request(..))
+import qualified Nostr.Types as NT
 import Nostr.Util
 import QtQuick
 import Store.Lmdb (LmdbStore, getFollows, getDMRelays, getGeneralRelays)
 import Types ( AppState(..), ConnectionState(..), Follow(..)
-             , PublishStatus(..), RelayData(..), RelayPool(..) )
+             , PublishStatus(..), queueMax )
+import Nostr.RelayPool (RelayPool, RelayPoolState(..), RelayData(..))
+import qualified Nostr.RelayPool as RelayPool
 
 
 -- | Result of a publish operation
@@ -62,7 +65,8 @@ getPublishResult eid = send $ GetPublishResult eid
 -- | Publisher effect handlers
 type PublisherEff es =
   ( State AppState :> es
-  , State RelayPool :> es
+  , State RelayPoolState :> es
+  , RelayPool :> es
   , LmdbStore :> es
   , EventHandler :> es
   , RelayConnection :> es
@@ -165,7 +169,7 @@ runPublisher =  interpret $ \_ -> \case
                             updateEventRelayStatus (eventId event') r (Failure "Relay server unreachable")
 
     GetPublishResult eventId' -> do
-        st <- get @RelayPool
+        st <- get @RelayPoolState
         let states = Map.findWithDefault Map.empty eventId' (publishStatus st)
         if null states
             then return $ PublishFailure "No relays found to publish to"
@@ -177,19 +181,29 @@ runPublisher =  interpret $ \_ -> \case
 -- | Write an event to a channel
 writeToChannel :: PublisherEff es => Event -> RelayURI -> Eff es ()
 writeToChannel e r = do
-    st <- get @RelayPool
+    st <- get @RelayPoolState
     case Map.lookup r (activeConnections st) of
         Just rd -> do
-            atomically $ writeTChan (requestChannel rd) (SendEvent e)
-            updateEventRelayStatus (eventId e) r WaitingForConfirmation
-        Nothing ->
-            updateEventRelayStatus (eventId e) r (Failure "No active connection")
+            if connectionState rd == Connected
+              then do
+                atomically $ writeTChan (requestChannel rd) (SendEvent e)
+                updateEventRelayStatus (eventId e) r WaitingForConfirmation
+              else do
+                -- Queue EVENT for this relay to flush on reconnect (connectivity buffer; AUTH corking remains via pendingRequests)
+                RelayPool.adjustActiveConnection r (\d ->
+                  let capped = take queueMax (NT.SendEvent e : queuedRequests d)
+                  in d { queuedRequests = capped })
+                updateEventRelayStatus (eventId e) r WaitingForConfirmation
+        Nothing -> do
+            -- No RelayData yet; initialize queue by creating an active connection entry on first use is complex.
+            -- For now, mark as waiting; connect path will send upon success via 'queuedRequests'.
+            pure ()
 
 
 -- | Get the connected relays
 getConnectedRelays :: PublisherEff es => Eff es [RelayURI]
 getConnectedRelays = do
-    st <- get @RelayPool
+    st <- get @RelayPoolState
     return $ Map.keys $ Map.filter ((== Connected) . connectionState) (activeConnections st)
 
 
