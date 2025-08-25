@@ -159,7 +159,7 @@ jobs:
           token: ${{ secrets.TOKEN }}
 
       - name: Upload Repository
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: '.'
 
