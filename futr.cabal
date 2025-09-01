@@ -39,7 +39,7 @@ executable futr
         Nostr.Encryption
         Nostr.Encryption.Internal
         Nostr.Event
-        Nostr.EventHandler
+        Nostr.EventProcessor
         Nostr.InboxModel
         Nostr.Keys
         Nostr.Nip05Search
@@ -47,9 +47,6 @@ executable futr
         Nostr.ProfileManager
         Nostr.Publisher
         Nostr.Relay
-        Nostr.RelayConnection
-        Nostr.Subscription
-        Nostr.SubscriptionHandler
         Nostr.Types
         Nostr.Util
         Presentation.Classes

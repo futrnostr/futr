@@ -30,7 +30,7 @@ import Text.Read (readMaybe)
 
 import Nostr.Event (Event(..), EventId(..), Kind, kindToInt)
 import Nostr.Keys (SecKey, PubKeyXO, importPubKeyXO, exportPubKeyXO, importSecKey, exportSecKey)
-import Nostr.Relay (RelayURI)
+import Nostr.Types (RelayURI)
 
 
 -- | Bech32 encoding for SecKey

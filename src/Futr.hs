@@ -10,12 +10,11 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
-import Data.Text (Text, isPrefixOf, unpack)
+import Data.Text (Text, isPrefixOf, pack, unpack)
 import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (async, cancel)
-import Effectful.Concurrent.STM (atomically, flushTQueue, newTVarIO, readTQueue, readTVar, writeTVar)
+import Effectful.Concurrent.Async (async, cancel, forConcurrently_)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.Exception (SomeException, try)
 import Effectful.FileSystem
@@ -42,18 +41,16 @@ import Nostr.Event ( Event(..), EventId, UnsignedEvent(..)
                    , createRepost, createRumor, createShortTextNote, eventIdToHex
                    )
 import Nostr.Event qualified as NE
-import Nostr.EventHandler (EventHandler, handleEvent)
-import Nostr.InboxModel ( InboxModel, awaitAtLeastOneConnected, startInboxModel
-                        , stopInboxModel, subscribeToProfilesAndPostsFor
-                        , subscribeToCommentsFor, unsubscribeToCommentsFor )
+import Nostr.EventProcessor (handleEvent)
+import Nostr.InboxModel ( InboxModel, connectAndBootstrap, startInboxModel, stopInboxModel
+                        , subscribeToCommentsFor, subscribeToProfilesAndPostsFor, unsubscribeToCommentsFor )
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, pubKeyXOToHex, secKeyToKeyPair)
 import Nostr.Nip05Search (isNip05Identifier, searchNip05, Nip05SearchResult(..))
 import Nostr.ProfileManager (ProfileManager)
 import Nostr.Publisher
-import Nostr.Relay (RelayURI, getUri, isInboxCapable, isValidRelayURI)
-import Nostr.RelayConnection (RelayConnection, connect, disconnect)
-import Nostr.Subscription
-import Nostr.SubscriptionHandler (SubscriptionHandler)
+import Nostr.Relay ( RelayConnection, RelayPool(..), connect, disconnect
+                   , initialRelayPool, subscribeTemporary, unsubscribe )
+import Nostr.Types (RelayURI, getUri, isInboxCapable, isValidRelayURI, metadataFilter)
 import Nostr.Util
 import Presentation.Classes (Classes, createPost)
 import Presentation.KeyMgmtUI (KeyMgmtUI)
@@ -181,7 +178,6 @@ type FutrEff es =
   ( State AppState :> es
   , State LmdbState :> es
   , LmdbStore :> es
-  , EventHandler :> es
   , KeyMgmt :> es
   , KeyMgmtUI :> es
   , RelayMgmtUI :> es
@@ -191,8 +187,6 @@ type FutrEff es =
   , InboxModel :> es
   , RelayConnection :> es
   , RelayMgmt :> es
-  , Subscription :> es
-  , SubscriptionHandler :> es
   , Publisher :> es
   , State KeyMgmtState :> es
   , State RelayPool :> es
@@ -213,9 +207,7 @@ runFutr = interpret $ \_ -> \case
   Login obj input -> do
       kst <- get @KeyMgmtState
       case Map.lookup (AccountId input) (accountMap kst) of
-        Nothing -> do
-          --logError $ "Account not found: " <> input
-          return ()
+        Nothing -> pure ()
         Just a -> do
           let pk = accountPubKeyXO a
 
@@ -320,6 +312,7 @@ runFutr = interpret $ \_ -> \case
         Nothing -> return ()
 
   LoadFeed f -> do
+    logDebug $ "LoadFeed: " <> pack (show f)
     let pk = case f of
           PostsFilter pk' -> pk'
           PrivateMessagesFilter pk' -> pk'
@@ -328,7 +321,7 @@ runFutr = interpret $ \_ -> \case
     st <- get @AppState
 
     case currentProfile st of
-      Just (_, subIds) -> forM_ subIds $ \subId' -> stopSubscription subId'
+      Just (_, subIds) -> forM_ subIds $ \subId' -> unsubscribe subId'
       _ -> pure ()
 
     modify @AppState $ \st' -> st' { currentProfile = Just (pk, []) }
@@ -546,18 +539,19 @@ loginWithAccount obj a = do
         , npubView = pubKeyXOToBech32 $ derivePublicKeyXO $ accountSecKey a
         }
 
-    void $ async startInboxModel
     void $ async $ do
-      atLeastOneConnected <- awaitAtLeastOneConnected
-
-      if atLeastOneConnected
-        then do
+      e <- connectAndBootstrap
+      case e of
+        Left err -> do
+          liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False err
+          fullAppCleanup
+          fireSignal obj
+        Right _ -> do
           modify @AppState $ \s -> s { currentScreen = Home }
           liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
-        else do
-          liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Failed to connect to any relay"
+          fireSignal obj
+          startInboxModel
 
-      fireSignal obj
 
 -- | Send a follow list event.
 sendFollowListEvent :: FutrEff es => [Follow] -> Eff es ()
@@ -575,62 +569,21 @@ sendFollowListEvent follows = do
 
 
 -- | Search for a profile in relays.
-searchInRelays :: FutrEff es => PubKeyXO -> [RelayURI] -> Eff es ()
+searchInRelays :: forall (es :: [Effect]). FutrEff es => PubKeyXO -> [RelayURI] -> Eff es ()
 searchInRelays xo relayUris = do
-    manuallyConnected <- case relayUris of
-        [relayUri] -> do
-            conns <- gets @RelayPool activeConnections
-            if Map.member relayUri conns
-                then return False
-                else do
-                    void $ connect relayUri
-                    return True
-        _ -> return False
+  relays <- getGeneralRelays xo
 
-    relays <- getGeneralRelays xo
-    conns <- gets @RelayPool activeConnections
+  let searchRelays = case relayUris of
+          [relayUri] -> [relayUri]
+          _ -> map getUri relays
 
-    let searchRelays = case relayUris of
-            [relayUri] -> [relayUri]
-            _ -> map getUri relays
-
-    forM_ searchRelays $ \relayUri' -> do
-        when (Map.member relayUri' conns) $ do
-            subId' <- subscribe relayUri' (metadataFilter [xo])
-            subs <- gets @RelayPool subscriptions
-            let q = case Map.lookup subId' subs of
-                      Just sub -> responseQueue sub
-                      Nothing -> error $ "Subscription " <> show subId' <> " not found"
-            -- @todo duplicated from subscription handler, but closes unneeded connections
-
-            void $ async $ do
-                shouldStopVar <- newTVarIO False
-                let loop = do
-                        e <- atomically $ readTQueue q
-                        es <- atomically $ flushTQueue q
-
-                        forM_ (e:es) $ \(relayUri, e') -> do
-                            case e' of
-                                EventAppeared event' -> handleEvent (Just relayUri) event'
-
-                                SubscriptionEose _ -> do
-                                  stopSubscription subId'
-                                  when (manuallyConnected && relayUri' `elem` relayUris) $ do
-                                    disconnect relayUri'
-
-                                SubscriptionClosed _ -> do
-                                  atomically $ writeTVar shouldStopVar True
-                                  when (manuallyConnected && relayUri' `elem` relayUris) $ do
-                                    disconnect relayUri'
-
-                        shouldStop <- atomically $ readTVar shouldStopVar
-                        unless shouldStop loop
-
-                loop
+  forConcurrently_ searchRelays $ \relayUri -> do
+    connected <- connect relayUri
+    when connected $ void $ subscribeTemporary relayUri (metadataFilter [xo]) handleEvent
 
 
 -- | Helper to fully clean up app state, disconnect all relays, and fire signal
-fullAppCleanup :: FutrEff es => Eff es ()
+fullAppCleanup :: forall (es :: [Effect]). FutrEff es => Eff es ()
 fullAppCleanup = do
   stopInboxModel
 

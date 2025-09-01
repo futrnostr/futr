@@ -28,11 +28,12 @@ import Nostr.Event qualified as NE
 import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (ProfileManager, getProfile)
+import Nostr.Relay (RelayPool(..))
 import Nostr.Util (Util, formatDateTime, getKeyPair)
 import QtQuick ( QtQuick, PropertyMap(..), PropertyName, QtQuickState(..)
                , UIReferences(..), UIUpdates(..), emptyUpdates, notify )
 import Store.Lmdb (LmdbStore, TimelineType(..), getCommentsWithIndentationLevel, getEvent, getEvents, getEventRelays, getFollows, getTimelineIds)
-import Types (AppState(..), Feed(..), FeedFilter(..), Follow(..), Language(..), Post(..), PublishStatus(..), RelayPool(..))
+import Types (AppState(..), Feed(..), FeedFilter(..), Follow(..), Language(..), Post(..), PublishStatus(..))
 import Downloader (Downloader(..), DownloadStatus(..), hasDownload, download, peekMimeType)
 
 
@@ -123,7 +124,7 @@ loadPostFromFeed eid = do
 
 -- | Handler for subscription effects.
 runClasses
-  :: ClassesEff es
+  :: forall (es :: [Effect]) a. ClassesEff es
   => Eff (Classes : es) a
   -> Eff es a
 runClasses = interpret $ \_ -> \case
@@ -183,37 +184,37 @@ runClasses = interpret $ \_ -> \case
             defPropertySigRO' "name" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
                 storeProfileObjRef pk "name" obj
-                (profile, _) <- getProfile pk
+                profile <- getProfile pk
                 pure $ name profile,
 
             defPropertySigRO' "displayName" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
                 storeProfileObjRef pk "displayName" obj
-                (profile, _) <- getProfile pk
+                profile <- getProfile pk
                 pure $ displayName profile,
 
             defPropertySigRO' "about" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
                 storeProfileObjRef pk "about" obj
-                (profile, _) <- getProfile pk
+                profile <- getProfile pk
                 pure $ about profile,
 
             defPropertySigRO' "picture" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
                 storeProfileObjRef pk "picture" obj
-                (profile, _) <- getProfile pk
+                profile <- getProfile pk
                 resolveProfileImage (const $ pure $ picture profile) pk (Just obj),
 
             defPropertySigRO' "nip05" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
                 storeProfileObjRef pk "nip05" obj
-                (profile, _) <- getProfile pk
+                profile <- getProfile pk
                 pure $ nip05 profile,
 
             defPropertySigRO' "banner" changeKey' $ \obj -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO
                 storeProfileObjRef pk "banner" obj
-                (profile, _) <- getProfile pk
+                profile <- getProfile pk
                 resolveProfileImage (const $ pure $ banner profile) pk (Just obj),
 
             defPropertySigRO' "isFollow" changeKey' $ \obj -> runE $ do
@@ -289,17 +290,17 @@ runClasses = interpret $ \_ -> \case
             followProp "displayName" $ \obj -> maybe (return "") (\follow -> do
                 let pk = pubkey follow
                 runE $ storeProfileObjRef pk "displayName" obj
-                (profile, _) <- runE $ getProfile pk
+                profile <- runE $ getProfile pk
                 return $ fromMaybe "" (displayName profile)),
             followProp "name" $ \obj -> maybe (return "") (\follow -> do
                 let pk = pubkey follow
                 runE $ storeProfileObjRef pk "name" obj
-                (profile, _) <- runE $ getProfile pk
+                profile <- runE $ getProfile pk
                 return $ fromMaybe "" (name profile)),
             followProp "picture" $ \obj -> maybe (return "") (\follow -> do
                 let pk = pubkey follow
                 runE $ storeProfileObjRef pk "picture" obj
-                (profile, _) <- runE $ getProfile pk
+                profile <- runE $ getProfile pk
                 runE $ resolveProfileImage (const $ pure $ picture profile) pk (Just obj)),
             defMethod' "getProfilePicture" $ \obj pictureUrl -> runE $ do
                 let pk = fromObjRef obj :: PubKeyXO

@@ -2,19 +2,19 @@
 
 module Presentation.KeyMgmtUI where
 
-import Control.Monad (void)
+import Control.Monad (forever, forM_, void)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, unpack)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (async)
+import Effectful.Concurrent.Async (async, cancel)
 import Effectful.Dispatch.Dynamic (EffectHandler, interpret, send)
 import Effectful.FileSystem (FileSystem, XdgDirectory(..), createDirectoryIfMissing, getXdgDirectory)
-import Effectful.State.Static.Shared (State, get, modify, put)
+import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import System.FilePath ((</>))
 
-import Downloader (Downloader)
+import Downloader (Downloader, clearCache)
 import QtQuick
 import KeyMgmt
 import Logging
@@ -24,9 +24,10 @@ import Nostr.InboxModel
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.ProfileManager (ProfileManager)
 import Nostr.Publisher
+import Nostr.Relay (RelayPool(..), initialRelayPool)
 import Nostr.Util
 import Store.Lmdb (LmdbState, LmdbStore, initializeLmdbState)
-import Types (AppState(..), RelayPool(..), initialRelayPool)
+import Types (AppState(..))
 
 
 -- | Key Management UI Effect.
@@ -64,10 +65,10 @@ createUI changeKey = send $ CreateUI changeKey
 
 
 -- | Run the Key Management UI effect.
-runKeyMgmtUI :: KeyMgmgtUIEff es => Eff (KeyMgmtUI : es) a -> Eff es a
+runKeyMgmtUI :: forall (es :: [Effect]) a. KeyMgmgtUIEff es => Eff (KeyMgmtUI : es) a -> Eff es a
 runKeyMgmtUI action = interpret handleKeyMgmtUI action
   where
-    handleKeyMgmtUI :: KeyMgmgtUIEff es => EffectHandler KeyMgmtUI es
+    handleKeyMgmtUI :: forall (es :: [Effect]). KeyMgmgtUIEff es => EffectHandler KeyMgmtUI es
     handleKeyMgmtUI _ = \case
       CreateUI changeKey -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
         runE loadAccounts
@@ -138,6 +139,7 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
               defMethod' "createAccount" $ \obj -> runE $ do
                 mkp <- generateSeedphrase obj
                 case mkp of
+                  Nothing -> error "Failed to get keypair after generating seedphrase"
                   Just kp -> do
                     modify @AppState $ \s -> s { keyPair = Just kp }
                     modify @RelayPool $ const initialRelayPool
@@ -152,11 +154,23 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                     lmdbState <- liftIO $ initializeLmdbState lmdDir
                     put @LmdbState lmdbState
 
-                    void $ async $ startInboxModel
+                    void $ async $ do
+                      e <- connectAndBootstrap
+                      case e of
+                        Left err -> do
+                          modify @KeyMgmtState $ \st -> st { errorMsg = err }
+                          fireSignal obj
+                        Right _ -> do
+                          startInboxModel
+
+                          mOld <- gets @AppState cacheClearer
+                          forM_ mOld $ \old -> cancel old
+                          t <- async $ forever $ do
+                            clearCache
+                            threadDelay (5 * 60 * 1000000)
+                          modify @AppState $ \s -> s { cacheClearer = Just t }
+
                     return True
-
-                  Nothing -> error "Failed to get keypair after generating seedphrase"
-
             ]
 
         newObject contextClass ()
