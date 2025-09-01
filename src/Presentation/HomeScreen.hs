@@ -64,7 +64,7 @@ createUI changeKey = send $ CreateUI changeKey
 
 
 -- | Run the UI effect.
-runHomeScreen :: forall (es :: [Effect]) a. (FutrEff es, Futr :> es) => Eff (HomeScreen : es) a -> Eff es a
+runHomeScreen :: (FutrEff es, Futr :> es) => Eff (HomeScreen : es) a -> Eff es a
 runHomeScreen = interpret $ \_ -> \case
   CreateUI changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
     keyMgmtObj <- runE $ KeyMgmtUI.createUI changeKey'

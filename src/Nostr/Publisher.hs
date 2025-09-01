@@ -73,10 +73,7 @@ type PublisherEff es =
 
 
 -- | Run a publisher
-runPublisher
-  :: forall (es :: [Effect]) a. PublisherEff es
-  => Eff (Publisher : es) a
-  -> Eff es a
+runPublisher :: PublisherEff es => Eff (Publisher : es) a -> Eff es a
 runPublisher =  interpret $ \_ -> \case
     Broadcast event' -> do
         kp <- getKeyPair

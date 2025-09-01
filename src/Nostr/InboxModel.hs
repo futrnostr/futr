@@ -83,7 +83,7 @@ unsubscribeToCommentsFor eid = send $ UnsubscribeToCommentsFor eid
 
 
 -- | Run InboxModel
-runInboxModel :: forall (es :: [Effect]) a. InboxModelEff es => Eff (InboxModel : es) a -> Eff es a
+runInboxModel :: InboxModelEff es => Eff (InboxModel : es) a -> Eff es a
 runInboxModel = interpret $ \_ -> \case
   ConnectAndBootstrap -> do
     setInitialBootstrap
@@ -221,7 +221,7 @@ setLiveProcessing = do
 
 
 -- | Compute since from relay stats (last EOSE) and local subscription state (latestCreatedAtSeen)
-computeSinceForRelay :: forall (es :: [Effect]). InboxModelEff es => RelayURI -> Eff es (Maybe Int)
+computeSinceForRelay :: InboxModelEff es => RelayURI -> Eff es (Maybe Int)
 computeSinceForRelay relayUri = do
   st <- get @RelayPool
   let localMax =
@@ -247,7 +247,7 @@ applySince f s = f { since = s }
 
 
 -- | Disconnect relay if there are no active subscriptions bound to it
-disconnectIfUnused :: forall (es :: [Effect]). InboxModelEff es => RelayURI -> Eff es ()
+disconnectIfUnused :: InboxModelEff es => RelayURI -> Eff es ()
 disconnectIfUnused relayUri = do
   st <- get @RelayPool
   let hasSubs = any (\(_, sd) -> relay sd == relayUri) (Map.toList (subscriptions st))
@@ -309,7 +309,7 @@ isLocalhostRelay uri =
 
 
 -- | Unified reconciliation for general and DM subscriptions
-reconcileSubscriptions :: forall (es :: [Effect]). InboxModelEff es => PubKeyXO -> Eff es ()
+reconcileSubscriptions :: InboxModelEff es => PubKeyXO -> Eff es ()
 reconcileSubscriptions xo = do
   -- Timeout stalled subscriptions (no EOSE)
   now <- getCurrentTime

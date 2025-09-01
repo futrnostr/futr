@@ -70,7 +70,7 @@ runProfileManager = interpret $ \_ -> \case
     FetchProfile pk relayHints -> fetchProfileImpl pk relayHints
 
 -- Helper function containing the common implementation
-fetchProfileImpl :: forall (es :: [Effect]). ProfileManagerEff es => PubKeyXO -> [RelayURI] -> Eff es Profile
+fetchProfileImpl :: ProfileManagerEff es => PubKeyXO -> [RelayURI] -> Eff es Profile
 fetchProfileImpl pk relayHints = do
     profile <- Lmdb.getProfile pk
     profileTimestamp <- Lmdb.getLatestTimestamp pk [Metadata]

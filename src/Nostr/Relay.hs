@@ -183,7 +183,7 @@ type RelayConnectionEff es =
   )
 
 
-runRelayConnection :: forall (es :: [Effect]) a. RelayConnectionEff es => Eff (RelayConnection : es) a -> Eff es a
+runRelayConnection :: RelayConnectionEff es => Eff (RelayConnection : es) a -> Eff es a
 runRelayConnection = interpret $ \env -> \case
   Connect r -> do
     let r' = normalizeRelayURI r
@@ -306,7 +306,7 @@ runRelayConnection = interpret $ \env -> \case
 
 
 -- | Establish a connection to a relay.
-establishConnection :: forall es. RelayConnectionEff es => RelayURI -> TChan NT.Request -> Eff es Bool
+establishConnection :: RelayConnectionEff es => RelayURI -> TChan NT.Request -> Eff es Bool
 establishConnection r requestChan = do
   modify @RelayPool $ \st' -> st' { activeConnections = Map.adjust (\d -> d { connectionState = Connecting, connectionAttempts = connectionAttempts d + 1 }) r (activeConnections st') }
   connectionMVar <- newEmptyTMVarIO
@@ -341,7 +341,7 @@ establishConnection r requestChan = do
 
 
 -- | Run the Nostr client.
-nostrClient :: forall es. RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan NT.Request -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
+nostrClient :: RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan NT.Request -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
 nostrClient connectionMVar r requestChan runE conn = runE $ do
   liftIO $ withPingPong defaultPingPongOptions conn $ \conn' -> runE $ do
     now <- getCurrentTime
@@ -424,7 +424,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
 
 
 -- | Handle a response from a relay.
-handleResponse :: forall es. RelayConnectionEff es => RelayURI -> Response -> Eff es ()
+handleResponse :: RelayConnectionEff es => RelayURI -> Response -> Eff es ()
 handleResponse relayURI' r = case r of
   EventReceived subId' event' -> do
     now <- getCurrentTime

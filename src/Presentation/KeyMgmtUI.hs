@@ -65,10 +65,10 @@ createUI changeKey = send $ CreateUI changeKey
 
 
 -- | Run the Key Management UI effect.
-runKeyMgmtUI :: forall (es :: [Effect]) a. KeyMgmgtUIEff es => Eff (KeyMgmtUI : es) a -> Eff es a
+runKeyMgmtUI :: KeyMgmgtUIEff es => Eff (KeyMgmtUI : es) a -> Eff es a
 runKeyMgmtUI action = interpret handleKeyMgmtUI action
   where
-    handleKeyMgmtUI :: forall (es :: [Effect]). KeyMgmgtUIEff es => EffectHandler KeyMgmtUI es
+    handleKeyMgmtUI :: KeyMgmgtUIEff es => EffectHandler KeyMgmtUI es
     handleKeyMgmtUI _ = \case
       CreateUI changeKey -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
         runE loadAccounts

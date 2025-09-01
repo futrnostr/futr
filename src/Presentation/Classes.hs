@@ -123,10 +123,7 @@ loadPostFromFeed eid = do
             st { currentFeed = Just $ feed' { feedEventMap = Map.insert eid' p (feedEventMap feed') } }
 
 -- | Handler for subscription effects.
-runClasses
-  :: forall (es :: [Effect]) a. ClassesEff es
-  => Eff (Classes : es) a
-  -> Eff es a
+runClasses :: ClassesEff es => Eff (Classes : es) a -> Eff es a
 runClasses = interpret $ \_ -> \case
     FeedClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
         newClass [

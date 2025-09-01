@@ -569,7 +569,7 @@ sendFollowListEvent follows = do
 
 
 -- | Search for a profile in relays.
-searchInRelays :: forall (es :: [Effect]). FutrEff es => PubKeyXO -> [RelayURI] -> Eff es ()
+searchInRelays :: FutrEff es => PubKeyXO -> [RelayURI] -> Eff es ()
 searchInRelays xo relayUris = do
   relays <- getGeneralRelays xo
 
@@ -583,7 +583,7 @@ searchInRelays xo relayUris = do
 
 
 -- | Helper to fully clean up app state, disconnect all relays, and fire signal
-fullAppCleanup :: forall (es :: [Effect]). FutrEff es => Eff es ()
+fullAppCleanup :: FutrEff es => Eff es ()
 fullAppCleanup = do
   stopInboxModel
 
