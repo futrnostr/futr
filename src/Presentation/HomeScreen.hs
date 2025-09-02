@@ -39,6 +39,7 @@ import Nostr.Publisher
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.ProfileManager (fetchProfile, getProfile)
+import Nostr.Relay (RelayPool(..))
 import Nostr.Util
 import Presentation.Classes qualified as Classes
 import Presentation.Classes (findAvailableFilename, createPost)
@@ -46,7 +47,7 @@ import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
 import Store.Lmdb (LmdbStore, getEvent, getEvents, getFollows, getEventRelays, getCommentsWithIndentationLevel)
-import Types (Post(..), AppState(..), AppScreen(..), RelayPool(..), FeedFilter(..), Follow(..), Feed(..))
+import Types (Post(..), AppState(..), AppScreen(..), FeedFilter(..), Follow(..), Feed(..))
 
 
 -- | HomeScren Effect for creating QML UI.
@@ -114,7 +115,7 @@ runHomeScreen = interpret $ \_ -> \case
 
         defPropertySigRO' "mypicture" changeKey' $ \_ -> runE $ do
           kp <- getKeyPair
-          (profile, _) <- getProfile $ keyPairToPubKeyXO kp
+          profile <- getProfile $ keyPairToPubKeyXO kp
           return $ fromMaybe "" $ picture profile,
 
         defPropertySigRO' "inboxModelState" changeKey' $ \obj -> runE $ do
