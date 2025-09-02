@@ -3,19 +3,14 @@
 --
 -- Responsibilities:
 --   * WebSocket connect/disconnect to relays
---   * Blocking subscriptions with per-subscription callbacks
---     (Subscribe / SubscribeTemporary)
+--   * Non-blocking subscriptions with per-subscription callbacks
+--     (Subscribe / SubscribeTemporary) that return SubscriptionId immediately
+--   * WaitForCompletion effect for blocking until subscription finishes
 --   * Event routing (EventReceived) to the appropriate callback
 --   * Handling EOSE/Closed and unsubscribing/cleanup
 --   * Sending events to relays (SendEventToRelays)
 --   * Tracking per-relay stats (successes/errors/bytes/eose/lastSeen)
 --   * Treating relay-side signals (Notice/Auth)
-
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE QuasiQuotes       #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Nostr.Relay where
 
@@ -34,9 +29,10 @@ import Data.Text.Encoding (decodeUtf8)
 import Effectful
 import Effectful.Concurrent (Concurrent, forkIO, threadDelay)
 import Effectful.Concurrent.Async (Async, async)
-import Effectful.Concurrent.STM ( TChan, TMVar, atomically, newTChanIO
-                                , newEmptyTMVarIO, putTMVar, tryPutTMVar, readTChan
-                                , takeTMVar, writeTChan )
+import Effectful.Concurrent.STM ( TChan, TMVar, TVar, atomically, newTChanIO
+                                , newEmptyTMVarIO, putTMVar, readTChan
+                                , takeTMVar, writeTChan
+                                , newTVarIO, readTVar, writeTVar, retry )
 import Effectful.Dispatch.Dynamic (interpret, localSeqUnliftIO, send)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Network.URI (URI(..), parseURI, uriAuthority, uriPort, uriRegName, uriScheme)
@@ -69,6 +65,8 @@ data RelayConnection :: Effect where
   SubscribeTemporary :: RelayURI -> Filter -> (Event -> RelayURI -> m ()) -> RelayConnection m SubscriptionId
   Unsubscribe :: SubscriptionId -> RelayConnection m ()
   UnsubscribeAll :: RelayURI -> RelayConnection m ()
+  -- waiting
+  WaitForCompletion :: SubscriptionId -> RelayConnection m ()
   -- send event
   SendEventToRelays :: Event -> [RelayURI] -> RelayConnection m ()
 
@@ -83,7 +81,8 @@ data RelayPool = RelayPool
     , publishStatus :: Map EventId (Map RelayURI PublishStatus)
     , reconciliationThread :: Maybe (Async ())
     , commentSubscriptions :: Map EventId [SubscriptionId]
-    , subscriptionCallbacks :: Map SubscriptionId (Event -> RelayURI -> IO (), TMVar ())
+    , subscriptionCallbacks :: Map SubscriptionId (Event -> RelayURI -> IO ())
+    , subscriptionCompletion :: Map SubscriptionId (TVar Bool)
     }
 
 
@@ -145,6 +144,7 @@ initialRelayPool = RelayPool
   , reconciliationThread = Nothing
   , commentSubscriptions = Map.empty
   , subscriptionCallbacks = Map.empty
+  , subscriptionCompletion = Map.empty
   }
 
 
@@ -168,6 +168,9 @@ unsubscribeAll = send . UnsubscribeAll
 
 sendEventToRelays :: RelayConnection :> es => Event -> [RelayURI] -> Eff es ()
 sendEventToRelays ev rs = send $ SendEventToRelays ev rs
+
+waitForCompletion :: RelayConnection :> es => SubscriptionId -> Eff es ()
+waitForCompletion = send . WaitForCompletion
 
 
 -- Effect runner (interpreter)
@@ -246,17 +249,16 @@ runRelayConnection = interpret $ \env -> \case
     case Map.lookup r' (activeConnections st) of
       Just rd -> do
         let stNew = (newSubscriptionState r' f) { startedAt = now, isTemporary = False }
-        waiter <- newEmptyTMVarIO
         (cb' :: Event -> RelayURI -> IO ()) <- localSeqUnliftIO env $ \unlift ->
             pure $ \e r'' -> unlift (cb e r'')
+        done <- newTVarIO False
         modify @RelayPool $ \s ->
           s { subscriptions = Map.insert subId stNew (subscriptions s)
-            , subscriptionCallbacks = Map.insert subId (cb', waiter) (subscriptionCallbacks s) }
-        void $ async $ do
-          atomically $ writeTChan (requestChannel rd) (NT.Subscribe $ NT.Subscription subId f)
-          atomically $ takeTMVar waiter        
+            , subscriptionCallbacks = Map.insert subId cb' (subscriptionCallbacks s) }
+        modify @RelayPool $ \s -> s { subscriptionCompletion = Map.insert subId done (subscriptionCompletion s) }
+        atomically $ writeTChan (requestChannel rd) (NT.Subscribe $ NT.Subscription subId f)
         return subId
-      Nothing -> error $ "Subscribe: relay not connected: " ++ T.unpack r'
+      Nothing -> error $ "Subscribe: Relay not connected: " ++ T.unpack r'
 
   SubscribeTemporary r f cb -> do
     subId <- generateRandomSubscriptionId
@@ -266,17 +268,16 @@ runRelayConnection = interpret $ \env -> \case
     case Map.lookup r' (activeConnections st) of
       Just rd -> do
         let tempState = (newSubscriptionState r' f) { eoseSeen = False, startedAt = now, isTemporary = True }
-        waiter <- newEmptyTMVarIO
         (cb' :: Event -> RelayURI -> IO ()) <- localSeqUnliftIO env $ \unlift ->
             pure $ \e r'' -> unlift (cb e r'')
+        done <- newTVarIO False
         modify @RelayPool $ \s ->
           s { subscriptions = Map.insert subId tempState (subscriptions s)
-            , subscriptionCallbacks = Map.insert subId (cb', waiter) (subscriptionCallbacks s) }
-        void $ async $ do
-          atomically $ writeTChan (requestChannel rd) (NT.Subscribe $ NT.Subscription subId f)
-          atomically $ takeTMVar waiter
+            , subscriptionCallbacks = Map.insert subId cb' (subscriptionCallbacks s) }
+        modify @RelayPool $ \s -> s { subscriptionCompletion = Map.insert subId done (subscriptionCompletion s) }
+        atomically $ writeTChan (requestChannel rd) (NT.Subscribe $ NT.Subscription subId f)
         return subId
-      Nothing -> error $ "SubscribeTemporary: relay not connected: " ++ T.unpack r'
+      Nothing -> error $ "SubscribeTemporary: Relay not connected: " ++ T.unpack r'
 
   Unsubscribe subId -> do
     st <- get @RelayPool
@@ -284,11 +285,11 @@ runRelayConnection = interpret $ \env -> \case
       let r' = relay sd
       for_ (Map.lookup r' (activeConnections st)) $ \rd ->
         atomically $ writeTChan (requestChannel rd) (NT.Close subId)
-      for_ (Map.lookup subId (subscriptionCallbacks st)) $ \(_, waiter) ->
-        atomically $ tryPutTMVar waiter () >> pure ()
+      -- no waiter to signal anymore
       modify @RelayPool $ \s -> 
         s { subscriptions = Map.delete subId (subscriptions s)
-          , subscriptionCallbacks = Map.delete subId (subscriptionCallbacks s) }
+          , subscriptionCallbacks = Map.delete subId (subscriptionCallbacks s)
+          , subscriptionCompletion = Map.delete subId (subscriptionCompletion s) }
 
   UnsubscribeAll r -> do
     let r' = normalizeRelayURI r
@@ -303,6 +304,14 @@ runRelayConnection = interpret $ \env -> \case
     forM_ relays $ \r ->
       for_ (Map.lookup (normalizeRelayURI r) (activeConnections st)) $ \rd ->
         atomically $ writeTChan (requestChannel rd) (NT.SendEvent ev)
+
+  WaitForCompletion subId -> do
+    st <- get @RelayPool
+    case Map.lookup subId (subscriptionCompletion st) of
+      Nothing -> pure ()
+      Just tv -> atomically $ do
+        done <- readTVar tv
+        if done then pure () else retry
 
 
 -- | Establish a connection to a relay.
@@ -376,7 +385,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
                 EventReceived subId' event' -> do
                   handleResponse r response
                   stCb <- get @RelayPool
-                  for_ (Map.lookup subId' (subscriptionCallbacks stCb)) $ \(cb, _) -> liftIO $ cb event' r
+                  for_ (Map.lookup subId' (subscriptionCallbacks stCb)) $ \cb -> liftIO $ cb event' r
                 _ -> handleResponse r response
               receiveLoop conn'
             Left _ -> do
@@ -437,20 +446,26 @@ handleResponse relayURI' r = case r of
     now <- getCurrentTime
     st <- get @RelayPool
     for_ (Map.lookup subId' (subscriptions st)) $ \sd -> do
-      let r' = relay sd
-      for_ (Map.lookup r' (activeConnections st)) $ \rd ->
-        atomically $ writeTChan (requestChannel rd) (NT.Close subId')
-      for_ (Map.lookup subId' (subscriptionCallbacks st)) $ \(_, waiter) ->
-        atomically $ putTMVar waiter ()
-      modify @RelayPool $ \s -> s { subscriptions = Map.delete subId' (subscriptions s)
-                                       , subscriptionCallbacks = Map.delete subId' (subscriptionCallbacks s) }
+      if isTemporary sd
+        then do
+          let r' = relay sd
+          for_ (Map.lookup r' (activeConnections st)) $ \rd ->
+            atomically $ writeTChan (requestChannel rd) (NT.Close subId')
+          -- mark completion and remove subscription state
+          for_ (Map.lookup subId' (subscriptionCompletion st)) $ \tv -> atomically $ writeTVar tv True
+          modify @RelayPool $ \s -> s { subscriptions = Map.delete subId' (subscriptions s)
+                                       , subscriptionCallbacks = Map.delete subId' (subscriptionCallbacks s)
+                                       , subscriptionCompletion = Map.delete subId' (subscriptionCompletion s) }
+        else do
+          modify @RelayPool $ \s -> s { subscriptions = Map.adjust (\x -> x { eoseSeen = True, lastActivityTs = now }) subId' (subscriptions s) }
     updateRelayStats relayURI' (\s -> s { lastEoseTs = now, lastSeenTs = now })
 
   Closed subId' _ -> do
     now <- getCurrentTime
     st <- get @RelayPool
-    for_ (Map.lookup subId' (subscriptionCallbacks st)) $ \(_, waiter) -> atomically $ putTMVar waiter ()
-    modify @RelayPool $ \s -> s { subscriptionCallbacks = Map.delete subId' (subscriptionCallbacks s) }
+    for_ (Map.lookup subId' (subscriptionCompletion st)) $ \tv -> atomically $ writeTVar tv True
+    modify @RelayPool $ \s -> s { subscriptionCallbacks = Map.delete subId' (subscriptionCallbacks s)
+                                 , subscriptionCompletion = Map.delete subId' (subscriptionCompletion s) }
     updateRelayStats relayURI' (\s -> s { lastSeenTs = now })
 
   Ok _ accepted _ -> do

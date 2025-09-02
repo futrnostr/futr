@@ -539,14 +539,20 @@ loginWithAccount obj a = do
         , npubView = pubKeyXOToBech32 $ derivePublicKeyXO $ accountSecKey a
         }
 
+    logDebug $ "Login with account"
+
     void $ async $ do
+      logDebug $ "Connect and bootstrap"
       e <- connectAndBootstrap
+      logDebug $ "Connect and bootstrap result" <> pack (show e)
       case e of
         Left err -> do
+          logDebug $ "Connect and bootstrap error" <> pack (show err)
           liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False err
           fullAppCleanup
           fireSignal obj
         Right _ -> do
+          logDebug $ "Connect and bootstrap success"
           modify @AppState $ \s -> s { currentScreen = Home }
           liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
           fireSignal obj

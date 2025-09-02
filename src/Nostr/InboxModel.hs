@@ -16,15 +16,15 @@ import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, cancel, forConcurrently, forConcurrently_)
 import Effectful.Dispatch.Dynamic (interpret, send)
-import Effectful.State.Static.Shared (State, get, gets, put, modify)
+import Effectful.State.Static.Shared (State, get, put, modify)
 
 import KeyMgmt (KeyMgmt)
 import Nostr
 import Nostr.Event (EventId, Kind(..))
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Relay ( ConnectionState(..), RelayConnection, RelayData(..), RelayPool(..), SubscriptionState(..)
+import Nostr.Relay ( RelayConnection, RelayPool(..), SubscriptionState(..)
                    , connect, disconnect, subscribe, subscribeTemporary
-                   , unsubscribe, unsubscribeAll, initialRelayPool )
+                   , unsubscribe, unsubscribeAll, initialRelayPool, waitForCompletion )
 import Nostr.Types ( Filter(..), RelayURI, SubscriptionId, getUri, topologyFilter
                    , defaultGeneralRelays, commentsFilter, giftWrapFilter, mentionsFilter
                    , isInboxCapable, isOutboxCapable)
@@ -64,10 +64,8 @@ type InboxModelEff es =
 connectAndBootstrap :: InboxModel :> es => Eff es (Either Text ())
 connectAndBootstrap = send ConnectAndBootstrap
 
-
 startInboxModel :: InboxModel :> es => Eff es ()
 startInboxModel = send StartInboxModel
-
 
 stopInboxModel :: InboxModel :> es => Eff es ()
 stopInboxModel = send StopInboxModel
@@ -96,12 +94,14 @@ runInboxModel = interpret $ \_ -> \case
     then pure $ Left "Connection failed"
     else do
         when (null inboxRelays) $ do
-            forM_ connectedRelays $ \r ->
-                subscribeTemporary (getUri r) (topologyFilter [xo]) handleEvent
+            forConcurrently_ connectedRelays $ \r -> do
+                subId <- subscribeTemporary (getUri r) (topologyFilter [xo]) handleEvent
+                waitForCompletion subId
 
             follows <- getFollows xo
-            unless (null follows) $ forM_ connectedRelays $ \r ->
-                subscribeTemporary (getUri r) (topologyFilter $ map pubkey follows) handleEvent
+            unless (null follows) $ forConcurrently_ connectedRelays $ \r -> do
+                subId <- subscribeTemporary (getUri r) (topologyFilter $ map pubkey follows) handleEvent
+                waitForCompletion subId
 
             myGeneralRelays <- getGeneralRelays xo
             myDMRelays <- getDMRelays xo
@@ -167,17 +167,7 @@ runInboxModel = interpret $ \_ -> \case
     notify $ emptyUpdates { inboxModelStateChanged = True }
 
   SubscribeToProfilesAndPostsFor xo -> do
-      kp <- getKeyPair
-      let myXO = keyPairToPubKeyXO kp
-      conns <- gets @RelayPool activeConnections
-
-      let connectedRelays = Map.keys $ Map.filter (\rd -> connectionState rd == Connected) conns
-      let bootstrapFilter = topologyFilter [xo]
-
-      -- Handle bootstrap subscriptions - we don't collect these IDs since they're already terminated
-      forM_ connectedRelays $ \r -> do
-          void $ subscribe r bootstrapFilter handleEvent
-
+      myXO <- keyPairToPubKeyXO <$> getKeyPair
       ownInboxRelayURIs <- map getUri <$> getGeneralRelays myXO
       followRelayMap <- buildRelayPubkeyMap [xo] ownInboxRelayURIs
 

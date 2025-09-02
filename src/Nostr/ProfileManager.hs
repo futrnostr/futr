@@ -104,8 +104,7 @@ fetchProfileImpl pk relayHints = do
 
             forM_ targetRelays $ \relayUri -> async $ do
                 connected <- connect relayUri
-                when connected $ do
-                    void $ subscribeTemporary relayUri (metadataFilter [pk]) handleEvent
+                when connected $ void $ subscribeTemporary relayUri (metadataFilter [pk]) handleEvent
 
             modify @ProfileManagerState $ \s -> s
                 { pendingFetches = Set.delete pk (pendingFetches s) }
