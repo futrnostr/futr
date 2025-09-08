@@ -3,22 +3,19 @@ module Main where
 import Effectful
 import Effectful.Concurrent (runConcurrent)
 import Effectful.FileSystem (runFileSystem)
-import Effectful.State.Static.Shared (State, evalState)
+import Effectful.State.Static.Shared (evalState)
 import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
-import Downloader (DownloaderState, initialDownloaderState, runDownloader)
+import Downloader (initialDownloaderState, runDownloader)
 import Futr (runFutr)
-import KeyMgmt (KeyMgmtState(..), initialKeyMgmtState, runKeyMgmt)
+import KeyMgmt (initialKeyMgmtState, runKeyMgmt)
 import Logging (runLoggingStdout)
-import Nostr
-import Nostr.EventHandler (runEventHandler)
+import Nostr (runNostr)
 import Nostr.InboxModel (runInboxModel)
-import Nostr.ProfileManager (ProfileManagerState, initialProfileManagerState, runProfileManager)
+import Nostr.ProfileManager (initialProfileManagerState, runProfileManager)
 import Nostr.Publisher (runPublisher)
-import Nostr.RelayConnection (runRelayConnection)
-import Nostr.Subscription (runSubscription)
-import Nostr.SubscriptionHandler (runSubscriptionHandler)
+import Nostr.Relay (initialRelayPool, runRelayConnection)
 import Nostr.Util (runUtil)
 import Presentation.Classes (runClasses)
 import Presentation.HomeScreen (createUI,runHomeScreen)
@@ -26,8 +23,8 @@ import Presentation.KeyMgmtUI (runKeyMgmtUI)
 import Presentation.RelayMgmtUI (runRelayMgmtUI)
 import QtQuick
 import RelayMgmt (runRelayMgmt)
-import Store.Lmdb (LmdbState, initialLmdbState, runLmdbStore)
-import Types (AppState(..), RelayPool(..), initialState, initialRelayPool)
+import Store.Lmdb (initialLmdbState, runLmdbStore)
+import Types (initialState)
 
 
 -- | Main function for the app.
@@ -39,7 +36,13 @@ main = do
     runEff
         . runLoggingStdout
         . runConcurrent
-        . withInitialState
+        . evalState initialRelayPool
+        . evalState initialProfileManagerState
+        . evalState initialLmdbState
+        . evalState initialState
+        . evalState initialKeyMgmtState
+        . evalState initialQtQuickState
+        . evalState initialDownloaderState
         . runQtQuick
         . runFileSystem
         . runUtil
@@ -49,11 +52,8 @@ main = do
         . runNostr
         . runKeyMgmt
         . runRelayConnection
-        . runEventHandler
         . runPublisher
         . runRelayMgmt
-        . runSubscription
-        . runSubscriptionHandler
         . runInboxModel
         . runProfileManager
         -- presentation related
@@ -81,24 +81,3 @@ main = do
             --liftIO $ QML.setQtFlag QML.QtEnableQMLDebug True
             liftIO $ QML.enableHighDpiScaling
             runEngineLoop config changeKey ctx
-            
-
--- | Initialize the state for the app.
-withInitialState
-    :: Eff ( State DownloaderState
-           : State QtQuickState
-           : State RelayPool
-           : State KeyMgmtState
-           : State AppState
-           : State LmdbState
-           : State ProfileManagerState
-           : es) a
-    -> Eff es a
-withInitialState
-    = evalState initialProfileManagerState
-    . evalState initialLmdbState
-    . evalState initialState
-    . evalState initialKeyMgmtState
-    . evalState initialRelayPool
-    . evalState initialQtQuickState
-    . evalState initialDownloaderState

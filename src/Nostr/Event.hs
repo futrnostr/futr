@@ -23,11 +23,9 @@ import Data.Time.Clock.POSIX (getCurrentTime, utcTimeToPOSIXSeconds)
 import GHC.Generics (Generic)
 import System.Random (randomRIO)
 
---import Nostr.Bech32 (eventToNevent)
 import Nostr.Keys
 import Nostr.Encryption (decrypt, getConversationKey, encrypt)
 import Nostr.Profile (Profile(..))
-import Nostr.Relay (Relay, RelayURI, getUri, isInboxCapable, isOutboxCapable)
 
 
 -- | The 'Kind' data type represents different kinds of events in the Nostr protocol.
@@ -408,7 +406,7 @@ createComment originalEvent content' xo createdAt' =
 
 
 -- | Create a repost event (kind 6) for text notes.
-createRepost :: Event -> RelayURI -> PubKeyXO -> Int -> UnsignedEvent
+createRepost :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
 createRepost event relayUrl xo t =
   UnsignedEvent
     { pubKey' = xo
@@ -422,7 +420,7 @@ createRepost event relayUrl xo t =
 
 
 -- | Create a generic repost event (kind 16) for non-text-note events.
-createGenericRepost :: Event -> RelayURI -> PubKeyXO -> Int -> UnsignedEvent
+createGenericRepost :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
 createGenericRepost event relayUrl xo t =
   UnsignedEvent
     { pubKey' = xo
@@ -492,25 +490,7 @@ createEventDeletion event reason xo t =
     kTags = [["k", pack $ show $ kindToInt $ kind event]]
 
 
-createRelayListMetadataEvent :: [Relay] -> PubKeyXO -> Int -> UnsignedEvent
-createRelayListMetadataEvent relays xo t =
-  UnsignedEvent
-    { pubKey' = xo
-    , createdAt' = t
-    , kind' = RelayListMetadata
-    , tags' = map makeRelayTag relays
-    , content' = ""
-    }
-  where
-    makeRelayTag r = ["r", getUri r] ++
-      if isOutboxCapable r && not (isInboxCapable r)
-        then ["write"]
-      else if isInboxCapable r && not (isOutboxCapable r)
-        then ["read"]
-      else []
-
-
-createPreferredDMRelaysEvent :: [RelayURI] -> PubKeyXO -> Int -> UnsignedEvent
+createPreferredDMRelaysEvent :: [Text] -> PubKeyXO -> Int -> UnsignedEvent
 createPreferredDMRelaysEvent urls xo t =
   UnsignedEvent
     { pubKey' = xo
@@ -521,7 +501,7 @@ createPreferredDMRelaysEvent urls xo t =
     }
 
 
-createCanonicalAuthentication :: RelayURI -> Text -> PubKeyXO -> Int -> UnsignedEvent
+createCanonicalAuthentication :: Text -> Text -> PubKeyXO -> Int -> UnsignedEvent
 createCanonicalAuthentication r challenge xo t =
   UnsignedEvent
     { pubKey' = xo

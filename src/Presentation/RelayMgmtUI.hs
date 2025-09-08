@@ -14,11 +14,12 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import QtQuick (QtQuickState(..), UIReferences(..))
 import Logging
 import Nostr.Keys (keyPairToPubKeyXO)
-import Nostr.Relay (RelayURI, getUri, isInboxCapable, isOutboxCapable)
+import Nostr.Relay (ConnectionState(..), RelayData(..), RelayPool(..))
+import Nostr.Types (RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.Util
 import RelayMgmt (RelayMgmt, addDMRelay, addGeneralRelay, removeDMRelay, removeGeneralRelay)
 import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
-import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPool(..))
+import Types (AppState(..))
 
 
 data RelayType = DMRelays | InboxRelays | OutboxRelays
@@ -200,6 +201,5 @@ getConnectionStateText :: RelayURI -> RelayPool -> Text
 getConnectionStateText uri pst = case Map.lookup uri (activeConnections pst) of
   Just rd -> case connectionState rd of
     Connected -> "Connected"
-    Disconnected -> "Disconnected"
     Connecting -> "Connecting"
   Nothing -> "Disconnected"

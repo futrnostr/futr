@@ -33,7 +33,7 @@ Pane {
         spacing: Constants.spacing_m
 
         ProfilePicture {
-            imageSource: currentUserProfile ? currentUserProfile.getProfilePicture(currentUserPicture) : ""
+            imageSource: currentUserProfile ? getProfilePicture(currentUser, currentUserPicture) : ""
         }
 
         TextArea {

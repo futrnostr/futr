@@ -27,6 +27,15 @@ Pane {
     property string currentUser
     property bool isRefPost: false
     property var author: null
+    // author is a list: [id, npub, name, displayName, about, picture, nip05, banner]
+    property var author_id: author ? author[0] : ""
+    property var author_npub: author ? author[1] : ""
+    property var author_name: author ? author[2] : ""
+    property var author_displayName: author ? author[3] : ""
+    property var author_about: author ? author[4] : ""
+    property var author_picture: author ? author[5] : ""
+    property var author_nip05: author ? author[6] : ""
+    property var author_banner: author ? author[7] : ""
     property bool privateChatMode: false
 
     property var contentParts: []
@@ -213,7 +222,7 @@ Pane {
 
     background: Rectangle {
         id: backgroundRect
-        color: privateChatMode && author && author.npub == currentUser ? Material.accentColor : Material.dialogColor
+        color: privateChatMode && author && author_npub == currentUser ? Material.accentColor : Material.dialogColor
         radius: Constants.radius_m
 
         MouseArea {
@@ -274,14 +283,14 @@ Pane {
                     cursorShape: Qt.PointingHandCursor
 
                     onClicked: {
-                        personalFeed.npub = root.author.npub
+                        personalFeed.npub = author_npub
                     }
                 }
 
                 Image {
                     anchors.fill: parent
                     anchors.margins: Constants.spacing_xs
-                    source: root.author ? root.author.getProfilePicture(root.author.picture) : ""
+                    source: author ? getProfilePicture(author_npub, author_picture) : ""
                     fillMode: Image.PreserveAspectCrop
                     cache: false
                 }
@@ -294,7 +303,7 @@ Pane {
                 anchors.verticalCenter: parent.verticalCenter
 
                 onClicked: {
-                    personalFeed.npub = root.author.npub
+                    personalFeed.npub = author_npub
                 }
 
                 Column {
@@ -303,14 +312,14 @@ Pane {
 
                     Text {
                         font: Constants.font
-                        text: root.author ? (root.author.displayName || root.author.name || "") : ""
+                        text: author ? (author_displayName || author_name || "") : ""
                         elide: Text.ElideRight
                         width: parent.width
                         color: Material.primaryTextColor
                     }
 
                     Text {
-                        text: root.author ? root.author.npub : ""
+                        text: author ? author_npub : ""
                         font.pixelSize: Constants.font.pixelSize * 0.8
                         elide: Text.ElideRight
                         width: parent.width

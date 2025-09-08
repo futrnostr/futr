@@ -15,6 +15,17 @@ Rectangle {
 
     property var profileData: null
     property string npub
+
+    // 0: id(hex), 1: npub, 2: name, 3: displayName, 4: about, 5: picture, 6: nip05, 7: banner
+    property var profile_id: profileData ? profileData[0] : ""
+    property var profile_npub: profileData ? profileData[1] : ""
+    property var profile_name: profileData ? profileData[2] : ""
+    property var profile_displayName: profileData ? profileData[3] : ""
+    property var profile_about: profileData ? profileData[4] : ""
+    property var profile_picture: profileData ? profileData[5] : ""
+    property var profile_nip05: profileData ? profileData[6] : ""
+    property var profile_banner: profileData ? profileData[7] : ""
+
     required property string currentUser
 
     Component.onCompleted: {
@@ -41,10 +52,10 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             height: 80
-            visible: profileData !== null && profileData.banner !== null && profileData.banner !== ""
+            visible: profileData && profile_banner !== ""
 
             Image {
-                source: profileData !== null ? (profileData.banner ?? "") : ""
+                source: profileData ? profile_banner : ""
                 width: parent.width
                 height: 80
                 fillMode: Image.PreserveAspectCrop
@@ -59,7 +70,7 @@ Rectangle {
             Layout.rightMargin: 10
 
             ProfilePicture {
-                imageSource: profileData !== null ? profileData.getProfilePicture(profileData.picture) : ""
+                imageSource: profileData ? getProfilePicture(profile_npub, profile_picture) : ""
                 Layout.preferredWidth: 60
                 Layout.preferredHeight: 60
             }
@@ -70,7 +81,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: profileData !== null ? profileData.displayName || profileData.name || npub : ""
+                    text: profileData ? (profile_displayName || profile_name || npub) : ""
                     font: Constants.largeFont
                     color: Material.primaryTextColor
                     elide: Text.ElideRight
@@ -78,10 +89,10 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: profileData !== null ? profileData.name || "" : ""
+                    text: profileData ? (profile_name || "") : ""
                     font: Constants.font
                     color: Material.primaryTextColor
-                    visible: profileData !== null && profileData.displayName
+                    visible: profileData && profile_displayName
                     elide: Text.ElideRight
                 }
             }
@@ -101,7 +112,8 @@ Rectangle {
 
             Button {
                 visible: npub !== currentUser
-                text: profileData !== null ? (profileData.isFollow ? qsTr("Unfollow") : qsTr("Follow")) : ""
+                // isFollow is not provided here anymore; hide/change later when wired
+                text: ""
                 font: Constants.font
                 highlighted: true
                 Material.background: Material.primary
@@ -155,7 +167,7 @@ Rectangle {
             }
 
             Text {
-                text: profileData !== null ? profileData.about : ""
+                text: profileData ? profile_about : ""
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
                 font: Constants.font

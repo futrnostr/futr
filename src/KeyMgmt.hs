@@ -37,7 +37,7 @@ import Nostr.Bech32
 import Nostr.Keys ( KeyPair, PubKeyXO, SecKey, derivePublicKeyXO
                   , keyPairToPubKeyXO, keyPairToSecKey, secKeyToKeyPair)
 import Nostr.Profile (Profile(..))
-import Nostr.Relay (Relay)
+import Nostr.Types (Relay)
 import System.FilePath (takeFileName, (</>))
 import Text.Read (readMaybe)
 import Types (AppState(..))
