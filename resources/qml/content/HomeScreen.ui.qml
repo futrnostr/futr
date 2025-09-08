@@ -208,29 +208,29 @@ Item {
         }
     }
 
-    RelayMgmtDialog {
-        id: relayMgmtDialog
-    }
+    // RelayMgmtDialog {
+    //     id: relayMgmtDialog
+    // }
 
-    ShowKeysDialog {
-        id: showKeysDialog
-    }
+    // ShowKeysDialog {
+    //     id: showKeysDialog
+    // }
 
-    AlertManager {
-        id: alertManager
-    }
+    // AlertManager {
+    //     id: alertManager
+    // }
 
-    InboxModelStatusAlert {
-        id: inboxModelStatusAlert
-        currentState: inboxModelState
-    }
+    // InboxModelStatusAlert {
+    //     id: inboxModelStatusAlert
+    //     currentState: inboxModelState
+    // }
 
-    NotificationToast {
-        id: notification
-        z: 999
+    // NotificationToast {
+    //     id: notification
+    //     z: 999
 
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: 80
-    }
+    //     anchors.horizontalCenter: parent.horizontalCenter
+    //     anchors.top: parent.top
+    //     anchors.topMargin: 80
+    // }
 }

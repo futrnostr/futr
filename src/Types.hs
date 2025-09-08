@@ -71,20 +71,12 @@ data Post = Post
   } deriving (Eq, Show)
 
 
--- | Feed.
-data Feed = Feed
-  { feedEvents :: [Post]
-  , feedEventMap :: Map EventId Post
-  , feedFilter :: FeedFilter
-  } deriving (Eq, Show)
-
-
 -- | Application state.
 data AppState = AppState
   { keyPair :: Maybe KeyPair
   , currentScreen :: AppScreen -- @todo remove maybe?
-  , currentFeed :: Maybe Feed
-  , currentCommentFeed :: Maybe Feed
+  , currentFeed :: Maybe FeedFilter
+  , currentCommentFeed :: Maybe FeedFilter
   , currentProfile :: Maybe (PubKeyXO, [SubscriptionId])
   , currentPost :: Maybe EventId
   , version :: Text

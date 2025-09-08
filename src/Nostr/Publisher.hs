@@ -12,6 +12,7 @@ import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, modify)
 
 import KeyMgmt (KeyMgmt)
+import Logging (Logging)
 import Nostr (Nostr)
 import Nostr.Event (Event(..), EventId)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
@@ -65,6 +66,7 @@ type PublisherEff es =
   , State RelayPool :> es
   , LmdbStore :> es
   , Nostr :> es
+  , Logging :> es
   , KeyMgmt :> es
   , Concurrent :> es
   , QtQuick :> es

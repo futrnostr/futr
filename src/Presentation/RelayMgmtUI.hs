@@ -201,6 +201,5 @@ getConnectionStateText :: RelayURI -> RelayPool -> Text
 getConnectionStateText uri pst = case Map.lookup uri (activeConnections pst) of
   Just rd -> case connectionState rd of
     Connected -> "Connected"
-    Disconnected -> "Disconnected"
     Connecting -> "Connecting"
   Nothing -> "Disconnected"

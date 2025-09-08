@@ -11,6 +11,7 @@ import Effectful.State.Static.Shared (State, get)
 import Text.Read (readMaybe)
 
 import KeyMgmt (KeyMgmt, updateProfile, AccountId(..))
+import Logging
 import Nostr (Nostr, unwrapGiftWrap, unwrapSeal)
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Event ( Event(..), Kind(..), Rumor(..), eventIdFromHex
@@ -25,6 +26,7 @@ import Types (AppState(..))
 
 type EventProcessingEff es =
   ( LmdbStore :> es
+  , Logging :> es
   , KeyMgmt :> es
   , Nostr :> es
   , Util :> es

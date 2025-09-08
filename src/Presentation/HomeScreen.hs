@@ -3,7 +3,7 @@
 module Presentation.HomeScreen where
 
 import Control.Lens ((^.))
-import Control.Monad (filterM, void)
+import Control.Monad (filterM, forM, void)
 import Data.Aeson (decode, encode, toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
@@ -32,13 +32,16 @@ import Text.Read (readMaybe)
 
 import Downloader (Downloader, DownloadStatus(..), hasDownload, peekMimeType, download)
 import KeyMgmt (AccountId(..), updateProfile)
+import Logging (logDebug)
 import Nostr
 import Nostr.Bech32 (pubKeyXOToBech32, eventToNevent, eventIdToNote, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
 import Nostr.Event (Event(..), EventId(..), Kind(..), createMetadata, getEventId)
-import Nostr.Publisher
-import Nostr.Keys (keyPairToPubKeyXO)
-import Nostr.Profile (Profile(..))
+import Nostr.InboxModel (InboxModel, stopInboxModel, startInboxModel)
+import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
+import Nostr.Profile (Profile(..), emptyProfile)
+import Nostr.Profile qualified as NP
 import Nostr.ProfileManager (fetchProfile, getProfile)
+import Nostr.Publisher
 import Nostr.Relay (RelayPool(..))
 import Nostr.Util
 import Presentation.Classes qualified as Classes
@@ -47,7 +50,7 @@ import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
 import Store.Lmdb (LmdbStore, getEvent, getEvents, getFollows, getEventRelays, getCommentsWithIndentationLevel)
-import Types (Post(..), AppState(..), AppScreen(..), FeedFilter(..), Follow(..), Feed(..))
+import Types (Post(..), AppState(..), AppScreen(..), FeedFilter(..), Follow(..))
 
 
 -- | HomeScren Effect for creating QML UI.
@@ -70,13 +73,9 @@ runHomeScreen = interpret $ \_ -> \case
     keyMgmtObj <- runE $ KeyMgmtUI.createUI changeKey'
     relayMgmtObj <- runE $ RelayMgmtUI.createUI changeKey'
 
-    followClass' <- runE $ Classes.followClass changeKey'
-    profileClass' <- runE $ Classes.profileClass changeKey'
     publishStatusClass' <- runE $ Classes.publishStatusClass changeKey'
     commentFeedClass' <- runE $ Classes.commentFeedClass changeKey'
 
-    followPool <- newFactoryPool (newObject followClass')
-    profilesPool <- newFactoryPool (newObject profileClass')
     publishStatusPool <- newFactoryPool (newObject publishStatusClass')
 
     rootClass <- newClass [
@@ -93,9 +92,25 @@ runHomeScreen = interpret $ \_ -> \case
           mp <- runE $ gets @AppState currentProfile
           case mp of
             Just (pk, _) -> do
-              profileObj <- getPoolObject profilesPool pk
-              return $ Just profileObj
-            Nothing -> return Nothing),
+              prof <- runE $ getProfile pk
+              pic <- runE $ resolveProfileImage (const $ pure $ picture prof) pk
+              ban <- runE $ resolveProfileImage (const $ pure $ banner prof) pk
+              kpCur <- runE $ getKeyPair
+              let currentPubKey = keyPairToPubKeyXO kpCur
+              followsCur <- runE $ getFollows currentPubKey
+              let isFollowBool = pk `elem` map pubkey followsCur
+              return $ Just
+                [ TE.decodeUtf8 $ B16.encode $ exportPubKeyXO pk  -- id (hex)
+                , pubKeyXOToBech32 pk                             -- npub
+                , fromMaybe "" (name prof)
+                , fromMaybe "" (displayName prof)
+                , fromMaybe "" (about prof)
+                , pic
+                , fromMaybe "" (NP.nip05 prof)
+                , ban
+                , if isFollowBool then "1" else "0"
+                ]
+            Nothing -> return (Nothing :: Maybe [Text])),
 
         defPropertySigRW' "currentScreen" changeKey'
           (\_ -> do
@@ -128,6 +143,14 @@ runHomeScreen = interpret $ \_ -> \case
         defMethod' "login" $ \obj input -> runE $ login obj input,
 
         defMethod' "logout" $ \obj -> runE $ logout obj,
+
+        defMethod' "stopInboxModel" $ \obj -> runE $ do
+          logDebug $ "stopInboxModel"
+          stopInboxModel,
+
+        defMethod' "startInboxModel" $ \obj -> runE $ do
+          logDebug $ "startInboxModel"
+          void $ async $ startInboxModel,
 
         defMethod' "search" $ \obj input -> runE $ do
           res <- search obj input
@@ -163,11 +186,29 @@ runHomeScreen = interpret $ \_ -> \case
               updateProfile aid profile,
 
         defPropertySigRO' "followList" changeKey' $ \obj -> do
+          runE $ logDebug $ "followList"
           runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
           kp <- runE $ getKeyPair
           let userPubKey = keyPairToPubKeyXO kp
-          followedPubKeys <- runE $ getFollows userPubKey
-          mapM (getPoolObject followPool) (userPubKey : map pubkey followedPubKeys),
+          follows <- runE $ getFollows userPubKey
+          let petnameOf pk =
+                if pk == userPubKey
+                  then ""
+                  else maybe "" (fromMaybe "" . petName)
+                           (listToMaybe [ f | f <- follows, pubkey f == pk ])
+              allPks = userPubKey : map pubkey follows
+          forM allPks $ \pk -> runE $ do
+            --profile <- getProfile pk
+            let profile = emptyProfile
+            -- Skip expensive image resolution for followList - just use the URL directly
+            let pic = fromMaybe "" (picture profile)
+            return
+              [ pubKeyXOToBech32 pk
+              , petnameOf pk
+              , fromMaybe "" (displayName profile)
+              , fromMaybe "" (name profile)
+              , pic
+              ],
 
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
@@ -217,30 +258,49 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "getCommentFeed" $ \_ eid -> runE $ do
           let eid' = read (unpack eid) :: EventId
-          commentIds <- getCommentsWithIndentationLevel eid'
-
-          let commentEventIds = map fst commentIds
-          commentEvents <- getEvents commentEventIds
-          commentPosts <- mapM createPost commentEvents
-          let commentEventMap = Map.fromList [(postId p, p) | p <- commentPosts]
-              commentsFeed = Feed
-                  { feedEvents = commentPosts
-                  , feedEventMap = commentEventMap
-                  , feedFilter = CommentsFilter eid'
-                  }
-
-          modify @AppState $ \st -> st { currentCommentFeed = Just commentsFeed }
+          modify @AppState $ \st -> st { currentCommentFeed = Just $ CommentsFilter eid' }
           commentsFeedObj <- liftIO $ newObject commentFeedClass' ()
           return commentsFeedObj,
 
         defMethod' "getProfile" $ \_ input -> do
           result <- case parseNprofileOrNpub input of
             Just (pk, relayHints) -> do
-              _ <- runE $ fetchProfile pk relayHints  -- this will return profile and handle fetch if needed
-              profileObj <- getPoolObject profilesPool pk
-              return $ Just profileObj
+              prof <- runE $ fetchProfile pk relayHints  -- ensure cache
+              pic <- runE $ resolveProfileImage (const $ pure $ picture prof) pk
+              ban <- runE $ resolveProfileImage (const $ pure $ banner prof) pk
+              kpCur <- runE $ getKeyPair
+              let currentPubKey = keyPairToPubKeyXO kpCur
+              followsCur <- runE $ getFollows currentPubKey
+              let isFollowBool = pk `elem` map pubkey followsCur
+              return $ Just
+                [ TE.decodeUtf8 $ B16.encode $ exportPubKeyXO pk  -- id (hex)
+                , pubKeyXOToBech32 pk                             -- npub
+                , fromMaybe "" (name prof)
+                , fromMaybe "" (displayName prof)
+                , fromMaybe "" (about prof)
+                , pic
+                , fromMaybe "" (NP.nip05 prof)
+                , ban
+                , if isFollowBool then "1" else "0"
+                ]
             _ -> return Nothing
           return result,
+
+        -- given an npub (or nprofile) and optional picture URL,
+        -- returns a usable image URL (possibly cached file:/// path).
+        defMethod' "getProfilePicture" $ \_ npubText pictureUrl -> runE $ do
+          case parseNprofileOrNpub npubText of
+            Just (pk, _) -> do
+              let url' _ = case pictureUrl of
+                    Nothing -> do
+                      prof <- getProfile pk
+                      pure $ picture prof
+                    Just "" -> do
+                      prof <- getProfile pk
+                      pure $ picture prof
+                    Just url -> pure $ Just url
+              resolveProfileImage url' pk
+            _ -> pure "",
 
         defMethod' "getPost" $ \_ input -> runE $ do
           let fetchByEventId eid = do
@@ -406,3 +466,29 @@ waitForDownloadCompletion url = do
             threadDelay 100000  -- 100ms
             waitForDownloadCompletion url
         _ -> return status
+
+
+-- | Helper to resolve a remote image URL to a local file if downloaded,
+--   otherwise trigger async download and signal.
+resolveProfileImage
+  :: (Futr :> es, Downloader :> es, Concurrent :> es)
+  => (PubKeyXO -> Eff es (Maybe Text))
+  -> PubKeyXO
+  -> Eff es Text
+resolveProfileImage getField pk = do
+  mUrl <- getField pk
+  case mUrl of
+    Just url | "http://" `Text.isPrefixOf` url || "https://" `Text.isPrefixOf` url -> do
+      status <- hasDownload url
+      case status of
+        Ready (cacheFile, mime, _) | "image/" `Text.isPrefixOf` mime ->
+          pure $ "file:///" <> Text.pack cacheFile
+        _ -> do
+          void $ async $ do
+            mimeResult <- peekMimeType url
+            case mimeResult of
+              Right mime | "image/" `Text.isPrefixOf` mime -> do
+                void $ download url
+              _ -> pure ()
+          pure url
+    _ -> pure $ fromMaybe "" mUrl

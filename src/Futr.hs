@@ -42,11 +42,11 @@ import Nostr.Event ( Event(..), EventId, UnsignedEvent(..)
                    )
 import Nostr.Event qualified as NE
 import Nostr.EventProcessor (handleEvent)
-import Nostr.InboxModel ( InboxModel, connectAndBootstrap, startInboxModel, stopInboxModel
+import Nostr.InboxModel ( InboxModel, startInboxModel, stopInboxModel
                         , subscribeToCommentsFor, subscribeToProfilesAndPostsFor, unsubscribeToCommentsFor )
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, pubKeyXOToHex, secKeyToKeyPair)
 import Nostr.Nip05Search (isNip05Identifier, searchNip05, Nip05SearchResult(..))
-import Nostr.ProfileManager (ProfileManager)
+import Nostr.ProfileManager (ProfileManager, initializeProfileManager)
 import Nostr.Publisher
 import Nostr.Relay ( RelayConnection, RelayPool(..), connect, disconnect
                    , initialRelayPool, subscribeTemporary, unsubscribe )
@@ -115,7 +115,7 @@ data Futr :: Effect where
   SetCurrentPost :: Maybe EventId -> Futr m ()
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
-  LoadFeed :: FeedFilter -> Futr m Feed
+  LoadFeed :: FeedFilter -> Futr m ()
   SendPrivateMessage :: Text -> Futr m ()
   SendShortTextNote :: Text -> Futr m ()
   Logout :: ObjRef () -> Futr m ()
@@ -145,7 +145,7 @@ followProfile npub' = send $ FollowProfile npub'
 unfollowProfile :: Futr :> es => Text -> Eff es ()
 unfollowProfile npub' = send $ UnfollowProfile npub'
 
-loadFeed :: Futr :> es => FeedFilter -> Eff es Feed
+loadFeed :: Futr :> es => FeedFilter -> Eff es ()
 loadFeed f = send $ LoadFeed f
 
 sendPrivateMessage :: Futr :> es => Text -> Eff es ()
@@ -221,18 +221,19 @@ runFutr = interpret $ \_ -> \case
           case dbResult of
             Left e -> error $ "Database initialization failed: " <> show e
             Right _ -> do
+              initializeProfileManager
               loginWithAccount obj a
 
               -- Stop any previous cache clearer
               mOld <- gets @AppState cacheClearer
               forM_ mOld $ \old -> cancel old
 
-              -- Start new cache clearer
-              t <- async $ forever $ do
-                clearCache
-                threadDelay (5 * 60 * 1000000) -- 5 minutes in microseconds
+              -- -- Start new cache clearer
+              -- t <- async $ forever $ do
+              --   clearCache
+              --   threadDelay (5 * 60 * 1000000) -- 5 minutes in microseconds
 
-              modify @AppState $ \s -> s { cacheClearer = Just t }
+              -- modify @AppState $ \s -> s { cacheClearer = Just t }
 
   Search _ input -> do
     st <- get @AppState
@@ -324,33 +325,15 @@ runFutr = interpret $ \_ -> \case
       Just (_, subIds) -> forM_ subIds $ \subId' -> unsubscribe subId'
       _ -> pure ()
 
-    modify @AppState $ \st' -> st' { currentProfile = Just (pk, []) }
+    modify @AppState $ \st' -> st'
+      { currentProfile = Just (pk, [])
+      , currentFeed = Just f
+      }
     notify $ emptyUpdates { feedChanged = True }
 
-    eventIds <- case f of
-      PostsFilter pk' -> do
-        getTimelineIds PostTimeline pk' 100
-      PrivateMessagesFilter pk' -> do
-        getTimelineIds ChatTimeline pk' 100
-      CommentsFilter _ -> error "LoadFeed not supported for CommentsFilter - use getCommentFeed instead"
-
-    events <- getEvents eventIds
-    posts <- mapM createPost events
-
-    let feed = Feed posts (Map.fromList [(postId p, p) | p <- posts]) f
-
-    modify @AppState $ \st' -> st' { currentFeed = Just feed }
-
     void $ async $ do
-      kp <- getKeyPair
-      let mypk = keyPairToPubKeyXO kp
-      follows <- getFollows mypk
-
-      when (not (pk `elem` map pubkey follows)) $ do
-        subIds <- subscribeToProfilesAndPostsFor pk
-        modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
-
-    pure feed
+      subIds <- subscribeToProfilesAndPostsFor pk
+      modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
 
   SendPrivateMessage input -> do
     st <- get @AppState
@@ -541,22 +524,10 @@ loginWithAccount obj a = do
 
     logDebug $ "Login with account"
 
-    void $ async $ do
-      logDebug $ "Connect and bootstrap"
-      e <- connectAndBootstrap
-      logDebug $ "Connect and bootstrap result" <> pack (show e)
-      case e of
-        Left err -> do
-          logDebug $ "Connect and bootstrap error" <> pack (show err)
-          liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False err
-          fullAppCleanup
-          fireSignal obj
-        Right _ -> do
-          logDebug $ "Connect and bootstrap success"
-          modify @AppState $ \s -> s { currentScreen = Home }
-          liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
-          fireSignal obj
-          startInboxModel
+    modify @AppState $ \s -> s { currentScreen = Home }
+    liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
+    fireSignal obj
+    void $ async $ startInboxModel
 
 
 -- | Send a follow list event.

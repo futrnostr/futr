@@ -22,7 +22,7 @@ import Nostr
 import Nostr.Bech32
 import Nostr.InboxModel
 import Nostr.Keys (keyPairToPubKeyXO)
-import Nostr.ProfileManager (ProfileManager)
+import Nostr.ProfileManager (ProfileManager, initializeProfileManager)
 import Nostr.Publisher
 import Nostr.Relay (RelayPool(..), initialRelayPool)
 import Nostr.Util
@@ -153,22 +153,16 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                     -- Initialize the LMDB database
                     lmdbState <- liftIO $ initializeLmdbState lmdDir
                     put @LmdbState lmdbState
+                    initializeProfileManager
 
                     void $ async $ do
-                      e <- connectAndBootstrap
-                      case e of
-                        Left err -> do
-                          modify @KeyMgmtState $ \st -> st { errorMsg = err }
-                          fireSignal obj
-                        Right _ -> do
-                          startInboxModel
-
-                          mOld <- gets @AppState cacheClearer
-                          forM_ mOld $ \old -> cancel old
-                          t <- async $ forever $ do
-                            clearCache
-                            threadDelay (5 * 60 * 1000000)
-                          modify @AppState $ \s -> s { cacheClearer = Just t }
+                      mOld <- gets @AppState cacheClearer
+                      forM_ mOld $ \old -> cancel old
+                      t <- async $ forever $ do
+                        clearCache
+                        threadDelay (5 * 60 * 1000000)
+                      modify @AppState $ \s -> s { cacheClearer = Just t }
+                      startInboxModel
 
                     return True
             ]
