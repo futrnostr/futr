@@ -64,6 +64,9 @@ executable futr
     ghc-options:
         -threaded -Wall -Wcompat -Wincomplete-uni-patterns
         -Wincomplete-record-updates
+        "-with-rtsopts=-M512m -A12m -N -hr -p -l-au -s"
+        -rtsopts
+        -fprof-auto
     default-extensions: DataKinds,
                         GADTs,
                         LambdaCase,

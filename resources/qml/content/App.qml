@@ -24,6 +24,19 @@ ApplicationWindow {
     Material.accent: accentColor
     Material.primary: Material.BlueGrey
 
+    // // Minimal UI - just a label
+    // Text {
+    //     anchors.centerIn: parent
+    //     text: "Memory Test - QML Disabled"
+    //     color: "white"
+    //     font.pixelSize: 24
+    // }
+
+    // Component.onCompleted: {
+    //     console.log("Memory Test - QML Disabled")
+    //     login("npub18wxf0t5jsmcpy57ylzx595twskx8eyj382lj7wp9rtlhzdg5hnnqvt4xra")
+    // }
+
     ClipboardHelper {
         id: clipboard
     }

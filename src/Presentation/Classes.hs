@@ -27,7 +27,7 @@ import Nostr.Event (Event(..), EventId(..), Rumor(..), eventIdFromHex)
 import Nostr.Event qualified as NE
 import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
-import Nostr.ProfileManager (ProfileManager, getProfile)
+import Nostr.ProfileManager (ProfileManager)
 import Nostr.Relay (RelayPool(..))
 import Nostr.Util (Util, formatDateTime, getKeyPair)
 import QtQuick ( QtQuick, PropertyMap(..), PropertyName, QtQuickState(..)
@@ -67,7 +67,6 @@ type ClassesEff es =
   , State QtQuickState :> es
   , State RelayPool :> es
   , State AppState :> es
-  , ProfileManager :> es
   , LmdbStore :> es
   , Downloader :> es
   , Concurrent :> es

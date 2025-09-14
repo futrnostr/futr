@@ -17,9 +17,7 @@ Rectangle {
     property var cachedPost
     property bool isLoading: true
 
-    height: !isLoading
-                ? (nestedLoader.item ? nestedLoader.item.implicitHeight + Constants.spacing_xs : 40)
-                : 40
+    implicitHeight: (isLoading ? 40 : (nestedPostContent.visible ? nestedPostContent.implicitHeight + Constants.spacing_xs : 40))
 
     color: isLoading ? Material.dialogColor : Material.backgroundColor
     radius: Constants.radius_m
@@ -27,6 +25,7 @@ Rectangle {
     border.width: isLoading ? 1 : 0
 
     Component.onCompleted: {
+        console.log("[ReferencedPost] completed value=", value)
         if (value) {
             var result = getPost(value)
 
@@ -39,14 +38,16 @@ Rectangle {
 
     RowLayout {
         visible: isLoading
-        anchors.centerIn: parent
-        width: parent.width - (Constants.spacing_xs * 2)
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: Constants.spacing_xs
 
         BusyIndicator {
             Layout.alignment: Qt.AlignVCenter
             Layout.preferredWidth: 36
             Layout.preferredHeight: 36
-            running: true
+            running: referencedPostContainer.isLoading
         }
 
         Text {
@@ -58,63 +59,22 @@ Rectangle {
         }
     }
 
-    Loader {
-        id: nestedLoader
-        active: !isLoading && cachedPost && cachedPost != null
-        sourceComponent: postContentComponent
-        width: parent.width
+    PostContent {
+        id: nestedPostContent
+        anchors.fill: parent
+        anchors.margins: 1
+        visible: !isLoading && cachedPost && cachedPost != null
 
-        onLoaded: {
-            if (item && cachedPost) {
-                item.post = cachedPost
-                item.currentUser = referencedPostContainer.currentUser
-                item.isRefPost = true
-            }
-        }
-    }
+        post: cachedPost
+        currentUser: referencedPostContainer.currentUser
+        isRefPost: true
 
-    Component {
-        id: postContentComponent
-
-        PostContent {
-            width: parent.width
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 2
-            visible: !isLoading
-
-            onPostClicked: {
-                stackView.push("../PostDetails.ui.qml", {
-                    "post": referencedPostContainer.post,
-                    "isRefPost": true,
-                    "currentUser": referencedPostContainer.currentUser
-                })
-            }
-        }
-    }
-
-    function updateNestedPost() {
-        if (nestedLoader.item && cachedPost && cachedPost != null) {
-            nestedLoader.item.post = cachedPost
-            nestedLoader.item.currentUser = referencedPostContainer.currentUser
-            nestedLoader.item.isRefPost = true
-        }
-    }
-
-    onCachedPostChanged: {
-        if (cachedPost) {
-            isLoading = false
-        }
-        
-        if (nestedLoader.item && cachedPost && cachedPost != null) {
-            nestedLoader.item.post = cachedPost
-        }
-    }
-    
-    onCurrentUserChanged: {
-        if (cachedPost && cachedPost != null) {
-            updateNestedPost()
+        onPostClicked: {
+            stackView.push("../PostDetails.ui.qml", {
+                "post": referencedPostContainer.cachedPost,
+                "isRefPost": true,
+                "currentUser": referencedPostContainer.currentUser
+            })
         }
     }
 }

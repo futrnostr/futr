@@ -54,11 +54,11 @@ Pane {
         "text": "PostContent/TextComponent.ui.qml",
         "image": "PostContent/PostImage.ui.qml", 
         "video": "PostContent/PostVideo.ui.qml",
-        "note": "PostContent/ReferencedPost.ui.qml",
-        "nevent": "PostContent/ReferencedPost.ui.qml",
-        "naddr": "PostContent/ReferencedPost.ui.qml",
-        "url": "PostContent/TextComponent.ui.qml",
-        "profile": "PostContent/TextComponent.ui.qml"
+        //"note": "PostContent/ReferencedPost.ui.qml",
+        //"nevent": "PostContent/ReferencedPost.ui.qml",
+        //"naddr": "PostContent/ReferencedPost.ui.qml",
+        //"url": "PostContent/TextComponent.ui.qml",
+        //"profile": "PostContent/DummyComponent.ui.qml"
     }
 
     signal commentClicked()
@@ -66,16 +66,13 @@ Pane {
     signal postClicked()
 
     padding: Constants.spacing_xs
+    implicitHeight: mainColumn.implicitHeight + (padding * 2)
 
     onPost_contentChanged: {
         if (post_content !== lastProcessedContent) {
             lastProcessedContent = post_content || ""
-
             renderInitialText()
-
-            if (post_content) {
-                Qt.callLater(parseContent)
-            }
+            parseContent()
         }
     }
 
@@ -89,10 +86,8 @@ Pane {
 
             if (post && post_content && post_content !== lastProcessedContent) {
                 lastProcessedContent = post_content || ""
-
                 renderInitialText()
-
-                Qt.callLater(parseContent)
+                parseContent()
             }
         } else if (currentPostId === null && lastProcessedPostId !== null) {
             lastProcessedPostId = null
@@ -109,7 +104,7 @@ Pane {
 
         contentLayout.children = []
 
-        var component = Qt.createComponent(componentMap["text"])
+        var component = Qt.createComponent("PostContent/TextComponent.ui.qml")
 
         if (component.status === Component.Ready) {
             var item = component.createObject(contentLayout, {
@@ -132,7 +127,9 @@ Pane {
             return
         }
 
-        author = post_authorId ? getProfile(post_authorId) : null
+        if (!author && post_authorId) {
+            author = getProfile(post_authorId)
+        }
 
         var parts = parseContentParts(post_content)
         contentParts = parts
@@ -244,7 +241,9 @@ Pane {
 
     Column {
         id: mainColumn
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
         spacing: Constants.spacing_xs
 
         Row {
@@ -625,23 +624,90 @@ Pane {
         }
 
         contentLayout.children = []
-        renderContentParts(contentParts)
+        renderContentParts(contentLayout, contentParts)
     }
 
-    function renderContentParts(parts) {
+    function renderContentParts(container, parts) {
         for (var i = 0; i < parts.length; i++) {
             var part = parts[i]
             var type = part[0]
             var value = part[1]
             var originalUrl = part.length > 2 ? part[2] : value
 
+            if ("note" === type || "nevent" === type || "naddr" === type) {
+                // Create framed container
+                var qml = "import QtQuick 2.15; import QtQuick.Controls 2.15; import QtQuick.Controls.Material 2.15; import QtQuick.Layouts 1.15; import Futr 1.0;\n"
+                        + "Rectangle { id: refFrame; color: \"transparent\"; radius: Constants.radius_m; border.width: 1; border.color: Material.backgroundColor; clip: true;\n"
+                        + "  property int frameWidth: 0; width: frameWidth;\n"
+                        + "  property bool isLoading: true;\n"
+                        + "  property alias contentRootItem: contentRoot;\n"
+                        + "  RowLayout { id: placeholder; visible: refFrame.isLoading; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: Constants.spacing_xs;\n"
+                        + "    BusyIndicator { Layout.alignment: Qt.AlignVCenter; Layout.preferredWidth: 36; Layout.preferredHeight: 36; running: refFrame.isLoading }\n"
+                        + "    Text { Layout.alignment: Qt.AlignLeft; Layout.fillWidth: true; text: qsTr(\"Event not found. Trying to find it for you...\"); font: Constants.font; color: Material.secondaryTextColor }\n"
+                        + "  }\n"
+                        + "  Column { id: contentRoot; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: Constants.spacing_xs; spacing: 0; visible: !refFrame.isLoading;\n"
+                        + "           layer.enabled: true; layer.smooth: true; layer.mipmap: true }\n"
+                        + "  implicitHeight: (refFrame.isLoading ? placeholder.implicitHeight : contentRoot.implicitHeight) + Constants.spacing_xs\n"
+                        + "}"
+
+                var frame = Qt.createQmlObject(qml, container)
+                if (frame) {
+                    frame.frameWidth = Qt.binding(function() { return container.width })
+                    var result = getPost(value)
+                    var cachedPost = (result && Array.isArray(result) && result.length > 0) ? result : null
+
+                    if (cachedPost) {
+                        frame.isLoading = false
+
+                        var authorProfile = cachedPost[7] ? getProfile(cachedPost[7]) : null
+                        var authorNpubVal = authorProfile ? authorProfile[1] : ""
+                        var authorDisplay = authorProfile ? (authorProfile[3] || authorProfile[2] || "") : ""
+                        var authorPic = authorProfile ? getProfilePicture(authorNpubVal, authorProfile[5]) : ""
+
+                        var headerQml = "import QtQuick 2.15; import QtQuick.Controls 2.15; import QtQuick.Controls.Material 2.15; import QtQuick.Layouts 1.15; import Futr 1.0;\n"
+                                     + "Row { id: refHeader; width: parent.width; spacing: Constants.spacing_s;\n"
+                                     + "  property string authorNpub: \"\"; property string authorDisplayName: \"\"; property string authorPictureUrl: \"\";\n"
+                                     + "  Rectangle { width: 34; height: 34; radius: width/2; color: \"transparent\"; border.width: 1; border.color: Material.dividerColor;\n"
+                                     + "    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { personalFeed.npub = refHeader.authorNpub } }\n"
+                                     + "    Image { anchors.fill: parent; anchors.margins: Constants.spacing_xs; source: refHeader.authorPictureUrl; fillMode: Image.PreserveAspectCrop; cache: false }\n"
+                                     + "  }\n"
+                                     + "  MouseArea { width: parent.width - 50; height: childrenRect.height; cursorShape: Qt.PointingHandCursor; anchors.verticalCenter: parent.verticalCenter; onClicked: { personalFeed.npub = refHeader.authorNpub }\n"
+                                     + "    Column { spacing: 2; width: parent.width;\n"
+                                     + "      Text { font: Constants.font; text: refHeader.authorDisplayName; elide: Text.ElideRight; width: parent.width; color: Material.primaryTextColor }\n"
+                                     + "      Text { text: refHeader.authorNpub; font.pixelSize: Constants.font.pixelSize * 0.8; elide: Text.ElideRight; width: parent.width; color: Material.secondaryTextColor }\n"
+                                     + "    }\n"
+                                     + "  }\n"
+                                     + "}"
+
+                        var headerObj = Qt.createQmlObject(headerQml, frame.contentRootItem, "RefHeader")
+                        if (headerObj) {
+                            headerObj.authorNpub = authorNpubVal
+                            headerObj.authorDisplayName = authorDisplay
+                            headerObj.authorPictureUrl = authorPic
+                        }
+
+                        var nestedContent = cachedPost[5]
+                        if (nestedContent) {
+                            var nestedParts = parseContentParts(nestedContent)
+                            renderContentParts(frame.contentRootItem, nestedParts)
+                        }
+                    } else {
+                        frame.isLoading = true
+                    }
+                } else {
+                    console.error("Failed to create referenced frame for:", value)
+                }
+                break
+            }
+
             if (!componentMap[type]) {
-                continue
+                console.error("Failed to create component for:", type)
+                break
             }
 
             var finalType = type
             var args = {
-                "width": Qt.binding(function() { return contentLayout.width }),
+                "width": Qt.binding(function() { return container.width }),
             }
 
             if (type === "text") {
@@ -692,7 +758,6 @@ Pane {
                         }
                     } else if (!urlInfo || urlInfo.type === "failed") {
                         args["value"] = "<a href=\"" + value + "\" style=\"color: #9C27B0\">" + value + "</a>"
-
                         if (!urlInfo) {
                             processedUrls[value] = {type: "checking"}
                             mediaPeekCompleted.connect(mediaPeekCallback)
@@ -725,7 +790,7 @@ Pane {
                     args["currentUser"] = currentUser
                 }
 
-                var item = component.createObject(contentLayout, args)
+                var item = component.createObject(container, args)
 
                 if (item === null) {
                     console.error("Failed to create object for:", value)
@@ -777,7 +842,7 @@ Pane {
             contentParts = newParts
             contentLayout.children = []
             if (post_id && contentParts) {
-                renderContentParts(contentParts)
+                renderContentParts(contentLayout, contentParts)
             }
         }
     }

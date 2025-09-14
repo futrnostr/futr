@@ -113,12 +113,10 @@ runProfileManager = interpret $ \_ -> \case
 -- | Main profile fetching implementation with queue and batching
 fetchProfileImpl :: ProfileManagerEff es => PubKeyXO -> [RelayURI] -> Eff es Profile
 fetchProfileImpl pk relayHints = do
-    -- First check if we already have a recent profile
     profile <- Lmdb.getProfile pk
     profileTimestamp <- Lmdb.getLatestTimestamp pk [Metadata]
     currentTime <- getCurrentTime
-    
-    -- Check if we should fetch (need to get state first)
+
     st <- get @ProfileManagerState
     let profileTs = fromMaybe 0 profileTimestamp
         lastFetchAttempt = fromMaybe 0 $ Map.lookup pk (lastFetchAttempts st)
@@ -160,7 +158,7 @@ processQueue = do
         let (withHints, withoutHints) = partition (not . null . requestRelayHints) allRequests
         groupedRequests <- groupRequestsByRelay withHints withoutHints
         
-        -- Process each relay group concurrently (up to 3 active fetches)
+        -- Process each relay group concurrently
         forM_ (Map.toList groupedRequests) $ \(relayUri, pubkeys) -> do
             void $ async $ processRelayBatch relayUri pubkeys allRequests
 

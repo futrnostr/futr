@@ -49,7 +49,8 @@ import Presentation.Classes (findAvailableFilename, createPost)
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb (LmdbStore, getEvent, getEvents, getFollows, getEventRelays, getCommentsWithIndentationLevel)
+import Store.Lmdb ( LmdbStore, getEvent, getEvents, getFollows, getEventRelays
+      , getCommentsWithIndentationLevel)
 import Types (Post(..), AppState(..), AppScreen(..), FeedFilter(..), Follow(..))
 
 

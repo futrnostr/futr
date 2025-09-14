@@ -58,25 +58,25 @@ Item {
                         }
                     }
 
-                    FollowList {
-                        id: followListElement
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        radius: Constants.radius_m
+                    // FollowList {
+                    //     id: followListElement
+                    //     anchors.fill: parent
+                    //     anchors.margins: 10
+                    //     radius: Constants.radius_m
 
-                        isCollapsed: !mainContainer.sidebarExpanded
-                        stackView: stackView
-                        currentUser: homeScreen.currentUserNpub
-                        currentUserPicture: homeScreen.currentUserPicture
-                        personalFeed: personalFeed
+                    //     isCollapsed: !mainContainer.sidebarExpanded
+                    //     stackView: stackView
+                    //     currentUser: homeScreen.currentUserNpub
+                    //     currentUserPicture: homeScreen.currentUserPicture
+                    //     personalFeed: personalFeed
 
-                        Behavior on opacity {
-                            NumberAnimation {
-                                duration: 150
-                                easing.type: Easing.InOutQuad
-                            }
-                        }
-                    }
+                    //     Behavior on opacity {
+                    //         NumberAnimation {
+                    //             duration: 150
+                    //             easing.type: Easing.InOutQuad
+                    //         }
+                    //     }
+                    // }
 
                     Rectangle {
                         id: toggleButton

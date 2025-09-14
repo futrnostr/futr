@@ -256,7 +256,7 @@ Rectangle {
                     }
 
                     delegate: PostContent {
-                        width: ListView.view.width - postsView.rightMargin
+                        width: ListView.view ? (ListView.view.width - postsView.rightMargin) : postsView.width
                         post: modelData
                         currentUser: chat.currentUser
                         Layout.minimumHeight: 100
@@ -351,6 +351,13 @@ Rectangle {
                             Layout.fillWidth: true
                             Layout.leftMargin: author && author.npub == chat.currentUser ? 75 : 0
                             Layout.rightMargin: author && author.npub != chat.currentUser ? 75 : 0
+
+                            // Debug logging for delegate lifecycle and sizing
+                            Component.onCompleted: {
+                                console.log("[Chat] DM delegate created post_id=", post ? post[0] : null)
+                            }
+                            onImplicitHeightChanged: console.log("[Chat] DM delegate implicitHeight:", implicitHeight)
+                            onWidthChanged: console.log("[Chat] DM delegate width:", width)
                         }
 
                         ProfilePicture {
