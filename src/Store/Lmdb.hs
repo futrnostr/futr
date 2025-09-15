@@ -516,7 +516,6 @@ runLmdbStore = interpret $ \_ -> \case
             Nothing -> pure []
 
     GetProfile pk -> do
-        logDebug $ "GetProfile: " <> pack (show pk)
         st <- get @LmdbState
         mp <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->
             LMap.lookup' (readonly txn) (profileDb st) pk

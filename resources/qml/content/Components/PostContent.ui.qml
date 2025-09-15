@@ -54,11 +54,8 @@ Pane {
         "text": "PostContent/TextComponent.ui.qml",
         "image": "PostContent/PostImage.ui.qml", 
         "video": "PostContent/PostVideo.ui.qml",
-        //"note": "PostContent/ReferencedPost.ui.qml",
-        //"nevent": "PostContent/ReferencedPost.ui.qml",
-        //"naddr": "PostContent/ReferencedPost.ui.qml",
-        //"url": "PostContent/TextComponent.ui.qml",
-        //"profile": "PostContent/DummyComponent.ui.qml"
+        "url": "PostContent/TextComponent.ui.qml",
+        "profile": "PostContent/TextComponent.ui.qml"
     }
 
     signal commentClicked()
@@ -642,7 +639,7 @@ Pane {
                         + "  property bool isLoading: true;\n"
                         + "  property alias contentRootItem: contentRoot;\n"
                         + "  RowLayout { id: placeholder; visible: refFrame.isLoading; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: Constants.spacing_xs;\n"
-                        + "    BusyIndicator { Layout.alignment: Qt.AlignVCenter; Layout.preferredWidth: 36; Layout.preferredHeight: 36; running: refFrame.isLoading }\n"
+                        + "    BusyIndicator { Layout.alignment: Qt.AlignVCenter; Layout.preferredWidth: 36; Layout.preferredHeight: 36; running: false }\n"
                         + "    Text { Layout.alignment: Qt.AlignLeft; Layout.fillWidth: true; text: qsTr(\"Event not found. Trying to find it for you...\"); font: Constants.font; color: Material.secondaryTextColor }\n"
                         + "  }\n"
                         + "  Column { id: contentRoot; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: Constants.spacing_xs; spacing: 0; visible: !refFrame.isLoading;\n"
