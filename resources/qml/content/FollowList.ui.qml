@@ -168,7 +168,7 @@ Rectangle {
                         onExited: followItem.mouseHover = false
 
                         ToolTip {
-                            visible: parent.containsMouse && root.isCollapsed
+                            visible: parent && parent.containsMouse && root.isCollapsed
                             text: (follow && follow_pubkey === currentUser)
                                 ? qsTr("Myself")
                                 : (follow_petname || follow_displayName || follow_name || follow_pubkey)

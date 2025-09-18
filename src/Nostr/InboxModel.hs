@@ -11,14 +11,14 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
 import Data.Set qualified as Set
-import Data.Text (Text, pack)
+import Data.Text (pack)
 import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, cancel, forConcurrently, forConcurrently_)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, put, modify)
-import System.CPUTime
+--import System.CPUTime
 
 import KeyMgmt (KeyMgmt)
 import Logging (Logging, logDebug)
@@ -93,7 +93,6 @@ runInboxModel = interpret $ \_ -> \case
     -- Possibly bootstrap inbox model
     when (null inboxRelays) $ do
       logDebug $ "Bootstrapping inbox model"
-      st <- get @RelayPool
       forConcurrently_ connectedRelays $ \r -> do
           subId <- subscribeTemporary (getUri r) (topologyFilter [xo]) handleEvent
           logDebug $ "Subscribed to relay: " <> getUri r <> " " <> pack (show subId)
@@ -138,11 +137,11 @@ runInboxModel = interpret $ \_ -> \case
     -- reconnection/alternative selection and subscription reconciliation.
     reconciliationThread' <- async $ forever $ do
         threadDelay 15000000
-        a <- liftIO $ getCPUTime
-        --reconcileSubscriptions xo
-        b <- liftIO $ getCPUTime
-        let diff = (fromIntegral (b - a)) / (10^12) :: Double
-        logDebug $ "Reconciliation took " <> pack (show diff) <> "sec"
+        --a <- liftIO $ getCPUTime
+        reconcileSubscriptions xo
+        --b <- liftIO $ getCPUTime
+        --let diff = (fromIntegral (b - a)) / (10^(12::Int)) :: Double
+        --logDebug $ "Reconciliation took " <> pack (show diff) <> "sec"
     modify @RelayPool $ \s -> s { reconciliationThread = Just reconciliationThread' }
     where
       setInitialBootstrap = do
@@ -263,8 +262,8 @@ buildRelayPubkeyMap pks ownInboxRelays = do
 
   let score u =
         let s = Map.findWithDefault emptyRelayStats u statsMap
-            succs  = fromIntegral (successes s)
-            errs   = fromIntegral (errorsCount s)
+            succs  = fromIntegral (successes s) :: Double
+            errs   = fromIntegral (errorsCount s) :: Double
             total  = succs + errs
             rate   = if total == 0 then 0 else succs / total
             nowFail = lastFailureTs s > 0 && (now - lastFailureTs s) < (10 * 60)
