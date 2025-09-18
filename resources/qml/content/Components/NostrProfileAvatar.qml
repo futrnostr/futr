@@ -18,6 +18,50 @@ NostrImage {
     width: 36
     height: 36
 
+    Component.onCompleted: {
+        if (url && url !== "") {
+            resolveUrl(url)
+            return
+        }
+
+        if (npub && npub !== "") {
+            var robohashUrl = "https://robohash.org/" + npub + ".png?size=50x50"
+            isRobohashFallback = true
+            image.source = "qrc:/icons/person.svg"
+            resolveUrl(robohashUrl)
+        }
+    }
+
+    onUrlChanged: {
+        if (url && url !== "") {
+            image.source = root.fallbackImage
+            resolveUrl(url)
+            return
+        }
+
+        if (npub && npub !== "") {
+            var robohashUrl = "https://robohash.org/" + npub + ".png?size=50x50"
+            isRobohashFallback = true
+            image.source = "qrc:/icons/person.svg"
+            resolveUrl(robohashUrl)
+        }
+    }
+
+    onNpubChanged: {
+        if (url && url !== "") {
+            image.source = root.fallbackImage
+            resolveUrl(url)
+            return
+        }
+
+        if (npub && npub !== "") {
+            var robohashUrl = "https://robohash.org/" + npub + ".png?size=50x50"
+            isRobohashFallback = true
+            image.source = "qrc:/icons/person.svg"
+            resolveUrl(robohashUrl)
+        }
+    }
+
     function onImageFailed() {
         if (isRobohashFallback) {
             image.source = "qrc:/icons/person.svg"
@@ -28,6 +72,7 @@ NostrImage {
         if (npub && npub !== "") {
             var robohashUrl = "https://robohash.org/" + npub + ".png?size=50x50"
             isRobohashFallback = true
+            image.source = "qrc:/icons/person.svg"
             resolveUrl(robohashUrl)
         }
     }

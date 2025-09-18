@@ -54,6 +54,12 @@ Item {
             return
         }
 
+        if (targetUrl.startsWith("qrc:/")) {
+            status = "ready"
+            image.source = targetUrl
+            return
+        }
+
         currentUrl = targetUrl
         var downloadStatus = hasDownload(targetUrl) || []
 

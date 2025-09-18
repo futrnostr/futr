@@ -18,10 +18,34 @@ Rectangle {
     property string currentUserPicture: ""
     required property var personalFeed
 
+    property string currentFilter: "all" // "all" or "follows"
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: root.isCollapsed ? 4 : 10
         spacing: root.isCollapsed ? 4 : 10
+
+        TabBar {
+            id: filterTabs
+            Layout.fillWidth: true
+            visible: !root.isCollapsed
+
+            TabButton {
+                text: "All"
+                Layout.preferredHeight: 32
+                width: implicitWidth
+                checked: root.currentFilter === "all"
+                onClicked: root.currentFilter = "all"
+            }
+
+            TabButton {
+                text: "Follows"
+                Layout.preferredHeight: 32
+                width: implicitWidth
+                checked: root.currentFilter === "follows"
+                onClicked: root.currentFilter = "follows"
+            }
+        }
 
         FollowListFilter {
             id: followListFilter
@@ -35,6 +59,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: Constants.spacing_xs
+            clip: true
 
             cacheBuffer: height * 15
 
@@ -56,11 +81,17 @@ Rectangle {
                     property string follow_displayName: follow ? follow[2] : ""
                     property string follow_name: follow ? follow[3] : ""
                     property string follow_picture: follow ? follow[4] : ""
+                    property string follow_type: follow ? follow[5] : ""
                     property bool mouseHover: false
                     height: visible ? (root.isCollapsed ? 34 : 54) : 0
                     width: followsView.width
                     visible: {
                         if (!follow) return false;
+
+                        if (root.currentFilter === "follows" && follow_type !== "follow") {
+                            return false;
+                        }
+
                         if (followListFilter.filterText === "") return true;
                         var searchText = followListFilter.filterText.toLowerCase();
                         var displayName = follow_displayName || "";
@@ -118,7 +149,7 @@ Rectangle {
                             }
 
                             Text {
-                                text: "Myself"
+                                text: qsTr("Myself")
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                                 font: Constants.smallFont
@@ -138,7 +169,9 @@ Rectangle {
 
                         ToolTip {
                             visible: parent.containsMouse && root.isCollapsed
-                            text: follow_petname || follow_displayName || follow_name || follow_pubkey
+                            text: (follow && follow_pubkey === currentUser)
+                                ? qsTr("Myself")
+                                : (follow_petname || follow_displayName || follow_name || follow_pubkey)
                             delay: 500
                         }
 

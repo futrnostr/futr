@@ -186,28 +186,26 @@ runHomeScreen = interpret $ \_ -> \case
         defPropertySigRO' "followList" changeKey' $ \obj -> runE $ do
           modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
           userPubKey <- keyPairToPubKeyXO <$> getKeyPair
+          userProfile <- getProfile userPubKey
           follows <- getFollows userPubKey
-          let petnameOf pk =
-                if pk == userPubKey
-                  then ""
-                  else maybe "" (fromMaybe "" . petName)
-                           (listToMaybe [ f | f <- follows, pubkey f == pk ])
-              allPks = userPubKey : map pubkey follows
-          forM allPks $ \pk -> do
+          let petnameOf pk = maybe "" (fromMaybe "" . petName) (listToMaybe [ f | f <- follows, pubkey f == pk ])
+          followData <- forM (map pubkey follows) $ \pk -> do
             profile <- getProfile pk
-            -- logDebug $ pack (show [ pubKeyXOToBech32 pk
-            --   , petnameOf pk
-            --   , fromMaybe "" (displayName profile)
-            --   , fromMaybe "" (name profile)
-            --   , fromMaybe "" (picture profile)
-            --   ])
             return
               [ pubKeyXOToBech32 pk
               , petnameOf pk
               , fromMaybe "" (displayName profile)
               , fromMaybe "" (name profile)
               , fromMaybe "" (picture profile)  -- return raw URL, let QML handle resolution
-              ],
+              , "follow"
+              ]
+          return $
+            -- what's need feed first
+            [["", "", "What's new", "", "qrc:/icons/news.svg", "feed"]] ++
+            -- user profile second
+            [[pubKeyXOToBech32 userPubKey, "", "", "", fromMaybe "" (picture userProfile), "feed"]] ++
+            -- follows third
+            followData,
 
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
