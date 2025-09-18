@@ -335,13 +335,17 @@ Rectangle {
                     delegate: RowLayout {
                         width: ListView.view.width - privateMessageListView.rightMargin
 
-                        property var author: modelData ? getProfile(modelData.authorId) : null
+                        property var author: modelData ? getProfile(modelData[7]) : null
 
-                        ProfilePicture {
-                            imageSource: author ? author.getProfilePicture(author.picture) : ""
+                        property var author_npub: author ? author[1] : ""
+                        property var author_picture: author ? author[5] : ""
+
+                        NostrProfileAvatar {
+                            url: author ? author_picture : ""
+                            npub: author ? author_npub : ""
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 34
-                            visible: author && author.npub != chat.currentUser
+                            visible: author && author_npub != chat.currentUser
                         }
 
                         PostContent {
@@ -349,22 +353,16 @@ Rectangle {
                             currentUser: chat.currentUser
                             privateChatMode: true
                             Layout.fillWidth: true
-                            Layout.leftMargin: author && author.npub == chat.currentUser ? 75 : 0
-                            Layout.rightMargin: author && author.npub != chat.currentUser ? 75 : 0
-
-                            // Debug logging for delegate lifecycle and sizing
-                            Component.onCompleted: {
-                                console.log("[Chat] DM delegate created post_id=", post ? post[0] : null)
-                            }
-                            onImplicitHeightChanged: console.log("[Chat] DM delegate implicitHeight:", implicitHeight)
-                            onWidthChanged: console.log("[Chat] DM delegate width:", width)
+                            Layout.leftMargin: author && author_npub == chat.currentUser ? 75 : 0
+                            Layout.rightMargin: author && author_npub != chat.currentUser ? 75 : 0
                         }
 
-                        ProfilePicture {
-                            imageSource: author ? author.getProfilePicture(author.picture) : ""
+                        NostrProfileAvatar {
+                            url: author ? author_picture : ""
+                            npub: author ? author_npub : ""
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 34
-                            visible: author && author.npub == chat.currentUser
+                            visible: author && author_npub == chat.currentUser
                         }
                     }
                 }

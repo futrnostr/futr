@@ -3,14 +3,14 @@
 
 module Futr where
 
-import Control.Monad (forever, forM, forM_, unless, void, when)
+import Control.Monad (forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Set qualified as Set
-import Data.Text (Text, isPrefixOf, pack, unpack)
+import Data.Text (Text, isPrefixOf, unpack)
 import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
@@ -31,7 +31,7 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 import System.FilePath ((</>))
 
-import Downloader (Downloader, clearCache)
+import Downloader (Downloader)
 import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
 import Nostr
@@ -52,12 +52,12 @@ import Nostr.Relay ( RelayConnection, RelayPool(..), connect, disconnect
                    , initialRelayPool, subscribeTemporary, unsubscribe )
 import Nostr.Types (RelayURI, getUri, isInboxCapable, isValidRelayURI, metadataFilter)
 import Nostr.Util
-import Presentation.Classes (Classes, createPost)
+import Presentation.Classes (Classes)
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
-import Store.Lmdb ( LmdbState(..), LmdbStore, TimelineType(..), initialLmdbState, initializeLmdbState
-                  , getEvent, getEvents, getEventRelays, getFollows, getGeneralRelays, getTimelineIds )
+import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
+                  , getEvent, getEventRelays, getFollows, getGeneralRelays )
 import Types
 
 -- | Signal key class for LoginStatusChanged.
@@ -313,7 +313,7 @@ runFutr = interpret $ \_ -> \case
         Nothing -> return ()
 
   LoadFeed f -> do
-    logDebug $ "LoadFeed: " <> pack (show f)
+    --logDebug $ "LoadFeed: " <> pack (show f)
     let pk = case f of
           PostsFilter pk' -> pk'
           PrivateMessagesFilter pk' -> pk'
@@ -521,8 +521,6 @@ loginWithAccount obj a = do
         { nsecView = secKeyToBech32 $ accountSecKey a
         , npubView = pubKeyXOToBech32 $ derivePublicKeyXO $ accountSecKey a
         }
-
-    logDebug $ "Login with account"
 
     modify @AppState $ \s -> s { currentScreen = Home }
     liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""

@@ -4,9 +4,11 @@ import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 
 import Buttons 1.0
+import Components 1.0
 import Futr 1.0
 
 Rectangle {
+    id: root
     color: Material.backgroundColor
     radius: Constants.radius_m
     width: 400
@@ -16,15 +18,17 @@ Rectangle {
     property var profileData: null
     property string npub
 
-    // 0: id(hex), 1: npub, 2: name, 3: displayName, 4: about, 5: picture, 6: nip05, 7: banner
+    // 0: id(hex), 1: npub, 2: name, 3: displayName, 4: about
+    // 5: picture, 6: nip05, 7: banner, 8: isFollow
     property var profile_id: profileData ? profileData[0] : ""
-    property var profile_npub: profileData ? profileData[1] : ""
+    //property var profile_npub: profileData ? profileData[1] : ""
     property var profile_name: profileData ? profileData[2] : ""
     property var profile_displayName: profileData ? profileData[3] : ""
     property var profile_about: profileData ? profileData[4] : ""
     property var profile_picture: profileData ? profileData[5] : ""
     property var profile_nip05: profileData ? profileData[6] : ""
     property var profile_banner: profileData ? profileData[7] : ""
+    property var profile_isFollow: profileData ? profileData[8] : ""
 
     required property string currentUser
 
@@ -49,18 +53,9 @@ Rectangle {
         anchors.margins: 1
         spacing: 0
 
-        Rectangle {
+        NostrProfileBanner {
             Layout.fillWidth: true
-            height: 80
-            visible: profileData && profile_banner !== ""
-
-            Image {
-                source: profileData ? profile_banner : ""
-                width: parent.width
-                height: 80
-                fillMode: Image.PreserveAspectCrop
-                cache: false
-            }
+            url: profile_banner
         }
 
         RowLayout {
@@ -69,8 +64,9 @@ Rectangle {
             Layout.leftMargin: 10
             Layout.rightMargin: 10
 
-            ProfilePicture {
-                imageSource: profileData ? getProfilePicture(profile_npub, profile_picture) : ""
+            NostrProfileAvatar {
+                url: profile_picture
+                npub: root.npub
                 Layout.preferredWidth: 60
                 Layout.preferredHeight: 60
             }
@@ -81,7 +77,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: profileData ? (profile_displayName || profile_name || npub) : ""
+                    text: profileData ? (profile_displayName || profile_name || root.npub) : ""
                     font: Constants.largeFont
                     color: Material.primaryTextColor
                     elide: Text.ElideRight
@@ -103,7 +99,7 @@ Rectangle {
 
             EditButton {
                 id: editButton
-                visible: npub === currentUser
+                visible: root.npub === root.currentUser
 
                 onClicked: {
                     personalFeed.editMode = true
@@ -111,22 +107,21 @@ Rectangle {
             }
 
             Button {
-                visible: npub !== currentUser
-                // isFollow is not provided here anymore; hide/change later when wired
-                text: ""
+                visible: root.npub !== root.currentUser
+                text: profileData !== null ? (profile_isFollow === "1" ? qsTr("Unfollow") : qsTr("Follow")) : ""
                 font: Constants.font
                 highlighted: true
                 Material.background: Material.primary
 
                 onClicked: {
-                    if (profileData === null) {
+                    if (root.profileData === null) {
                         return
                     }
 
-                    if (profileData.isFollow) {
-                        unfollow(npub)
+                    if (root.profileData.isFollow) {
+                        unfollow(root.npub)
                     } else {
-                        follow(npub)
+                        follow(root.npub)
                     }
                 }
             }
@@ -143,7 +138,7 @@ Rectangle {
                 Layout.fillWidth: true
 
                 Text {
-                    text: npub
+                    text: root.npub
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                     font: Constants.font
@@ -161,7 +156,7 @@ Rectangle {
                     ToolTip.text: qsTr("Copy to clipboard")
 
                     onClicked: {
-                        clipboard.copyText(npub)
+                        clipboard.copyText(root.npub)
                     }
                 }
             }

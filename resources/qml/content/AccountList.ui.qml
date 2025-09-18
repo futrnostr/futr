@@ -4,6 +4,7 @@ import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 import QtGraphicalEffects 1.15
 
+import Components 1.0
 import Dialogs 1.0
 import Futr 1.0
 import HsQML.Model 1.0
@@ -55,8 +56,10 @@ ScrollView {
                 anchors.margins: 10
                 spacing: 10
 
+                // do not use NostrProfileAvatar here
+                // we are not yet logged in
                 Image {
-                    source: modelData.getProfilePicture(modelData.picture)
+                    source: modelData.picture || "https://robohash.org/" + modelData.npub + ".png?size=50x50"
                     Layout.preferredWidth: 40
                     Layout.preferredHeight: 40
                     Layout.alignment: Qt.AlignVCenter

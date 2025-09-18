@@ -32,8 +32,9 @@ Pane {
         width: parent.width
         spacing: Constants.spacing_m
 
-        ProfilePicture {
-            imageSource: currentUserProfile ? getProfilePicture(currentUser, currentUserPicture) : ""
+        NostrProfileAvatar {
+            url: currentUserProfile ? currentUserPicture : ""
+            npub: currentUser
         }
 
         TextArea {

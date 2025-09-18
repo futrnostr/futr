@@ -283,12 +283,11 @@ Pane {
                     }
                 }
 
-                Image {
+                NostrProfileAvatar {
                     anchors.fill: parent
                     anchors.margins: Constants.spacing_xs
-                    source: author ? getProfilePicture(author_npub, author_picture) : ""
-                    fillMode: Image.PreserveAspectCrop
-                    cache: false
+                    url: author_picture
+                    npub: author_npub
                 }
             }
 
@@ -659,14 +658,14 @@ Pane {
                         var authorProfile = cachedPost[7] ? getProfile(cachedPost[7]) : null
                         var authorNpubVal = authorProfile ? authorProfile[1] : ""
                         var authorDisplay = authorProfile ? (authorProfile[3] || authorProfile[2] || "") : ""
-                        var authorPic = authorProfile ? getProfilePicture(authorNpubVal, authorProfile[5]) : ""
+                        var authorPic = authorProfile ? authorProfile[5] : ""
 
-                        var headerQml = "import QtQuick 2.15; import QtQuick.Controls 2.15; import QtQuick.Controls.Material 2.15; import QtQuick.Layouts 1.15; import Futr 1.0;\n"
+                        var headerQml = "import QtQuick 2.15; import QtQuick.Controls 2.15; import QtQuick.Controls.Material 2.15; import QtQuick.Layouts 1.15; import Futr 1.0; import Components 1.0;\n"
                                      + "Row { id: refHeader; width: parent.width; spacing: Constants.spacing_s;\n"
                                      + "  property string authorNpub: \"\"; property string authorDisplayName: \"\"; property string authorPictureUrl: \"\";\n"
                                      + "  Rectangle { width: 34; height: 34; radius: width/2; color: \"transparent\"; border.width: 1; border.color: Material.dividerColor;\n"
                                      + "    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { personalFeed.npub = refHeader.authorNpub } }\n"
-                                     + "    Image { anchors.fill: parent; anchors.margins: Constants.spacing_xs; source: refHeader.authorPictureUrl; fillMode: Image.PreserveAspectCrop; cache: false }\n"
+                                     + "    NostrProfileAvatar { anchors.fill: parent; anchors.margins: Constants.spacing_xs; url: refHeader.authorPictureUrl; npub: refHeader.authorNpub }\n"
                                      + "  }\n"
                                      + "  MouseArea { width: parent.width - 50; height: childrenRect.height; cursorShape: Qt.PointingHandCursor; anchors.verticalCenter: parent.verticalCenter; onClicked: { personalFeed.npub = refHeader.authorNpub }\n"
                                      + "    Column { spacing: 2; width: parent.width;\n"
@@ -711,9 +710,13 @@ Pane {
                 args["value"] = value
             } else if (type === "profile") {
                 var profile = getProfile(value)
-                var displayName = profile && (profile.displayName || profile.name) ? 
-                                 (profile.displayName || profile.name) : 
-                                 (value.substring(0, 8) + "...")
+                var displayName = ""
+                if (profile && profile.length >= 4) {
+                    displayName = profile[3] || profile[2] || ""
+                }
+                if (!displayName) {
+                    displayName = value.substring(0, 8) + "..."
+                }
                 args["value"] = "<a href=\"profile://" + value + 
                                "\" style=\"color: #9C27B0\">@" + displayName + "</a>"
             } else if (type === "url") {
@@ -725,11 +728,11 @@ Pane {
 
                     if (mimeType.indexOf("image/") === 0) {
                         finalType = "image"
-                        args["value"] = "file:///" + cacheFile
+                        args["value"] = cacheFile
                         args["original"] = originalUrl
                     } else if (mimeType.indexOf("video/") === 0) {
                         finalType = "video" 
-                        args["value"] = "file:///" + cacheFile
+                        args["value"] = cacheFile
                         args["original"] = originalUrl
                     } else {
                         args["value"] = "<a href=\"" + value + "\" style=\"color: #9C27B0\">" + value + "</a>"

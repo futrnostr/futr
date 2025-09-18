@@ -36,11 +36,11 @@ import Logging (logDebug)
 import Nostr
 import Nostr.Bech32 (pubKeyXOToBech32, eventToNevent, eventIdToNote, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
 import Nostr.Event (Event(..), EventId(..), Kind(..), createMetadata, getEventId)
-import Nostr.InboxModel (InboxModel, stopInboxModel, startInboxModel)
-import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
-import Nostr.Profile (Profile(..), emptyProfile)
+import Nostr.InboxModel (stopInboxModel, startInboxModel)
+import Nostr.Keys (exportPubKeyXO, keyPairToPubKeyXO)
+import Nostr.Profile (Profile(..))
 import Nostr.Profile qualified as NP
-import Nostr.ProfileManager (fetchProfile, getProfile)
+import Nostr.ProfileManager (fetchProfile)
 import Nostr.Publisher
 import Nostr.Relay (RelayPool(..))
 import Nostr.Util
@@ -49,8 +49,7 @@ import Presentation.Classes (findAvailableFilename, createPost)
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb ( LmdbStore, getEvent, getEvents, getFollows, getEventRelays
-      , getCommentsWithIndentationLevel)
+import Store.Lmdb (getEvent, getFollows, getEventRelays, getProfile)
 import Types (Post(..), AppState(..), AppScreen(..), FeedFilter(..), Follow(..))
 
 
@@ -89,29 +88,27 @@ runHomeScreen = interpret $ \_ -> \case
 
         defPropertyConst' "ctxRelayMgmt" (\_ -> return relayMgmtObj),
 
-        defPropertyConst' "currentProfile" (\_ -> do
-          mp <- runE $ gets @AppState currentProfile
-          case mp of
-            Just (pk, _) -> do
-              prof <- runE $ getProfile pk
-              pic <- runE $ resolveProfileImage (const $ pure $ picture prof) pk
-              ban <- runE $ resolveProfileImage (const $ pure $ banner prof) pk
-              kpCur <- runE $ getKeyPair
-              let currentPubKey = keyPairToPubKeyXO kpCur
-              followsCur <- runE $ getFollows currentPubKey
-              let isFollowBool = pk `elem` map pubkey followsCur
-              return $ Just
-                [ TE.decodeUtf8 $ B16.encode $ exportPubKeyXO pk  -- id (hex)
-                , pubKeyXOToBech32 pk                             -- npub
-                , fromMaybe "" (name prof)
-                , fromMaybe "" (displayName prof)
-                , fromMaybe "" (about prof)
-                , pic
-                , fromMaybe "" (NP.nip05 prof)
-                , ban
-                , if isFollowBool then "1" else "0"
-                ]
-            Nothing -> return (Nothing :: Maybe [Text])),
+        -- defPropertyConst' "currentProfile" (\_ -> do
+        --   mp <- runE $ gets @AppState currentProfile
+        --   case mp of
+        --     Just (pk, _) -> do
+        --       prof <- runE $ getProfile pk
+        --       kpCur <- runE $ getKeyPair
+        --       let currentPubKey = keyPairToPubKeyXO kpCur
+        --       followsCur <- runE $ getFollows currentPubKey
+        --       let isFollowBool = pk `elem` map pubkey followsCur
+        --       return $ Just
+        --         [ TE.decodeUtf8 $ B16.encode $ exportPubKeyXO pk  -- id (hex)
+        --         , pubKeyXOToBech32 pk                             -- npub
+        --         , fromMaybe "" (name prof)
+        --         , fromMaybe "" (displayName prof)
+        --         , fromMaybe "" (about prof)
+        --         , fromMaybe "" (picture prof)  -- return raw URL, let QML handle resolution
+        --         , fromMaybe "" (NP.nip05 prof)
+        --         , fromMaybe "" (banner prof)   -- return raw URL, let QML handle resolution
+        --         , if isFollowBool then "1" else "0"
+        --         ]
+        --     Nothing -> return (Nothing :: Maybe [Text])),
 
         defPropertySigRW' "currentScreen" changeKey'
           (\_ -> do
@@ -145,11 +142,11 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "logout" $ \obj -> runE $ logout obj,
 
-        defMethod' "stopInboxModel" $ \obj -> runE $ do
+        defMethod' "stopInboxModel" $ \_ -> runE $ do
           logDebug $ "stopInboxModel"
           stopInboxModel,
 
-        defMethod' "startInboxModel" $ \obj -> runE $ do
+        defMethod' "startInboxModel" $ \_ -> runE $ do
           logDebug $ "startInboxModel"
           void $ async $ startInboxModel,
 
@@ -186,29 +183,31 @@ runHomeScreen = interpret $ \_ -> \case
               let aid = AccountId $ pubKeyXOToBech32 (keyPairToPubKeyXO kp)
               updateProfile aid profile,
 
-        defPropertySigRO' "followList" changeKey' $ \obj -> do
-          runE $ logDebug $ "followList"
-          runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
-          kp <- runE $ getKeyPair
-          let userPubKey = keyPairToPubKeyXO kp
-          follows <- runE $ getFollows userPubKey
+        defPropertySigRO' "followList" changeKey' $ \obj -> runE $ do
+          logDebug $ "followList"
+          modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
+          userPubKey <- keyPairToPubKeyXO <$> getKeyPair
+          follows <- getFollows userPubKey
           let petnameOf pk =
                 if pk == userPubKey
                   then ""
                   else maybe "" (fromMaybe "" . petName)
                            (listToMaybe [ f | f <- follows, pubkey f == pk ])
               allPks = userPubKey : map pubkey follows
-          forM allPks $ \pk -> runE $ do
-            --profile <- getProfile pk
-            let profile = emptyProfile
-            -- Skip expensive image resolution for followList - just use the URL directly
-            let pic = fromMaybe "" (picture profile)
+          forM allPks $ \pk -> do
+            profile <- getProfile pk
+            logDebug $ pack (show [ pubKeyXOToBech32 pk
+              , petnameOf pk
+              , fromMaybe "" (displayName profile)
+              , fromMaybe "" (name profile)
+              , fromMaybe "" (picture profile)
+              ])
             return
               [ pubKeyXOToBech32 pk
               , petnameOf pk
               , fromMaybe "" (displayName profile)
               , fromMaybe "" (name profile)
-              , pic
+              , fromMaybe "" (picture profile)  -- return raw URL, let QML handle resolution
               ],
 
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
@@ -267,8 +266,6 @@ runHomeScreen = interpret $ \_ -> \case
           result <- case parseNprofileOrNpub input of
             Just (pk, relayHints) -> do
               prof <- runE $ fetchProfile pk relayHints  -- ensure cache
-              pic <- runE $ resolveProfileImage (const $ pure $ picture prof) pk
-              ban <- runE $ resolveProfileImage (const $ pure $ banner prof) pk
               kpCur <- runE $ getKeyPair
               let currentPubKey = keyPairToPubKeyXO kpCur
               followsCur <- runE $ getFollows currentPubKey
@@ -279,29 +276,14 @@ runHomeScreen = interpret $ \_ -> \case
                 , fromMaybe "" (name prof)
                 , fromMaybe "" (displayName prof)
                 , fromMaybe "" (about prof)
-                , pic
+                , fromMaybe "" (picture prof)  -- return raw URL, let QML handle resolution
                 , fromMaybe "" (NP.nip05 prof)
-                , ban
+                , fromMaybe "" (banner prof)   -- return raw URL, let QML handle resolution
                 , if isFollowBool then "1" else "0"
                 ]
             _ -> return Nothing
           return result,
 
-        -- given an npub (or nprofile) and optional picture URL,
-        -- returns a usable image URL (possibly cached file:/// path).
-        defMethod' "getProfilePicture" $ \_ npubText pictureUrl -> runE $ do
-          case parseNprofileOrNpub npubText of
-            Just (pk, _) -> do
-              let url' _ = case pictureUrl of
-                    Nothing -> do
-                      prof <- getProfile pk
-                      pure $ picture prof
-                    Just "" -> do
-                      prof <- getProfile pk
-                      pure $ picture prof
-                    Just url -> pure $ Just url
-              resolveProfileImage url' pk
-            _ -> pure "",
 
         defMethod' "getPost" $ \_ input -> runE $ do
           let fetchByEventId eid = do
@@ -355,7 +337,7 @@ runHomeScreen = interpret $ \_ -> \case
         defMethod' "hasDownload" $ \_ url -> runE $ do
           status <- hasDownload url
           case status of
-              Ready (cacheFile, mime, _) -> return [pack cacheFile, mime]
+              Ready (cacheFile, mime, _) -> return ["file:///" <> pack cacheFile, mime]
               _ -> return [],
 
         defMethod' "peekMimeType" $ \obj url -> runE $ do
@@ -448,16 +430,6 @@ runHomeScreen = interpret $ \_ -> \case
     newObject rootClass ()
 
 
--- Helper function to fetch and create an event object
-fetchEventObject :: (LmdbStore :> es, IOE :> es) => FactoryPool EventId -> EventId -> Eff es (Maybe (ObjRef EventId))
-fetchEventObject pool eid = do
-    eventMaybe <- getEvent eid
-    case eventMaybe of
-        Just _ -> do
-            obj <- liftIO (getPoolObject pool eid)
-            return (Just obj)
-        Nothing -> return Nothing
-
 -- Helper function to wait for download completion by polling status
 waitForDownloadCompletion :: (Futr :> es, Downloader :> es, Concurrent :> es) => Text -> Eff es DownloadStatus
 waitForDownloadCompletion url = do
@@ -469,27 +441,3 @@ waitForDownloadCompletion url = do
         _ -> return status
 
 
--- | Helper to resolve a remote image URL to a local file if downloaded,
---   otherwise trigger async download and signal.
-resolveProfileImage
-  :: (Futr :> es, Downloader :> es, Concurrent :> es)
-  => (PubKeyXO -> Eff es (Maybe Text))
-  -> PubKeyXO
-  -> Eff es Text
-resolveProfileImage getField pk = do
-  mUrl <- getField pk
-  case mUrl of
-    Just url | "http://" `Text.isPrefixOf` url || "https://" `Text.isPrefixOf` url -> do
-      status <- hasDownload url
-      case status of
-        Ready (cacheFile, mime, _) | "image/" `Text.isPrefixOf` mime ->
-          pure $ "file:///" <> Text.pack cacheFile
-        _ -> do
-          void $ async $ do
-            mimeResult <- peekMimeType url
-            case mimeResult of
-              Right mime | "image/" `Text.isPrefixOf` mime -> do
-                void $ download url
-              _ -> pure ()
-          pure url
-    _ -> pure $ fromMaybe "" mUrl

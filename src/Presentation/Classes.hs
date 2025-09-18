@@ -1,6 +1,5 @@
 module Presentation.Classes where
 
-import Control.Monad (void)
 import Data.Aeson (toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
@@ -13,7 +12,6 @@ import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (async)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.FileSystem
 import Effectful.State.Static.Shared (State, get, gets,modify)
@@ -25,16 +23,12 @@ import Nostr
 import Nostr.Bech32
 import Nostr.Event (Event(..), EventId(..), Rumor(..), eventIdFromHex)
 import Nostr.Event qualified as NE
-import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
-import Nostr.Profile (Profile(..))
-import Nostr.ProfileManager (ProfileManager)
+import Nostr.Keys (PubKeyXO)
 import Nostr.Relay (RelayPool(..))
 import Nostr.Util (Util, formatDateTime, getKeyPair)
-import QtQuick ( QtQuick, PropertyMap(..), PropertyName, QtQuickState(..)
-               , UIReferences(..), UIUpdates(..), emptyUpdates, notify )
-import Store.Lmdb (LmdbStore, TimelineType(..), getCommentsWithIndentationLevel, getEvent, getEvents, getEventRelays, getFollows, getTimelineIds)
-import Types (AppState(..), FeedFilter(..), Follow(..), Language(..), Post(..), PublishStatus(..))
-import Downloader (Downloader(..), DownloadStatus(..), hasDownload, download, peekMimeType)
+import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..))
+import Store.Lmdb (LmdbStore, TimelineType(..), getCommentsWithIndentationLevel, getEvents, getEventRelays, getTimelineIds)
+import Types (AppState(..), FeedFilter(..), Language(..), Post(..), PublishStatus(..))
 
 
 -- Effect for creating C++ classes for usage in QtQuick QML
@@ -68,7 +62,6 @@ type ClassesEff es =
   , State RelayPool :> es
   , State AppState :> es
   , LmdbStore :> es
-  , Downloader :> es
   , Concurrent :> es
   , Nostr :> es
   , Logging :> es
@@ -83,7 +76,6 @@ runClasses = interpret $ \_ -> \case
     FeedClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
         newClass [
             defPropertySigRO' "events" changeKey' $ \obj -> runE $ do
-                liftIO $ putStrLn "FeedClass events"
                 modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { mainFeedEventsObjRef = Just obj } }
                 cf <- gets @AppState currentFeed
                 case cf of

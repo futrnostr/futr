@@ -319,7 +319,7 @@ runRelayConnection = interpret $ \env -> \case
       Nothing -> pure ()
       Just tv -> do
         -- Add timeout to prevent infinite blocking
-        logDebug $ "Wait start: sid=" <> subId
+        --logDebug $ "Wait start: sid=" <> subId
         timeoutResult <- race
           (let loop = do
                   done <- atomically $ readTVar tv
@@ -332,11 +332,11 @@ runRelayConnection = interpret $ \env -> \case
           (threadDelay 20000000 >> pure ()) -- 20 second timeout
         case timeoutResult of
           Left () -> do
-            logDebug $ "Wait done: sid=" <> subId
+            --logDebug $ "Wait done: sid=" <> subId
             pure () -- Completed normally
           Right () -> do
             -- Timeout occurred, log warning and continue
-            logWarning $ "Subscription " <> pack (show subId) <> " timed out after 20 seconds"
+            --logWarning $ "Subscription " <> pack (show subId) <> " timed out after 20 seconds"
             pure ()
 
 
@@ -409,7 +409,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
       msg <- liftIO (try (WS.receiveData conn') :: IO (Either SomeException ByteString))
       case msg of
         Left err -> do
-          logDebug $ "WS recv error: " <> r <> ": " <> pack (show err)
+          --logDebug $ "WS recv error: " <> r <> ": " <> pack (show err)
           now <- getCurrentTime
           updateRelayStats r (\s -> s { errorsCount = errorsCount s + 1
                                       , disconnects = disconnects s + 1
@@ -439,7 +439,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
                 _ -> pure ()
               receiveLoop conn'
             Left _ -> do
-              logWarning $ "WS decode error: " <> r <> " raw=" <> rawSnippet
+              --logWarning $ "WS decode error: " <> r <> " raw=" <> rawSnippet
               updateRelayStats r (\s -> s { errorsCount = errorsCount s + 1
                                           , lastFailureTs = now
                                           , lastSeenTs = now })
@@ -453,7 +453,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
           pure ()
         NT.SendEvent _ -> do
           let out = encode msg
-          logDebug $ "WS send: " <> r <> " bytes=" <> pack (show (BSL.length out))
+          --logDebug $ "WS send: " <> r <> " bytes=" <> pack (show (BSL.length out))
           res <- liftIO $ try @SomeException $ WS.sendTextData conn' out
           case res of
             Right _ -> do

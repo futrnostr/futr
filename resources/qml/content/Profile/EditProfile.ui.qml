@@ -4,6 +4,7 @@ import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 
 import Buttons 1.0
+import Components 1.0
 import Futr 1.0
 
 Rectangle {
@@ -19,6 +20,16 @@ Rectangle {
     required property var npub
     property var labelWidth: 100
 
+     // 0: id(hex), 1: npub, 2: name, 3: displayName, 4: about, 5: picture, 6: nip05, 7: banner
+    property var profile_id: profileData ? profileData[0] : ""
+    property var profile_npub: profileData ? profileData[1] : ""
+    property var profile_name: profileData ? profileData[2] : ""
+    property var profile_displayName: profileData ? profileData[3] : ""
+    property var profile_about: profileData ? profileData[4] : ""
+    property var profile_picture: profileData ? profileData[5] : ""
+    property var profile_nip05: profileData ? profileData[6] : ""
+    property var profile_banner: profileData ? profileData[7] : ""
+
     Component.onCompleted: {
         profileData = getProfile(npub)
     }
@@ -29,15 +40,15 @@ Rectangle {
 
     onVisibleChanged: {
         if (visible) {
-            displayNameField.text = profileData.displayName || ""
-            nameField.text = profileData.name || ""
-            aboutMeField.text = profileData.about || ""
-            avatarUrlField.text = profileData.picture || ""
-            bannerUrlField.text = profileData.banner || ""
+            displayNameField.text = profile_displayName
+            nameField.text = profile_name
+            aboutMeField.text = profile_about
+            avatarUrlField.text = profile_picture
+            bannerUrlField.text = profile_banner
             nip05Field.text = profileData.nip05 || ""
-            githubProofField.text = profileData.githubProof || ""
-            twitterProofField.text = profileData.twitterProof || ""
-            telegramProofField.text = profileData.telegramProof || ""
+            // githubProofField.text = ""
+            // twitterProofField.text = ""
+            // telegramProofField.text = ""
         }
     }
 
@@ -96,7 +107,7 @@ Rectangle {
                     id: displayNameField
                     placeholderText: "Display Name"
                     Layout.fillWidth: true
-                    text: profileData !== null ? profileData.displayName : ""
+                    text: profile_displayName
                 }
             }
 
@@ -110,7 +121,7 @@ Rectangle {
                     id: nameField
                     placeholderText: "Name"
                     Layout.fillWidth: true
-                    text: profileData !== null ? profileData.name : ""
+                    text: profile_name
                 }
             }
 
@@ -126,7 +137,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 70
                     wrapMode: TextEdit.Wrap
-                    text: profileData !== null ? profileData.about : ""
+                    text: profile_about
                 }
             }
 
@@ -140,7 +151,7 @@ Rectangle {
                     id: avatarUrlField
                     placeholderText: "Avatar URL"
                     Layout.fillWidth: true
-                    text: profileData !== null ? profileData.picture : ""
+                    text: profile_picture
                 }
             }
 
@@ -154,7 +165,7 @@ Rectangle {
                     id: bannerUrlField
                     placeholderText: "Banner URL"
                     Layout.fillWidth: true
-                    text: profileData !== null ? profileData.banner : ""
+                    text: profile_banner
                 }
             }
 
@@ -168,7 +179,7 @@ Rectangle {
                     id: nip05Field
                     placeholderText: "NIP05 Address"
                     Layout.fillWidth: true
-                    text: profileData !== null ? profileData.nip05 : ""
+                    text: profile_nip05
                 }
             }
 

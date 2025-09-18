@@ -90,41 +90,41 @@ runInboxModel = interpret $ \_ -> \case
 
     connectedRelays <- connectRelays inboxRelays
 
-    -- -- Possibly bootstrap inbox model
-    -- when (null inboxRelays) $ do
-    --   logDebug $ "Bootstrapping inbox model"
-    --   st <- get @RelayPool
-    --   forConcurrently_ connectedRelays $ \r -> do
-    --       subId <- subscribeTemporary (getUri r) (topologyFilter [xo]) handleEvent
-    --       logDebug $ "Subscribed to relay: " <> getUri r <> " " <> pack (show subId)
-    --       waitForCompletion subId
-    --       logDebug $ "Completed subscription to relay: " <> getUri r <> " " <> pack (show subId)
+    -- Possibly bootstrap inbox model
+    when (null inboxRelays) $ do
+      logDebug $ "Bootstrapping inbox model"
+      st <- get @RelayPool
+      forConcurrently_ connectedRelays $ \r -> do
+          subId <- subscribeTemporary (getUri r) (topologyFilter [xo]) handleEvent
+          logDebug $ "Subscribed to relay: " <> getUri r <> " " <> pack (show subId)
+          waitForCompletion subId
+          logDebug $ "Completed subscription to relay: " <> getUri r <> " " <> pack (show subId)
 
-    --   follows <- getFollows xo
-    --   unless (null follows) $ forConcurrently_ connectedRelays $ \r -> do
-    --       subId <- subscribeTemporary (getUri r) (topologyFilter $ map pubkey follows) handleEvent
-    --       waitForCompletion subId
+      follows <- getFollows xo
+      unless (null follows) $ forConcurrently_ connectedRelays $ \r -> do
+          subId <- subscribeTemporary (getUri r) (topologyFilter $ map pubkey follows) handleEvent
+          waitForCompletion subId
 
-    --   myGeneralRelays <- getGeneralRelays xo
-    --   myDMRelays <- getDMRelays xo
+      myGeneralRelays <- getGeneralRelays xo
+      myDMRelays <- getDMRelays xo
 
-    --   when (null myGeneralRelays) $ setDefaultGeneralRelays
-    --   when (null myDMRelays) $ setDefaultDMRelays
+      when (null myGeneralRelays) $ setDefaultGeneralRelays
+      when (null myDMRelays) $ setDefaultDMRelays
 
-    -- -- Subscribe to giftwraps on DM relays
-    -- let ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
-    -- dmRelays <- getDMRelays xo
-    -- forM_ dmRelays $ \relayUri -> async $ do
-    --   connected <- connect relayUri
-    --   when connected $ void $ subscribe relayUri (giftWrapFilter xo) handleEvent
+    -- Subscribe to giftwraps on DM relays
+    let ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
+    dmRelays <- getDMRelays xo
+    forM_ dmRelays $ \relayUri -> async $ do
+      connected <- connect relayUri
+      when connected $ void $ subscribe relayUri (giftWrapFilter xo) handleEvent
 
-    -- -- Subscribe to profiles and posts on general relays
-    -- follows <- getFollows xo
-    -- let followList = xo : map pubkey follows
-    -- followRelayMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
-    -- forM_ (Map.toList followRelayMap) $ \(relayUri, pks) -> async $ do
-    --   connected <- connect relayUri
-    --   when connected $ void $ subscribe relayUri (topologyFilter pks) handleEvent
+    -- Subscribe to profiles and posts on general relays
+    follows <- getFollows xo
+    let followList = xo : map pubkey follows
+    followRelayMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
+    forM_ (Map.toList followRelayMap) $ \(relayUri, pks) -> async $ do
+      connected <- connect relayUri
+      when connected $ void $ subscribe relayUri (topologyFilter pks) handleEvent
 
     setLiveProcessing
 
@@ -156,7 +156,7 @@ runInboxModel = interpret $ \_ -> \case
             rs' = if null rs then defaultRelays else rs
         connectionResults <- forConcurrently rs' $ \r -> do
           connected <- connect $ getUri r
-          logDebug $ "Connected to relay: " <> getUri r <> " " <> pack (show connected)
+          --logDebug $ "Connected to relay: " <> getUri r <> " " <> pack (show connected)
           pure (r, connected)
         pure [ r | (r, True) <- connectionResults ]
 
@@ -171,7 +171,7 @@ runInboxModel = interpret $ \_ -> \case
     notify $ emptyUpdates { inboxModelStateChanged = True }
 
   SubscribeToProfilesAndPostsFor xo -> do
-      logDebug $ "SubscribeToProfilesAndPostsFor: " <> pack (show xo)
+      --logDebug $ "SubscribeToProfilesAndPostsFor: " <> pack (show xo)
       myXO <- keyPairToPubKeyXO <$> getKeyPair
       ownInboxRelayURIs <- map getUri <$> getGeneralRelays myXO
       followRelayMap <- buildRelayPubkeyMap [xo] ownInboxRelayURIs

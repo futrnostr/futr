@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 
+import Components 1.0
 import HsQML.Model 1.0
 import Futr 1.0
 import Profile 1.0
@@ -88,8 +89,9 @@ Rectangle {
                         anchors.margins: root.isCollapsed ? 2 : 7
                         spacing: root.isCollapsed ? 0 : 8
 
-                        ProfilePicture {
-                            imageSource: getProfilePicture(follow_pubkey, follow_picture)
+                        NostrProfileAvatar {
+                            url: follow_picture
+                            npub: follow_pubkey
                         }
 
                         ColumnLayout {
