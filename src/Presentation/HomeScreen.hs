@@ -184,7 +184,6 @@ runHomeScreen = interpret $ \_ -> \case
               updateProfile aid profile,
 
         defPropertySigRO' "followList" changeKey' $ \obj -> runE $ do
-          logDebug $ "followList"
           modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
           userPubKey <- keyPairToPubKeyXO <$> getKeyPair
           follows <- getFollows userPubKey
@@ -196,12 +195,12 @@ runHomeScreen = interpret $ \_ -> \case
               allPks = userPubKey : map pubkey follows
           forM allPks $ \pk -> do
             profile <- getProfile pk
-            logDebug $ pack (show [ pubKeyXOToBech32 pk
-              , petnameOf pk
-              , fromMaybe "" (displayName profile)
-              , fromMaybe "" (name profile)
-              , fromMaybe "" (picture profile)
-              ])
+            -- logDebug $ pack (show [ pubKeyXOToBech32 pk
+            --   , petnameOf pk
+            --   , fromMaybe "" (displayName profile)
+            --   , fromMaybe "" (name profile)
+            --   , fromMaybe "" (picture profile)
+            --   ])
             return
               [ pubKeyXOToBech32 pk
               , petnameOf pk
