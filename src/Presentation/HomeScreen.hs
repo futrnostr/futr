@@ -122,9 +122,8 @@ runHomeScreen = interpret $ \_ -> \case
                         fireSignal obj
                   Nothing -> return ()),
 
-        defPropertySigRO' "mynpub" changeKey' $ \_ -> do
-          kp <- runE $ getKeyPair
-          return $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp,
+        defPropertySigRO' "mynpub" changeKey' $ \_ -> runE $
+          pubKeyXOToBech32 . keyPairToPubKeyXO <$> getKeyPair,
 
         defPropertySigRO' "mypicture" changeKey' $ \_ -> runE $ do
           kp <- getKeyPair
@@ -155,6 +154,7 @@ runHomeScreen = interpret $ \_ -> \case
           return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
 
         defMethod' "loadFeed" $ \(_ :: ObjRef ()) (feedType :: Text) (input :: Text) -> runE $ do
+          logDebug $ "loadFeed: " <> feedType <> " " <> input
           let f = case feedType of
                 "public" -> case bech32ToPubKeyXO input of
                   Just pubKeyXO -> PostsFilter pubKeyXO

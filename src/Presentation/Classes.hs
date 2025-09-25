@@ -182,29 +182,6 @@ createCommentClass changeKey' = liftIO $ do
         ]
 
 
--- | Store a profile object reference in the property map
-storeProfileObjRef :: ClassesEff es => PubKeyXO -> PropertyName -> ObjRef PubKeyXO -> Eff es ()
-storeProfileObjRef pk propName obj = withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-    weakObjRef <- toWeakObjRef obj
-
-    runE $ modify @QtQuickState $ \st ->
-        let currentMap = profileObjRefs (propertyMap st)
-            updatedMap = Map.alter (Just . maybe 
-                                         (Map.singleton propName weakObjRef)
-                                         (Map.insert propName weakObjRef)) 
-                                 pk 
-                                 currentMap
-        in st { propertyMap = (propertyMap st) { profileObjRefs = updatedMap } }
-
-    finalizer <- newObjFinaliser $ \_ -> do
-        runE $ modify @QtQuickState $ \st' ->
-            let currentMap = profileObjRefs (propertyMap st')
-                updatedMap = Map.delete pk currentMap
-            in st' { propertyMap = (propertyMap st') { profileObjRefs = updatedMap } }
-
-    addObjFinaliser finalizer obj
-
-
 -- Helper function to find an available filename
 findAvailableFilename :: (FileSystem :> es) => FilePath -> FilePath -> Eff es FilePath
 findAvailableFilename dir baseFileName = do
@@ -224,9 +201,6 @@ findAvailableFilename dir baseFileName = do
       if not exists
         then return tryPath
         else findNextAvailable dir' fileName (counter + 1)
-
-
-
 
 
 -- | Create a post from an event.

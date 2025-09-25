@@ -546,7 +546,8 @@ sendFollowListEvent follows = do
 -- | Search for a profile in relays.
 searchInRelays :: FutrEff es => PubKeyXO -> [RelayURI] -> Eff es ()
 searchInRelays xo relayUris = do
-  relays <- getGeneralRelays xo
+  st <- get @AppState
+  let relays = Map.elems $ currentGeneralRelays st
 
   let searchRelays = case relayUris of
           [relayUri] -> [relayUri]

@@ -87,6 +87,11 @@ runInboxModel = interpret $ \_ -> \case
     setInitialBootstrap
     xo <- keyPairToPubKeyXO <$> getKeyPair
     inboxRelays <- getGeneralRelays xo
+    dmRelays <- getDMRelays xo
+    modify @AppState $ \st -> st
+      { currentDMRelays = Map.fromList $ zip dmRelays (repeat ())
+      , currentGeneralRelays = Map.fromList $ zip (map getUri inboxRelays) inboxRelays
+      }
 
     connectedRelays <- connectRelays inboxRelays
 
@@ -112,7 +117,8 @@ runInboxModel = interpret $ \_ -> \case
 
     -- Subscribe to giftwraps on DM relays
     let ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
-    dmRelays <- getDMRelays xo
+    st <- get @AppState
+    let dmRelayURIs = Map.keys $ currentDMRelays st
     forM_ dmRelays $ \relayUri -> async $ do
       connected <- connect relayUri
       when connected $ void $ subscribe relayUri (giftWrapFilter xo) handleEvent
@@ -138,7 +144,7 @@ runInboxModel = interpret $ \_ -> \case
     reconciliationThread' <- async $ forever $ do
         threadDelay 15000000
         --a <- liftIO $ getCPUTime
-        reconcileSubscriptions xo
+        --reconcileSubscriptions xo
         --b <- liftIO $ getCPUTime
         --let diff = (fromIntegral (b - a)) / (10^(12::Int)) :: Double
         --logDebug $ "Reconciliation took " <> pack (show diff) <> "sec"
@@ -172,7 +178,8 @@ runInboxModel = interpret $ \_ -> \case
   SubscribeToProfilesAndPostsFor xo -> do
       --logDebug $ "SubscribeToProfilesAndPostsFor: " <> pack (show xo)
       myXO <- keyPairToPubKeyXO <$> getKeyPair
-      ownInboxRelayURIs <- map getUri <$> getGeneralRelays myXO
+      st <- get @AppState
+      let ownInboxRelayURIs = Map.keys $ currentGeneralRelays st
       followRelayMap <- buildRelayPubkeyMap [xo] ownInboxRelayURIs
 
       connectionResults <- forConcurrently (Map.toList followRelayMap) $ \(relayUri, _) -> do
@@ -311,10 +318,12 @@ reconcileSubscriptions xo = do
 
   follows <- getFollows xo
   let followList = xo : map pubkey follows
-  inboxRelays <- getGeneralRelays xo
-  let ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
+  st <- get @AppState
+  let inboxRelays = Map.elems $ currentGeneralRelays st
+      ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
   newRelayPubkeyMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
-  dmRelayURIs <- getDMRelays xo
+  st <- get @AppState
+  let dmRelayURIs = Map.keys $ currentDMRelays st
   let dmRelaySet = Set.fromList dmRelayURIs
   st <- get @RelayPool
 

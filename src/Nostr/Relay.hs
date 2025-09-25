@@ -1,4 +1,5 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StrictData #-}
 
 -- | Module: Nostr.Relay
 -- Relay connection and subscription management for Nostr.
@@ -80,26 +81,26 @@ type instance DispatchOf RelayConnection = Dynamic
 
 -- | State for RelayPool handling.
 data RelayPool = RelayPool
-    { activeConnections :: Map RelayURI RelayData
-    , subscriptions :: Map SubscriptionId SubscriptionState
-    , publishStatus :: Map EventId (Map RelayURI PublishStatus)
-    , reconciliationThread :: Maybe (Async ())
-    , commentSubscriptions :: Map EventId [SubscriptionId]
-    , subscriptionCallbacks :: Map SubscriptionId (Event -> RelayURI -> IO ())
-    , subscriptionCompletion :: Map SubscriptionId (TVar Bool)
+    { activeConnections :: !(Map RelayURI RelayData)
+    , subscriptions :: !(Map SubscriptionId SubscriptionState)
+    , publishStatus :: !(Map EventId (Map RelayURI PublishStatus))
+    , reconciliationThread :: !(Maybe (Async ()))
+    , commentSubscriptions :: !(Map EventId [SubscriptionId])
+    , subscriptionCallbacks :: !(Map SubscriptionId (Event -> RelayURI -> IO ()))
+    , subscriptionCompletion :: !(Map SubscriptionId (TVar Bool))
     }
 
 
 -- | Subscription state.
 data SubscriptionState = SubscriptionState
-    { relay :: RelayURI
-    , subscriptionFilter :: Filter
-    , eventsSeen :: Int
-    , latestCreatedAtSeen :: Int
-    , eoseSeen :: Bool
-    , startedAt :: Int
-    , lastActivityTs :: Int
-    , isTemporary :: Bool
+    { relay :: !RelayURI
+    , subscriptionFilter :: !Filter
+    , eventsSeen :: !Int
+    , latestCreatedAtSeen :: !Int
+    , eoseSeen :: !Bool
+    , startedAt :: !Int
+    , lastActivityTs :: !Int
+    , isTemporary :: !Bool
     }
 
 
@@ -127,15 +128,15 @@ data ConnectionState = Connected | Connecting
 
 -- | Data for each relay.
 data RelayData = RelayData
-  { connectionState :: ConnectionState
-  , requestChannel :: TChan Request
-  , notices        :: [Text]
-  , lastError      :: Maybe ConnectionError
-  , connectionAttempts :: Int
-  , pendingRequests :: [Request]
-  , pendingEvents :: [Event]
-  , pendingAuthId :: Maybe EventId
-  , lastConnectedTs :: Int
+  { connectionState :: !ConnectionState
+  , requestChannel :: !(TChan Request)
+  , notices        :: ![Text]
+  , lastError      :: !(Maybe ConnectionError)
+  , connectionAttempts :: !Int
+  , pendingRequests :: ![Request]
+  , pendingEvents :: ![Event]
+  , pendingAuthId :: !(Maybe EventId)
+  , lastConnectedTs :: !Int
   }
 
 
@@ -255,9 +256,13 @@ runRelayConnection = interpret $ \env -> \case
             pure $ \e r'' -> unlift (cb e r'')
         done <- newTVarIO False
         modify @RelayPool $ \s ->
-          s { subscriptions = Map.insert subId stNew (subscriptions s)
-            , subscriptionCallbacks = Map.insert subId cb' (subscriptionCallbacks s) }
-        modify @RelayPool $ \s -> s { subscriptionCompletion = Map.insert subId done (subscriptionCompletion s) }
+          let subs' = Map.insert subId stNew (subscriptions s)
+              cbs'  = Map.insert subId cb' (subscriptionCallbacks s)
+              comp' = Map.insert subId done (subscriptionCompletion s)
+          in s { subscriptions = subs'
+               , subscriptionCallbacks = cbs'
+               , subscriptionCompletion = comp'
+               }
         atomically $ writeTChan (requestChannel rd) (NT.Subscribe $ NT.Subscription subId f)
         return subId
       Nothing -> error $ "Subscribe: Relay not connected: " ++ T.unpack r'
@@ -274,9 +279,13 @@ runRelayConnection = interpret $ \env -> \case
             pure $ \e r'' -> unlift (cb e r'')
         done <- newTVarIO False
         modify @RelayPool $ \s ->
-          s { subscriptions = Map.insert subId tempState (subscriptions s)
-            , subscriptionCallbacks = Map.insert subId cb' (subscriptionCallbacks s) }
-        modify @RelayPool $ \s -> s { subscriptionCompletion = Map.insert subId done (subscriptionCompletion s) }
+          let subs' = Map.insert subId tempState (subscriptions s)
+              cbs'  = Map.insert subId cb' (subscriptionCallbacks s)
+              comp' = Map.insert subId done (subscriptionCompletion s)
+          in s { subscriptions = subs'
+               , subscriptionCallbacks = cbs'
+               , subscriptionCompletion = comp'
+               }
         atomically $ writeTChan (requestChannel rd) (NT.Subscribe $ NT.Subscription subId f)
         return subId
       Nothing -> error $ "SubscribeTemporary: Relay not connected: " ++ T.unpack r'
@@ -396,12 +405,16 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
     let subIdsToPurge = [ sid | (sid, sd) <- Map.toList (subscriptions stSubs), relay sd == r ]
     for_ subIdsToPurge $ \sid' ->
       for_ (Map.lookup sid' (subscriptionCompletion stSubs)) $ \tv -> atomically $ writeTVar tv True
-    modify @RelayPool $ \s -> s
-      { subscriptions = foldr Map.delete (subscriptions s) subIdsToPurge
-      , subscriptionCallbacks = foldr Map.delete (subscriptionCallbacks s) subIdsToPurge
-      , subscriptionCompletion = foldr Map.delete (subscriptionCompletion s) subIdsToPurge
-      }
-    modify @RelayPool $ \st' -> st' { activeConnections = Map.delete r (activeConnections st') }
+    modify @RelayPool $ \s ->
+      let subs' = foldr Map.delete (subscriptions s) subIdsToPurge
+          cbs' = foldr Map.delete (subscriptionCallbacks s) subIdsToPurge
+          comp' = foldr Map.delete (subscriptionCompletion s) subIdsToPurge
+          active' = Map.delete r (activeConnections s)
+      in s { subscriptions = subs'
+           , subscriptionCallbacks = cbs'
+           , subscriptionCompletion = comp'
+           , activeConnections = active'
+           }
     notifyRelayStatus
   where
     receiveLoop conn' = do
@@ -418,7 +431,8 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
           modify @RelayPool $ \st -> st { activeConnections = Map.adjust (\d -> d { lastError = Just (NetworkError "recv error") }) r (activeConnections st) }
         Right msg' -> do
           now <- getCurrentTime
-          let rawSnippet = T.take 250 $ decodeUtf8 $ BS.take 250 msg'
+          -- Only create debug strings when actually logging to avoid unnecessary allocations
+          -- let rawSnippet = T.take 250 $ decodeUtf8 $ BS.take 250 msg'
           --logDebug $ "WS recv: bytes=" <> pack (show (BSL.length msg')) <> " raw: " <> r <> " " <> rawSnippet
           updateRelayStats r (\s -> s { bytesRxTotal = bytesRxTotal s + fromIntegral (BS.length msg')
                                       , lastSeenTs = now })
@@ -439,6 +453,7 @@ nostrClient connectionMVar r requestChan runE conn = runE $ do
                 _ -> pure ()
               receiveLoop conn'
             Left _ -> do
+              -- Only create debug strings when actually logging to avoid unnecessary allocations
               --logWarning $ "WS decode error: " <> r <> " raw=" <> rawSnippet
               updateRelayStats r (\s -> s { errorsCount = errorsCount s + 1
                                           , lastFailureTs = now
@@ -539,10 +554,11 @@ handleResponse relayURI' r = case r of
 
   Notice msg -> do
     now <- getCurrentTime
-    modify @RelayPool $ \st -> st
-      { activeConnections = Map.adjust (\rd -> rd { notices = take 20 (msg : notices rd) }) relayURI' (activeConnections st)
-      , subscriptions = Map.map (\sd -> if relay sd == relayURI' then sd { lastActivityTs = now } else sd) (subscriptions st)
-      }
+    modify @RelayPool $ \st ->
+      let active' = Map.adjust (\rd -> rd { notices = take 20 (msg : notices rd) }) relayURI' (activeConnections st)
+          subIds = [sid | (sid, sd) <- Map.toList (subscriptions st), relay sd == relayURI']
+          subs' = foldr (\sid m -> Map.adjust (\sd -> sd { lastActivityTs = now }) sid m) (subscriptions st) subIds
+      in st { activeConnections = active', subscriptions = subs' }
     updateRelayStats relayURI' (\s -> s { noticesCount = noticesCount s + 1, lastSeenTs = now })
 
   Auth challenge -> do
@@ -554,10 +570,11 @@ handleResponse relayURI' r = case r of
       let unsignedEvent = createCanonicalAuthentication relayURI' challenge (keyPairToPubKeyXO kp) now
       signedEventMaybe <- signEvent unsignedEvent kp
       for_ signedEventMaybe $ \signedEvent -> do
-        modify @RelayPool $ \st' -> st'
-          { activeConnections = Map.adjust (\rd' -> rd' { pendingAuthId = Just (eventId signedEvent) }) relayURI' (activeConnections st')
-          , subscriptions = Map.map (\sd -> if relay sd == relayURI' then sd { lastActivityTs = now } else sd) (subscriptions st')
-          }
+        modify @RelayPool $ \st' ->
+          let active' = Map.adjust (\rd' -> rd' { pendingAuthId = Just (eventId signedEvent) }) relayURI' (activeConnections st')
+              subIds = [sid | (sid, sd) <- Map.toList (subscriptions st'), relay sd == relayURI']
+              subs' = foldr (\sid m -> Map.adjust (\sd -> sd { lastActivityTs = now }) sid m) (subscriptions st') subIds
+          in st' { activeConnections = active', subscriptions = subs' }
         atomically $ writeTChan (requestChannel rd) (NT.Authenticate signedEvent)
 
 

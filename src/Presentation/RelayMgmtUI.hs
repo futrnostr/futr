@@ -90,25 +90,23 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
             defPropertySigRO' "isInbox" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              kp <- getKeyPair
-
-              dmRelays <- getDMRelays (keyPairToPubKeyXO kp)
-              let isInDMRelays = uri' `elem` dmRelays
-
-              generalRelays <- getGeneralRelays (keyPairToPubKeyXO kp)
-              let isInGeneralRelays = any (\r -> isInboxCapable r && getUri r == uri') generalRelays
+              xo <- keyPairToPubKeyXO <$> getKeyPair
+              st <- get @AppState
+              let dmRelays = Map.keys $ currentDMRelays st
+                  generalRelays = Map.elems $ currentGeneralRelays st
+                  isInDMRelays = uri' `elem` dmRelays
+                  isInGeneralRelays = any (\r -> isInboxCapable r && getUri r == uri') generalRelays
 
               return $ isInDMRelays || isInGeneralRelays,
 
             defPropertySigRO' "isOutbox" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              kp <- getKeyPair
-
-              dmRelays <- getDMRelays (keyPairToPubKeyXO kp)
-              let isInDMRelays = uri' `elem` dmRelays
-
-              generalRelays <- getGeneralRelays (keyPairToPubKeyXO kp)
-              let isInGeneralRelays = any (\r -> isOutboxCapable r && getUri r == uri') generalRelays
+              xo <- keyPairToPubKeyXO <$> getKeyPair
+              st <- get @AppState
+              let dmRelays = Map.keys $ currentDMRelays st
+                  generalRelays = Map.elems $ currentGeneralRelays st
+                  isInDMRelays = uri' `elem` dmRelays
+                  isInGeneralRelays = any (\r -> isOutboxCapable r && getUri r == uri') generalRelays
 
               return $ isInDMRelays || isInGeneralRelays,
 
@@ -140,9 +138,9 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
             case keyPair appState of
               Nothing -> return []
               Just kp -> do
-                let pk = keyPairToPubKeyXO kp
-                relays <- runE $ getDMRelays pk
-                mapM (\relay -> getPoolObject dmRelayPool relay) relays,
+                st <- runE $ get @AppState
+                let relays = Map.keys $ currentDMRelays st
+                mapM (getPoolObject dmRelayPool) relays,
 
           defPropertySigRO' "generalRelays" changeKey $ \obj -> do
             runE $ modify @QtQuickState $ \s -> s {
@@ -152,9 +150,9 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
             case keyPair appState of
                 Nothing -> return []
                 Just kp -> do
-                    let pk = keyPairToPubKeyXO kp
-                    relays <- runE $ getGeneralRelays pk
-                    mapM (getPoolObject generalRelayPool . getUri) relays,
+                    st <- runE $ get @AppState
+                    let relays = Map.keys $ currentGeneralRelays st
+                    mapM (getPoolObject generalRelayPool) relays,
 
           defPropertySigRO' "tempRelays" changeKey $ \obj -> do
             runE $ modify @QtQuickState $ \s -> s {
@@ -168,12 +166,10 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
             case keyPair appState of
               Nothing -> return []
               Just kp -> do
-                let pk = keyPairToPubKeyXO kp
-                dmRelays <- runE $ getDMRelays pk
-                generalRelays <- runE $ getGeneralRelays pk
-                let generalURIs = map getUri generalRelays
-
-                let tempURIs = filter (\uri -> uri `notElem` dmRelays && uri `notElem` generalURIs) activeURIs
+                st <- runE $ get @AppState
+                let dmRelays = Map.keys $ currentDMRelays st
+                    generalRelaysURIs = Map.keys $ currentGeneralRelays st
+                    tempURIs = filter (\uri -> uri `notElem` dmRelays && uri `notElem` generalRelaysURIs) activeURIs
                 mapM (getPoolObject tempRelayPool) tempURIs,
 
           defMethod' "addDMRelay" $ \_ input -> runE $ do

@@ -58,25 +58,25 @@ Item {
                         }
                     }
 
-                    FollowList {
-                        id: followListElement
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        radius: Constants.radius_m
+                    // FollowList {
+                    //     id: followListElement
+                    //     anchors.fill: parent
+                    //     anchors.margins: 10
+                    //     radius: Constants.radius_m
 
-                        isCollapsed: !mainContainer.sidebarExpanded
-                        stackView: stackView
-                        currentUser: homeScreen.currentUserNpub
-                        currentUserPicture: homeScreen.currentUserPicture
-                        personalFeed: personalFeed
+                    //     isCollapsed: !mainContainer.sidebarExpanded
+                    //     stackView: stackView
+                    //     currentUser: homeScreen.currentUserNpub
+                    //     currentUserPicture: homeScreen.currentUserPicture
+                    //     personalFeed: personalFeed
 
-                        Behavior on opacity {
-                            NumberAnimation {
-                                duration: 150
-                                easing.type: Easing.InOutQuad
-                            }
-                        }
-                    }
+                    //     Behavior on opacity {
+                    //         NumberAnimation {
+                    //             duration: 150
+                    //             easing.type: Easing.InOutQuad
+                    //         }
+                    //     }
+                    // }
 
                     Rectangle {
                         id: toggleButton
@@ -208,29 +208,29 @@ Item {
         }
     }
 
-    // RelayMgmtDialog {
-    //     id: relayMgmtDialog
-    // }
+    RelayMgmtDialog {
+        id: relayMgmtDialog
+    }
 
-    // ShowKeysDialog {
-    //     id: showKeysDialog
-    // }
+    ShowKeysDialog {
+        id: showKeysDialog
+    }
 
-    // AlertManager {
-    //     id: alertManager
-    // }
+    AlertManager {
+        id: alertManager
+    }
 
-    // InboxModelStatusAlert {
-    //     id: inboxModelStatusAlert
-    //     currentState: inboxModelState
-    // }
+    InboxModelStatusAlert {
+        id: inboxModelStatusAlert
+        currentState: inboxModelState
+    }
 
-    // NotificationToast {
-    //     id: notification
-    //     z: 999
+    NotificationToast {
+        id: notification
+        z: 999
 
-    //     anchors.horizontalCenter: parent.horizontalCenter
-    //     anchors.top: parent.top
-    //     anchors.topMargin: 80
-    // }
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: 80
+    }
 }

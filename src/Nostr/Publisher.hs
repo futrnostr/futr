@@ -78,12 +78,12 @@ type PublisherEff es =
 runPublisher :: PublisherEff es => Eff (Publisher : es) a -> Eff es a
 runPublisher =  interpret $ \_ -> \case
     Broadcast event' -> do
-        kp <- getKeyPair
-        let xo = keyPairToPubKeyXO kp
+        xo <- keyPairToPubKeyXO <$> getKeyPair
+        st <- get @AppState
 
-        dmRelays <- getDMRelays xo
-        myGeneralRelays <- getGeneralRelays xo
-        let outboxCapable = filter isOutboxCapable myGeneralRelays
+        let dmRelays = Map.keys $ currentDMRelays st
+            myGeneralRelays = Map.elems $ currentGeneralRelays st
+            outboxCapable = filter isOutboxCapable myGeneralRelays
 
         follows <- getFollows xo
         let followPks = map pubkey follows
@@ -115,12 +115,10 @@ runPublisher =  interpret $ \_ -> \case
                     updateEventRelayStatus (eventId event') r (Failure "Relay server unreachable")
 
     PublishToOutbox event' -> do
-
-        kp <- getKeyPair
-        let pk = keyPairToPubKeyXO kp
-
-        generalRelayList <- getGeneralRelays pk
-        let outboxCapableURIs = map getUri $ filter isOutboxCapable generalRelayList
+        xo <- keyPairToPubKeyXO <$> getKeyPair
+        st <- get @AppState
+        let generalRelayList = Map.elems $ currentGeneralRelays st
+            outboxCapableURIs = map getUri $ filter isOutboxCapable generalRelayList
 
         initEventPublishStatus (eventId event') outboxCapableURIs
 

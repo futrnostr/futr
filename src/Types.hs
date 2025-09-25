@@ -5,13 +5,14 @@ module Types where
 
 import Data.Aeson (FromJSON, ToJSON, toJSON, parseJSON, (.:), (.=), withObject, object)
 import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Text (Text, pack)
 import Control.Concurrent.Async (Async)
 import GHC.Generics (Generic)
 import Nostr.Event (Event, EventId)
 import Nostr.Keys (KeyPair, PubKeyXO)
-import Nostr.Types (RelayURI, SubscriptionId)
+import Nostr.Types (Relay, RelayURI, SubscriptionId)
 import Version (runtimeVersion)
 
 
@@ -81,6 +82,8 @@ data AppState = AppState
   , currentPost :: Maybe EventId
   , version :: Text
   , inboxModelState :: InboxModelState
+  , currentDMRelays :: Map RelayURI ()
+  , currentGeneralRelays :: Map RelayURI Relay
   , cacheClearer :: Maybe (Async ())
   }
 
@@ -117,5 +120,7 @@ initialState = AppState
   , currentPost = Nothing
   , version = pack runtimeVersion
   , inboxModelState = Stopped
+  , currentDMRelays = Map.empty
+  , currentGeneralRelays = Map.empty
   , cacheClearer = Nothing
   }
