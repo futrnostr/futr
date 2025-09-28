@@ -12,6 +12,7 @@ import Control.Concurrent.Async (Async)
 import GHC.Generics (Generic)
 import Nostr.Event (Event, EventId)
 import Nostr.Keys (KeyPair, PubKeyXO)
+import Nostr.Profile (Profile)
 import Nostr.Types (Relay, RelayURI, SubscriptionId)
 import Version (runtimeVersion)
 
@@ -69,6 +70,7 @@ data Post = Post
   , postTimestamp :: Text
   , postType :: Text
   , referencedPostId :: Maybe EventId
+  , postRelays :: Set RelayURI
   } deriving (Eq, Show)
 
 
@@ -80,10 +82,13 @@ data AppState = AppState
   , currentCommentFeed :: Maybe FeedFilter
   , currentProfile :: Maybe (PubKeyXO, [SubscriptionId])
   , currentPost :: Maybe EventId
+  , currentFeedCache :: Map EventId Post
   , version :: Text
   , inboxModelState :: InboxModelState
   , currentDMRelays :: Map RelayURI ()
   , currentGeneralRelays :: Map RelayURI Relay
+  , currentFollows :: Map PubKeyXO Follow
+  , profileCache :: Map PubKeyXO Profile
   , cacheClearer :: Maybe (Async ())
   }
 
@@ -118,9 +123,12 @@ initialState = AppState
   , currentCommentFeed = Nothing
   , currentProfile = Nothing
   , currentPost = Nothing
+  , currentFeedCache = Map.empty
   , version = pack runtimeVersion
   , inboxModelState = Stopped
   , currentDMRelays = Map.empty
   , currentGeneralRelays = Map.empty
+  , currentFollows = Map.empty
+  , profileCache = Map.empty
   , cacheClearer = Nothing
   }

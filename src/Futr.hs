@@ -57,7 +57,7 @@ import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
 import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
-                  , getEvent, getEventRelays, getFollows, getGeneralRelays )
+                  , getEvent, getEventRelays, getGeneralRelays )
 import Types
 
 -- | Signal key class for LoginStatusChanged.
@@ -252,8 +252,8 @@ runFutr = interpret $ \_ -> \case
               then return $ Nip05Result npubStr nip05Id relayHints
               else do
                 -- Check if already following
-                currentFollows <- maybe [] id <$> traverse getFollows myPubKey
-                if any (\f -> pubkey f == userPubKey) currentFollows
+                currentFollows <- gets @AppState currentFollows
+                if Map.member userPubKey currentFollows
                   then return $ Nip05Result npubStr nip05Id relayHints
                   else do
                     -- Search in relays to get more info about the user
@@ -267,8 +267,8 @@ runFutr = interpret $ \_ -> \case
           Just (pubkey', relayUris)
             | Just pubkey' == myPubKey -> return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
             | otherwise -> do
-                currentFollows <- maybe [] id <$> traverse getFollows myPubKey
-                if any (\f -> pubkey f == pubkey') currentFollows
+                currentFollows <- gets @AppState currentFollows
+                if Map.member pubkey' currentFollows
                   then return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
                   else do
                     searchInRelays pubkey' relayUris
@@ -293,10 +293,10 @@ runFutr = interpret $ \_ -> \case
     st <- get @AppState
     case keyPairToPubKeyXO <$> keyPair st of
         Just userPK -> do
-            currentFollows <- getFollows userPK
-            unless (targetPK `elem` map pubkey currentFollows) $ do
+            let followsList = Map.elems $ currentFollows st
+            unless (targetPK `elem` map pubkey followsList) $ do
                 let newFollow = Follow targetPK Nothing
-                    newFollows = newFollow : currentFollows
+                    newFollows = newFollow : followsList
                 sendFollowListEvent newFollows
                 notify $ emptyUpdates { myFollowsChanged = True }
         Nothing -> return ()
@@ -306,8 +306,8 @@ runFutr = interpret $ \_ -> \case
     st <- get @AppState
     case keyPairToPubKeyXO <$> keyPair st of
         Just userPK -> do
-            currentFollows <- getFollows userPK
-            let newFollows = filter ((/= targetPK) . pubkey) currentFollows
+            let followsList = Map.elems $ currentFollows st
+                newFollows = filter ((/= targetPK) . pubkey) followsList
             sendFollowListEvent newFollows
             notify $ emptyUpdates { myFollowsChanged = True }
         Nothing -> return ()

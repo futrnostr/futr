@@ -108,20 +108,19 @@ runDownloader = interpret $ \_ -> \case
       Just status@(Failed _)    -> pure status
       Just status@Downloading   -> pure status
       _ -> do
-        pure NotStarted
-        -- cacheDir <- getCacheDirForCurrentUser
-        -- let cacheFile = cacheDir </> urlToCacheFile url
-        --     metaFile  = cacheFile ++ ".meta"
-        -- exists <- liftIO $ doesFileExist cacheFile
-        -- metaExists <- liftIO $ doesFileExist metaFile
-        -- if not (exists && metaExists)
-        --   then pure NotStarted
-        --   else do
-        --     meta <- liftIO $ readMetaFile metaFile
-        --     now <- liftIO getCurrentTime
-        --     case meta of
-        --       Just (mime, expiry) | expiry > now -> pure $ Ready (cacheFile, mime, expiry)
-        --       _ -> pure NotStarted
+        cacheDir <- getCacheDirForCurrentUser
+        let cacheFile = cacheDir </> urlToCacheFile url
+            metaFile  = cacheFile ++ ".meta"
+        exists <- liftIO $ doesFileExist cacheFile
+        metaExists <- liftIO $ doesFileExist metaFile
+        if not (exists && metaExists)
+          then pure NotStarted
+          else do
+            meta <- liftIO $ readMetaFile metaFile
+            now <- liftIO getCurrentTime
+            case meta of
+              Just (mime, expiry) | expiry > now -> pure $ Ready (cacheFile, mime, expiry)
+              _ -> pure NotStarted
 
   Download url -> do
     st <- get
@@ -129,37 +128,37 @@ runDownloader = interpret $ \_ -> \case
       Just status@(Ready _)   -> pure status
       Just status@Downloading -> pure status
       Just status@(Failed _)  -> pure status
-      -- _ -> do
-      --   cacheDir <- getCacheDirForCurrentUser
-      --   let cacheFile = cacheDir </> urlToCacheFile url
-      --       metaFile  = cacheFile ++ ".meta"
-      --   exists <- liftIO $ doesFileExist cacheFile
-      --   metaExists <- liftIO $ doesFileExist metaFile
-      --   if not (exists && metaExists)
-      --     then startDownload
-      --     else do
-      --       meta <- liftIO $ readMetaFile metaFile
-      --       now <- liftIO getCurrentTime
-      --       case meta of
-      --         Just (mime, expiry) | expiry > now -> do
-      --           let readyStatus = Ready (cacheFile, mime, expiry)
-      --           modify $ \s -> s { inProgress = Map.insert url readyStatus (inProgress s) }
-      --           pure readyStatus
-      --         _ -> startDownload
-    --where
-      -- startDownload = do
-      --   modify $ \s -> s { inProgress = Map.insert url Downloading (inProgress s) }
-      --   now <- liftIO getCurrentTime
-      --   result <- downloadAndCache url now
-      --   case result of
-      --     Right (cacheFile, mime, expiry) -> do
-      --       let readyStatus = Ready (cacheFile, mime, expiry)
-      --       modify $ \s -> s { inProgress = Map.insert url readyStatus (inProgress s) }
-      --       pure readyStatus
-      --     Left err -> do
-      --       let failedStatus = Failed err
-      --       modify $ \s -> s { inProgress = Map.insert url failedStatus (inProgress s) }
-      --       pure failedStatus
+      _ -> do
+        cacheDir <- getCacheDirForCurrentUser
+        let cacheFile = cacheDir </> urlToCacheFile url
+            metaFile  = cacheFile ++ ".meta"
+        exists <- liftIO $ doesFileExist cacheFile
+        metaExists <- liftIO $ doesFileExist metaFile
+        if not (exists && metaExists)
+          then startDownload
+          else do
+            meta <- liftIO $ readMetaFile metaFile
+            now <- liftIO getCurrentTime
+            case meta of
+              Just (mime, expiry) | expiry > now -> do
+                let readyStatus = Ready (cacheFile, mime, expiry)
+                modify $ \s -> s { inProgress = Map.insert url readyStatus (inProgress s) }
+                pure readyStatus
+              _ -> startDownload
+    where
+      startDownload = do
+        modify $ \s -> s { inProgress = Map.insert url Downloading (inProgress s) }
+        now <- liftIO getCurrentTime
+        result <- downloadAndCache url now
+        case result of
+          Right (cacheFile, mime, expiry) -> do
+            let readyStatus = Ready (cacheFile, mime, expiry)
+            modify $ \s -> s { inProgress = Map.insert url readyStatus (inProgress s) }
+            pure readyStatus
+          Left err -> do
+            let failedStatus = Failed err
+            modify $ \s -> s { inProgress = Map.insert url failedStatus (inProgress s) }
+            pure failedStatus
 
   PeekMimeType url -> do
     headResult <- liftIO $ try $ headWith defaults (T.unpack url)

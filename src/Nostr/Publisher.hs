@@ -21,7 +21,7 @@ import Nostr.EventProcessor (handleEvent)
 import Nostr.Types (Request(..), RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.Util
 import QtQuick
-import Store.Lmdb (LmdbStore, getFollows, getDMRelays, getGeneralRelays)
+import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
 import Types (AppState(..), Follow(..), PublishStatus(..))
 
 
@@ -84,9 +84,7 @@ runPublisher =  interpret $ \_ -> \case
         let dmRelays = Map.keys $ currentDMRelays st
             myGeneralRelays = Map.elems $ currentGeneralRelays st
             outboxCapable = filter isOutboxCapable myGeneralRelays
-
-        follows <- getFollows xo
-        let followPks = map pubkey follows
+            followPks = Map.keys $ currentFollows st
 
         followerRelays <- forM followPks $ \pk -> do
             relays' <- getGeneralRelays pk

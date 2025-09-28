@@ -32,9 +32,10 @@ Pane {
         width: parent.width
         spacing: Constants.spacing_m
 
-        NostrProfileAvatar {
+        ProfilePicture {
             url: currentUserProfile ? currentUserPicture : ""
-            npub: currentUser
+            Layout.preferredWidth: 34
+            Layout.preferredHeight: 34
         }
 
         TextArea {

@@ -14,28 +14,27 @@ Pane {
 
     property var post
 
-    property var post_id: post ? post[0] : null
-    property var post_nevent: post ? post[1] : null
-    property var post_raw: post ? post[2] : null
-    property var post_relays: post ? post[3] : null
-    property var post_postType: post ? post[4] : null
-    property var post_content: post ? post[5] : null
-    property var post_timestamp: post ? post[6] : null
-    property var post_authorId: post ? post[7] : null
-    property var post_referencedPostId: post ? post[8] : null
+    property var post_id: post ? post.id : null
+    property var post_nevent: post ? post.nevent : null
+    property var post_relays: post ? post.relays : null
+    property var post_postType: post ? post.postType : null
+    property var post_content: post ? post.content : null
+    property var post_timestamp: post ? post.timestamp : null
+    property var post_authorId: post ? post.authorId : null
+    property var post_referencedPostId: post ? post.referencedPostId : null
 
     property string currentUser
     property bool isRefPost: false
     property var author: null
-    // author is a list: [id, npub, name, displayName, about, picture, nip05, banner]
-    property var author_id: author ? author[0] : ""
-    property var author_npub: author ? author[1] : ""
-    property var author_name: author ? author[2] : ""
-    property var author_displayName: author ? author[3] : ""
-    property var author_about: author ? author[4] : ""
-    property var author_picture: author ? author[5] : ""
-    property var author_nip05: author ? author[6] : ""
-    property var author_banner: author ? author[7] : ""
+
+    property var author_id: author ? author.id : ""
+    property var author_npub: author ? author.npub : ""
+    property var author_name: author ? author.name : ""
+    property var author_displayName: author ? author.displayName : ""
+    property var author_about: author ? author.about : ""
+    property var author_picture: author ? author.picture : ""
+    property var author_nip05: author ? author.nip05 : ""
+    property var author_banner: author ? author.banner : ""
     property bool privateChatMode: false
 
     property var contentParts: []
@@ -195,8 +194,8 @@ Pane {
     }
 
     Component.onDestruction: {
-        post_id = null
-        post_content = null
+        post = null
+        author = null
         lastProcessedPostId = null
         contentParsed = false
 
@@ -204,9 +203,10 @@ Pane {
             processedUrls = ({})
         }
 
-        author = null
-
         if (contentLayout && contentLayout.children) {
+            for (var i = 0; i < contentLayout.children.length; i++) {
+                contentLayout.children[i].destroy()
+            }
             contentLayout.children = []
         }
 
@@ -283,11 +283,10 @@ Pane {
                     }
                 }
 
-                NostrProfileAvatar {
+                ProfilePicture {
                     anchors.fill: parent
                     anchors.margins: Constants.spacing_xs
                     url: author_picture
-                    npub: author_npub
                 }
             }
 
@@ -314,7 +313,7 @@ Pane {
                     }
 
                     Text {
-                        text: author ? author_npub : ""
+                        text: author_npub
                         font.pixelSize: Constants.font.pixelSize * 0.8
                         elide: Text.ElideRight
                         width: parent.width
@@ -409,7 +408,7 @@ Pane {
                 implicitHeight: 36
                 padding: 8
                 icon.color: Material.secondaryTextColor
-                visible: post != null && post != undefined && currentUser == post_authorId
+                visible: post && currentUser == author_npub
                 anchors.verticalCenter: parent.verticalCenter
 
                 onClicked: deleteDialog.open()
@@ -457,9 +456,8 @@ Pane {
                         text: qsTr("Show Event JSON")
                         onTriggered: {
                             if (post_id) {
-                                var rawData = getRaw(post_id)
                                 eventJsonDialog.targetPost = {
-                                    raw: rawData
+                                    raw: post.raw
                                 }
                                 eventJsonDialog.open()
                             }
@@ -649,23 +647,22 @@ Pane {
                 var frame = Qt.createQmlObject(qml, container)
                 if (frame) {
                     frame.frameWidth = Qt.binding(function() { return container.width })
-                    var result = getPost(value)
-                    var cachedPost = (result && Array.isArray(result) && result.length > 0) ? result : null
+                    var cachedPost = getPost(value)
 
                     if (cachedPost) {
                         frame.isLoading = false
 
-                        var authorProfile = cachedPost[7] ? getProfile(cachedPost[7]) : null
-                        var authorNpubVal = authorProfile ? authorProfile[1] : ""
-                        var authorDisplay = authorProfile ? (authorProfile[3] || authorProfile[2] || "") : ""
-                        var authorPic = authorProfile ? authorProfile[5] : ""
+                        var authorProfile = cachedPost.authorId ? getProfile(cachedPost.authorId) : null
+                        var authorNpubVal = authorProfile ? authorProfile.npub : ""
+                        var authorDisplay = authorProfile ? (authorProfile.displayName || authorProfile.name || "") : ""
+                        var authorPic = authorProfile ? authorProfile.picture : ""
 
                         var headerQml = "import QtQuick 2.15; import QtQuick.Controls 2.15; import QtQuick.Controls.Material 2.15; import QtQuick.Layouts 1.15; import Futr 1.0; import Components 1.0;\n"
                                      + "Row { id: refHeader; width: parent.width; spacing: Constants.spacing_s;\n"
                                      + "  property string authorNpub: \"\"; property string authorDisplayName: \"\"; property string authorPictureUrl: \"\";\n"
                                      + "  Rectangle { width: 34; height: 34; radius: width/2; color: \"transparent\"; border.width: 1; border.color: Material.dividerColor;\n"
                                      + "    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { personalFeed.npub = refHeader.authorNpub } }\n"
-                                     + "    NostrProfileAvatar { anchors.fill: parent; anchors.margins: Constants.spacing_xs; url: refHeader.authorPictureUrl; npub: refHeader.authorNpub }\n"
+                                     + "    ProfilePicture { anchors.fill: parent; anchors.margins: Constants.spacing_xs; url: refHeader.authorPictureUrl }\n"
                                      + "  }\n"
                                      + "  MouseArea { width: parent.width - 50; height: childrenRect.height; cursorShape: Qt.PointingHandCursor; anchors.verticalCenter: parent.verticalCenter; onClicked: { personalFeed.npub = refHeader.authorNpub }\n"
                                      + "    Column { spacing: 2; width: parent.width;\n"
@@ -682,7 +679,7 @@ Pane {
                             headerObj.authorPictureUrl = authorPic
                         }
 
-                        var nestedContent = cachedPost[5]
+                        var nestedContent = cachedPost.content
                         if (nestedContent) {
                             var nestedParts = parseContentParts(nestedContent)
                             renderContentParts(frame.contentRootItem, nestedParts)
@@ -711,8 +708,8 @@ Pane {
             } else if (type === "profile") {
                 var profile = getProfile(value)
                 var displayName = ""
-                if (profile && profile.length >= 4) {
-                    displayName = profile[3] || profile[2] || ""
+                if (profile) {
+                    displayName = profile.displayName || profile.name || ""
                 }
                 if (!displayName) {
                     displayName = value.substring(0, 8) + "..."

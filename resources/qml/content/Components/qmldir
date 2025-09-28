@@ -7,14 +7,13 @@ ImageViewer 1.0 ImageViewer.ui.qml
 InboxModelStatusAlert 1.0 InboxModelStatusAlert.ui.qml
 MessageInput 1.0 MessageInput.ui.qml
 NotificationToast 1.0 NotificationToast.ui.qml
-NostrImage 1.0 NostrImage.qml
-NostrProfileAvatar 1.0 NostrProfileAvatar.qml
-NostrProfileBanner 1.0 NostrProfileBanner.qml
 PersonalFeed 1.0 PersonalFeed.ui.qml
 PostContent 1.0 PostContent.ui.qml
 PostDetails 1.0 PostDetails.ui.qml
 PostImage 1.0 PostImage.ui.qml
 PostVideo 1.0 PostVideo.ui.qml
+ProfileBanner 1.0 ProfileBanner.qml
+ProfilePicture 1.0 ProfilePicture.qml
 PublishAlert 1.0 PublishAlert.ui.qml
 RelayStatusIcon 1.0 RelayStatusIcon.ui.qml
 RepostMenu 1.0 RepostMenu.ui.qml

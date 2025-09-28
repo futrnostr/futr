@@ -76,12 +76,6 @@ Dialog {
                     model: AutoListModel {
                         source: ctxRelayMgmt.dmRelays
                         mode: AutoListModel.ByKey
-                        equalityTest: function (oldItem, newItem) {
-                            return oldItem.url === newItem.url
-                                && oldItem.connectionState === newItem.connectionState
-                                && oldItem.connectionRetries === newItem.connectionRetries
-                                && oldItem.notices === newItem.notices
-                        }
                     }
 
                     delegate: RowLayout {
@@ -245,14 +239,6 @@ Dialog {
                     model: AutoListModel {
                         source: ctxRelayMgmt.generalRelays
                         mode: AutoListModel.ByKey
-                        equalityTest: function (oldItem, newItem) {
-                            return oldItem.url === newItem.url
-                                && oldItem.connectionState === newItem.connectionState
-                                && oldItem.isInbox === newItem.isInbox
-                                && oldItem.isOutbox === newItem.isOutbox
-                                && oldItem.connectionRetries === newItem.connectionRetries
-                                && oldItem.notices === newItem.notices
-                        }
                     }
 
                     delegate: RowLayout {
@@ -436,12 +422,6 @@ Dialog {
                     model: AutoListModel {
                         source: ctxRelayMgmt.tempRelays
                         mode: AutoListModel.ByKey
-                        equalityTest: function (oldItem, newItem) {
-                            return oldItem.url === newItem.url
-                                && oldItem.connectionState === newItem.connectionState
-                                && oldItem.connectionRetries === newItem.connectionRetries
-                                && oldItem.notices === newItem.notices
-                        }
                     }
 
                     delegate: RowLayout {

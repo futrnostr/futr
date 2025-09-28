@@ -88,9 +88,11 @@ runInboxModel = interpret $ \_ -> \case
     xo <- keyPairToPubKeyXO <$> getKeyPair
     inboxRelays <- getGeneralRelays xo
     dmRelays <- getDMRelays xo
+    myFollows <- getFollows xo
     modify @AppState $ \st -> st
       { currentDMRelays = Map.fromList $ zip dmRelays (repeat ())
       , currentGeneralRelays = Map.fromList $ zip (map getUri inboxRelays) inboxRelays
+      , currentFollows = Map.fromList $ zip (map pubkey myFollows) myFollows
       }
 
     connectedRelays <- connectRelays inboxRelays

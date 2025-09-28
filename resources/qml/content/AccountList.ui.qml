@@ -34,12 +34,6 @@ ScrollView {
         model: AutoListModel {
             source: ctxKeyMgmt.accounts
             mode: AutoListModel.ByKey
-            equalityTest: function (oldItem, newItem) {
-                return oldItem.displayName === newItem.displayName
-                    && oldItem.nsec === newItem.nsec
-                    && oldItem.npub === newItem.npub
-                    && oldItem.picture === newItem.picture
-            }
         }
 
         delegate: Rectangle {
@@ -56,7 +50,7 @@ ScrollView {
                 anchors.margins: 10
                 spacing: 10
 
-                // do not use NostrProfileAvatar here
+                // do not use downloader, here
                 // we are not yet logged in
                 Image {
                     source: modelData.picture || "https://robohash.org/" + modelData.npub + ".png?size=50x50"

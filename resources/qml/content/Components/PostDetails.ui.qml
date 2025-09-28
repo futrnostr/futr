@@ -162,7 +162,7 @@ Page {
                 }
 
                 Text {
-                    text: post ? post[3] : ""
+                    text: post ? post.relays.join(", ") : ""
                     color: Material.foreground
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true

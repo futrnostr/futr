@@ -17,18 +17,15 @@ Rectangle {
     border.width: 1
 
     required property string npub
-    property var feed: null
     required property string currentUser
     required property string currentUserPicture
 
-    property var posts: feed ? feed.events : []
-
     Component.onCompleted: {
-        feed = loadFeed('public', npub)
+        setFeed('public', npub)
     }
 
     onNpubChanged: {
-        feed = loadFeed('public', npub)
+        setFeed('public', npub)
         chatTypeSelector.currentIndex = 0
     }
 
@@ -71,9 +68,9 @@ Rectangle {
 
             onCurrentIndexChanged: {
                 if (currentIndex === 0) {
-                    feed = loadFeed('public', npub)
+                    setFeed('public', npub)
                 } else {
-                    feed = loadFeed('private', npub)
+                    setFeed('private', npub)
                 }
             }
 
@@ -251,7 +248,7 @@ Rectangle {
 
                     model: AutoListModel {
                         id: postsModel
-                        source: posts
+                        source: currentFeed
                         mode: AutoListModel.ByKey
                     }
 
@@ -325,27 +322,23 @@ Rectangle {
 
                     model: AutoListModel {
                         id: messagesModel
-                        source: posts
+                        source: currentFeed
                         mode: AutoListModel.ByKey
-                        equalityTest: function (oldItem, newItem) {
-                            return oldItem.id === newItem.id
-                        }
                     }
 
                     delegate: RowLayout {
                         width: ListView.view.width - privateMessageListView.rightMargin
 
-                        property var author: modelData ? getProfile(modelData[7]) : null
+                        property var author: modelData ? getProfile(modelData.authorId) : null
 
-                        property var author_npub: author ? author[1] : ""
-                        property var author_picture: author ? author[5] : ""
+                        property var author_npub: author ? author.npub : ""
+                        property var author_picture: author ? author.picture : ""
 
-                        NostrProfileAvatar {
+                        ProfilePicture {
                             url: author ? author_picture : ""
-                            npub: author ? author_npub : ""
+                            visible: author && author_npub != chat.currentUser
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 34
-                            visible: author && author_npub != chat.currentUser
                         }
 
                         PostContent {
@@ -357,12 +350,11 @@ Rectangle {
                             Layout.rightMargin: author && author_npub != chat.currentUser ? 75 : 0
                         }
 
-                        NostrProfileAvatar {
+                        ProfilePicture {
                             url: author ? author_picture : ""
-                            npub: author ? author_npub : ""
+                            visible: author && author_npub == chat.currentUser
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 34
-                            visible: author && author_npub == chat.currentUser
                         }
                     }
                 }

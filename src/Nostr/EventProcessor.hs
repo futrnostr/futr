@@ -23,8 +23,8 @@ import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Util (Util, getKeyPair)
 import Nostr.Types (RelayURI, getUri)
 import QtQuick (QtQuick, UIUpdates(..), emptyUpdates, hasUpdates, notify)
-import Store.Lmdb ( DecryptedGiftWrapData(..), LmdbStore, PutEventInput(..), putEvent, getGeneralRelays, getDMRelays)
-import Types (AppState(..))
+import Store.Lmdb ( DecryptedGiftWrapData(..), LmdbStore, PutEventInput(..), putEvent, getFollows, getGeneralRelays, getDMRelays)
+import Types (AppState(..), Follow(..))
 
 
 type EventProcessingEff es =
@@ -149,9 +149,11 @@ processRawEvent ev st' = case kind ev of
       Left _ -> pure ()
 
   FollowList -> do
-    kp <- getKeyPair
-    let pk = keyPairToPubKeyXO kp
-    notify $ emptyUpdates { myFollowsChanged = pk == pubKey ev }
+    xo <- keyPairToPubKeyXO <$> getKeyPair
+    when (xo == pubKey ev) $ do
+      follows <- getFollows xo
+      modify @AppState $ \s -> s { currentFollows = Map.fromList $ zip (map pubkey follows) follows }    
+    notify $ emptyUpdates { myFollowsChanged = xo == pubKey ev }
 
   GiftWrap -> do
     kp <- getKeyPair

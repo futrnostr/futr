@@ -14,7 +14,7 @@ import Effectful.Concurrent.STM ( TChan, TMVar, TVar, atomically, newTChanIO
                                 , takeTMVar, writeTChan, newTVarIO, readTVar, writeTVar, retry
                                 , tryReadTChan )
 import Effectful.Dispatch.Dynamic (interpret, send)
-import Effectful.State.Static.Shared (State, get, modify, put)
+import Effectful.State.Static.Shared (State, get, gets, modify, put)
 
 import KeyMgmt (KeyMgmt)
 import Logging (Logging)
@@ -113,23 +113,27 @@ runProfileManager = interpret $ \_ -> \case
 -- | Main profile fetching implementation with queue and batching
 fetchProfileImpl :: ProfileManagerEff es => PubKeyXO -> [RelayURI] -> Eff es Profile
 fetchProfileImpl pk relayHints = do
-    profile <- Lmdb.getProfile pk
-    profileTimestamp <- Lmdb.getLatestTimestamp pk [Metadata]
-    currentTime <- getCurrentTime
+    profileCache' <- gets @AppState profileCache
+    case Map.lookup pk profileCache' of
+        Just profile -> return profile
+        Nothing -> do
+            profile <- Lmdb.getProfile pk
+            profileTimestamp <- Lmdb.getLatestTimestamp pk [Metadata]
+            currentTime <- getCurrentTime
 
-    st <- get @ProfileManagerState
-    let profileTs = fromMaybe 0 profileTimestamp
-        lastFetchAttempt = fromMaybe 0 $ Map.lookup pk (lastFetchAttempts st)
-        timeSinceLastFetch = currentTime - lastFetchAttempt
-        shouldFetch = profileTs == 0 || timeSinceLastFetch > 24 * 60 * 60
-    
-    if shouldFetch
-        then do
-            let request = ProfileFetchRequest pk relayHints
-            atomically $ writeTChan (fetchQueue st) request
-            startQueueProcessor
+            st <- get @ProfileManagerState
+            let profileTs = fromMaybe 0 profileTimestamp
+                lastFetchAttempt = fromMaybe 0 $ Map.lookup pk (lastFetchAttempts st)
+                timeSinceLastFetch = currentTime - lastFetchAttempt
+                shouldFetch = profileTs == 0 || timeSinceLastFetch > 24 * 60 * 60
+            
+            when shouldFetch $ do
+                let request = ProfileFetchRequest pk relayHints
+                atomically $ writeTChan (fetchQueue st) request
+                startQueueProcessor
+
+            modify @AppState $ \s -> s { profileCache = Map.insert pk profile (profileCache s) }
             return profile
-        else return profile
 
 -- | Start the queue processor if not already running
 startQueueProcessor :: ProfileManagerEff es => Eff es ()
@@ -218,6 +222,11 @@ processRelayBatch relayUri pubkeys requests = do
                 { lastFetchAttempts = foldr (\pk acc -> Map.insert pk currentTime acc) (lastFetchAttempts s) pubkeys
                 , pendingFetches = foldr Set.delete (pendingFetches s) pubkeys
                 }
+
+            -- Add profiles to cache
+            forM_ pubkeys $ \pk -> do
+                profile <- Lmdb.getProfile pk
+                modify @AppState $ \s -> s { profileCache = Map.insert pk profile (profileCache s) }
         
         -- Decrement active fetches counter
         atomically $ do

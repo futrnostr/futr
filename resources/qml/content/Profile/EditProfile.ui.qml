@@ -21,14 +21,14 @@ Rectangle {
     property var labelWidth: 100
 
      // 0: id(hex), 1: npub, 2: name, 3: displayName, 4: about, 5: picture, 6: nip05, 7: banner
-    property var profile_id: profileData ? profileData[0] : ""
-    property var profile_npub: profileData ? profileData[1] : ""
-    property var profile_name: profileData ? profileData[2] : ""
-    property var profile_displayName: profileData ? profileData[3] : ""
-    property var profile_about: profileData ? profileData[4] : ""
-    property var profile_picture: profileData ? profileData[5] : ""
-    property var profile_nip05: profileData ? profileData[6] : ""
-    property var profile_banner: profileData ? profileData[7] : ""
+    property var profile_id: profileData ? profileData.id : ""
+    property var profile_npub: profileData ? profileData.npub : ""
+    property var profile_name: profileData ? profileData.name : ""
+    property var profile_displayName: profileData ? profileData.displayName : ""
+    property var profile_about: profileData ? profileData.about : ""
+    property var profile_picture: profileData ? profileData.picture : ""
+    property var profile_nip05: profileData ? profileData.nip05 : ""
+    property var profile_banner: profileData ? profileData.banner : ""
 
     Component.onCompleted: {
         profileData = getProfile(npub)

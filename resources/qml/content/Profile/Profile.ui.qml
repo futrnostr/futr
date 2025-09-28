@@ -18,17 +18,15 @@ Rectangle {
     property var profileData: null
     property string npub
 
-    // 0: id(hex), 1: npub, 2: name, 3: displayName, 4: about
-    // 5: picture, 6: nip05, 7: banner, 8: isFollow
-    property var profile_id: profileData ? profileData[0] : ""
-    //property var profile_npub: profileData ? profileData[1] : ""
-    property var profile_name: profileData ? profileData[2] : ""
-    property var profile_displayName: profileData ? profileData[3] : ""
-    property var profile_about: profileData ? profileData[4] : ""
-    property var profile_picture: profileData ? profileData[5] : ""
-    property var profile_nip05: profileData ? profileData[6] : ""
-    property var profile_banner: profileData ? profileData[7] : ""
-    property var profile_isFollow: profileData ? profileData[8] : ""
+    property var profile_id: profileData ? profileData.id : ""
+    //property var profile_npub: profileData ? profileData.npub : ""
+    property var profile_name: profileData ? profileData.name : ""
+    property var profile_displayName: profileData ? profileData.displayName : ""
+    property var profile_about: profileData ? profileData.about : ""
+    property var profile_picture: profileData ? profileData.picture : ""
+    property var profile_nip05: profileData ? profileData.nip05 : ""
+    property var profile_banner: profileData ? profileData.banner : ""
+    property var profile_isFollow: profileData ? profileData.isFollow : ""
 
     required property string currentUser
 
@@ -53,9 +51,10 @@ Rectangle {
         anchors.margins: 1
         spacing: 0
 
-        NostrProfileBanner {
-            Layout.fillWidth: true
+        ProfileBanner {
             url: profile_banner
+            Layout.fillWidth: true
+            Layout.preferredHeight: 60
         }
 
         RowLayout {
@@ -64,9 +63,8 @@ Rectangle {
             Layout.leftMargin: 10
             Layout.rightMargin: 10
 
-            NostrProfileAvatar {
+            ProfilePicture {
                 url: profile_picture
-                npub: root.npub
                 Layout.preferredWidth: 60
                 Layout.preferredHeight: 60
             }

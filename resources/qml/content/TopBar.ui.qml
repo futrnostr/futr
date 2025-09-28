@@ -50,11 +50,9 @@ Item {
             color: "transparent"
             clip: true
 
-            NostrProfileAvatar {
-                id: profilePicture
-                anchors.fill: parent
+            ProfilePicture {
                 url: currentUserPicture
-                npub: currentUser
+                anchors.fill: parent
             }
         }
 
