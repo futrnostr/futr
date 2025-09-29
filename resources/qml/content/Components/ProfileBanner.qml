@@ -15,7 +15,7 @@ Item {
     Image {
         id: image
         anchors.fill: parent
-        fillMode: Image.PreserveAspectFit
+        fillMode: Image.PreserveAspectCrop
         cache: false
         asynchronous: true
         source: root.url || ""
