@@ -17,18 +17,15 @@ Rectangle {
     border.width: 1
 
     required property string npub
-    property var feed: null
     required property string currentUser
     required property string currentUserPicture
 
-    property var posts: feed ? feed.events : []
-
     Component.onCompleted: {
-        feed = loadFeed('public', npub)
+        setFeed('public', npub)
     }
 
     onNpubChanged: {
-        feed = loadFeed('public', npub)
+        setFeed('public', npub)
         chatTypeSelector.currentIndex = 0
     }
 
@@ -71,9 +68,9 @@ Rectangle {
 
             onCurrentIndexChanged: {
                 if (currentIndex === 0) {
-                    feed = loadFeed('public', npub)
+                    setFeed('public', npub)
                 } else {
-                    feed = loadFeed('private', npub)
+                    setFeed('private', npub)
                 }
             }
 
@@ -251,12 +248,12 @@ Rectangle {
 
                     model: AutoListModel {
                         id: postsModel
-                        source: posts
+                        source: currentFeed
                         mode: AutoListModel.ByKey
                     }
 
                     delegate: PostContent {
-                        width: ListView.view.width - postsView.rightMargin
+                        width: ListView.view ? (ListView.view.width - postsView.rightMargin) : postsView.width
                         post: modelData
                         currentUser: chat.currentUser
                         Layout.minimumHeight: 100
@@ -325,11 +322,8 @@ Rectangle {
 
                     model: AutoListModel {
                         id: messagesModel
-                        source: posts
+                        source: currentFeed
                         mode: AutoListModel.ByKey
-                        equalityTest: function (oldItem, newItem) {
-                            return oldItem.id === newItem.id
-                        }
                     }
 
                     delegate: RowLayout {
@@ -337,11 +331,14 @@ Rectangle {
 
                         property var author: modelData ? getProfile(modelData.authorId) : null
 
+                        property var author_npub: author ? author.npub : ""
+                        property var author_picture: author ? author.picture : ""
+
                         ProfilePicture {
-                            imageSource: author ? author.getProfilePicture(author.picture) : ""
+                            url: author ? author_picture : ""
+                            visible: author && author_npub != chat.currentUser
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 34
-                            visible: author && author.npub != chat.currentUser
                         }
 
                         PostContent {
@@ -349,15 +346,15 @@ Rectangle {
                             currentUser: chat.currentUser
                             privateChatMode: true
                             Layout.fillWidth: true
-                            Layout.leftMargin: author && author.npub == chat.currentUser ? 75 : 0
-                            Layout.rightMargin: author && author.npub != chat.currentUser ? 75 : 0
+                            Layout.leftMargin: author && author_npub == chat.currentUser ? 75 : 0
+                            Layout.rightMargin: author && author_npub != chat.currentUser ? 75 : 0
                         }
 
                         ProfilePicture {
-                            imageSource: author ? author.getProfilePicture(author.picture) : ""
+                            url: author ? author_picture : ""
+                            visible: author && author_npub == chat.currentUser
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 34
-                            visible: author && author.npub == chat.currentUser
                         }
                     }
                 }

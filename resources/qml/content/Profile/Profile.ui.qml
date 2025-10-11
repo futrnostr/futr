@@ -4,9 +4,11 @@ import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 
 import Buttons 1.0
+import Components 1.0
 import Futr 1.0
 
 Rectangle {
+    id: root
     color: Material.backgroundColor
     radius: Constants.radius_m
     width: 400
@@ -15,6 +17,17 @@ Rectangle {
 
     property var profileData: null
     property string npub
+
+    property var profile_id: profileData ? profileData.id : ""
+    //property var profile_npub: profileData ? profileData.npub : ""
+    property var profile_name: profileData ? profileData.name : ""
+    property var profile_displayName: profileData ? profileData.displayName : ""
+    property var profile_about: profileData ? profileData.about : ""
+    property var profile_picture: profileData ? profileData.picture : ""
+    property var profile_nip05: profileData ? profileData.nip05 : ""
+    property var profile_banner: profileData ? profileData.banner : ""
+    property var profile_isFollow: profileData ? profileData.isFollow : ""
+
     required property string currentUser
 
     Component.onCompleted: {
@@ -38,18 +51,11 @@ Rectangle {
         anchors.margins: 1
         spacing: 0
 
-        Rectangle {
+        ProfileBanner {
+            url: profile_banner
             Layout.fillWidth: true
-            height: 80
-            visible: profileData !== null && profileData.banner !== null && profileData.banner !== ""
-
-            Image {
-                source: profileData !== null ? (profileData.banner ?? "") : ""
-                width: parent.width
-                height: 80
-                fillMode: Image.PreserveAspectCrop
-                cache: false
-            }
+            Layout.preferredHeight: 80
+            visible: profile_banner !== ""
         }
 
         RowLayout {
@@ -59,7 +65,7 @@ Rectangle {
             Layout.rightMargin: 10
 
             ProfilePicture {
-                imageSource: profileData !== null ? profileData.getProfilePicture(profileData.picture) : ""
+                url: profile_picture
                 Layout.preferredWidth: 60
                 Layout.preferredHeight: 60
             }
@@ -70,7 +76,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: profileData !== null ? profileData.displayName || profileData.name || npub : ""
+                    text: profileData ? (profile_displayName || profile_name || root.npub) : ""
                     font: Constants.largeFont
                     color: Material.primaryTextColor
                     elide: Text.ElideRight
@@ -78,10 +84,10 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: profileData !== null ? profileData.name || "" : ""
+                    text: profileData ? (profile_name || "") : ""
                     font: Constants.font
                     color: Material.primaryTextColor
-                    visible: profileData !== null && profileData.displayName
+                    visible: profileData && profile_displayName
                     elide: Text.ElideRight
                 }
             }
@@ -92,7 +98,7 @@ Rectangle {
 
             EditButton {
                 id: editButton
-                visible: npub === currentUser
+                visible: root.npub === root.currentUser
 
                 onClicked: {
                     personalFeed.editMode = true
@@ -100,21 +106,21 @@ Rectangle {
             }
 
             Button {
-                visible: npub !== currentUser
-                text: profileData !== null ? (profileData.isFollow ? qsTr("Unfollow") : qsTr("Follow")) : ""
+                visible: root.npub !== root.currentUser
+                text: profileData !== null ? (profile_isFollow === "1" ? qsTr("Unfollow") : qsTr("Follow")) : ""
                 font: Constants.font
                 highlighted: true
                 Material.background: Material.primary
 
                 onClicked: {
-                    if (profileData === null) {
+                    if (root.profileData === null) {
                         return
                     }
 
-                    if (profileData.isFollow) {
-                        unfollow(npub)
+                    if (root.profileData.isFollow) {
+                        unfollow(root.npub)
                     } else {
-                        follow(npub)
+                        follow(root.npub)
                     }
                 }
             }
@@ -131,7 +137,7 @@ Rectangle {
                 Layout.fillWidth: true
 
                 Text {
-                    text: npub
+                    text: root.npub
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                     font: Constants.font
@@ -149,13 +155,13 @@ Rectangle {
                     ToolTip.text: qsTr("Copy to clipboard")
 
                     onClicked: {
-                        clipboard.copyText(npub)
+                        clipboard.copyText(root.npub)
                     }
                 }
             }
 
             Text {
-                text: profileData !== null ? profileData.about : ""
+                text: profileData ? profile_about : ""
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
                 font: Constants.font

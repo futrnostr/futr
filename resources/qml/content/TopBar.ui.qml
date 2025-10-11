@@ -3,15 +3,14 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 
+import Components 1.0
 import Futr 1.0
 
 Item {
     id: topBar
     required property string currentUserPicture
     required property string currentUser
-    property var currentUserProfile: getProfile(currentUser)
-    
-    // Set explicit bounds to prevent unnecessary rendering area
+
     implicitHeight: 80
     clip: true
 
@@ -21,10 +20,27 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         anchors.rightMargin: 10
         spacing: 10
-        
-        // Set explicit size to prevent overdraw
+
         width: implicitWidth
         height: 60
+
+        // Button {
+        //     id: startInboxModelButton
+        //     text: qsTr("Start Inbox Model")
+        //     onClicked: startInboxModel()
+        //     Layout.preferredWidth: 80
+        //     Layout.preferredHeight: 40
+        //     background: Item {}
+        // }
+
+        // Button {
+        //     id: stopInboxModelButton
+        //     text: qsTr("Stop Inbox Model")
+        //     onClicked: stopInboxModel()
+        //     Layout.preferredWidth: 80
+        //     Layout.preferredHeight: 40
+        //     background: Item {}
+        // }
 
         Rectangle {
             id: profilePictureContainer
@@ -33,14 +49,10 @@ Item {
             radius: 30
             color: "transparent"
             clip: true
-            
-            Image {
-                id: profilePicture
+
+            ProfilePicture {
+                url: currentUserPicture
                 anchors.fill: parent
-                source: currentUserProfile.getProfilePicture(currentUserPicture)
-                fillMode: Image.PreserveAspectCrop
-                cache: false
-                smooth: true
             }
         }
 
@@ -77,7 +89,6 @@ Item {
         id: profileMenu
         y: menuButton.y + menuButton.height + 10
         x: parent.width - width - 10
-        // Optimize menu rendering
         clip: true
 
         MenuItem {

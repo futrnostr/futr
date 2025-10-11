@@ -2,19 +2,19 @@
 
 module Presentation.KeyMgmtUI where
 
-import Control.Monad (void)
+import Control.Monad (forever, forM_, void)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, unpack)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (async)
+import Effectful.Concurrent.Async (async, cancel)
 import Effectful.Dispatch.Dynamic (EffectHandler, interpret, send)
 import Effectful.FileSystem (FileSystem, XdgDirectory(..), createDirectoryIfMissing, getXdgDirectory)
-import Effectful.State.Static.Shared (State, get, modify, put)
+import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import System.FilePath ((</>))
 
-import Downloader (Downloader)
+import Downloader (Downloader, clearCache)
 import QtQuick
 import KeyMgmt
 import Logging
@@ -22,11 +22,12 @@ import Nostr
 import Nostr.Bech32
 import Nostr.InboxModel
 import Nostr.Keys (keyPairToPubKeyXO)
-import Nostr.ProfileManager (ProfileManager)
+import Nostr.ProfileManager (ProfileManager, initializeProfileManager)
 import Nostr.Publisher
+import Nostr.Relay (RelayPool(..), initialRelayPool)
 import Nostr.Util
 import Store.Lmdb (LmdbState, LmdbStore, initializeLmdbState)
-import Types (AppState(..), RelayPool(..), initialRelayPool)
+import Types (AppState(..))
 
 
 -- | Key Management UI Effect.
@@ -138,6 +139,7 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
               defMethod' "createAccount" $ \obj -> runE $ do
                 mkp <- generateSeedphrase obj
                 case mkp of
+                  Nothing -> error "Failed to get keypair after generating seedphrase"
                   Just kp -> do
                     modify @AppState $ \s -> s { keyPair = Just kp }
                     modify @RelayPool $ const initialRelayPool
@@ -151,12 +153,18 @@ runKeyMgmtUI action = interpret handleKeyMgmtUI action
                     -- Initialize the LMDB database
                     lmdbState <- liftIO $ initializeLmdbState lmdDir
                     put @LmdbState lmdbState
+                    initializeProfileManager
 
-                    void $ async $ startInboxModel
+                    void $ async $ do
+                      mOld <- gets @AppState cacheClearer
+                      forM_ mOld $ \old -> cancel old
+                      t <- async $ forever $ do
+                        clearCache
+                        threadDelay (5 * 60 * 1000000)
+                      modify @AppState $ \s -> s { cacheClearer = Just t }
+                      startInboxModel
+
                     return True
-
-                  Nothing -> error "Failed to get keypair after generating seedphrase"
-
             ]
 
         newObject contextClass ()

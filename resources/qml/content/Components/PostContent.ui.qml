@@ -14,23 +14,30 @@ Pane {
 
     property var post
 
-    property var post_id: post ? post[0] : null
-    property var post_nevent: post ? post[1] : null
-    property var post_raw: post ? post[2] : null
-    property var post_relays: post ? post[3] : null
-    property var post_postType: post ? post[4] : null
-    property var post_content: post ? post[5] : null
-    property var post_timestamp: post ? post[6] : null
-    property var post_authorId: post ? post[7] : null
-    property var post_referencedPostId: post ? post[8] : null
+    property var post_id: post ? post.id : null
+    property var post_nevent: post ? post.nevent : null
+    property var post_relays: post ? post.relays : null
+    property var post_postType: post ? post.postType : null
+    property var post_content: post ? post.content : null
+    property var post_timestamp: post ? post.timestamp : null
+    property var post_authorId: post ? post.authorId : null
+    property var post_referencedPostId: post ? post.referencedPostId : null
 
     property string currentUser
     property bool isRefPost: false
     property var author: null
+
+    property var author_id: author ? author.id : ""
+    property var author_npub: author ? author.npub : ""
+    property var author_name: author ? author.name : ""
+    property var author_displayName: author ? author.displayName : ""
+    property var author_about: author ? author.about : ""
+    property var author_picture: author ? author.picture : ""
+    property var author_nip05: author ? author.nip05 : ""
+    property var author_banner: author ? author.banner : ""
     property bool privateChatMode: false
 
     property var contentParts: []
-    property var comments: [] // @todo
     property bool hideActions: false
     property bool showAuthor: false
     property bool disableCommentAction: false
@@ -45,9 +52,6 @@ Pane {
         "text": "PostContent/TextComponent.ui.qml",
         "image": "PostContent/PostImage.ui.qml", 
         "video": "PostContent/PostVideo.ui.qml",
-        "note": "PostContent/ReferencedPost.ui.qml",
-        "nevent": "PostContent/ReferencedPost.ui.qml",
-        "naddr": "PostContent/ReferencedPost.ui.qml",
         "url": "PostContent/TextComponent.ui.qml",
         "profile": "PostContent/TextComponent.ui.qml"
     }
@@ -57,16 +61,13 @@ Pane {
     signal postClicked()
 
     padding: Constants.spacing_xs
+    implicitHeight: mainColumn.implicitHeight + (padding * 2)
 
     onPost_contentChanged: {
         if (post_content !== lastProcessedContent) {
             lastProcessedContent = post_content || ""
-
             renderInitialText()
-
-            if (post_content) {
-                Qt.callLater(parseContent)
-            }
+            parseContent()
         }
     }
 
@@ -80,10 +81,8 @@ Pane {
 
             if (post && post_content && post_content !== lastProcessedContent) {
                 lastProcessedContent = post_content || ""
-
                 renderInitialText()
-
-                Qt.callLater(parseContent)
+                parseContent()
             }
         } else if (currentPostId === null && lastProcessedPostId !== null) {
             lastProcessedPostId = null
@@ -100,7 +99,7 @@ Pane {
 
         contentLayout.children = []
 
-        var component = Qt.createComponent(componentMap["text"])
+        var component = Qt.createComponent("PostContent/TextComponent.ui.qml")
 
         if (component.status === Component.Ready) {
             var item = component.createObject(contentLayout, {
@@ -123,7 +122,9 @@ Pane {
             return
         }
 
-        author = post_authorId ? getProfile(post_authorId) : null
+        if (!author && post_authorId) {
+            author = getProfile(post_authorId)
+        }
 
         var parts = parseContentParts(post_content)
         contentParts = parts
@@ -192,8 +193,8 @@ Pane {
     }
 
     Component.onDestruction: {
-        post_id = null
-        post_content = null
+        post = null
+        author = null
         lastProcessedPostId = null
         contentParsed = false
 
@@ -201,9 +202,10 @@ Pane {
             processedUrls = ({})
         }
 
-        author = null
-
         if (contentLayout && contentLayout.children) {
+            for (var i = 0; i < contentLayout.children.length; i++) {
+                contentLayout.children[i].destroy()
+            }
             contentLayout.children = []
         }
 
@@ -213,7 +215,7 @@ Pane {
 
     background: Rectangle {
         id: backgroundRect
-        color: privateChatMode && author && author.npub == currentUser ? Material.accentColor : Material.dialogColor
+        color: privateChatMode && author && author_npub == currentUser ? Material.accentColor : Material.dialogColor
         radius: Constants.radius_m
 
         MouseArea {
@@ -235,7 +237,9 @@ Pane {
 
     Column {
         id: mainColumn
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
         spacing: Constants.spacing_xs
 
         Row {
@@ -274,16 +278,14 @@ Pane {
                     cursorShape: Qt.PointingHandCursor
 
                     onClicked: {
-                        personalFeed.npub = root.author.npub
+                        personalFeed.npub = author_npub
                     }
                 }
 
-                Image {
+                ProfilePicture {
                     anchors.fill: parent
                     anchors.margins: Constants.spacing_xs
-                    source: root.author ? root.author.getProfilePicture(root.author.picture) : ""
-                    fillMode: Image.PreserveAspectCrop
-                    cache: false
+                    url: author_picture
                 }
             }
 
@@ -294,7 +296,7 @@ Pane {
                 anchors.verticalCenter: parent.verticalCenter
 
                 onClicked: {
-                    personalFeed.npub = root.author.npub
+                    personalFeed.npub = author_npub
                 }
 
                 Column {
@@ -303,14 +305,14 @@ Pane {
 
                     Text {
                         font: Constants.font
-                        text: root.author ? (root.author.displayName || root.author.name || "") : ""
+                        text: author ? (author_displayName || author_name || "") : ""
                         elide: Text.ElideRight
                         width: parent.width
                         color: Material.primaryTextColor
                     }
 
                     Text {
-                        text: root.author ? root.author.npub : ""
+                        text: author_npub
                         font.pixelSize: Constants.font.pixelSize * 0.8
                         elide: Text.ElideRight
                         width: parent.width
@@ -350,11 +352,11 @@ Pane {
                     onClicked: commentClicked()
                 }
 
-                Text {
-                    text: comments.length
-                    color: Material.secondaryTextColor
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                    // Text {
+                    //     text: "0" // comments.length
+                    //     color: Material.secondaryTextColor
+                    //     anchors.verticalCenter: parent.verticalCenter
+                    // }
             }
 
             Row {
@@ -376,11 +378,11 @@ Pane {
                     }
                 }
 
-                Text {
-                    text: comments.length
-                    color: Material.secondaryTextColor
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                // Text {
+                //     text: "0" // comments.length
+                //     color: Material.secondaryTextColor
+                //     anchors.verticalCenter: parent.verticalCenter
+                // }
             }
 
             Button {
@@ -405,7 +407,7 @@ Pane {
                 implicitHeight: 36
                 padding: 8
                 icon.color: Material.secondaryTextColor
-                visible: post != null && post != undefined && currentUser == post_authorId
+                visible: post && currentUser == author_npub
                 anchors.verticalCenter: parent.verticalCenter
 
                 onClicked: deleteDialog.open()
@@ -453,9 +455,8 @@ Pane {
                         text: qsTr("Show Event JSON")
                         onTriggered: {
                             if (post_id) {
-                                var rawData = getRaw(post_id)
                                 eventJsonDialog.targetPost = {
-                                    raw: rawData
+                                    raw: post.raw
                                 }
                                 eventJsonDialog.open()
                             }
@@ -616,32 +617,102 @@ Pane {
         }
 
         contentLayout.children = []
-        renderContentParts(contentParts)
+        renderContentParts(contentLayout, contentParts)
     }
 
-    function renderContentParts(parts) {
+    function renderContentParts(container, parts) {
         for (var i = 0; i < parts.length; i++) {
             var part = parts[i]
             var type = part[0]
             var value = part[1]
             var originalUrl = part.length > 2 ? part[2] : value
 
+            if ("note" === type || "nevent" === type || "naddr" === type) {
+                // Create framed container
+                var qml = "import QtQuick 2.15; import QtQuick.Controls 2.15; import QtQuick.Controls.Material 2.15; import QtQuick.Layouts 1.15; import Futr 1.0;\n"
+                        + "Rectangle { id: refFrame; color: \"transparent\"; radius: Constants.radius_m; border.width: 1; border.color: Material.backgroundColor; clip: true;\n"
+                        + "  property int frameWidth: 0; width: frameWidth;\n"
+                        + "  property bool isLoading: true;\n"
+                        + "  property alias contentRootItem: contentRoot;\n"
+                        + "  RowLayout { id: placeholder; visible: refFrame.isLoading; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: Constants.spacing_xs;\n"
+                        + "    BusyIndicator { Layout.alignment: Qt.AlignVCenter; Layout.preferredWidth: 36; Layout.preferredHeight: 36; running: false }\n"
+                        + "    Text { Layout.alignment: Qt.AlignLeft; Layout.fillWidth: true; text: qsTr(\"Event not found. Trying to find it for you...\"); font: Constants.font; color: Material.secondaryTextColor }\n"
+                        + "  }\n"
+                        + "  Column { id: contentRoot; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: Constants.spacing_xs; spacing: 0; visible: !refFrame.isLoading;\n"
+                        + "           layer.enabled: true; layer.smooth: true; layer.mipmap: true }\n"
+                        + "  implicitHeight: (refFrame.isLoading ? placeholder.implicitHeight : contentRoot.implicitHeight) + Constants.spacing_xs\n"
+                        + "}"
+
+                var frame = Qt.createQmlObject(qml, container)
+                if (frame) {
+                    frame.frameWidth = Qt.binding(function() { return container.width })
+                    var cachedPost = getPost(value)
+
+                    if (cachedPost) {
+                        frame.isLoading = false
+
+                        var authorProfile = cachedPost.authorId ? getProfile(cachedPost.authorId) : null
+                        var authorNpubVal = authorProfile ? authorProfile.npub : ""
+                        var authorDisplay = authorProfile ? (authorProfile.displayName || authorProfile.name || "") : ""
+                        var authorPic = authorProfile ? authorProfile.picture : ""
+
+                        var headerQml = "import QtQuick 2.15; import QtQuick.Controls 2.15; import QtQuick.Controls.Material 2.15; import QtQuick.Layouts 1.15; import Futr 1.0; import Components 1.0;\n"
+                                     + "Row { id: refHeader; width: parent.width; spacing: Constants.spacing_s;\n"
+                                     + "  property string authorNpub: \"\"; property string authorDisplayName: \"\"; property string authorPictureUrl: \"\";\n"
+                                     + "  Rectangle { width: 34; height: 34; radius: width/2; color: \"transparent\"; border.width: 1; border.color: Material.dividerColor;\n"
+                                     + "    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { personalFeed.npub = refHeader.authorNpub } }\n"
+                                     + "    ProfilePicture { anchors.fill: parent; anchors.margins: Constants.spacing_xs; url: refHeader.authorPictureUrl }\n"
+                                     + "  }\n"
+                                     + "  MouseArea { width: parent.width - 50; height: childrenRect.height; cursorShape: Qt.PointingHandCursor; anchors.verticalCenter: parent.verticalCenter; onClicked: { personalFeed.npub = refHeader.authorNpub }\n"
+                                     + "    Column { spacing: 2; width: parent.width;\n"
+                                     + "      Text { font: Constants.font; text: refHeader.authorDisplayName; elide: Text.ElideRight; width: parent.width; color: Material.primaryTextColor }\n"
+                                     + "      Text { text: refHeader.authorNpub; font.pixelSize: Constants.font.pixelSize * 0.8; elide: Text.ElideRight; width: parent.width; color: Material.secondaryTextColor }\n"
+                                     + "    }\n"
+                                     + "  }\n"
+                                     + "}"
+
+                        var headerObj = Qt.createQmlObject(headerQml, frame.contentRootItem, "RefHeader")
+                        if (headerObj) {
+                            headerObj.authorNpub = authorNpubVal
+                            headerObj.authorDisplayName = authorDisplay
+                            headerObj.authorPictureUrl = authorPic
+                        }
+
+                        var nestedContent = cachedPost.content
+                        if (nestedContent) {
+                            var nestedParts = parseContentParts(nestedContent)
+                            renderContentParts(frame.contentRootItem, nestedParts)
+                        }
+                    } else {
+                        frame.isLoading = true
+                    }
+                } else {
+                    console.error("Failed to create referenced frame for:", value)
+                }
+                break
+            }
+
             if (!componentMap[type]) {
-                continue
+                console.error("Failed to create component for:", type)
+                break
             }
 
             var finalType = type
             var args = {
-                "width": Qt.binding(function() { return contentLayout.width }),
+                "width": Qt.binding(function() { return container.width }),
             }
 
             if (type === "text") {
                 args["value"] = value
             } else if (type === "profile") {
                 var profile = getProfile(value)
-                var displayName = profile && (profile.displayName || profile.name) ? 
-                                 (profile.displayName || profile.name) : 
-                                 (value.substring(0, 8) + "...")
+                var displayName = ""
+                if (profile) {
+                    displayName = profile.displayName || profile.name || ""
+                }
+                if (!displayName) {
+                    displayName = value.substring(0, 8) + "..."
+                }
                 args["value"] = "<a href=\"profile://" + value + 
                                "\" style=\"color: #9C27B0\">@" + displayName + "</a>"
             } else if (type === "url") {
@@ -653,11 +724,11 @@ Pane {
 
                     if (mimeType.indexOf("image/") === 0) {
                         finalType = "image"
-                        args["value"] = "file:///" + cacheFile
+                        args["value"] = cacheFile
                         args["original"] = originalUrl
                     } else if (mimeType.indexOf("video/") === 0) {
                         finalType = "video" 
-                        args["value"] = "file:///" + cacheFile
+                        args["value"] = cacheFile
                         args["original"] = originalUrl
                     } else {
                         args["value"] = "<a href=\"" + value + "\" style=\"color: #9C27B0\">" + value + "</a>"
@@ -683,7 +754,6 @@ Pane {
                         }
                     } else if (!urlInfo || urlInfo.type === "failed") {
                         args["value"] = "<a href=\"" + value + "\" style=\"color: #9C27B0\">" + value + "</a>"
-
                         if (!urlInfo) {
                             processedUrls[value] = {type: "checking"}
                             mediaPeekCompleted.connect(mediaPeekCallback)
@@ -716,7 +786,7 @@ Pane {
                     args["currentUser"] = currentUser
                 }
 
-                var item = component.createObject(contentLayout, args)
+                var item = component.createObject(container, args)
 
                 if (item === null) {
                     console.error("Failed to create object for:", value)
@@ -768,7 +838,7 @@ Pane {
             contentParts = newParts
             contentLayout.children = []
             if (post_id && contentParts) {
-                renderContentParts(contentParts)
+                renderContentParts(contentLayout, contentParts)
             }
         }
     }

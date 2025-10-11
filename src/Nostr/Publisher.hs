@@ -11,18 +11,18 @@ import Effectful.Concurrent.STM (atomically, writeTChan)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, modify)
 
-import Logging
+import KeyMgmt (KeyMgmt)
+import Logging (Logging)
+import Nostr (Nostr)
 import Nostr.Event (Event(..), EventId)
-import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
-import Nostr.Relay (RelayURI, getUri, isInboxCapable, isOutboxCapable)
-import Nostr.RelayConnection
-import Nostr.EventHandler (EventHandler, handleEvent)
-import Nostr.Types (Request(..))
+import Nostr.Keys (PubKeyXO)
+import Nostr.Relay
+import Nostr.EventProcessor (handleEvent)
+import Nostr.Types (Request(..), RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.Util
 import QtQuick
-import Store.Lmdb (LmdbStore, getFollows, getDMRelays, getGeneralRelays)
-import Types ( AppState(..), ConnectionState(..), Follow(..)
-             , PublishStatus(..), RelayData(..), RelayPool(..) )
+import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
+import Types (AppState(..), PublishStatus(..))
 
 
 -- | Result of a publish operation
@@ -61,36 +61,29 @@ getPublishResult eid = send $ GetPublishResult eid
 
 -- | Publisher effect handlers
 type PublisherEff es =
-  ( State AppState :> es
+  ( RelayConnection :> es
+  , State AppState :> es
   , State RelayPool :> es
   , LmdbStore :> es
-  , EventHandler :> es
-  , RelayConnection :> es
-  , QtQuick :> es
-  , Concurrent :> es
+  , Nostr :> es
   , Logging :> es
+  , KeyMgmt :> es
+  , Concurrent :> es
+  , QtQuick :> es
   , Util :> es
   )
 
 
 -- | Run a publisher
-runPublisher
-  :: PublisherEff es
-  => Eff (Publisher : es) a
-  -> Eff es a
+runPublisher :: PublisherEff es => Eff (Publisher : es) a -> Eff es a
 runPublisher =  interpret $ \_ -> \case
     Broadcast event' -> do
-        handleEvent Nothing event'
+        st <- get @AppState
 
-        kp <- getKeyPair
-        let xo = keyPairToPubKeyXO kp
-
-        dmRelays <- getDMRelays xo
-        myGeneralRelays <- getGeneralRelays xo
-        let outboxCapable = filter isOutboxCapable myGeneralRelays
-
-        follows <- getFollows xo
-        let followPks = map pubkey follows
+        let dmRelays = Map.keys $ currentDMRelays st
+            myGeneralRelays = Map.elems $ currentGeneralRelays st
+            outboxCapable = filter isOutboxCapable myGeneralRelays
+            followPks = Map.keys $ currentFollows st
 
         followerRelays <- forM followPks $ \pk -> do
             relays' <- getGeneralRelays pk
@@ -113,30 +106,28 @@ runPublisher =  interpret $ \_ -> \case
             if connected
                 then do
                     writeToChannel event' r
+                    handleEvent event' r
                     disconnect r
                 else
                     updateEventRelayStatus (eventId event') r (Failure "Relay server unreachable")
 
     PublishToOutbox event' -> do
-        handleEvent Nothing event'
-
-        kp <- getKeyPair
-        let pk = keyPairToPubKeyXO kp
-
-        generalRelayList <- getGeneralRelays pk
-        let outboxCapableURIs = map getUri $ filter isOutboxCapable generalRelayList
+        st <- get @AppState
+        let generalRelayList = Map.elems $ currentGeneralRelays st
+            outboxCapableURIs = map getUri $ filter isOutboxCapable generalRelayList
 
         initEventPublishStatus (eventId event') outboxCapableURIs
 
-        forM_ outboxCapableURIs $ \r -> writeToChannel event' r
+        forM_ outboxCapableURIs $ \r -> do
+            writeToChannel event' r
+            handleEvent event' r
 
     PublishToRelay event' relayUri' -> do
-        handleEvent Nothing event'
+        handleEvent event' relayUri'
         updateEventRelayStatus (eventId event') relayUri' Publishing
         writeToChannel event' relayUri'
 
     PublishGiftWrap event' senderPk recipientPk -> do
-        handleEvent Nothing event'
         dmRelayList <- getDMRelays senderPk
         recipientDMRelays <- getDMRelays recipientPk
 
@@ -158,6 +149,7 @@ runPublisher =  interpret $ \_ -> \case
                     if connected
                         then do
                             writeToChannel event' r
+                            handleEvent event' r
                             -- Delay disconnect to allow message transmission
                             threadDelay 1000000  -- 1 second delay
                             disconnect r
@@ -196,7 +188,7 @@ getConnectedRelays = do
 -- | Update publish status for an event at a specific relay
 updateEventRelayStatus :: PublisherEff es => EventId -> RelayURI -> PublishStatus -> Eff es ()
 updateEventRelayStatus eid relay status =
-    modify $ \st -> st
+    modify @RelayPool $ \st -> st
         { publishStatus = Map.adjust
             (Map.insert relay status)
             eid
@@ -207,7 +199,7 @@ updateEventRelayStatus eid relay status =
 -- | Initialize publish status for an event with multiple relays
 initEventPublishStatus :: PublisherEff es => EventId -> [RelayURI] -> Eff es ()
 initEventPublishStatus eid rs =
-    modify $ \st -> st
+    modify @RelayPool $ \st -> st
         { publishStatus = Map.insert
             eid
             (Map.fromList [(relay, Publishing) | relay <- rs])

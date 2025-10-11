@@ -3,14 +3,11 @@
 module Presentation.HomeScreen where
 
 import Control.Lens ((^.))
-import Control.Monad (filterM, void)
-import Data.Aeson (decode, encode, toJSON)
-import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
-import Data.ByteString.Base16 qualified as B16
+import Control.Monad (filterM, forM_, void)
+import Data.Aeson (decode, encode)
 import Data.ByteString.Lazy qualified as BSL
-import Data.Set qualified as Set
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (fromMaybe, isJust, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack, unpack)
 import Data.Text qualified as Text
@@ -27,26 +24,28 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 import Network.Wreq qualified as Wreq
 import Prelude hiding (drop)
-import System.FilePath ((</>), takeFileName)
+import System.FilePath ((</>), dropExtension, takeExtension, takeFileName)
 import Text.Read (readMaybe)
 
 import Downloader (Downloader, DownloadStatus(..), hasDownload, peekMimeType, download)
 import KeyMgmt (AccountId(..), updateProfile)
 import Nostr
-import Nostr.Bech32 (pubKeyXOToBech32, eventToNevent, eventIdToNote, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
-import Nostr.Event (Event(..), EventId(..), Kind(..), createMetadata, getEventId)
-import Nostr.Publisher
+import Nostr.Bech32 (pubKeyXOToBech32, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
+import Nostr.Event (Event(..), EventId(..), createMetadata)
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
-import Nostr.ProfileManager (fetchProfile, getProfile)
+import Nostr.ProfileManager (getProfile)
+import Nostr.Publisher
+import Nostr.Relay (RelayPool(..))
 import Nostr.Util
 import Presentation.Classes qualified as Classes
-import Presentation.Classes (findAvailableFilename, createPost)
+import Presentation.Classes (createPost)
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb (LmdbStore, getEvent, getEvents, getFollows, getEventRelays, getCommentsWithIndentationLevel)
-import Types (Post(..), AppState(..), AppScreen(..), RelayPool(..), FeedFilter(..), Follow(..), Feed(..))
+import Store.Lmdb ( TimelineType(..), getCommentsWithIndentationLevel, getEvent
+                  , getEvents, getTimelineIds )
+import Types (Post(..), AppState(..), AppScreen(..), FeedFilter(..))
 
 
 -- | HomeScren Effect for creating QML UI.
@@ -69,14 +68,18 @@ runHomeScreen = interpret $ \_ -> \case
     keyMgmtObj <- runE $ KeyMgmtUI.createUI changeKey'
     relayMgmtObj <- runE $ RelayMgmtUI.createUI changeKey'
 
-    followClass' <- runE $ Classes.followClass changeKey'
+    postClass' <- runE $ Classes.postClass changeKey'
     profileClass' <- runE $ Classes.profileClass changeKey'
     publishStatusClass' <- runE $ Classes.publishStatusClass changeKey'
-    commentFeedClass' <- runE $ Classes.commentFeedClass changeKey'
+    followClass' <- runE $ Classes.followClass changeKey'
 
-    followPool <- newFactoryPool (newObject followClass')
-    profilesPool <- newFactoryPool (newObject profileClass')
+    postPool <- newFactoryPool (newObject postClass')
+    profilePool <- newFactoryPool (newObject profileClass')
     publishStatusPool <- newFactoryPool (newObject publishStatusClass')
+    followPool <- newFactoryPool (newObject followClass')
+
+    commentClass' <- runE $ Classes.commentClass changeKey' postPool
+    commentPool <- newFactoryPool (newObject commentClass')
 
     rootClass <- newClass [
         defPropertyConst' "version" (\_ -> do
@@ -88,13 +91,27 @@ runHomeScreen = interpret $ \_ -> \case
 
         defPropertyConst' "ctxRelayMgmt" (\_ -> return relayMgmtObj),
 
-        defPropertyConst' "currentProfile" (\_ -> do
-          mp <- runE $ gets @AppState currentProfile
-          case mp of
-            Just (pk, _) -> do
-              profileObj <- getPoolObject profilesPool pk
-              return $ Just profileObj
-            Nothing -> return Nothing),
+        -- defPropertyConst' "currentProfile" (\_ -> do
+        --   mp <- runE $ gets @AppState currentProfile
+        --   case mp of
+        --     Just (pk, _) -> do
+        --       prof <- runE $ getProfile pk
+        --       kpCur <- runE $ getKeyPair
+        --       let currentPubKey = keyPairToPubKeyXO kpCur
+        --       followsCur <- runE $ getFollows currentPubKey
+        --       let isFollowBool = pk `elem` map pubkey followsCur
+        --       return $ Just
+        --         [ TE.decodeUtf8 $ B16.encode $ exportPubKeyXO pk  -- id (hex)
+        --         , pubKeyXOToBech32 pk                             -- npub
+        --         , fromMaybe "" (name prof)
+        --         , fromMaybe "" (displayName prof)
+        --         , fromMaybe "" (about prof)
+        --         , fromMaybe "" (picture prof)  -- return raw URL, let QML handle resolution
+        --         , fromMaybe "" (NP.nip05 prof)
+        --         , fromMaybe "" (banner prof)   -- return raw URL, let QML handle resolution
+        --         , if isFollowBool then "1" else "0"
+        --         ]
+        --     Nothing -> return (Nothing :: Maybe [Text])),
 
         defPropertySigRW' "currentScreen" changeKey'
           (\_ -> do
@@ -108,14 +125,28 @@ runHomeScreen = interpret $ \_ -> \case
                         fireSignal obj
                   Nothing -> return ()),
 
-        defPropertySigRO' "mynpub" changeKey' $ \_ -> do
-          kp <- runE $ getKeyPair
-          return $ pubKeyXOToBech32 $ keyPairToPubKeyXO kp,
+        defPropertySigRO' "mynpub" changeKey' $ \_ -> runE $
+          pubKeyXOToBech32 . keyPairToPubKeyXO <$> getKeyPair,
 
-        defPropertySigRO' "mypicture" changeKey' $ \_ -> runE $ do
-          kp <- getKeyPair
-          (profile, _) <- getProfile $ keyPairToPubKeyXO kp
-          return $ fromMaybe "" $ picture profile,
+        defPropertySigRO' "mypicture" changeKey' $ \obj -> runE $ do
+          xo <- keyPairToPubKeyXO <$> getKeyPair
+          profileCache' <- gets @AppState profileCache
+          case Map.lookup xo profileCache' of
+              Just profile -> do
+                let url' = case picture profile of
+                      Just url | Text.isPrefixOf "http://" url || Text.isPrefixOf "https://" url -> url
+                      _ -> "https://robohash.org/" <> pubKeyXOToBech32 xo <> ".png?size=50x50"
+                check <- hasDownload url'
+                case check of
+                  Ready (cacheFile, _mime, _expiry) -> pure $ Just $ "file://" <> pack cacheFile
+                  Failed _ -> pure Nothing
+                  Downloading -> pure Nothing
+                  NotStarted -> do
+                    void $ async $ do
+                      void $ download url'
+                      fireSignal obj
+                    pure Nothing
+              Nothing -> pure Nothing,
 
         defPropertySigRO' "inboxModelState" changeKey' $ \obj -> runE $ do
           modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { inboxModelStateObjRef = Just obj } }
@@ -132,7 +163,8 @@ runHomeScreen = interpret $ \_ -> \case
           res <- search obj input
           return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
 
-        defMethod' "loadFeed" $ \(_ :: ObjRef ()) (feedType :: Text) (input :: Text) -> runE $ do
+        defMethod' "setFeed" $ \(_ :: ObjRef ()) (feedType :: Text) (input :: Text) -> runE $ do
+          --logDebug $ "setFeed: " <> feedType <> " " <> input
           let f = case feedType of
                 "public" -> case bech32ToPubKeyXO input of
                   Just pubKeyXO -> PostsFilter pubKeyXO
@@ -141,12 +173,28 @@ runHomeScreen = interpret $ \_ -> \case
                   Just pubKeyXO -> PrivateMessagesFilter pubKeyXO
                   Nothing -> error "Invalid bech32 public key"
                 _ -> error "Invalid feed type"
-          void $ loadFeed f
-          ck <- gets @QtQuickState signalKey
-          let ck' = fromMaybe (error "Signal key not found") ck
-          feedClass' <- Classes.feedClass ck'
-          feedObj <- liftIO $ newObject feedClass' ()
-          return (feedObj :: ObjRef ()),
+          
+          loadFeed f
+          uiRefs' <- gets @QtQuickState uiRefs
+          forM_ (mainFeedEventsObjRef uiRefs') $ \obj -> fireSignal obj
+          return (),
+
+        -- defMethod' "loadFeed" $ \(_ :: ObjRef ()) (feedType :: Text) (input :: Text) -> runE $ do
+        --   logDebug $ "loadFeed: " <> feedType <> " " <> input
+        --   let f = case feedType of
+        --         "public" -> case bech32ToPubKeyXO input of
+        --           Just pubKeyXO -> PostsFilter pubKeyXO
+        --           Nothing -> error "Invalid bech32 public key"
+        --         "private" -> case bech32ToPubKeyXO input of
+        --           Just pubKeyXO -> PrivateMessagesFilter pubKeyXO
+        --           Nothing -> error "Invalid bech32 public key"
+        --         _ -> error "Invalid feed type"
+        --   loadFeed f
+        --   ck <- gets @QtQuickState signalKey
+        --   let ck' = fromMaybe (error "Signal key not found") ck
+        --   feedClass' <- Classes.feedClass ck'
+        --   feedObj <- liftIO $ newObject feedClass' ()
+        --   return (feedObj :: ObjRef ()),
 
         defMethod' "saveProfile" $ \_ input -> runE $ do
           let profile = maybe (error "Invalid profile JSON") id $ decode (BSL.fromStrict $ TE.encodeUtf8 input) :: Profile
@@ -163,10 +211,56 @@ runHomeScreen = interpret $ \_ -> \case
 
         defPropertySigRO' "followList" changeKey' $ \obj -> do
           runE $ modify $ \s -> s { uiRefs = (uiRefs s) { followsObjRef = Just obj } }
-          kp <- runE $ getKeyPair
-          let userPubKey = keyPairToPubKeyXO kp
-          followedPubKeys <- runE $ getFollows userPubKey
-          mapM (getPoolObject followPool) (userPubKey : map pubkey followedPubKeys),
+          userPubKey <- runE $ keyPairToPubKeyXO <$> getKeyPair
+          myFollows <- runE $ gets @AppState currentFollows
+          -- Include user's own profile first, then follows
+          userFollowObj <- getPoolObject followPool userPubKey
+          runE $ mapM_ getProfile $ Map.keys myFollows
+          followObjects <- mapM (getPoolObject followPool) $ Map.keys myFollows
+          return $ userFollowObj : followObjects,
+          -- let petnameOf pk = maybe "" (fromMaybe "" . petName) (listToMaybe [ f | f <- follows, pubkey f == pk ])
+          -- followData <- forM (map pubkey follows) $ \pk -> do
+          --   profile <- getProfile pk
+          --   return
+          --     [ pubKeyXOToBech32 pk
+          --     , petnameOf pk
+          --     , fromMaybe "" (displayName profile)
+          --     , fromMaybe "" (name profile)
+          --     , fromMaybe "" (picture profile)  -- return raw URL, let QML handle resolution
+          --     , "follow"
+          --     ]
+          -- return $
+          --   -- what's need feed first
+          --   [["", "", "What's new", "", "qrc:/icons/news.svg", "feed"]] ++
+          --   -- user profile second
+          --   [[pubKeyXOToBech32 userPubKey, "", "", "", fromMaybe "" (picture userProfile), "feed"]] ++
+          --   -- follows third
+          --   followData,
+
+        defPropertySigRO' "currentFeed" changeKey' $ \obj -> runE $ do
+          modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { mainFeedEventsObjRef = Just obj } }
+          cf <- gets @AppState currentFeed
+          es <- case cf of
+              Just (PostsFilter pk) -> do
+                  eventIds <- getTimelineIds PostTimeline pk 100
+                  getEvents eventIds
+              Just (PrivateMessagesFilter pk) -> do
+                  eventIds <- getTimelineIds ChatTimeline pk 100
+                  getEvents eventIds
+              Just (CommentsFilter _) -> error "CommentsFilter not supported for main feed"
+              Nothing -> error "No feed filter"
+          posts <- mapM createPost es
+          modify @AppState $ \st -> st { currentFeedCache = Map.fromList $ zip (map postId posts) posts }
+          liftIO $ mapM (getPoolObject postPool) (map eventId es),
+
+        defPropertySigRO' "commentFeed" changeKey' $ \obj -> runE $ do
+          modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { commentFeedEventsObjRef = Just obj } }
+          cf <- gets @AppState currentCommentFeed
+          case cf of
+              Just (CommentsFilter eid') -> do
+                  comments <- getCommentsWithIndentationLevel eid'
+                  liftIO $ mapM (getPoolObject commentPool) comments
+              _ -> error "No comment feed filter",
 
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
@@ -214,70 +308,37 @@ runHomeScreen = interpret $ \_ -> \case
                 Nothing -> error $ "Invalid event ID format: " <> show eid
             Nothing -> setCurrentPost Nothing,
 
-        defMethod' "getCommentFeed" $ \_ eid -> runE $ do
-          let eid' = read (unpack eid) :: EventId
-          commentIds <- getCommentsWithIndentationLevel eid'
-
-          let commentEventIds = map fst commentIds
-          commentEvents <- getEvents commentEventIds
-          commentPosts <- mapM createPost commentEvents
-          let commentEventMap = Map.fromList [(postId p, p) | p <- commentPosts]
-              commentsFeed = Feed
-                  { feedEvents = commentPosts
-                  , feedEventMap = commentEventMap
-                  , feedFilter = CommentsFilter eid'
-                  }
-
-          modify @AppState $ \st -> st { currentCommentFeed = Just commentsFeed }
-          commentsFeedObj <- liftIO $ newObject commentFeedClass' ()
-          return commentsFeedObj,
-
-        defMethod' "getProfile" $ \_ input -> do
-          result <- case parseNprofileOrNpub input of
-            Just (pk, relayHints) -> do
-              _ <- runE $ fetchProfile pk relayHints  -- this will return profile and handle fetch if needed
-              profileObj <- getPoolObject profilesPool pk
-              return $ Just profileObj
-            _ -> return Nothing
-          return result,
+        defMethod' "getProfile" $ \_ input -> runE $ do
+          case parseNprofileOrNpub input of
+            Just (pk, _relayHints) -> do
+              profileCache' <- gets @AppState profileCache
+              case Map.lookup pk profileCache' of
+                Just _ -> do
+                  obj <- liftIO $ getPoolObject profilePool pk
+                  return $ Just obj
+                Nothing -> do
+                  profile <- getProfile pk
+                  modify @AppState $ \st -> st { profileCache = Map.insert pk profile (profileCache st) }
+                  obj <- liftIO $ getPoolObject profilePool pk
+                  return $ Just obj
+            _ -> return Nothing,
 
         defMethod' "getPost" $ \_ input -> runE $ do
-          let fetchByEventId eid = do
-                eventMaybe <- getEvent eid
-                case eventMaybe of
-                  Just event -> do
-                    post <- createPost event
-                    relaysSet <- getEventRelays (postId post)
-                    let prettyConfig = defConfig {
-                        confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
-                            `mappend` compare
-                        }
-                    return [
-                        TE.decodeUtf8 $ B16.encode $ getEventId $ postId post,  -- id
-                        eventToNevent (postEvent post) [],                      -- nevent
-                        TE.decodeUtf8 $ BSL.toStrict $ encodePretty' prettyConfig $ toJSON $ postEvent post, -- raw
-                        Text.intercalate "," $ Set.toList relaysSet,           -- relays
-                        postType post,                                          -- postType
-                        postContent post,                                       -- content
-                        postTimestamp post,                                     -- timestamp
-                        pubKeyXOToBech32 $ postAuthor post,                    -- authorId
-                        maybe "" eventIdToNote (referencedPostId post)        -- referencedPostId
-                        ]
-                  Nothing -> return []
-
-          let fetchByType parseFunc = case parseFunc input of
-                  Just eid -> fmap Just (fetchByEventId eid)
-                  Nothing -> return Nothing
-
-          case Text.takeWhile (/= '1') input of
-              "note"  -> fetchByType noteToEventId
-              "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
-              "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
-              _ -> do
-                let meid = readMaybe (unpack input) :: Maybe EventId
-                case meid of
-                  Just eid -> fmap Just (fetchByEventId eid)
-                  Nothing -> return Nothing,
+          let parseEid = case Text.takeWhile (/= '1') input of
+                "note"  -> noteToEventId input
+                "nevent" -> case neventToEvent input of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing
+                "naddr" -> case naddrToEvent input of Just (eid, _, _) -> Just eid; Nothing -> Nothing
+                _ -> readMaybe (unpack input) :: Maybe EventId
+          --logDebug $ "getPost: " <> pack (show parseEid)
+          case parseEid of
+            Just eid -> do
+              eventExists <- isJust <$> getEvent eid
+              if eventExists
+              then do
+                obj <- liftIO $ getPoolObject postPool eid
+                pure $ Just obj
+              else pure Nothing
+            Nothing -> return Nothing,
 
         defMethod' "convertNprofileToNpub" $ \_ input -> runE $ do
           case parseNprofileOrNpub input of
@@ -293,7 +354,7 @@ runHomeScreen = interpret $ \_ -> \case
         defMethod' "hasDownload" $ \_ url -> runE $ do
           status <- hasDownload url
           case status of
-              Ready (cacheFile, mime, _) -> return [pack cacheFile, mime]
+              Ready (cacheFile, mime, _) -> return ["file:///" <> pack cacheFile, mime]
               _ -> return [],
 
         defMethod' "peekMimeType" $ \obj url -> runE $ do
@@ -359,42 +420,11 @@ runHomeScreen = interpret $ \_ -> \case
                     --logError $ "Download failed: " <> pack (show e)
                     liftIO $ QML.fireSignal (Proxy :: Proxy DownloadCompleted) obj False (pack $ show e),
 
-        defMethod' "cancelLogin" $ \obj -> runE $ cancelLogin obj,
-
-        defMethod' "getRaw" $ \_ eid -> runE $ do
-          let eid' = read (unpack eid) :: EventId
-          eventMaybe <- getEvent eid'
-          case eventMaybe of
-              Just e -> do
-                  let prettyConfig = defConfig {
-                          confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
-                          `mappend` compare
-                      }
-                      prettyEncode x = TE.decodeUtf8 . BSL.toStrict $ encodePretty' prettyConfig (toJSON x)
-                  case kind e of
-                      GiftWrap -> do
-                          kp <- getKeyPair
-                          sealed <- unwrapGiftWrap e kp
-                          rumor <- maybe (return Nothing) (\s -> unwrapSeal s kp) sealed
-                          return $ [prettyEncode e]
-                              ++ maybe [] ((:[]) . prettyEncode) sealed
-                              ++ maybe [] ((:[]) . prettyEncode) rumor
-                      _ -> return [prettyEncode e]
-              Nothing -> return []
+        defMethod' "cancelLogin" $ \obj -> runE $ cancelLogin obj
       ]
 
     newObject rootClass ()
 
-
--- Helper function to fetch and create an event object
-fetchEventObject :: (LmdbStore :> es, IOE :> es) => FactoryPool EventId -> EventId -> Eff es (Maybe (ObjRef EventId))
-fetchEventObject pool eid = do
-    eventMaybe <- getEvent eid
-    case eventMaybe of
-        Just _ -> do
-            obj <- liftIO (getPoolObject pool eid)
-            return (Just obj)
-        Nothing -> return Nothing
 
 -- Helper function to wait for download completion by polling status
 waitForDownloadCompletion :: (Futr :> es, Downloader :> es, Concurrent :> es) => Text -> Eff es DownloadStatus
@@ -405,3 +435,24 @@ waitForDownloadCompletion url = do
             threadDelay 100000  -- 100ms
             waitForDownloadCompletion url
         _ -> return status
+
+
+-- Helper function to find an available filename
+findAvailableFilename :: (FileSystem :> es) => FilePath -> FilePath -> Eff es FilePath
+findAvailableFilename dir baseFileName = do
+  let tryPath = dir </> baseFileName
+  exists <- doesFileExist tryPath
+  if not exists
+    then return tryPath
+    else findNextAvailable dir baseFileName 1
+  where
+    findNextAvailable :: (FileSystem :> es) => FilePath -> FilePath -> Int -> Eff es FilePath
+    findNextAvailable dir' fileName counter = do
+      let ext = takeExtension fileName
+          baseName = dropExtension fileName
+          newName = baseName ++ " (" ++ show counter ++ ")" ++ ext
+          tryPath = dir' </> newName
+      exists <- doesFileExist tryPath
+      if not exists
+        then return tryPath
+        else findNextAvailable dir' fileName (counter + 1)

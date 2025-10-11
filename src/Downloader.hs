@@ -34,6 +34,8 @@ import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.FileSystem (FileSystem, getXdgDirectory, XdgDirectory(XdgData), createDirectoryIfMissing)
 import Effectful.Concurrent (Concurrent)
+
+import Logging (Logging)
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Util (Util, getKeyPair)
@@ -97,7 +99,7 @@ peekMimeType url = send $ PeekMimeType url
 clearCache :: Downloader :> es => Eff es ()
 clearCache = send ClearCache
 
-runDownloader :: (State DownloaderState :> es, Util :> es, FileSystem :> es, IOE :> es, Concurrent :> es) => Eff (Downloader : es) a -> Eff es a
+runDownloader :: (State DownloaderState :> es, Util :> es, FileSystem :> es, IOE :> es, Concurrent :> es, Logging :> es) => Eff (Downloader : es) a -> Eff es a
 runDownloader = interpret $ \_ -> \case
   HasDownload url -> do
     st <- get
@@ -167,6 +169,7 @@ runDownloader = interpret $ \_ -> \case
         in pure $ Right mime
 
   ClearCache -> do
+    --logDebug $ "Clearing cache"
     cacheDir <- getCacheDirForCurrentUser
     files <- liftIO $ listDirectory cacheDir
     now <- liftIO getCurrentTime

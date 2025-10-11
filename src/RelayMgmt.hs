@@ -8,11 +8,12 @@ import Effectful.Dispatch.Dynamic (interpret, send)
 import QtQuick
 import Logging
 import Nostr
-import Nostr.Event (createPreferredDMRelaysEvent, createRelayListMetadataEvent)
+import Nostr.Event (Kind(..), UnsignedEvent(..), createPreferredDMRelaysEvent)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
 import Nostr.Publisher
-import Nostr.Relay (Relay(..), RelayURI, defaultDMRelays, defaultGeneralRelays, getUri)
-import Nostr.RelayConnection
+import Nostr.Types ( RelayURI, Relay(..), defaultDMRelays, defaultGeneralRelays, getUri
+                   , isInboxCapable, isOutboxCapable, normalizeRelayURI )
+import Nostr.Relay
 import Nostr.Util
 import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
 
@@ -183,9 +184,19 @@ runRelayMgmt = interpret $ \_ -> \case
                 --logError "Failed to sign preferred DM relays event"
 
 
--- | Normalize a Relay by normalizing its URI
-normalizeRelay :: Relay -> Relay
-normalizeRelay relay = case relay of
-    InboxRelay uri -> InboxRelay (normalizeRelayURI uri)
-    OutboxRelay uri -> OutboxRelay (normalizeRelayURI uri)
-    InboxOutboxRelay uri -> InboxOutboxRelay (normalizeRelayURI uri)
+createRelayListMetadataEvent :: [Relay] -> PubKeyXO -> Int -> UnsignedEvent
+createRelayListMetadataEvent relays xo t =
+  UnsignedEvent
+    { pubKey' = xo
+    , createdAt' = t
+    , kind' = RelayListMetadata
+    , tags' = map makeRelayTag relays
+    , content' = ""
+    }
+  where
+    makeRelayTag r = ["r", getUri r] ++
+      if isOutboxCapable r && not (isInboxCapable r)
+        then ["write"]
+      else if isInboxCapable r && not (isOutboxCapable r)
+        then ["read"]
+      else []

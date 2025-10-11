@@ -13,6 +13,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy (fromStrict, toStrict)
+import Data.List (find)
 import Data.Maybe (fromMaybe)
 import Data.Scientific (toBoundedInteger)
 import Data.String.Conversions (ConvertibleStrings, cs)
@@ -23,11 +24,9 @@ import Data.Time.Clock.POSIX (getCurrentTime, utcTimeToPOSIXSeconds)
 import GHC.Generics (Generic)
 import System.Random (randomRIO)
 
---import Nostr.Bech32 (eventToNevent)
 import Nostr.Keys
 import Nostr.Encryption (decrypt, getConversationKey, encrypt)
 import Nostr.Profile (Profile(..))
-import Nostr.Relay (Relay, RelayURI, getUri, isInboxCapable, isOutboxCapable)
 
 
 -- | The 'Kind' data type represents different kinds of events in the Nostr protocol.
@@ -391,11 +390,23 @@ createComment originalEvent content' xo createdAt' =
   where
     buildTags :: Event -> [Tag]
     buildTags e =
-      let rootTag = case getRootEventId e of
-            Just rootId -> [["e", eventIdToHex rootId, "", "root", pubKeyXOToHex $ pubKey e]]
-            Nothing -> [["e", eventIdToHex $ eventId e, "", "root", pubKeyXOToHex $ pubKey e]]
-
-          replyTag = [["e", eventIdToHex $ eventId e, "", "reply", pubKeyXOToHex $ pubKey e]]
+      let -- Check if the original event is a comment
+          isOriginalComment = isComment e
+          
+          -- Get the root event ID
+          -- If the original event is a comment, use its root ID
+          -- If the original event is a post, use the original event ID as root
+          rootId = case getRootEventId e of
+            Just rootId' -> rootId'  -- Original event is a comment, use its root
+            Nothing -> eventId e     -- Original event is a post, use it as root
+          
+          -- Build root tag
+          rootTag = [["e", eventIdToHex rootId, "", "root", pubKeyXOToHex $ pubKey e]]
+          
+          -- Build reply tag (only if commenting on a comment)
+          replyTag = if isOriginalComment
+                     then [["e", eventIdToHex $ eventId e, "", "reply", pubKeyXOToHex $ pubKey e]]
+                     else []
 
           originalPTags = [tag | tag@["p", _] <- tags e]
 
@@ -408,7 +419,7 @@ createComment originalEvent content' xo createdAt' =
 
 
 -- | Create a repost event (kind 6) for text notes.
-createRepost :: Event -> RelayURI -> PubKeyXO -> Int -> UnsignedEvent
+createRepost :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
 createRepost event relayUrl xo t =
   UnsignedEvent
     { pubKey' = xo
@@ -422,7 +433,7 @@ createRepost event relayUrl xo t =
 
 
 -- | Create a generic repost event (kind 16) for non-text-note events.
-createGenericRepost :: Event -> RelayURI -> PubKeyXO -> Int -> UnsignedEvent
+createGenericRepost :: Event -> Text -> PubKeyXO -> Int -> UnsignedEvent
 createGenericRepost event relayUrl xo t =
   UnsignedEvent
     { pubKey' = xo
@@ -492,25 +503,7 @@ createEventDeletion event reason xo t =
     kTags = [["k", pack $ show $ kindToInt $ kind event]]
 
 
-createRelayListMetadataEvent :: [Relay] -> PubKeyXO -> Int -> UnsignedEvent
-createRelayListMetadataEvent relays xo t =
-  UnsignedEvent
-    { pubKey' = xo
-    , createdAt' = t
-    , kind' = RelayListMetadata
-    , tags' = map makeRelayTag relays
-    , content' = ""
-    }
-  where
-    makeRelayTag r = ["r", getUri r] ++
-      if isOutboxCapable r && not (isInboxCapable r)
-        then ["write"]
-      else if isInboxCapable r && not (isOutboxCapable r)
-        then ["read"]
-      else []
-
-
-createPreferredDMRelaysEvent :: [RelayURI] -> PubKeyXO -> Int -> UnsignedEvent
+createPreferredDMRelaysEvent :: [Text] -> PubKeyXO -> Int -> UnsignedEvent
 createPreferredDMRelaysEvent urls xo t =
   UnsignedEvent
     { pubKey' = xo
@@ -521,7 +514,7 @@ createPreferredDMRelaysEvent urls xo t =
     }
 
 
-createCanonicalAuthentication :: RelayURI -> Text -> PubKeyXO -> Int -> UnsignedEvent
+createCanonicalAuthentication :: Text -> Text -> PubKeyXO -> Int -> UnsignedEvent
 createCanonicalAuthentication r challenge xo t =
   UnsignedEvent
     { pubKey' = xo
@@ -660,21 +653,30 @@ getRootEventId = getRelationshipEventId Root
 
 -- | Get the relationship event ID.
 getRelationshipEventId :: Marker -> Event -> Maybe EventId
-getRelationshipEventId m e =
-  if null replyList
-    then Nothing
-    else extractEventId $ head replyList
+getRelationshipEventId marker event =
+  let result = case find (hasMarker marker) (tags event) of
+        Just tag -> extractEventIdFromTag tag
+        Nothing -> Nothing
+      _ = print ("DEBUG getRelationshipEventId: marker=" ++ show marker ++ 
+                ", tags=" ++ show (tags event) ++ 
+                ", result=" ++ show result)
+  in result
   where
-    replyFilter :: Marker -> Tag -> Bool
-    replyFilter m' ["e", _, _, m'', _] = show m' == show m''
-    replyFilter _ _ = False
-
-    replyList = filter (replyFilter m) $ tags e
-
-    extractEventId :: Tag -> Maybe EventId
-    extractEventId ["e", eid, _, _, _] =
-      decodeHex (encodeUtf8 eid) >>= Just . EventId
-    extractEventId _ = Nothing
+    -- Check if a tag has the specified marker
+    hasMarker :: Marker -> Tag -> Bool
+    hasMarker m tag = case tag of
+      ("e":_:rest) -> 
+        case rest of
+          (_:markerStr:_) -> markerStr == pack (show m)
+          [markerStr] -> markerStr == pack (show m)
+          _ -> False
+      _ -> False
+    
+    -- Extract event ID from an e-tag
+    extractEventIdFromTag :: Tag -> Maybe EventId
+    extractEventIdFromTag tag = case tag of
+      ("e":eid:_) -> eventIdFromHex eid
+      _ -> Nothing
 
 
 -- | Decodes a hex string to a byte string.
@@ -687,14 +689,13 @@ decodeHex str =
 
 -- | Check if a short text note is a comment.
 isComment :: Event -> Bool
-isComment e = kind e == ShortTextNote && hasETags (tags e)
-  where
-    hasETags :: [Tag] -> Bool
-    hasETags = any isETag
-
-    isETag :: Tag -> Bool
-    isETag ("e":_) = True
-    isETag _ = False
+isComment e = any (\tag -> case tag of
+    ("e":_:rest) -> 
+      case rest of
+        (_:marker:_) -> marker == "root"
+        [marker] -> marker == "root"
+        _ -> False
+    _ -> False) (tags e)
 
 
 -- | Extract pubkeys from p-tags in the tags list

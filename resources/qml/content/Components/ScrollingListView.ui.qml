@@ -15,7 +15,7 @@ ListView {
     keyNavigationEnabled: true
     keyNavigationWraps: false
 
-    cacheBuffer: Math.max(200, height * 2)
+    //cacheBuffer: height * 3
     displayMarginBeginning: 100
     displayMarginEnd: 100
 

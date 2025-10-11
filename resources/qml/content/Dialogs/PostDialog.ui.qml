@@ -54,7 +54,6 @@ Dialog {
                 }
             }
 
-            // Use a Loader to conditionally create the post content
             Loader {
                 active: root.targetPost !== null
                 width: scrollView.width

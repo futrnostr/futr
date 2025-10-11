@@ -144,8 +144,9 @@ exportSignature :: Signature -> ByteString
 exportSignature = S.exportSchnorrSignature . getSignature
 
 -- | Convert byte string to hex string
+-- Optimized version that avoids intermediate ByteString allocation
 byteStringToHex :: ByteString -> Text
-byteStringToHex = decodeUtf8 . B16.encode
+byteStringToHex bs = decodeUtf8 $ B16.encode bs
 
 -- | Sign message using Schnorr signature scheme
 schnorrSign :: KeyPair -> ByteString -> IO (Maybe Signature)

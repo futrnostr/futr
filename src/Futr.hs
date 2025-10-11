@@ -3,7 +3,7 @@
 
 module Futr where
 
-import Control.Monad (forever, forM, forM_, unless, void, when)
+import Control.Monad (forM, forM_, unless, void, when)
 import Data.Aeson (ToJSON, pairs, toEncoding, (.=))
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
@@ -14,8 +14,7 @@ import Data.Text (Text, isPrefixOf, unpack)
 import Data.Typeable (Typeable)
 import Effectful
 import Effectful.Concurrent
-import Effectful.Concurrent.Async (async, cancel)
-import Effectful.Concurrent.STM (atomically, flushTQueue, newTVarIO, readTQueue, readTVar, writeTVar)
+import Effectful.Concurrent.Async (async, cancel, forConcurrently_)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.Exception (SomeException, try)
 import Effectful.FileSystem
@@ -32,7 +31,7 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 import System.FilePath ((</>))
 
-import Downloader (Downloader, clearCache)
+import Downloader (Downloader)
 import Logging
 import KeyMgmt (Account(..), AccountId(..), KeyMgmt, KeyMgmtState(..))
 import Nostr
@@ -42,25 +41,23 @@ import Nostr.Event ( Event(..), EventId, UnsignedEvent(..)
                    , createRepost, createRumor, createShortTextNote, eventIdToHex
                    )
 import Nostr.Event qualified as NE
-import Nostr.EventHandler (EventHandler, handleEvent)
-import Nostr.InboxModel ( InboxModel, awaitAtLeastOneConnected, startInboxModel
-                        , stopInboxModel, subscribeToProfilesAndPostsFor
-                        , subscribeToCommentsFor, unsubscribeToCommentsFor )
+import Nostr.EventProcessor (handleEvent)
+import Nostr.InboxModel ( InboxModel, startInboxModel, stopInboxModel
+                        , subscribeToCommentsFor, subscribeToProfilesAndPostsFor, unsubscribeToCommentsFor )
 import Nostr.Keys (PubKeyXO, derivePublicKeyXO, keyPairToPubKeyXO, pubKeyXOToHex, secKeyToKeyPair)
 import Nostr.Nip05Search (isNip05Identifier, searchNip05, Nip05SearchResult(..))
-import Nostr.ProfileManager (ProfileManager)
+import Nostr.ProfileManager (ProfileManager, initializeProfileManager)
 import Nostr.Publisher
-import Nostr.Relay (RelayURI, getUri, isInboxCapable, isValidRelayURI)
-import Nostr.RelayConnection (RelayConnection, connect, disconnect)
-import Nostr.Subscription
-import Nostr.SubscriptionHandler (SubscriptionHandler)
+import Nostr.Relay ( RelayConnection, RelayPool(..), connect, disconnect
+                   , initialRelayPool, subscribeTemporary, unsubscribe )
+import Nostr.Types (RelayURI, getUri, isInboxCapable, isValidRelayURI, metadataFilter)
 import Nostr.Util
-import Presentation.Classes (Classes, createPost)
+import Presentation.Classes (Classes)
 import Presentation.KeyMgmtUI (KeyMgmtUI)
 import Presentation.RelayMgmtUI (RelayMgmtUI)
 import RelayMgmt (RelayMgmt)
-import Store.Lmdb ( LmdbState(..), LmdbStore, TimelineType(..), initialLmdbState, initializeLmdbState
-                  , getEvent, getEvents, getEventRelays, getFollows, getGeneralRelays, getTimelineIds )
+import Store.Lmdb ( LmdbState(..), LmdbStore, initialLmdbState, initializeLmdbState
+                  , getEvent, getEventRelays, getGeneralRelays )
 import Types
 
 -- | Signal key class for LoginStatusChanged.
@@ -118,7 +115,7 @@ data Futr :: Effect where
   SetCurrentPost :: Maybe EventId -> Futr m ()
   FollowProfile :: Text -> Futr m ()
   UnfollowProfile :: Text -> Futr m ()
-  LoadFeed :: FeedFilter -> Futr m Feed
+  LoadFeed :: FeedFilter -> Futr m ()
   SendPrivateMessage :: Text -> Futr m ()
   SendShortTextNote :: Text -> Futr m ()
   Logout :: ObjRef () -> Futr m ()
@@ -148,7 +145,7 @@ followProfile npub' = send $ FollowProfile npub'
 unfollowProfile :: Futr :> es => Text -> Eff es ()
 unfollowProfile npub' = send $ UnfollowProfile npub'
 
-loadFeed :: Futr :> es => FeedFilter -> Eff es Feed
+loadFeed :: Futr :> es => FeedFilter -> Eff es ()
 loadFeed f = send $ LoadFeed f
 
 sendPrivateMessage :: Futr :> es => Text -> Eff es ()
@@ -181,7 +178,6 @@ type FutrEff es =
   ( State AppState :> es
   , State LmdbState :> es
   , LmdbStore :> es
-  , EventHandler :> es
   , KeyMgmt :> es
   , KeyMgmtUI :> es
   , RelayMgmtUI :> es
@@ -191,8 +187,6 @@ type FutrEff es =
   , InboxModel :> es
   , RelayConnection :> es
   , RelayMgmt :> es
-  , Subscription :> es
-  , SubscriptionHandler :> es
   , Publisher :> es
   , State KeyMgmtState :> es
   , State RelayPool :> es
@@ -213,9 +207,7 @@ runFutr = interpret $ \_ -> \case
   Login obj input -> do
       kst <- get @KeyMgmtState
       case Map.lookup (AccountId input) (accountMap kst) of
-        Nothing -> do
-          --logError $ "Account not found: " <> input
-          return ()
+        Nothing -> pure ()
         Just a -> do
           let pk = accountPubKeyXO a
 
@@ -229,18 +221,19 @@ runFutr = interpret $ \_ -> \case
           case dbResult of
             Left e -> error $ "Database initialization failed: " <> show e
             Right _ -> do
+              initializeProfileManager
               loginWithAccount obj a
 
               -- Stop any previous cache clearer
               mOld <- gets @AppState cacheClearer
               forM_ mOld $ \old -> cancel old
 
-              -- Start new cache clearer
-              t <- async $ forever $ do
-                clearCache
-                threadDelay (5 * 60 * 1000000) -- 5 minutes in microseconds
+              -- -- Start new cache clearer
+              -- t <- async $ forever $ do
+              --   clearCache
+              --   threadDelay (5 * 60 * 1000000) -- 5 minutes in microseconds
 
-              modify @AppState $ \s -> s { cacheClearer = Just t }
+              -- modify @AppState $ \s -> s { cacheClearer = Just t }
 
   Search _ input -> do
     st <- get @AppState
@@ -259,8 +252,8 @@ runFutr = interpret $ \_ -> \case
               then return $ Nip05Result npubStr nip05Id relayHints
               else do
                 -- Check if already following
-                currentFollows <- maybe [] id <$> traverse getFollows myPubKey
-                if any (\f -> pubkey f == userPubKey) currentFollows
+                currentFollows <- gets @AppState currentFollows
+                if Map.member userPubKey currentFollows
                   then return $ Nip05Result npubStr nip05Id relayHints
                   else do
                     -- Search in relays to get more info about the user
@@ -274,8 +267,8 @@ runFutr = interpret $ \_ -> \case
           Just (pubkey', relayUris)
             | Just pubkey' == myPubKey -> return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
             | otherwise -> do
-                currentFollows <- maybe [] id <$> traverse getFollows myPubKey
-                if any (\f -> pubkey f == pubkey') currentFollows
+                currentFollows <- gets @AppState currentFollows
+                if Map.member pubkey' currentFollows
                   then return $ ProfileResult (pubKeyXOToBech32 pubkey') relayUris
                   else do
                     searchInRelays pubkey' relayUris
@@ -284,8 +277,10 @@ runFutr = interpret $ \_ -> \case
 
   SetCurrentPost eid -> do
     previousPost <- gets @AppState currentPost
-
-    modify @AppState $ \st -> st { currentPost = eid }
+    let commentFeedFilter = case eid of
+          Just eid' -> Just $ CommentsFilter eid'
+          Nothing -> Nothing
+    modify @AppState $ \st -> st { currentPost = eid, currentCommentFeed = commentFeedFilter }
 
     case (eid, previousPost) of
       (Just newId, Just oldId) -> when (newId == oldId) $ do
@@ -299,11 +294,11 @@ runFutr = interpret $ \_ -> \case
     let targetPK = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
     st <- get @AppState
     case keyPairToPubKeyXO <$> keyPair st of
-        Just userPK -> do
-            currentFollows <- getFollows userPK
-            unless (targetPK `elem` map pubkey currentFollows) $ do
+        Just _ -> do
+            let followsList = Map.elems $ currentFollows st
+            unless (targetPK `elem` map pubkey followsList) $ do
                 let newFollow = Follow targetPK Nothing
-                    newFollows = newFollow : currentFollows
+                    newFollows = newFollow : followsList
                 sendFollowListEvent newFollows
                 notify $ emptyUpdates { myFollowsChanged = True }
         Nothing -> return ()
@@ -312,14 +307,15 @@ runFutr = interpret $ \_ -> \case
     let targetPK = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
     st <- get @AppState
     case keyPairToPubKeyXO <$> keyPair st of
-        Just userPK -> do
-            currentFollows <- getFollows userPK
-            let newFollows = filter ((/= targetPK) . pubkey) currentFollows
+        Just _ -> do
+            let followsList = Map.elems $ currentFollows st
+                newFollows = filter ((/= targetPK) . pubkey) followsList
             sendFollowListEvent newFollows
             notify $ emptyUpdates { myFollowsChanged = True }
         Nothing -> return ()
 
   LoadFeed f -> do
+    --logDebug $ "LoadFeed: " <> pack (show f)
     let pk = case f of
           PostsFilter pk' -> pk'
           PrivateMessagesFilter pk' -> pk'
@@ -328,36 +324,18 @@ runFutr = interpret $ \_ -> \case
     st <- get @AppState
 
     case currentProfile st of
-      Just (_, subIds) -> forM_ subIds $ \subId' -> stopSubscription subId'
+      Just (_, subIds) -> forM_ subIds $ \subId' -> unsubscribe subId'
       _ -> pure ()
 
-    modify @AppState $ \st' -> st' { currentProfile = Just (pk, []) }
+    modify @AppState $ \st' -> st'
+      { currentProfile = Just (pk, [])
+      , currentFeed = Just f
+      }
     notify $ emptyUpdates { feedChanged = True }
 
-    eventIds <- case f of
-      PostsFilter pk' -> do
-        getTimelineIds PostTimeline pk' 100
-      PrivateMessagesFilter pk' -> do
-        getTimelineIds ChatTimeline pk' 100
-      CommentsFilter _ -> error "LoadFeed not supported for CommentsFilter - use getCommentFeed instead"
-
-    events <- getEvents eventIds
-    posts <- mapM createPost events
-
-    let feed = Feed posts (Map.fromList [(postId p, p) | p <- posts]) f
-
-    modify @AppState $ \st' -> st' { currentFeed = Just feed }
-
     void $ async $ do
-      kp <- getKeyPair
-      let mypk = keyPairToPubKeyXO kp
-      follows <- getFollows mypk
-
-      when (not (pk `elem` map pubkey follows)) $ do
-        subIds <- subscribeToProfilesAndPostsFor pk
-        modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
-
-    pure feed
+      subIds <- subscribeToProfilesAndPostsFor pk
+      modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
 
   SendPrivateMessage input -> do
     st <- get @AppState
@@ -546,18 +524,11 @@ loginWithAccount obj a = do
         , npubView = pubKeyXOToBech32 $ derivePublicKeyXO $ accountSecKey a
         }
 
-    void $ async startInboxModel
-    void $ async $ do
-      atLeastOneConnected <- awaitAtLeastOneConnected
+    modify @AppState $ \s -> s { currentScreen = Home }
+    liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
+    fireSignal obj
+    void $ async $ startInboxModel
 
-      if atLeastOneConnected
-        then do
-          modify @AppState $ \s -> s { currentScreen = Home }
-          liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj True ""
-        else do
-          liftIO $ QML.fireSignal (Proxy :: Proxy LoginStatusChanged) obj False "Failed to connect to any relay"
-
-      fireSignal obj
 
 -- | Send a follow list event.
 sendFollowListEvent :: FutrEff es => [Follow] -> Eff es ()
@@ -577,56 +548,16 @@ sendFollowListEvent follows = do
 -- | Search for a profile in relays.
 searchInRelays :: FutrEff es => PubKeyXO -> [RelayURI] -> Eff es ()
 searchInRelays xo relayUris = do
-    manuallyConnected <- case relayUris of
-        [relayUri] -> do
-            conns <- gets @RelayPool activeConnections
-            if Map.member relayUri conns
-                then return False
-                else do
-                    void $ connect relayUri
-                    return True
-        _ -> return False
+  st <- get @AppState
+  let relays = Map.elems $ currentGeneralRelays st
 
-    relays <- getGeneralRelays xo
-    conns <- gets @RelayPool activeConnections
+  let searchRelays = case relayUris of
+          [relayUri] -> [relayUri]
+          _ -> map getUri relays
 
-    let searchRelays = case relayUris of
-            [relayUri] -> [relayUri]
-            _ -> map getUri relays
-
-    forM_ searchRelays $ \relayUri' -> do
-        when (Map.member relayUri' conns) $ do
-            subId' <- subscribe relayUri' (metadataFilter [xo])
-            subs <- gets @RelayPool subscriptions
-            let q = case Map.lookup subId' subs of
-                      Just sub -> responseQueue sub
-                      Nothing -> error $ "Subscription " <> show subId' <> " not found"
-            -- @todo duplicated from subscription handler, but closes unneeded connections
-
-            void $ async $ do
-                shouldStopVar <- newTVarIO False
-                let loop = do
-                        e <- atomically $ readTQueue q
-                        es <- atomically $ flushTQueue q
-
-                        forM_ (e:es) $ \(relayUri, e') -> do
-                            case e' of
-                                EventAppeared event' -> handleEvent (Just relayUri) event'
-
-                                SubscriptionEose _ -> do
-                                  stopSubscription subId'
-                                  when (manuallyConnected && relayUri' `elem` relayUris) $ do
-                                    disconnect relayUri'
-
-                                SubscriptionClosed _ -> do
-                                  atomically $ writeTVar shouldStopVar True
-                                  when (manuallyConnected && relayUri' `elem` relayUris) $ do
-                                    disconnect relayUri'
-
-                        shouldStop <- atomically $ readTVar shouldStopVar
-                        unless shouldStop loop
-
-                loop
+  forConcurrently_ searchRelays $ \relayUri -> do
+    connected <- connect relayUri
+    when connected $ void $ subscribeTemporary relayUri (metadataFilter [xo]) handleEvent
 
 
 -- | Helper to fully clean up app state, disconnect all relays, and fire signal

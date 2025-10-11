@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 
+import Components 1.0
 import HsQML.Model 1.0
 import Futr 1.0
 import Profile 1.0
@@ -17,10 +18,34 @@ Rectangle {
     property string currentUserPicture: ""
     required property var personalFeed
 
+    property string currentFilter: "all" // "all" or "follows"
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: root.isCollapsed ? 4 : 10
         spacing: root.isCollapsed ? 4 : 10
+
+        TabBar {
+            id: filterTabs
+            Layout.fillWidth: true
+            visible: !root.isCollapsed
+
+            TabButton {
+                text: "All"
+                Layout.preferredHeight: 32
+                width: implicitWidth
+                checked: root.currentFilter === "all"
+                onClicked: root.currentFilter = "all"
+            }
+
+            TabButton {
+                text: "Follows"
+                Layout.preferredHeight: 32
+                width: implicitWidth
+                checked: root.currentFilter === "follows"
+                onClicked: root.currentFilter = "follows"
+            }
+        }
 
         FollowListFilter {
             id: followListFilter
@@ -34,20 +59,15 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: Constants.spacing_xs
+            clip: true
+
+            //cacheBuffer: height * 15
 
             property string selectedPubkey: ""
 
             model: AutoListModel {
-                id: followsModel
                 source: followList
                 mode: AutoListModel.ByKey
-                equalityTest: function (oldItem, newItem) {
-                    return oldItem.pubkey === newItem.pubkey
-                        && oldItem.petname === newItem.petname
-                        && oldItem.displayName === newItem.displayName
-                        && oldItem.name === newItem.name
-                        && oldItem.picture === newItem.picture
-                }
             }
 
             ScrollBar.vertical: ScrollBar {
@@ -58,17 +78,29 @@ Rectangle {
             delegate: Component {
                 Rectangle {
                     id: followItem
+
+                    property string follow_pubkey: modelData ? modelData.pubkey : ""
+                    property string follow_petname: modelData ? modelData.petname : ""
+                    property string follow_displayName: modelData ? modelData.displayName : ""
+                    property string follow_name: modelData ? modelData.name : ""
+                    property string follow_picture: modelData ? modelData.picture : ""
+                    property string follow_type: modelData ? modelData.follow_type : ""
                     property bool mouseHover: false
                     height: visible ? (root.isCollapsed ? 34 : 54) : 0
                     width: followsView.width
                     visible: {
                         if (!modelData) return false;
+
+                        if (root.currentFilter === "follows" && follow_type !== "follow") {
+                            return false;
+                        }
+
                         if (followListFilter.filterText === "") return true;
                         var searchText = followListFilter.filterText.toLowerCase();
-                        var displayName = modelData.displayName || "";
-                        var petname = modelData.petname || "";
-                        var name = modelData.name || "";
-                        var pubkey = modelData.pubkey || "";
+                        var displayName = follow_displayName || "";
+                        var petname = follow_petname || "";
+                        var name = follow_name || "";
+                        var pubkey = follow_pubkey || "";
                         return pubkey.toLowerCase().includes(searchText) ||
                             displayName.toLowerCase().includes(searchText) ||
                             petname.toLowerCase().includes(searchText) ||
@@ -77,9 +109,9 @@ Rectangle {
 
                     color: {
                         if (mouseHover) return Qt.rgba(Material.accentColor.r, Material.accentColor.g, Material.accentColor.b, 0.2);
-                        if (modelData && modelData.pubkey === followsView.selectedPubkey)
+                        if (modelData && follow_pubkey === followsView.selectedPubkey)
                             return Qt.rgba(Material.accentColor.r, Material.accentColor.g, Material.accentColor.b, 0.15);
-                        if (modelData && modelData.pubkey === currentUser)
+                        if (modelData && follow_pubkey === currentUser)
                             return Qt.rgba(Material.primaryColor.r, Material.primaryColor.g, Material.primaryColor.b, 0.1);
                         return "transparent";
                     }
@@ -92,7 +124,7 @@ Rectangle {
                         spacing: root.isCollapsed ? 0 : 8
 
                         ProfilePicture {
-                            imageSource: modelData.getProfilePicture(modelData.picture)
+                            url: follow_picture
                         }
 
                         ColumnLayout {
@@ -101,32 +133,30 @@ Rectangle {
                             visible: !root.isCollapsed
 
                             Text {
-                                text: modelData.petname || modelData.displayName || modelData.name || modelData.pubkey
+                                text: follow_petname || follow_displayName || follow_name || follow_pubkey
                                 font: Constants.font
                                 color: Material.primaryTextColor
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
-                                visible: modelData !== undefined && modelData !== null && modelData.pubkey !== currentUser
+                                visible: modelData && follow_pubkey !== currentUser
                             }
 
                             Text {
-                                text: modelData.name || modelData.pubkey
+                                text: follow_name || follow_pubkey
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                                 font: Constants.smallFont
                                 color: Material.secondaryTextColor
-                                visible: modelData !== undefined && modelData !== null
-                                        && modelData.pubkey !== currentUser
-                                        && (modelData.displayName !== "" || modelData.name !== "")
+                                visible: modelData && follow_pubkey !== currentUser && ((follow_displayName !== "") || (follow_name !== ""))
                             }
 
                             Text {
-                                text: "Myself"
+                                text: qsTr("Myself")
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                                 font: Constants.smallFont
                                 color: Material.secondaryTextColor
-                                visible: modelData !== undefined && modelData !== null && modelData.pubkey === currentUser
+                                visible: modelData && follow_pubkey === currentUser
                             }
                         }
                     }
@@ -140,15 +170,20 @@ Rectangle {
                         onExited: followItem.mouseHover = false
 
                         ToolTip {
-                            visible: parent.containsMouse && root.isCollapsed
-                            text: modelData.petname || modelData.displayName || modelData.name || modelData.pubkey
+                            visible: parent && parent.containsMouse && root.isCollapsed
+                            text: (modelData && follow_pubkey === currentUser)
+                                ? qsTr("Myself")
+                                : (follow_petname || follow_displayName || follow_name || follow_pubkey)
                             delay: 500
                         }
 
                         onClicked: {
-                            if (modelData === undefined || modelData === null) return;
-                            followsView.selectedPubkey = modelData.pubkey
-                            personalFeed.npub = modelData.pubkey
+                            if (!modelData) return;
+                            if (stackView.depth > 1) {
+                                stackView.pop();
+                            }
+                            followsView.selectedPubkey = follow_pubkey
+                            personalFeed.npub = follow_pubkey
                         }
                     }
                 }
