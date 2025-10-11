@@ -27,7 +27,7 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (for_)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text, pack)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8)
 import Effectful
@@ -36,7 +36,7 @@ import Effectful.Concurrent.Async (Async, async, race)
 import Effectful.Concurrent.STM ( TChan, TMVar, TVar, atomically, newTChanIO
                                 , newEmptyTMVarIO, putTMVar, readTChan
                                 , takeTMVar, writeTChan
-                                , newTVarIO, readTVar, writeTVar, retry )
+                                , newTVarIO, readTVar, writeTVar )
 import Effectful.Dispatch.Dynamic (interpret, localUnliftIO, send)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Network.URI (URI(..), parseURI, uriAuthority, uriPort, uriRegName, uriScheme)
@@ -54,7 +54,7 @@ import Nostr.Types ( Filter, RelayURI, Request, Response(..), SubscriptionId
                    , normalizeRelayURI )
 import Nostr.Types qualified as NT
 import Nostr.Util
-import Logging (Logging, logWarning, logDebug)
+import Logging (Logging)
 import QtQuick (QtQuick, notifyRelayStatus)
 import Store.Lmdb (LmdbStore, RelayStats(..), updateRelayStats)
 import Types (AppState(..), PublishStatus)
@@ -85,6 +85,7 @@ data RelayPool = RelayPool
     , subscriptions :: !(Map SubscriptionId SubscriptionState)
     , publishStatus :: !(Map EventId (Map RelayURI PublishStatus))
     , reconciliationThread :: !(Maybe (Async ()))
+    , eventFetcherThread :: !(Maybe (Async ()))
     , commentSubscriptions :: !(Map EventId [SubscriptionId])
     , subscriptionCallbacks :: !(Map SubscriptionId (Event -> RelayURI -> IO ()))
     , subscriptionCompletion :: !(Map SubscriptionId (TVar Bool))
@@ -147,6 +148,7 @@ initialRelayPool = RelayPool
   , subscriptions = Map.empty
   , publishStatus = Map.empty
   , reconciliationThread = Nothing
+  , eventFetcherThread = Nothing
   , commentSubscriptions = Map.empty
   , subscriptionCallbacks = Map.empty
   , subscriptionCompletion = Map.empty
@@ -371,7 +373,7 @@ establishConnection r requestChan = do
     result <- try @SomeException $ connectAction runClient
     case result of
       Right _ -> pure ()
-      Left e -> runE $ do
+      Left _ -> runE $ do
         atomically $ putTMVar connectionMVar False
         now <- getCurrentTime
         updateRelayStats r (\s -> s { errorsCount = errorsCount s + 1
@@ -387,41 +389,40 @@ establishConnection r requestChan = do
 -- | Run the Nostr client.
 nostrClient :: RelayConnectionEff es => TMVar Bool -> RelayURI -> TChan NT.Request -> (forall a. Eff es a -> IO a) -> WS.ClientApp ()
 nostrClient connectionMVar r requestChan runE conn = runE $ do
-    let conn' = conn
-  --liftIO $ withPingPong defaultPingPongOptions conn $ \conn' -> runE $ do
-    now <- getCurrentTime
-    modify @RelayPool $ \st -> st { activeConnections = Map.adjust (\d -> 
-        d { connectionState = Connected
-          , requestChannel = requestChan
-          , lastConnectedTs = now
-          }) r (activeConnections st) }
-    updateRelayStats r (\s -> s { successes = successes s + 1, lastSeenTs = now })
-    void $ atomically $ putTMVar connectionMVar True
-    notifyRelayStatus
-    void $ async $ receiveLoop conn'
-    sendLoop conn'
-    -- Connection is closing; purge any subscriptions tied to this relay to avoid lingering state
-    stSubs <- get @RelayPool
-    let subIdsToPurge = [ sid | (sid, sd) <- Map.toList (subscriptions stSubs), relay sd == r ]
-    for_ subIdsToPurge $ \sid' ->
-      for_ (Map.lookup sid' (subscriptionCompletion stSubs)) $ \tv -> atomically $ writeTVar tv True
-    modify @RelayPool $ \s ->
-      let subs' = foldr Map.delete (subscriptions s) subIdsToPurge
-          cbs' = foldr Map.delete (subscriptionCallbacks s) subIdsToPurge
-          comp' = foldr Map.delete (subscriptionCompletion s) subIdsToPurge
-          active' = Map.delete r (activeConnections s)
-      in s { subscriptions = subs'
-           , subscriptionCallbacks = cbs'
-           , subscriptionCompletion = comp'
-           , activeConnections = active'
-           }
-    notifyRelayStatus
+    liftIO $ withPingPong defaultPingPongOptions conn $ \conn' -> runE $ do
+      now <- getCurrentTime
+      modify @RelayPool $ \st -> st { activeConnections = Map.adjust (\d -> 
+          d { connectionState = Connected
+            , requestChannel = requestChan
+            , lastConnectedTs = now
+            }) r (activeConnections st) }
+      updateRelayStats r (\s -> s { successes = successes s + 1, lastSeenTs = now })
+      void $ atomically $ putTMVar connectionMVar True
+      notifyRelayStatus
+      void $ async $ receiveLoop conn'
+      sendLoop conn'
+      -- Connection is closing; purge any subscriptions tied to this relay to avoid lingering state
+      stSubs <- get @RelayPool
+      let subIdsToPurge = [ sid | (sid, sd) <- Map.toList (subscriptions stSubs), relay sd == r ]
+      for_ subIdsToPurge $ \sid' ->
+        for_ (Map.lookup sid' (subscriptionCompletion stSubs)) $ \tv -> atomically $ writeTVar tv True
+      modify @RelayPool $ \s ->
+        let subs' = foldr Map.delete (subscriptions s) subIdsToPurge
+            cbs' = foldr Map.delete (subscriptionCallbacks s) subIdsToPurge
+            comp' = foldr Map.delete (subscriptionCompletion s) subIdsToPurge
+            active' = Map.delete r (activeConnections s)
+        in s { subscriptions = subs'
+            , subscriptionCallbacks = cbs'
+            , subscriptionCompletion = comp'
+            , activeConnections = active'
+            }
+      notifyRelayStatus
   where
     receiveLoop conn' = do
       --logDebug $ "WS recv loop: " <> r
       msg <- liftIO (try (WS.receiveData conn') :: IO (Either SomeException ByteString))
       case msg of
-        Left err -> do
+        Left _ -> do
           --logDebug $ "WS recv error: " <> r <> ": " <> pack (show err)
           now <- getCurrentTime
           updateRelayStats r (\s -> s { errorsCount = errorsCount s + 1

@@ -9,6 +9,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Text (Text, pack)
 import Control.Concurrent.Async (Async)
+import Control.Concurrent.STM (TBQueue)
 import GHC.Generics (Generic)
 import Nostr.Event (Event, EventId)
 import Nostr.Keys (KeyPair, PubKeyXO)
@@ -62,8 +63,7 @@ data FeedFilter
 
 
 data Post = Post
-  {
-    postId :: EventId
+  { postId :: EventId
   , postAuthor :: PubKeyXO
   , postEvent :: Event
   , postContent :: Text
@@ -89,6 +89,7 @@ data AppState = AppState
   , currentGeneralRelays :: Map RelayURI Relay
   , currentFollows :: Map PubKeyXO Follow
   , profileCache :: Map PubKeyXO Profile
+  , eventFetcherQueue :: Maybe (TBQueue (EventId, Set RelayURI))
   , cacheClearer :: Maybe (Async ())
   }
 
@@ -130,5 +131,6 @@ initialState = AppState
   , currentGeneralRelays = Map.empty
   , currentFollows = Map.empty
   , profileCache = Map.empty
+  , eventFetcherQueue = Nothing
   , cacheClearer = Nothing
   }

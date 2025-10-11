@@ -277,8 +277,10 @@ runFutr = interpret $ \_ -> \case
 
   SetCurrentPost eid -> do
     previousPost <- gets @AppState currentPost
-
-    modify @AppState $ \st -> st { currentPost = eid }
+    let commentFeedFilter = case eid of
+          Just eid' -> Just $ CommentsFilter eid'
+          Nothing -> Nothing
+    modify @AppState $ \st -> st { currentPost = eid, currentCommentFeed = commentFeedFilter }
 
     case (eid, previousPost) of
       (Just newId, Just oldId) -> when (newId == oldId) $ do
@@ -292,7 +294,7 @@ runFutr = interpret $ \_ -> \case
     let targetPK = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
     st <- get @AppState
     case keyPairToPubKeyXO <$> keyPair st of
-        Just userPK -> do
+        Just _ -> do
             let followsList = Map.elems $ currentFollows st
             unless (targetPK `elem` map pubkey followsList) $ do
                 let newFollow = Follow targetPK Nothing
@@ -305,7 +307,7 @@ runFutr = interpret $ \_ -> \case
     let targetPK = maybe (error "Invalid bech32 public key") id $ bech32ToPubKeyXO npub'
     st <- get @AppState
     case keyPairToPubKeyXO <$> keyPair st of
-        Just userPK -> do
+        Just _ -> do
             let followsList = Map.elems $ currentFollows st
                 newFollows = filter ((/= targetPK) . pubkey) followsList
             sendFollowListEvent newFollows

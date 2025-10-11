@@ -14,7 +14,6 @@ Pane {
     property string buttonText: qsTr("Send")
     property string currentUser: ""
     property string currentUserPicture: ""
-    property var currentUserProfile: currentUser !== "" ? getProfile(currentUser) : null
 
     signal messageSent(string text)
 
@@ -33,7 +32,7 @@ Pane {
         spacing: Constants.spacing_m
 
         ProfilePicture {
-            url: currentUserProfile ? currentUserPicture : ""
+            url: currentUserPicture
             Layout.preferredWidth: 34
             Layout.preferredHeight: 34
         }

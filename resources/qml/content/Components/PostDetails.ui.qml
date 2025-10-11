@@ -16,10 +16,9 @@ Page {
     property var post: null
     required property string currentUser
     required property string currentUserPicture
-    property var comments: [] // @todo
 
     Component.onCompleted: {
-        setCurrentPost(post ? post[0] : null)
+        setCurrentPost(post ? post.id : null)
     }
 
     Component.onDestruction: {
@@ -27,7 +26,7 @@ Page {
     }
 
     onPostChanged: {
-        setCurrentPost(post ? post[0] : null)
+        setCurrentPost(post ? post.id : null)
     }
 
     header: ToolBar {
@@ -170,7 +169,7 @@ Page {
             }
 
             Label {
-                text: qsTr("Comments: ") + comments.length
+                text: qsTr("Comments: ") + commentFeed.length
                 color: Material.foreground
                 Layout.leftMargin: 0
                 font: Constants.fontMedium
@@ -183,11 +182,13 @@ Page {
                 Layout.preferredHeight: contentHeight
                 Layout.leftMargin: 0
                 Layout.rightMargin: Constants.spacing_m
+                leftMargin: 0
+                rightMargin: 0
                 Layout.maximumHeight: 1000
 
                 model: AutoListModel {
                     id: commentsModel
-                    source: comments
+                    source: commentFeed
                     mode: AutoListModel.ByKey
                 }
 
@@ -199,7 +200,7 @@ Page {
 
                     PostContent {
                         id: postContent
-                        post: modelData ? getPost(modelData.post) : null
+                        post: modelData ? modelData.post : null
                         currentUser: root.currentUser
                         width: parent.width - indentation
                         x: indentation

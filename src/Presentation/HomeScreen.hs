@@ -3,14 +3,11 @@
 module Presentation.HomeScreen where
 
 import Control.Lens ((^.))
-import Control.Monad (filterM, forM, forM_, void)
-import Data.Aeson (decode, encode, toJSON)
-import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
-import Data.ByteString.Base16 qualified as B16
+import Control.Monad (filterM, forM_, void)
+import Data.Aeson (decode, encode)
 import Data.ByteString.Lazy qualified as BSL
-import Data.Set qualified as Set
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (fromMaybe, isJust, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack, unpack)
 import Data.Text qualified as Text
@@ -27,30 +24,28 @@ import Graphics.QML hiding (fireSignal, runEngineLoop)
 import Graphics.QML qualified as QML
 import Network.Wreq qualified as Wreq
 import Prelude hiding (drop)
-import System.FilePath ((</>), takeFileName)
+import System.FilePath ((</>), dropExtension, takeExtension, takeFileName)
 import Text.Read (readMaybe)
 
 import Downloader (Downloader, DownloadStatus(..), hasDownload, peekMimeType, download)
 import KeyMgmt (AccountId(..), updateProfile)
-import Logging (logDebug)
 import Nostr
-import Nostr.Bech32 (pubKeyXOToBech32, eventToNevent, eventIdToNote, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
-import Nostr.Event (Event(..), EventId(..), Kind(..), createMetadata, getEventId)
-import Nostr.InboxModel (stopInboxModel, startInboxModel)
-import Nostr.Keys (exportPubKeyXO, keyPairToPubKeyXO)
+import Nostr.Bech32 (pubKeyXOToBech32, bech32ToPubKeyXO, noteToEventId, neventToEvent, naddrToEvent)
+import Nostr.Event (Event(..), EventId(..), createMetadata)
+import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
-import Nostr.Profile qualified as NP
 import Nostr.ProfileManager (getProfile)
 import Nostr.Publisher
 import Nostr.Relay (RelayPool(..))
 import Nostr.Util
 import Presentation.Classes qualified as Classes
-import Presentation.Classes (findAvailableFilename, createPost)
+import Presentation.Classes (createPost)
 import Presentation.KeyMgmtUI qualified as KeyMgmtUI
 import Presentation.RelayMgmtUI qualified as RelayMgmtUI
 import Futr hiding (Comment, QuoteRepost, Repost)
-import Store.Lmdb (TimelineType(..), getEvent, getEvents, getEventRelays, getFollows, getEventRelays, getTimelineIds)
-import Types (Post(..), AppState(..), AppScreen(..), FeedFilter(..), Follow(..))
+import Store.Lmdb ( TimelineType(..), getCommentsWithIndentationLevel, getEvent
+                  , getEvents, getTimelineIds )
+import Types (Post(..), AppState(..), AppScreen(..), FeedFilter(..))
 
 
 -- | HomeScren Effect for creating QML UI.
@@ -76,13 +71,15 @@ runHomeScreen = interpret $ \_ -> \case
     postClass' <- runE $ Classes.postClass changeKey'
     profileClass' <- runE $ Classes.profileClass changeKey'
     publishStatusClass' <- runE $ Classes.publishStatusClass changeKey'
-    commentFeedClass' <- runE $ Classes.commentFeedClass changeKey'
     followClass' <- runE $ Classes.followClass changeKey'
 
     postPool <- newFactoryPool (newObject postClass')
     profilePool <- newFactoryPool (newObject profileClass')
     publishStatusPool <- newFactoryPool (newObject publishStatusClass')
     followPool <- newFactoryPool (newObject followClass')
+
+    commentClass' <- runE $ Classes.commentClass changeKey' postPool
+    commentPool <- newFactoryPool (newObject commentClass')
 
     rootClass <- newClass [
         defPropertyConst' "version" (\_ -> do
@@ -146,7 +143,7 @@ runHomeScreen = interpret $ \_ -> \case
                   Downloading -> pure Nothing
                   NotStarted -> do
                     void $ async $ do
-                      res <- download url'
+                      void $ download url'
                       fireSignal obj
                     pure Nothing
               Nothing -> pure Nothing,
@@ -162,20 +159,12 @@ runHomeScreen = interpret $ \_ -> \case
 
         defMethod' "logout" $ \obj -> runE $ logout obj,
 
-        defMethod' "stopInboxModel" $ \_ -> runE $ do
-          logDebug $ "stopInboxModel"
-          stopInboxModel,
-
-        defMethod' "startInboxModel" $ \_ -> runE $ do
-          logDebug $ "startInboxModel"
-          void $ async $ startInboxModel,
-
         defMethod' "search" $ \obj input -> runE $ do
           res <- search obj input
           return $ TE.decodeUtf8 $ BSL.toStrict $ encode res,
 
         defMethod' "setFeed" $ \(_ :: ObjRef ()) (feedType :: Text) (input :: Text) -> runE $ do
-          logDebug $ "setFeed: " <> feedType <> " " <> input
+          --logDebug $ "setFeed: " <> feedType <> " " <> input
           let f = case feedType of
                 "public" -> case bech32ToPubKeyXO input of
                   Just pubKeyXO -> PostsFilter pubKeyXO
@@ -264,6 +253,15 @@ runHomeScreen = interpret $ \_ -> \case
           modify @AppState $ \st -> st { currentFeedCache = Map.fromList $ zip (map postId posts) posts }
           liftIO $ mapM (getPoolObject postPool) (map eventId es),
 
+        defPropertySigRO' "commentFeed" changeKey' $ \obj -> runE $ do
+          modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { commentFeedEventsObjRef = Just obj } }
+          cf <- gets @AppState currentCommentFeed
+          case cf of
+              Just (CommentsFilter eid') -> do
+                  comments <- getCommentsWithIndentationLevel eid'
+                  liftIO $ mapM (getPoolObject commentPool) comments
+              _ -> error "No comment feed filter",
+
         defPropertySigRO' "publishStatuses" changeKey' $ \obj -> do
           runE $ modify @QtQuickState $ \s -> s { uiRefs = (uiRefs s) { publishStatusObjRef = Just obj } }
           st <- runE $ get @RelayPool
@@ -310,12 +308,6 @@ runHomeScreen = interpret $ \_ -> \case
                 Nothing -> error $ "Invalid event ID format: " <> show eid
             Nothing -> setCurrentPost Nothing,
 
-        defMethod' "getCommentFeed" $ \_ eid -> runE $ do
-          let eid' = read (unpack eid) :: EventId
-          modify @AppState $ \st -> st { currentCommentFeed = Just $ CommentsFilter eid' }
-          commentsFeedObj <- liftIO $ newObject commentFeedClass' ()
-          return commentsFeedObj,
-
         defMethod' "getProfile" $ \_ input -> runE $ do
           case parseNprofileOrNpub input of
             Just (pk, _relayHints) -> do
@@ -332,42 +324,21 @@ runHomeScreen = interpret $ \_ -> \case
             _ -> return Nothing,
 
         defMethod' "getPost" $ \_ input -> runE $ do
-          let fetchByEventId eid = do
-                eventMaybe <- getEvent eid
-                case eventMaybe of
-                  Just event -> do
-                    post <- createPost event
-                    relaysSet <- getEventRelays (postId post)
-                    let prettyConfig = defConfig {
-                        confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
-                            `mappend` compare
-                        }
-                    return [
-                        TE.decodeUtf8 $ B16.encode $ getEventId $ postId post,  -- id
-                        eventToNevent (postEvent post) [],                      -- nevent
-                        TE.decodeUtf8 $ BSL.toStrict $ encodePretty' prettyConfig $ toJSON $ postEvent post, -- raw
-                        Text.intercalate "," $ Set.toList relaysSet,           -- relays
-                        postType post,                                          -- postType
-                        postContent post,                                       -- content
-                        postTimestamp post,                                     -- timestamp
-                        pubKeyXOToBech32 $ postAuthor post,                    -- authorId
-                        maybe "" eventIdToNote (referencedPostId post)        -- referencedPostId
-                        ]
-                  Nothing -> return []
-
-          let fetchByType parseFunc = case parseFunc input of
-                  Just eid -> fmap Just (fetchByEventId eid)
-                  Nothing -> return Nothing
-
-          case Text.takeWhile (/= '1') input of
-              "note"  -> fetchByType noteToEventId
-              "nevent" -> fetchByType (\i -> case neventToEvent i of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing)
-              "naddr" -> fetchByType (\i -> case naddrToEvent i of Just (eid, _, _) -> Just eid; Nothing -> Nothing)
-              _ -> do
-                let meid = readMaybe (unpack input) :: Maybe EventId
-                case meid of
-                  Just eid -> fmap Just (fetchByEventId eid)
-                  Nothing -> return Nothing,
+          let parseEid = case Text.takeWhile (/= '1') input of
+                "note"  -> noteToEventId input
+                "nevent" -> case neventToEvent input of Just (eid, _, _, _) -> Just eid; Nothing -> Nothing
+                "naddr" -> case naddrToEvent input of Just (eid, _, _) -> Just eid; Nothing -> Nothing
+                _ -> readMaybe (unpack input) :: Maybe EventId
+          --logDebug $ "getPost: " <> pack (show parseEid)
+          case parseEid of
+            Just eid -> do
+              eventExists <- isJust <$> getEvent eid
+              if eventExists
+              then do
+                obj <- liftIO $ getPoolObject postPool eid
+                pure $ Just obj
+              else pure Nothing
+            Nothing -> return Nothing,
 
         defMethod' "convertNprofileToNpub" $ \_ input -> runE $ do
           case parseNprofileOrNpub input of
@@ -466,21 +437,22 @@ waitForDownloadCompletion url = do
         _ -> return status
 
 
--- flattenPost :: (Futr :> es, LmdbStore :> es) => Post -> Eff es [Text]
--- flattenPost post = do
---     relaysSet <- getEventRelays (postId post)
---     let prettyConfig = defConfig {
---         confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
---             `mappend` compare
---         }
---     return [
---         TE.decodeUtf8 $ B16.encode $ getEventId $ postId post,  -- id
---         eventToNevent (postEvent post) [],                      -- nevent
---         TE.decodeUtf8 $ BSL.toStrict $ encodePretty' prettyConfig $ toJSON $ postEvent post, -- raw
---         Text.intercalate "," $ Set.toList relaysSet,           -- relays
---         postType post,                                          -- postType
---         postContent post,                                       -- content
---         postTimestamp post,                                     -- timestamp
---         pubKeyXOToBech32 $ postAuthor post,                    -- authorId
---         maybe "" eventIdToNote (referencedPostId post) -- referencedPostId
---         ]
+-- Helper function to find an available filename
+findAvailableFilename :: (FileSystem :> es) => FilePath -> FilePath -> Eff es FilePath
+findAvailableFilename dir baseFileName = do
+  let tryPath = dir </> baseFileName
+  exists <- doesFileExist tryPath
+  if not exists
+    then return tryPath
+    else findNextAvailable dir baseFileName 1
+  where
+    findNextAvailable :: (FileSystem :> es) => FilePath -> FilePath -> Int -> Eff es FilePath
+    findNextAvailable dir' fileName counter = do
+      let ext = takeExtension fileName
+          baseName = dropExtension fileName
+          newName = baseName ++ " (" ++ show counter ++ ")" ++ ext
+          tryPath = dir' </> newName
+      exists <- doesFileExist tryPath
+      if not exists
+        then return tryPath
+        else findNextAvailable dir' fileName (counter + 1)

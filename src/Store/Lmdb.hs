@@ -31,7 +31,7 @@ module Store.Lmdb
     , getRelayStatsMany
     ) where
 
-import Control.Concurrent.MVar (MVar, newMVar, withMVar)
+import Control.Concurrent.MVar (MVar, newMVar)
 #ifdef mingw32_HOST_OS
 import Control.Monad (forM, forM_, unless, when)
 #else
@@ -47,12 +47,11 @@ import Data.Map (Map)
 import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Set (Set)
-import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word8)
 import Effectful
 import Effectful.Dispatch.Dynamic
-import Effectful.State.Static.Shared (State, get, modify)
+import Effectful.State.Static.Shared (State, get)
 import GHC.Generics (Generic)
 import Lmdb.Codec qualified as Codec
 import Lmdb.Connection
@@ -70,7 +69,7 @@ import System.Win32.Types (HANDLE, BOOL, DWORD, iNVALID_HANDLE_VALUE)
 import System.Win32.File (createFile, closeHandle, gENERIC_WRITE, fILE_SHARE_WRITE, oPEN_EXISTING, fILE_ATTRIBUTE_NORMAL)
 #endif
 
-import Logging (Logging, logDebug)
+import Logging (Logging)
 import Nostr.Event ( Event(..), EventId(..), Kind(..), Marker(..)
                    , eventIdFromHex, validateEvent )
 import Nostr.Keys (PubKeyXO, pubKeyXOFromHex)
@@ -250,8 +249,7 @@ runLmdbStore = interpret $ \_ -> \case
         -- Check if the event already exists
         existingEvent <- getEventDirectFromDb eventId'
 
-        result <- withEffToIO (ConcUnlift Persistent Unlimited) $ \runE ->
-          --liftIO $ withMVar (lmdbLock currentState) $ \_ ->
+        result <- withEffToIO (ConcUnlift Persistent Unlimited) $ \_runE ->
           withTransaction (lmdbEnv currentState) $ \txn -> do
             let isNewEvent = case existingEvent of
                   Nothing -> True
@@ -389,6 +387,20 @@ runLmdbStore = interpret $ \_ -> \case
                                                 LMap.delete' txn db key
                                                 LMap.delete' txn (eventDb currentState) eid
                                                 LMap.delete' txn (eventRelaysDb currentState) eid
+                                                
+                                                -- Remove comment database entries for this event
+                                                -- We need to remove both possible entries:
+                                                -- 1. (rootId, parentId, timestamp, eid) - for querying by rootId
+                                                -- 2. (parentId, parentId, timestamp, eid) - for querying by parentId
+                                                -- Since we don't know the exact keys, we need to scan and delete
+                                                withCursor txn (commentDb currentState) $ \cursor -> do
+                                                    allCommentEntries <- Pipes.toListM $
+                                                        LMap.forward cursor
+                                                        >-> Pipes.filter (\kv -> case keyValueKey kv of (_, _, _, commentId) -> commentId == eid)
+                                                        >-> Pipes.map keyValueKey
+                                                    
+                                                    forM_ allCommentEntries $ \commentKey ->
+                                                        LMap.delete' txn (commentDb currentState) commentKey
                                             Nothing -> pure ()
 
                                     else
@@ -843,17 +855,16 @@ getEventDirectFromDb eid = do
 queryComments :: Transaction e -> Database CommentKey () -> EventId -> IO [(CommentKey, ())]
 queryComments txn db rootId = do
     withCursor txn db $ \cursor -> do
-        let startKey = (rootId, rootId, minBound, EventId $ BS.replicate 32 0)
+        let startKey = (rootId, EventId $ BS.replicate 32 0, minBound, EventId $ BS.replicate 32 0)
         -- Get all comments that have this as their root, starting from newest
         allComments <- Pipes.toListM $
             LMap.lookupGteForward cursor startKey
             >-> Pipes.takeWhile (\kv -> case keyValueKey kv of (r, _, _, _) -> r == rootId)
             >-> Pipes.map (\kv -> (keyValueKey kv, keyValueValue kv))
-
         pure allComments
 
 -- | Get comments from cache or database
-getComments :: (IOE :> es, State LmdbState :> es) => EventId -> Eff es [CommentTree]
+getComments :: (IOE :> es, State LmdbState :> es, Logging :> es) => EventId -> Eff es [CommentTree]
 getComments rootId = do
     st <- get @LmdbState
     comments <- liftIO $ withTransaction (lmdbEnv st) $ \txn ->

@@ -4,15 +4,12 @@ import Control.Monad (forM_, void, when)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
-import Data.List (partition, sortOn)
-import Data.Ord (Down(..))
+import Data.List (partition)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, Async)
-import Effectful.Concurrent.STM ( TChan, TMVar, TVar, atomically, newTChanIO
-                                , newEmptyTMVarIO, putTMVar, readTChan
-                                , takeTMVar, writeTChan, newTVarIO, readTVar, writeTVar, retry
-                                , tryReadTChan )
+import Effectful.Concurrent.STM ( TChan, TVar, atomically, newTChanIO, writeTChan
+                                , newTVarIO, readTVar, writeTVar, tryReadTChan )
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, gets, modify, put)
 
@@ -24,8 +21,8 @@ import Nostr.EventProcessor (handleEvent)
 import Nostr.Keys (PubKeyXO)
 import Nostr.Profile (Profile)
 import Nostr.Relay ( ConnectionState(..), RelayConnection, RelayData(..), RelayPool(..)
-                   , SubscriptionState(..), connect, subscribeTemporary, waitForCompletion )
-import Nostr.Types (Filter(..), RelayURI, metadataFilter)
+                   , connect, subscribeTemporary, waitForCompletion )
+import Nostr.Types (RelayURI, metadataFilter)
 import Nostr.Util
 import QtQuick (QtQuick)
 import Store.Lmdb (LmdbStore)
@@ -164,7 +161,7 @@ processQueue = do
         
         -- Process each relay group concurrently
         forM_ (Map.toList groupedRequests) $ \(relayUri, pubkeys) -> do
-            void $ async $ processRelayBatch relayUri pubkeys allRequests
+            void $ async $ processRelayBatch relayUri pubkeys
 
 -- | Group requests by relay for efficient batching
 groupRequestsByRelay :: ProfileManagerEff es => [ProfileFetchRequest] -> [ProfileFetchRequest] -> Eff es (Map.Map RelayURI [PubKeyXO])
@@ -195,8 +192,8 @@ distributeKeys keys relays groups =
         in Map.insertWith (++) relay [key] acc) groups (zip [0..] keys)
 
 -- | Process a batch of pubkeys for a specific relay
-processRelayBatch :: ProfileManagerEff es => RelayURI -> [PubKeyXO] -> [ProfileFetchRequest] -> Eff es ()
-processRelayBatch relayUri pubkeys requests = do
+processRelayBatch :: ProfileManagerEff es => RelayURI -> [PubKeyXO] -> Eff es ()
+processRelayBatch relayUri pubkeys = do
     st <- get @ProfileManagerState
     
     -- Check if we can start a new fetch (max 3 concurrent)

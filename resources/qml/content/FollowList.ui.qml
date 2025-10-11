@@ -179,6 +179,9 @@ Rectangle {
 
                         onClicked: {
                             if (!modelData) return;
+                            if (stackView.depth > 1) {
+                                stackView.pop();
+                            }
                             followsView.selectedPubkey = follow_pubkey
                             personalFeed.npub = follow_pubkey
                         }

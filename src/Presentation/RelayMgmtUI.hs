@@ -18,7 +18,7 @@ import Nostr.Relay (ConnectionState(..), RelayData(..), RelayPool(..))
 import Nostr.Types (RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.Util
 import RelayMgmt (RelayMgmt, addDMRelay, addGeneralRelay, removeDMRelay, removeGeneralRelay)
-import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
+import Store.Lmdb (LmdbStore)
 import Types (AppState(..))
 
 
@@ -90,7 +90,6 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
             defPropertySigRO' "isInbox" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              xo <- keyPairToPubKeyXO <$> getKeyPair
               st <- get @AppState
               let dmRelays = Map.keys $ currentDMRelays st
                   generalRelays = Map.elems $ currentGeneralRelays st
@@ -101,7 +100,6 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
             defPropertySigRO' "isOutbox" changeKey $ \obj -> runE $ do
               let uri' = fromObjRef obj
-              xo <- keyPairToPubKeyXO <$> getKeyPair
               st <- get @AppState
               let dmRelays = Map.keys $ currentDMRelays st
                   generalRelays = Map.elems $ currentGeneralRelays st
@@ -137,7 +135,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
             appState <- runE $ get @AppState
             case keyPair appState of
               Nothing -> return []
-              Just kp -> do
+              Just _ -> do
                 st <- runE $ get @AppState
                 let relays = Map.keys $ currentDMRelays st
                 mapM (getPoolObject dmRelayPool) relays,
@@ -149,7 +147,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
             appState <- runE $ get @AppState
             case keyPair appState of
                 Nothing -> return []
-                Just kp -> do
+                Just _ -> do
                     st <- runE $ get @AppState
                     let relays = Map.keys $ currentGeneralRelays st
                     mapM (getPoolObject generalRelayPool) relays,
@@ -165,7 +163,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
             case keyPair appState of
               Nothing -> return []
-              Just kp -> do
+              Just _ -> do
                 st <- runE $ get @AppState
                 let dmRelays = Map.keys $ currentDMRelays st
                     generalRelaysURIs = Map.keys $ currentGeneralRelays st

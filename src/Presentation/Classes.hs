@@ -1,12 +1,12 @@
 module Presentation.Classes where
 
-import Control.Monad (void, when)
+import Control.Monad (void)
 import Data.Aeson (toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), defConfig, keyOrder)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromJust, fromMaybe, isJust, listToMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text, pack)
 import Data.Text qualified as Text
@@ -15,10 +15,8 @@ import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
 import Effectful.Dispatch.Dynamic (interpret, send)
-import Effectful.FileSystem
-import Effectful.State.Static.Shared (State, get, gets,modify)
+import Effectful.State.Static.Shared (State, get, gets)
 import Graphics.QML hiding (fireSignal)
-import System.FilePath ((</>), takeExtension, dropExtension)
 
 import Downloader (Downloader, DownloadStatus(..), hasDownload, download)
 import Logging
@@ -30,29 +28,22 @@ import Nostr.Keys (PubKeyXO, exportPubKeyXO, keyPairToPubKeyXO)
 import Nostr.Profile (Profile(..))
 import Nostr.Relay (RelayPool(..))
 import Nostr.Util (Util, formatDateTime, getKeyPair)
-import QtQuick (QtQuick, PropertyMap(..), PropertyName, QtQuickState(..), UIReferences(..), signalProfile)
-import Store.Lmdb ( LmdbStore, TimelineType(..), getCommentsWithIndentationLevel
-                  , getEvents, getEventRelays, getFollows, getProfile, getTimelineIds
-                  , updateRelayStats)
-import Types (AppState(..), FeedFilter(..), Follow(..), Language(..), Post(..), PublishStatus(..))
+import QtQuick (QtQuick, QtQuickState(..), signalProfile)
+import Store.Lmdb ( LmdbStore, getEvent, getEventRelays, getFollows)
+import Types (AppState(..), Follow(..), Language(..), Post(..), PublishStatus(..))
 
 
 -- Effect for creating C++ classes for usage in QtQuick QML
 data Classes :: Effect where
-    --FeedClass :: SignalKey (IO ()) -> Classes m (Class ())
     PostClass :: SignalKey (IO ()) -> Classes m (Class EventId)
     ProfileClass :: SignalKey (IO ()) -> Classes m (Class PubKeyXO)
-    CommentFeedClass :: SignalKey (IO ()) -> Classes m (Class ())
     PublishStatusClass :: SignalKey (IO ()) -> Classes m (Class EventId)
     FollowClass :: SignalKey (IO ()) -> Classes m (Class PubKeyXO)
-    CommentClass :: SignalKey (IO ()) -> Classes m (Class (EventId, Int))
+    CommentClass :: SignalKey (IO ()) -> FactoryPool EventId -> Classes m (Class (EventId, Int))
 
 
 type instance DispatchOf Classes = Dynamic
 
-
--- feedClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class ())
--- feedClass changeKey = send $ FeedClass changeKey
 
 postClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class EventId)
 postClass changeKey = send $ PostClass changeKey
@@ -60,17 +51,14 @@ postClass changeKey = send $ PostClass changeKey
 profileClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class PubKeyXO)
 profileClass changeKey = send $ ProfileClass changeKey
 
-commentFeedClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class ())
-commentFeedClass changeKey = send $ CommentFeedClass changeKey
-
 publishStatusClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class EventId)
 publishStatusClass changeKey = send $ PublishStatusClass changeKey
 
 followClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class PubKeyXO)
 followClass changeKey = send $ FollowClass changeKey
 
-commentClass :: Classes :> es => SignalKey (IO ()) -> Eff es (Class (EventId, Int))
-commentClass changeKey = send $ CommentClass changeKey
+commentClass :: Classes :> es => SignalKey (IO ()) -> FactoryPool EventId -> Eff es (Class (EventId, Int))
+commentClass changeKey postPool = send $ CommentClass changeKey postPool
 
 
 -- | SubscriptionEff
@@ -233,7 +221,7 @@ runClasses = interpret $ \_ -> \case
                         Downloading -> pure Nothing
                         NotStarted -> do
                           void $ async $ do
-                            download url'
+                            void $ download url'
                             signalProfile obj
                           pure Nothing
                     Nothing -> pure Nothing,
@@ -260,7 +248,7 @@ runClasses = interpret $ \_ -> \case
                             Downloading -> pure $ ""
                             NotStarted -> do
                               void $ async $ do
-                                download url
+                                void $ download url
                                 signalProfile obj
                               pure $ ""
                         Nothing -> pure $ ""
@@ -345,7 +333,7 @@ runClasses = interpret $ \_ -> \case
                         Downloading -> pure Nothing
                         NotStarted -> do
                           void $ async $ do
-                            res <- download url'
+                            void $ download url'
                             signalProfile obj
                           pure Nothing
                     Nothing -> pure Nothing,
@@ -356,76 +344,16 @@ runClasses = interpret $ \_ -> \case
                 return $ if Map.member pubKeyXO currentFollows then ("follow" :: Text) else ("all" :: Text)
           ]
 
-    CommentClass changeKey' -> createCommentClass changeKey'
-
-    CommentFeedClass changeKey' -> withEffToIO (ConcUnlift Persistent Unlimited) $ \runE -> do
-        newClass [
-            defPropertySigRO' "events" changeKey' $ \obj -> runE $ do
-                modify @QtQuickState $ \st -> st { uiRefs = (uiRefs st) { commentFeedEventsObjRef = Just obj } }
-                cf <- gets @AppState currentCommentFeed
-                case cf of
-                    Just (CommentsFilter eid) -> do
-                        commentIds <- getCommentsWithIndentationLevel eid
-                        let commentEventIds = map fst commentIds
-                        events <- getEvents commentEventIds
-                        posts <- mapM createPost events
-                        mapM flattenPost posts
-                    _ -> error "Invalid feed filter"
-            ]
-        where
-            flattenPost :: ClassesEff es => Post -> Eff es [Text]
-            flattenPost post = do
-                relaysSet <- getEventRelays (postId post)
-                let prettyConfig = defConfig {
-                    confCompare = keyOrder [ "id", "pubkey", "created_at", "kind", "tags", "content", "sig"]
-                        `mappend` compare
-                    }
-                return [
-                    TE.decodeUtf8 $ B16.encode $ getEventId $ postId post,  -- id
-                    eventToNevent (postEvent post) [],                      -- nevent
-                    TE.decodeUtf8 $ BSL.toStrict $ encodePretty' prettyConfig $ toJSON $ postEvent post, -- raw
-                    Text.intercalate "," $ Set.toList relaysSet,           -- relays
-                    postType post,                                          -- postType
-                    postContent post,                                       -- content
-                    postTimestamp post,                                     -- timestamp
-                    pubKeyXOToBech32 $ postAuthor post,                    -- authorId
-                    maybe "" eventIdToNote (referencedPostId post) -- referencedPostId
-                    ]
-
-
-
-createCommentClass :: ClassesEff es => SignalKey (IO ()) -> Eff es (Class (EventId, Int))
-createCommentClass changeKey' = liftIO $ do
-    newClass [
+    CommentClass changeKey' postPool -> liftIO $ do
+      newClass [
         defPropertySigRO' "post" changeKey' $ \obj -> do
             let (eid, _) = fromObjRef obj :: (EventId, Int)
-            return $ TE.decodeUtf8 $ B16.encode $ getEventId eid,
+            liftIO $ getPoolObject postPool eid,
 
         defPropertySigRO' "indentationLevel" changeKey' $ \obj -> do
             let (_, level) = fromObjRef obj :: (EventId, Int)
             return level
         ]
-
-
--- Helper function to find an available filename
-findAvailableFilename :: (FileSystem :> es) => FilePath -> FilePath -> Eff es FilePath
-findAvailableFilename dir baseFileName = do
-  let tryPath = dir </> baseFileName
-  exists <- doesFileExist tryPath
-  if not exists
-    then return tryPath
-    else findNextAvailable dir baseFileName 1
-  where
-    findNextAvailable :: (FileSystem :> es) => FilePath -> FilePath -> Int -> Eff es FilePath
-    findNextAvailable dir' fileName counter = do
-      let ext = takeExtension fileName
-          baseName = dropExtension fileName
-          newName = baseName ++ " (" ++ show counter ++ ")" ++ ext
-          tryPath = dir' </> newName
-      exists <- doesFileExist tryPath
-      if not exists
-        then return tryPath
-        else findNextAvailable dir' fileName (counter + 1)
 
 
 -- | Create a post from an event.
@@ -474,4 +402,12 @@ loadPost eid = do
     cache <- gets @AppState currentFeedCache
     case Map.lookup eid cache of
         Just post -> return post
-        Nothing -> error "Post not found in cache"
+        Nothing -> do
+          ev <- getEvent eid
+          case ev of
+            Just ev' -> do
+              post <- createPost ev'
+              return post
+            Nothing -> do
+              logDebug $ "Post not found in cache: " <> pack (show eid)
+              error "Post not found in cache"

@@ -55,6 +55,7 @@ Rectangle {
             url: profile_banner
             Layout.fillWidth: true
             Layout.preferredHeight: 80
+            visible: profile_banner !== ""
         }
 
         RowLayout {

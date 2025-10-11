@@ -15,14 +15,14 @@ import KeyMgmt (KeyMgmt)
 import Logging (Logging)
 import Nostr (Nostr)
 import Nostr.Event (Event(..), EventId)
-import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
+import Nostr.Keys (PubKeyXO)
 import Nostr.Relay
 import Nostr.EventProcessor (handleEvent)
 import Nostr.Types (Request(..), RelayURI, getUri, isInboxCapable, isOutboxCapable)
 import Nostr.Util
 import QtQuick
 import Store.Lmdb (LmdbStore, getDMRelays, getGeneralRelays)
-import Types (AppState(..), Follow(..), PublishStatus(..))
+import Types (AppState(..), PublishStatus(..))
 
 
 -- | Result of a publish operation
@@ -78,7 +78,6 @@ type PublisherEff es =
 runPublisher :: PublisherEff es => Eff (Publisher : es) a -> Eff es a
 runPublisher =  interpret $ \_ -> \case
     Broadcast event' -> do
-        xo <- keyPairToPubKeyXO <$> getKeyPair
         st <- get @AppState
 
         let dmRelays = Map.keys $ currentDMRelays st
@@ -113,7 +112,6 @@ runPublisher =  interpret $ \_ -> \case
                     updateEventRelayStatus (eventId event') r (Failure "Relay server unreachable")
 
     PublishToOutbox event' -> do
-        xo <- keyPairToPubKeyXO <$> getKeyPair
         st <- get @AppState
         let generalRelayList = Map.elems $ currentGeneralRelays st
             outboxCapableURIs = map getUri $ filter isOutboxCapable generalRelayList

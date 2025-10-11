@@ -11,17 +11,17 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
 import Data.Set qualified as Set
-import Data.Text (pack)
 import Data.Text qualified as T
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async, cancel, forConcurrently, forConcurrently_)
+import Effectful.Concurrent.STM (atomically, newTBQueueIO, flushTBQueue, readTBQueue)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Effectful.State.Static.Shared (State, get, put, modify)
 --import System.CPUTime
 
 import KeyMgmt (KeyMgmt)
-import Logging (Logging, logDebug)
+import Logging (Logging)
 import Nostr
 import Nostr.Event (EventId, Kind(..))
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
@@ -64,6 +64,7 @@ type InboxModelEff es =
   , IOE :> es
   )
 
+
 startInboxModel :: InboxModel :> es => Eff es ()
 startInboxModel = send StartInboxModel
 
@@ -96,15 +97,33 @@ runInboxModel = interpret $ \_ -> \case
       }
 
     connectedRelays <- connectRelays inboxRelays
+    eventFetcherQueue <- newTBQueueIO 51200
+    modify @AppState $ \st -> st { eventFetcherQueue = Just eventFetcherQueue }
+
+    eventFetcherThread' <- async $ forever $ do
+      e <- atomically $ readTBQueue eventFetcherQueue
+      es <- atomically $ flushTBQueue eventFetcherQueue
+      let relayEventMap = Map.fromListWith (++) $ concatMap (\(eid, relays) -> 
+            map (\relay -> (relay, [eid])) (Set.toList relays)) (e:es)
+
+      forM_ (Map.toList relayEventMap) $ \(relayURI, eventIds) -> do
+        void $ async $ do
+          connected <- connect relayURI
+          when connected $ do
+            let eventFilter = emptyFilter { ids = Just eventIds }
+            subId <- subscribeTemporary relayURI eventFilter handleEvent
+            waitForCompletion subId
+
+    modify @RelayPool $ \s -> s { eventFetcherThread = Just eventFetcherThread' }
 
     -- Possibly bootstrap inbox model
     when (null inboxRelays) $ do
-      logDebug $ "Bootstrapping inbox model"
+      --logDebug $ "Bootstrapping inbox model"
       forConcurrently_ connectedRelays $ \r -> do
           subId <- subscribeTemporary (getUri r) (topologyFilter [xo]) handleEvent
-          logDebug $ "Subscribed to relay: " <> getUri r <> " " <> pack (show subId)
+          --logDebug $ "Subscribed to relay: " <> getUri r <> " " <> pack (show subId)
           waitForCompletion subId
-          logDebug $ "Completed subscription to relay: " <> getUri r <> " " <> pack (show subId)
+          --logDebug $ "Completed subscription to relay: " <> getUri r <> " " <> pack (show subId)
 
       follows <- getFollows xo
       unless (null follows) $ forConcurrently_ connectedRelays $ \r -> do
@@ -119,8 +138,6 @@ runInboxModel = interpret $ \_ -> \case
 
     -- Subscribe to giftwraps on DM relays
     let ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
-    st <- get @AppState
-    let dmRelayURIs = Map.keys $ currentDMRelays st
     forM_ dmRelays $ \relayUri -> async $ do
       connected <- connect relayUri
       when connected $ void $ subscribe relayUri (giftWrapFilter xo) handleEvent
@@ -145,11 +162,8 @@ runInboxModel = interpret $ \_ -> \case
     -- reconnection/alternative selection and subscription reconciliation.
     reconciliationThread' <- async $ forever $ do
         threadDelay 15000000
-        --a <- liftIO $ getCPUTime
-        --reconcileSubscriptions xo
-        --b <- liftIO $ getCPUTime
-        --let diff = (fromIntegral (b - a)) / (10^(12::Int)) :: Double
-        --logDebug $ "Reconciliation took " <> pack (show diff) <> "sec"
+        reconcileSubscriptions xo
+
     modify @RelayPool $ \s -> s { reconciliationThread = Just reconciliationThread' }
     where
       setInitialBootstrap = do
@@ -179,7 +193,6 @@ runInboxModel = interpret $ \_ -> \case
 
   SubscribeToProfilesAndPostsFor xo -> do
       --logDebug $ "SubscribeToProfilesAndPostsFor: " <> pack (show xo)
-      myXO <- keyPairToPubKeyXO <$> getKeyPair
       st <- get @AppState
       let ownInboxRelayURIs = Map.keys $ currentGeneralRelays st
       followRelayMap <- buildRelayPubkeyMap [xo] ownInboxRelayURIs
@@ -315,7 +328,7 @@ reconcileSubscriptions xo = do
           deadline = anchor + baseTimeout + (if lastActivityTs sd > 0 then inactivityGrace else 0)
       -- Only timeout temporary (one-shot) subscriptions; long-lived streams may not EOSE quickly on some relays
       when (isTemporary sd && eventsSeen sd == 0 && not (eoseSeen sd) && now > deadline) $ do
-        logDebug $ "Reconcile: Unsubscribe dead temporary subscription: " <> relay sd <> " sid=" <> sid
+        --logDebug $ "Reconcile: Unsubscribe dead temporary subscription: " <> relay sd <> " sid=" <> sid
         unsubscribe sid
 
   follows <- getFollows xo
@@ -324,12 +337,12 @@ reconcileSubscriptions xo = do
   let inboxRelays = Map.elems $ currentGeneralRelays st
       ownInboxRelayURIs = [ getUri r | r <- inboxRelays, isInboxCapable r ]
   newRelayPubkeyMap <- buildRelayPubkeyMap followList ownInboxRelayURIs
-  st <- get @AppState
-  let dmRelayURIs = Map.keys $ currentDMRelays st
+  appState <- get @AppState
+  let dmRelayURIs = Map.keys $ currentDMRelays appState
   let dmRelaySet = Set.fromList dmRelayURIs
-  st <- get @RelayPool
+  poolState <- get @RelayPool
 
-  let currentRelays   = Map.keysSet (activeConnections st)
+  let currentRelays   = Map.keysSet (activeConnections poolState)
       requiredRelays  = Set.unions [ Map.keysSet newRelayPubkeyMap
                                    , Set.fromList ownInboxRelayURIs
                                    , dmRelaySet
@@ -343,13 +356,13 @@ reconcileSubscriptions xo = do
   adjust relaysUnchanged ownInboxRelayURIs newRelayPubkeyMap dmRelaySet
   where
     remove relays = forConcurrently_ (Set.toList relays) $ \r -> do
-      logDebug $ "Reconcile: remove relay: " <> r
+      --logDebug $ "Reconcile: remove relay: " <> r
       unsubscribeAll r
       disconnect r
 
     add relays ownInboxURIs relayPkMap dmSet =
       forConcurrently_ (Set.toList relays) $ \r -> do
-        logDebug $ "Reconcile: add relay: " <> r
+        --logDebug $ "Reconcile: add relay: " <> r
         connected <- connect r
         when connected $ do
           when (r `elem` ownInboxURIs) $ do
@@ -384,25 +397,25 @@ reconcileSubscriptions xo = do
             giftRemove = not (r `Set.member` dmSet) && hasGiftwrap
 
         when (authorsChanged || mentionsAdd || mentionsRemove || giftAdd || giftRemove) $ do
-          logDebug $ "Reconcile: adjust relay: " <> r
+          --logDebug $ "Reconcile: adjust relay: " <> r
           connected <- connect r
           when connected $ do
             when mentionsRemove $ do
-              logDebug $ "Reconcile: mentionsRemove: " <> r
+              --logDebug $ "Reconcile: mentionsRemove: " <> r
               forM_ [ sid | (sid, sd) <- subsList, isMentions sd ] unsubscribe
 
             when authorsChanged $ do
-              logDebug $ "Reconcile: authorsChanged: " <> r
-              logDebug $ "Reconcile: currentAuthors: " <> pack (show currentAuthors)
-              logDebug $ "Reconcile: desiredAuthors: " <> pack (show desiredAuthors)
+              --logDebug $ "Reconcile: authorsChanged: " <> r
+              --logDebug $ "Reconcile: currentAuthors: " <> pack (show currentAuthors)
+              --logDebug $ "Reconcile: desiredAuthors: " <> pack (show desiredAuthors)
               forM_ [ sid | (sid, sd) <- subsList, isTopology sd ] unsubscribe
 
             when giftRemove $ do
-              logDebug $ "Reconcile: giftRemove: " <> r
+              --logDebug $ "Reconcile: giftRemove: " <> r
               forM_ [ sid | (sid, sd) <- subsList, isGift sd ] unsubscribe
 
             when mentionsAdd $ do
-              logDebug $ "Reconcile: mentionsAdd: " <> r
+              --logDebug $ "Reconcile: mentionsAdd: " <> r
               s <- computeSinceForRelay r
               void $ subscribe r (applySince (mentionsFilter xo) s) handleEvent
 
@@ -412,6 +425,6 @@ reconcileSubscriptions xo = do
               void $ subscribe r (applySince (topologyFilter desiredList) s) handleEvent
 
             when giftAdd $ do
-              logDebug $ "Reconcile: giftAdd: " <> r
+              --logDebug $ "Reconcile: giftAdd: " <> r
               s <- computeSinceForGiftwrap r
               void $ subscribe r (applySince (giftWrapFilter xo) s) handleEvent

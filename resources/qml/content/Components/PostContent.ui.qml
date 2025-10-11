@@ -38,7 +38,6 @@ Pane {
     property bool privateChatMode: false
 
     property var contentParts: []
-    property var comments: [] // @todo
     property bool hideActions: false
     property bool showAuthor: false
     property bool disableCommentAction: false
@@ -353,11 +352,11 @@ Pane {
                     onClicked: commentClicked()
                 }
 
-                Text {
-                    text: comments.length
-                    color: Material.secondaryTextColor
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                    // Text {
+                    //     text: "0" // comments.length
+                    //     color: Material.secondaryTextColor
+                    //     anchors.verticalCenter: parent.verticalCenter
+                    // }
             }
 
             Row {
@@ -379,11 +378,11 @@ Pane {
                     }
                 }
 
-                Text {
-                    text: comments.length
-                    color: Material.secondaryTextColor
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                // Text {
+                //     text: "0" // comments.length
+                //     color: Material.secondaryTextColor
+                //     anchors.verticalCenter: parent.verticalCenter
+                // }
             }
 
             Button {

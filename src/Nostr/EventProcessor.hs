@@ -2,16 +2,14 @@ module Nostr.EventProcessor (handleEvent) where
 
 import Control.Monad (unless, when)
 import Data.Aeson (eitherDecodeStrict')
-import Data.ByteString.Lazy (fromStrict)
 import Data.List (sort)
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (unpack)
+import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Read (decimal)
 import Effectful
+import Effectful.Concurrent (Concurrent)
 import Effectful.State.Static.Shared (State, get, modify)
-import Text.Read (readMaybe)
 
 import KeyMgmt (KeyMgmt, updateProfile, AccountId(..))
 import Logging
@@ -23,7 +21,8 @@ import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Util (Util, getKeyPair)
 import Nostr.Types (RelayURI, getUri)
 import QtQuick (QtQuick, UIUpdates(..), emptyUpdates, hasUpdates, notify)
-import Store.Lmdb ( DecryptedGiftWrapData(..), LmdbStore, PutEventInput(..), putEvent, getFollows, getGeneralRelays, getDMRelays)
+import Store.Lmdb ( DecryptedGiftWrapData(..), LmdbStore, PutEventInput(..)
+                  , putEvent, getFollows, getGeneralRelays, getDMRelays )
 import Types (AppState(..), Follow(..))
 
 
@@ -35,6 +34,7 @@ type EventProcessingEff es =
   , Util :> es
   , State AppState :> es
   , QtQuick :> es
+  , Concurrent :> es
   )
 
 
@@ -120,7 +120,7 @@ processRawEvent ev st' = case kind ev of
 
   EventDeletion -> do
     let kTags = [k | ("k":kStr:_) <- tags ev
-                   , Right (k, "") <- [decimal kStr]]
+                   , Right (k, "") <- [decimal kStr :: Either String (Int, Text)]]
     if any (== 1059) kTags then
       notify $ emptyUpdates { feedChanged = True }
     else do

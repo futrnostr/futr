@@ -35,7 +35,7 @@ import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.FileSystem (FileSystem, getXdgDirectory, XdgDirectory(XdgData), createDirectoryIfMissing)
 import Effectful.Concurrent (Concurrent)
 
-import Logging (Logging, logDebug)
+import Logging (Logging)
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Util (Util, getKeyPair)
@@ -169,7 +169,7 @@ runDownloader = interpret $ \_ -> \case
         in pure $ Right mime
 
   ClearCache -> do
-    logDebug $ "Clearing cache"
+    --logDebug $ "Clearing cache"
     cacheDir <- getCacheDirForCurrentUser
     files <- liftIO $ listDirectory cacheDir
     now <- liftIO getCurrentTime
