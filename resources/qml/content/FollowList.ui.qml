@@ -18,7 +18,7 @@ Rectangle {
     property string currentUserPicture: ""
     required property var personalFeed
 
-    property string currentFilter: "all" // "all" or "follows"
+    property string currentFilter: "all" // "all" or "follow"
 
     ColumnLayout {
         anchors.fill: parent
@@ -42,8 +42,8 @@ Rectangle {
                 text: "Follows"
                 Layout.preferredHeight: 32
                 width: implicitWidth
-                checked: root.currentFilter === "follows"
-                onClicked: root.currentFilter = "follows"
+                checked: root.currentFilter === "follow"
+                onClicked: root.currentFilter = "follow"
             }
         }
 
@@ -86,15 +86,13 @@ Rectangle {
                     property string follow_picture: modelData ? modelData.picture : ""
                     property string follow_type: modelData ? modelData.follow_type : ""
                     property bool mouseHover: false
-                    height: visible ? (root.isCollapsed ? 34 : 54) : 0
+                    height: modelData && isFiltered ? (root.isCollapsed ? 34 : 54) : 0
                     width: followsView.width
-                    visible: {
+                    visible: modelData && isFiltered
+
+                    property bool isFiltered: {
                         if (!modelData) return false;
-
-                        if (root.currentFilter === "follows" && follow_type !== "follow") {
-                            return false;
-                        }
-
+                        if (root.currentFilter !== "all" && root.currentFilter !== follow_type) return false;
                         if (followListFilter.filterText === "") return true;
                         var searchText = followListFilter.filterText.toLowerCase();
                         var displayName = follow_displayName || "";
