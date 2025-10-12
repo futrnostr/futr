@@ -334,6 +334,7 @@ runFutr = interpret $ \_ -> \case
     notify $ emptyUpdates { feedChanged = True }
 
     void $ async $ do
+      waitForInboxModelReady
       subIds <- subscribeToProfilesAndPostsFor pk
       modify @AppState $ \st' -> st' { currentProfile = Just (pk, subIds) }
 
@@ -513,6 +514,17 @@ parseNprofileOrNpub input =
   case bech32ToPubKeyXO input of
     Just pubkey' -> Just (pubkey', [])  -- for npub
     Nothing -> nprofileToPubKeyXO input  -- for nprofile
+
+
+-- | Wait for the inbox model to be ready (LiveProcessing state)
+waitForInboxModelReady :: FutrEff es => Eff es ()
+waitForInboxModelReady = do
+  inboxState <- gets @AppState inboxModelState
+  case inboxState of
+    LiveProcessing -> pure ()
+    _ -> do
+      threadDelay 100000  -- 0.1 second
+      waitForInboxModelReady
 
 
 -- | Login with an account.

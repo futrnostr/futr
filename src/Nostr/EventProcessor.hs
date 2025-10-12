@@ -1,28 +1,31 @@
 module Nostr.EventProcessor (handleEvent) where
 
-import Control.Monad (unless, when)
+import Control.Monad (unless, when, filterM)
 import Data.Aeson (eitherDecodeStrict')
 import Data.List (sort)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isNothing)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Read (decimal)
 import Effectful
 import Effectful.Concurrent (Concurrent)
+import Effectful.Concurrent.STM (atomically, writeTBQueue)
 import Effectful.State.Static.Shared (State, get, modify)
 
 import KeyMgmt (KeyMgmt, updateProfile, AccountId(..))
 import Logging
 import Nostr (Nostr, unwrapGiftWrap, unwrapSeal)
 import Nostr.Bech32 (pubKeyXOToBech32)
-import Nostr.Event ( Event(..), Kind(..), Rumor(..), eventIdFromHex
+import Nostr.Event ( Event(..), EventId, Kind(..), Rumor(..), eventIdFromHex
                    , getAllPubKeysFromPTags, isComment, validateEvent )
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Util (Util, getKeyPair)
 import Nostr.Types (RelayURI, getUri)
-import QtQuick (QtQuick, UIUpdates(..), emptyUpdates, hasUpdates, notify)
+import QtQuick (QtQuick, QtQuickState(..), UIUpdates(..), emptyUpdates, hasUpdates, notify)
 import Store.Lmdb ( DecryptedGiftWrapData(..), LmdbStore, PutEventInput(..)
-                  , putEvent, getFollows, getGeneralRelays, getDMRelays )
+                  , putEvent, getFollows, getGeneralRelays, getDMRelays, getEvent )
 import Types (AppState(..), Follow(..))
 
 
@@ -33,6 +36,7 @@ type EventProcessingEff es =
   , Nostr :> es
   , Util :> es
   , State AppState :> es
+  , State QtQuickState :> es
   , QtQuick :> es
   , Concurrent :> es
   )
@@ -62,7 +66,7 @@ handleEvent event' relayUri =
                 notify $ emptyUpdates { feedChanged = True }
               Nothing -> pure ()
 
-          RawEvent ev -> processRawEvent ev st'
+          RawEvent ev -> processRawEvent ev st' relayUri
 
 
 -- | Process GiftWrap events
@@ -93,26 +97,52 @@ processGiftWrapEvent event' = do
     _ -> pure $ RawEvent event'
 
 
+-- | Queue referenced events for fetching if they don't exist locally
+queueReferencedEventsForFetching :: EventProcessingEff es => [EventId] -> RelayURI -> Eff es ()
+queueReferencedEventsForFetching eventIds relayUri = do
+  st <- get @AppState
+  case eventFetcherQueue st of
+    Just queue -> do
+      -- Check which events we don't have locally
+      missingEvents <- filterM (\eid -> do
+        existing <- getEvent eid
+        pure $ isNothing existing) eventIds
+      
+      -- Queue missing events for fetching
+      unless (null missingEvents) $ do
+        let relaySet = Set.singleton relayUri
+        mapM_ (\eid -> atomically $ writeTBQueue queue (eid, relaySet)) missingEvents
+    Nothing -> pure () -- Event fetcher not initialized yet
+
+
 -- | Process raw events
-processRawEvent :: EventProcessingEff es => Event -> AppState -> Eff es ()
-processRawEvent ev st' = case kind ev of
+processRawEvent :: EventProcessingEff es => Event -> AppState -> RelayURI -> Eff es ()
+processRawEvent ev st' relayUri = case kind ev of
   ShortTextNote -> do
     if isComment ev then do
       let parentIds = [ eid
                       | ("e":eidHex:_) <- tags ev
                       , Just eid <- [eventIdFromHex eidHex]
                       ]
+      queueReferencedEventsForFetching parentIds relayUri
+
       case currentPost st' of
         Just currentPostId -> when (currentPostId `elem` parentIds) $
           notify $ emptyUpdates { commentFeedChanged = True }
         Nothing -> pure ()
     else do
       case currentProfile st' of
-        Just (pk, _) -> when (pk == pubKey ev) $
+        Just (pk, _) -> when (pk == pubKey ev) $ do
           notify $ emptyUpdates { feedChanged = True }
         Nothing -> pure ()
 
   Repost -> do
+    let referencedIds = [ eid
+                        | ("e":eidHex:_) <- tags ev
+                        , Just eid <- [eventIdFromHex eidHex]
+                        ]
+    queueReferencedEventsForFetching referencedIds relayUri
+
     case currentProfile st' of
       Just (pk, _) -> when (pk == pubKey ev) $
         notify $ emptyUpdates { feedChanged = True }
@@ -145,7 +175,11 @@ processRawEvent ev st' = case kind ev of
         when isOwnProfile $ do
           let aid = AccountId $ pubKeyXOToBech32 (pubKey ev)
           updateProfile aid profile
-        notify $ emptyUpdates { profilePubkeysToUpdate = [pubKey ev] }
+
+        let profilePubKey = pubKey ev
+
+        modify @AppState $ \s -> s { profileCache = Map.insert profilePubKey profile (profileCache s) }
+        notify $ emptyUpdates { myFollowsChanged = True, profilePubkeysToUpdate = [profilePubKey] }
       Left _ -> pure ()
 
   FollowList -> do

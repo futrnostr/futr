@@ -32,7 +32,7 @@ import Nostr.Types ( Filter(..), RelayURI, SubscriptionId, getUri, topologyFilte
                    , defaultGeneralRelays, commentsFilter, giftWrapFilter, mentionsFilter
                    , isInboxCapable, isOutboxCapable)
 import Nostr.Util
-import QtQuick (QtQuick, UIUpdates(..), emptyUpdates, notify)
+import QtQuick (QtQuick, QtQuickState, UIUpdates(..), emptyUpdates, notify)
 import Nostr.EventProcessor (handleEvent)
 import RelayMgmt
 import Store.Lmdb ( LmdbStore, RelayStats(..), emptyRelayStats, getFollows, getGeneralRelays
@@ -52,6 +52,7 @@ type instance DispatchOf InboxModel = Dynamic
 type InboxModelEff es =
   ( State AppState :> es
   , State RelayPool :> es
+  , State QtQuickState :> es
   , LmdbStore :> es
   , KeyMgmt :> es
   , RelayConnection :> es
@@ -171,7 +172,7 @@ runInboxModel = interpret $ \_ -> \case
           notify $ emptyUpdates { inboxModelStateChanged = True }
       setLiveProcessing = do
           modify @AppState $ \s -> s { inboxModelState = LiveProcessing }
-          notify $ emptyUpdates { inboxModelStateChanged = True }
+          notify $ emptyUpdates { inboxModelStateChanged = True, feedChanged = True }
       connectRelays rs = do
         let (defaultRelays, _) = defaultGeneralRelays
             rs' = if null rs then defaultRelays else rs
