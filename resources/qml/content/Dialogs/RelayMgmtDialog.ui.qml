@@ -84,12 +84,12 @@ Dialog {
                         width: dmRelaysListView.width
 
                         RelayStatusIcon {
-                            connectionState: modelData.connectionState
-                            connectionRetries: modelData.connectionRetries
+                            connectionState: modelData ? modelData.connectionState : qsTr("Unknown")
+                            connectionRetries: modelData ? modelData.connectionRetries : 0
                         }
 
                         Text {
-                            text: modelData.url
+                            text: modelData ? modelData.url : ""
                             font: Constants.font
                             color: Material.primaryTextColor
                             Layout.fillWidth: true
@@ -247,25 +247,25 @@ Dialog {
                         width: inboxRelayListView.width
 
                         RelayStatusIcon {
-                            connectionState: modelData.connectionState
-                            connectionRetries: modelData.connectionRetries
+                            connectionState: modelData ? modelData.connectionState : qsTr("Unknown")
+                            connectionRetries: modelData ? modelData.connectionRetries : 0
                         }
 
                         Text {
-                            text: modelData.url
+                            text: modelData ? modelData.url : ""
                             font: Constants.font
                             color: Material.primaryTextColor
                             Layout.fillWidth: true
                         }
 
                         CheckBox {
-                            checked: modelData.isInbox
+                            checked: modelData ? modelData.isInbox : false
                             text: qsTr("Inbox")
                             enabled: false
                         }
 
                         CheckBox {
-                            checked: modelData.isOutbox
+                            checked: modelData ? modelData.isOutbox : false
                             text: qsTr("Outbox")
                             enabled: false
                         }
