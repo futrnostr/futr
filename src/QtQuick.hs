@@ -2,16 +2,15 @@
 
 module QtQuick where
 
-import Control.Monad (forever, forM, forM_, unless, void, when)
+import Control.Monad (forever, forM_, unless, void, when)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Effectful
 import Effectful.Concurrent
 import Effectful.Concurrent.Async (async)
 import Effectful.Concurrent.STM (TQueue, atomically, flushTQueue, newTQueueIO, readTQueue, writeTQueue)
 import Effectful.Dispatch.Dynamic (interpret, send)
-import Effectful.State.Static.Shared (State, get, gets, put)
+import Effectful.State.Static.Shared (State, get, gets, modify, put)
 import Graphics.QML qualified as QML
 
 import Logging
@@ -25,7 +24,7 @@ data QtQuickState = QtQuickState
   { signalKey :: Maybe (QML.SignalKey (IO ()))
   , rootObjRef :: Maybe (QML.ObjRef ())
   , uiRefs :: UIReferences
-  , propertyMap :: PropertyMap
+  , profileObjects :: Map PubKeyXO [QML.ObjRef PubKeyXO]
   , queue :: Maybe (TQueue UIUpdates)
   }
 
@@ -43,12 +42,6 @@ data UIReferences = UIReferences
   }
 
 
-type PropertyName = Text
-
-
-data PropertyMap = PropertyMap
-  { profileObjRefs :: Map PubKeyXO (Map PropertyName (QML.WeakObjRef PubKeyXO))
-  }
 
 
 -- | UI updates
@@ -62,7 +55,6 @@ data UIUpdates = UIUpdates
   , publishStatusChanged :: Bool
   , noticesChanged :: Bool
   , inboxModelStateChanged :: Bool
-  , profileObjectsToSignal :: [QML.ObjRef PubKeyXO]
   , profilePubkeysToUpdate :: [PubKeyXO]
   }
 
@@ -78,7 +70,6 @@ instance Semigroup UIUpdates where
     , publishStatusChanged = publishStatusChanged a || publishStatusChanged b
     , noticesChanged = noticesChanged a || noticesChanged b
     , inboxModelStateChanged = inboxModelStateChanged a || inboxModelStateChanged b
-    , profileObjectsToSignal = profileObjectsToSignal a ++ profileObjectsToSignal b
     , profilePubkeysToUpdate = profilePubkeysToUpdate a ++ profilePubkeysToUpdate b
     }
 
@@ -90,12 +81,12 @@ instance Monoid UIUpdates where
 -- | Empty UI updates.
 emptyUpdates :: UIUpdates
 emptyUpdates = UIUpdates
-  False False False False False False False False False [] []
+  False False False False False False False False False []
 
 
 -- | Initial effectful QML state.
 initialQtQuickState :: QtQuickState
-initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs (PropertyMap Map.empty) Nothing
+initialQtQuickState = QtQuickState Nothing Nothing initialUIRefs Map.empty Nothing
 
 
 -- | Initial UI references.
@@ -113,6 +104,8 @@ data QtQuick :: Effect where
   SignalProfile :: QML.ObjRef PubKeyXO -> QtQuick m ()
   Notify :: UIUpdates -> QtQuick m ()
   NotifyRelayStatus :: QtQuick m ()
+  -- profile object tracking
+  RegisterProfileObject :: PubKeyXO -> QML.ObjRef PubKeyXO -> QtQuick m ()
 
 
 type instance DispatchOf QtQuick = Dynamic
@@ -143,6 +136,9 @@ notify updates = send $ Notify updates
 notifyRelayStatus :: QtQuick :> es => Eff es ()
 notifyRelayStatus = send NotifyRelayStatus
 
+registerProfileObject :: QtQuick :> es => PubKeyXO -> QML.ObjRef PubKeyXO -> Eff es ()
+registerProfileObject pk objRef = send $ RegisterProfileObject pk objRef
+
 
 -- | Handler for the QML effects.
 runQtQuick
@@ -152,7 +148,7 @@ runQtQuick
 runQtQuick = interpret $ \_ -> \case
     RunEngineLoop config changeKey ctx -> do
         q <- newTQueueIO
-        put $ QtQuickState (Just changeKey) (Just ctx) initialUIRefs (PropertyMap Map.empty) (Just q)
+        put $ QtQuickState (Just changeKey) (Just ctx) initialUIRefs Map.empty (Just q)
         void $ async $ forever $ do
           uiUpdates <- atomically $ readTQueue q
           moreUpdates <- atomically $ flushTQueue q
@@ -174,17 +170,13 @@ runQtQuick = interpret $ \_ -> \case
             when (checkFn combinedUpdates) $
               forM_ (getRef refs) (liftIO . QML.fireSignal changeKey)
 
-          forM_ (profileObjectsToSignal combinedUpdates) $ \objRef ->
-            liftIO $ QML.fireSignal changeKey objRef
-
+          -- Handle profile pubkeys to update - look up registered objects and signal them
           unless (null $ profilePubkeysToUpdate combinedUpdates) $ do
-            pmap <- gets propertyMap
+            profileObjs <- gets profileObjects
             let uniquePubkeys = Map.keys $ Map.fromList $ zip (profilePubkeysToUpdate combinedUpdates) (repeat ())
             forM_ uniquePubkeys $ \pubKey -> do
-              let profileWeakRefs = concatMap Map.elems $ Map.lookup pubKey $ profileObjRefs pmap
-              profileRefs <- forM profileWeakRefs $ \weakRef ->
-                liftIO $ QML.fromWeakObjRef weakRef
-              forM_ profileRefs $ \objRef ->
+              let registeredObjs = Map.findWithDefault [] pubKey profileObjs
+              forM_ registeredObjs $ \objRef ->
                 liftIO $ QML.fireSignal changeKey objRef
 
           threadDelay 200000  -- 0.2 second delay for UI updates
@@ -225,6 +217,11 @@ runQtQuick = interpret $ \_ -> \case
           Just q -> atomically $ writeTQueue q u
           Nothing -> error "No queue available"
 
+    RegisterProfileObject pk objRef -> do
+        modify $ \st -> st {
+          profileObjects = Map.insertWith (++) pk [objRef] (profileObjects st)
+        }
+
 
 -- | Check if the UI updates have any changes.
 hasUpdates :: UIUpdates -> Bool
@@ -238,5 +235,4 @@ hasUpdates u =
     publishStatusChanged u ||
     noticesChanged u ||
     inboxModelStateChanged u ||
-    not (null (profileObjectsToSignal u)) ||
     not (null (profilePubkeysToUpdate u))

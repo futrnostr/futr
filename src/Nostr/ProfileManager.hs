@@ -24,7 +24,7 @@ import Nostr.Relay ( ConnectionState(..), RelayConnection, RelayData(..), RelayP
                    , connect, subscribeTemporary, waitForCompletion )
 import Nostr.Types (RelayURI, metadataFilter)
 import Nostr.Util
-import QtQuick (QtQuick)
+import QtQuick (QtQuick, QtQuickState)
 import Store.Lmdb (LmdbStore)
 import Store.Lmdb qualified as Lmdb
 import Types
@@ -84,6 +84,7 @@ type ProfileManagerEff es =
     , QtQuick :> es
     , State ProfileManagerState :> es
     , State RelayPool :> es
+    , State QtQuickState :> es
     , Concurrent :> es
     , IOE :> es
     )

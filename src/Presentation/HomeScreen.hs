@@ -215,8 +215,10 @@ runHomeScreen = interpret $ \_ -> \case
           myFollows <- runE $ gets @AppState currentFollows
           -- Include user's own profile first, then follows
           userFollowObj <- getPoolObject followPool userPubKey
+          runE $ registerProfileObject userPubKey userFollowObj
           runE $ mapM_ getProfile $ Map.keys myFollows
           followObjects <- mapM (getPoolObject followPool) $ Map.keys myFollows
+          runE $ mapM_ (\followObj -> registerProfileObject (fromObjRef followObj) followObj) followObjects
           return $ userFollowObj : followObjects,
           -- let petnameOf pk = maybe "" (fromMaybe "" . petName) (listToMaybe [ f | f <- follows, pubkey f == pk ])
           -- followData <- forM (map pubkey follows) $ \pk -> do
@@ -315,11 +317,13 @@ runHomeScreen = interpret $ \_ -> \case
               case Map.lookup pk profileCache' of
                 Just _ -> do
                   obj <- liftIO $ getPoolObject profilePool pk
+                  registerProfileObject pk obj
                   return $ Just obj
                 Nothing -> do
                   profile <- getProfile pk
                   modify @AppState $ \st -> st { profileCache = Map.insert pk profile (profileCache st) }
                   obj <- liftIO $ getPoolObject profilePool pk
+                  registerProfileObject pk obj
                   return $ Just obj
             _ -> return Nothing,
 

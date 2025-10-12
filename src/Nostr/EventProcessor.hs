@@ -23,7 +23,7 @@ import Nostr.Event ( Event(..), EventId, Kind(..), Rumor(..), eventIdFromHex
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.Util (Util, getKeyPair)
 import Nostr.Types (RelayURI, getUri)
-import QtQuick (QtQuick, UIUpdates(..), emptyUpdates, hasUpdates, notify)
+import QtQuick (QtQuick, QtQuickState(..), UIUpdates(..), emptyUpdates, hasUpdates, notify)
 import Store.Lmdb ( DecryptedGiftWrapData(..), LmdbStore, PutEventInput(..)
                   , putEvent, getFollows, getGeneralRelays, getDMRelays, getEvent )
 import Types (AppState(..), Follow(..))
@@ -36,6 +36,7 @@ type EventProcessingEff es =
   , Nostr :> es
   , Util :> es
   , State AppState :> es
+  , State QtQuickState :> es
   , QtQuick :> es
   , Concurrent :> es
   )
@@ -131,7 +132,7 @@ processRawEvent ev st' relayUri = case kind ev of
         Nothing -> pure ()
     else do
       case currentProfile st' of
-        Just (pk, _) -> when (pk == pubKey ev) $
+        Just (pk, _) -> when (pk == pubKey ev) $ do
           notify $ emptyUpdates { feedChanged = True }
         Nothing -> pure ()
 
@@ -174,7 +175,11 @@ processRawEvent ev st' relayUri = case kind ev of
         when isOwnProfile $ do
           let aid = AccountId $ pubKeyXOToBech32 (pubKey ev)
           updateProfile aid profile
-        notify $ emptyUpdates { profilePubkeysToUpdate = [pubKey ev] }
+
+        let profilePubKey = pubKey ev
+
+        modify @AppState $ \s -> s { profileCache = Map.insert profilePubKey profile (profileCache s) }
+        notify $ emptyUpdates { myFollowsChanged = True, profilePubkeysToUpdate = [profilePubKey] }
       Left _ -> pure ()
 
   FollowList -> do

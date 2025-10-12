@@ -64,6 +64,7 @@ type PublisherEff es =
   ( RelayConnection :> es
   , State AppState :> es
   , State RelayPool :> es
+  , State QtQuickState :> es
   , LmdbStore :> es
   , Nostr :> es
   , Logging :> es
