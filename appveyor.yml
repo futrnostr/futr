@@ -14,7 +14,7 @@ skip_branch_with_pr: true
 environment:
   matrix:
     - MSYS2_ARCH: x86_64
-      MSYSTEM: UCRT64
+      MSYSTEM: MINGW64
 
 # Install dependencies
 install:
@@ -34,34 +34,33 @@ before_build:
   # Install MSYS2 build dependencies
   - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm pacman-mirrors"
   - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm git"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-gcc"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-make"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-base"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-declarative"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-graphicaleffects"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-imageformats"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-multimedia"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-quickcontrols2"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-svg"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-tools"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-translations"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-winextras"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-openssl"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-angleproject"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-lmdb"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-libunwind"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-toolchain"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-zlib"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-libc++"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-libwebp"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-libjpeg-turbo"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-giflib"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-make"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-base"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-declarative"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-graphicaleffects"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-imageformats"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-multimedia"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-quickcontrols2"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-svg"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-tools"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-translations"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-qt5-winextras"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-openssl"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-angleproject"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-lmdb"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-libunwind"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-toolchain"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-zlib"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-libwebp"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-libjpeg-turbo"
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-giflib"
   - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm autoconf autogen automake libtool make"
 
 # Build script
-build_script:
-  # Fix Cabal config for UCRT64
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && ./platform/windows/fix-cabal-ucrt64-appveyor.sh"
+build_script:  
+  # Ensure C runtime library compatibility
+  - C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:\$PATH && gcc --version"
 
   # Clone dependencies
   - C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/prolic/hsc2hs"
@@ -72,11 +71,11 @@ build_script:
   - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && cp cabal.project.windows cabal.project"
 
   # Build secp256k1 from source
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects && export PATH=/ucrt64/bin:/usr/bin:\$PATH && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
+  - C:\msys64\usr\bin\bash -lc "cd /c/projects && export PATH=/mingw64/bin:/usr/bin:\$PATH && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
 
   # Build
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && cabal configure --extra-include-dirs=C:/msys64/ucrt64/include --extra-lib-dirs=C:/msys64/ucrt64/lib"
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && cabal build"
+  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/mingw64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && cabal configure --extra-include-dirs=C:/msys64/mingw64/include --extra-lib-dirs=C:/msys64/mingw64/lib"
+  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/mingw64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && cabal build"
 
   # Build Windows Installer
   - ps: |
@@ -103,10 +102,10 @@ build_script:
       if (-not (Test-Path "dist")) { New-Item -ItemType Directory -Path "dist" }
       
       # Deploy Qt dependencies
-      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:`$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
+      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/mingw64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:`$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
       
       # Copy additional DLLs
-      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && bash ./platform/windows/copy-dlls.sh"
+      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/mingw64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && bash ./platform/windows/copy-dlls.sh"
       
       # Clean up temporary build artifacts
       C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-$version/build/futr/futr-tmp"
