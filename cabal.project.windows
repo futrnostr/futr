@@ -6,14 +6,6 @@ tests: True
 package *
   extra-include-dirs: C:/msys64/ucrt64/include, C:/msys64/usr/local/include
   extra-lib-dirs: C:/msys64/ucrt64/lib, C:/msys64/usr/local/lib
-  extra-libraries: ucrt, msvcrt
-  ghc-options: 
-    -optl-Wl,--no-undefined
-    -optl-Wl,--enable-auto-import
-    -optl-Wl,--allow-multiple-definition
-    -optl-Wl,--enable-runtime-pseudo-reloc
-    -optl-Wl,--disable-auto-import
-    -optl-Wl,--as-needed
 
 source-repository-package
   type: git
