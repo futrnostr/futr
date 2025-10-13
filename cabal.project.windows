@@ -1,6 +1,5 @@
 packages:
     ./
-    ../hsc2hs/
     ../HsQML/
 tests: True
 
@@ -15,6 +14,10 @@ package *
     -optl-Wl,--enable-runtime-pseudo-reloc
     -optl-Wl,--disable-auto-import
     -optl-Wl,--as-needed
+
+source-repository-package
+  type: git
+  location: ../hsc2hs
 
 source-repository-package
   type: git
