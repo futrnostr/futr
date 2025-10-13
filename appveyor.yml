@@ -75,8 +75,8 @@ build_script:
   - C:\msys64\usr\bin\bash -lc "cd /c/projects && export PATH=/ucrt64/bin:/usr/bin:\$PATH && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
 
   # Build
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && cabal configure --extra-include-dirs=C:/msys64/ucrt64/include --extra-lib-dirs=C:/msys64/ucrt64/lib"
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && export CC=gcc && export LD=gcc && cabal build"
+  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && export CC=gcc && export LD=gcc && cabal configure --extra-include-dirs=C:/msys64/ucrt64/include --extra-lib-dirs=C:/msys64/ucrt64/lib --ghc-option=-pgml=gcc"
+  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && export CC=gcc && export LD=gcc && cabal build --ghc-option=-pgml=gcc"
 
   # Build Windows Installer
   - ps: |
