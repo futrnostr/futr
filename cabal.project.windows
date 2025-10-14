@@ -1,6 +1,5 @@
 packages:
     ./
-    ../hsc2hs/
     ../HsQML/
 tests: True
 
