@@ -64,10 +64,6 @@ build_script:
   - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && ./platform/windows/fix-cabal-ucrt64-appveyor.sh"
 
   # Clone dependencies
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/prolic/hsc2hs"
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/hsc2hs && git checkout 339a832b7bfa4d8072bfc3911af7d2f4b03c432d"
-
-
   - C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/prolic/HsQML"
   - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && cp cabal.project.windows cabal.project"
 
