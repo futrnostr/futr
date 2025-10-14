@@ -9,7 +9,8 @@ package *
 
 source-repository-package
   type: git
-  location: ../hsc2hs
+  location: https://github.com/prolic/hsc2hs
+  tag: 339a832b7bfa4d8072bfc3911af7d2f4b03c432d
 
 source-repository-package
   type: git
