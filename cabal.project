@@ -1,6 +1,12 @@
 packages:
     ./
+    ../HsQML/
 tests: True
+
+source-repository-package
+  type: git
+  location: https://github.com/haskell-bitcoin/libsecp256k1-haskell
+  tag: 1fbe5ed6a0943ddafe5a4818da32a07f64e40dd8
 
 source-repository-package
   type: git

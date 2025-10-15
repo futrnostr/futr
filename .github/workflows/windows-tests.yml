@@ -1,0 +1,94 @@
+name: Windows Tests
+
+on:
+  pull_request:
+  push:
+    branches: ["master"]
+
+jobs:
+  windows-tests:
+    name: Windows Tests
+    runs-on: windows-latest
+    steps:
+      - name: Checkout base repo
+        uses: actions/checkout@v4
+
+      - name: Set up Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.7'
+          cabal-version: '3.10.3.0'
+
+      - name: Cache Cabal packages
+        uses: actions/cache@v4.2.3
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc-9.6.7-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-9.6.7-cabal-
+
+      - name: Cache MSYS2 installation
+        uses: actions/cache@v4.2.3
+        with:
+          path: C:\msys64
+          key: ${{ runner.os }}-msys2-${{ hashFiles('**/cabal.project.windows') }}
+          restore-keys: |
+            ${{ runner.os }}-msys2-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Initialize Cabal user config
+        run: cabal user-config init --force
+
+      - name: Setup MSYS2 and Qt5
+        run: |
+          # Check if MSYS2 is already installed (from cache)
+          if (-not (Test-Path "C:\msys64\usr\bin\bash.exe")) {
+            # Install Chocolatey
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+            
+            # Add custom Chocolatey source (same as AppVeyor)
+            choco source add -n mistuke -s https://www.myget.org/F/mistuke/api/v2
+            
+            # Install MSYS2
+            choco install -y msys2
+            refreshenv
+            
+            # Install Qt5 and build dependencies via MSYS2
+            C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm git mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-qt5-base mingw-w64-x86_64-qt5-declarative mingw-w64-x86_64-qt5-graphicaleffects mingw-w64-x86_64-qt5-imageformats mingw-w64-x86_64-qt5-multimedia mingw-w64-x86_64-qt5-quickcontrols2 mingw-w64-x86_64-qt5-svg mingw-w64-x86_64-qt5-tools mingw-w64-x86_64-qt5-translations mingw-w64-x86_64-qt5-winextras mingw-w64-x86_64-openssl mingw-w64-x86_64-angleproject mingw-w64-x86_64-lmdb mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-zlib mingw-w64-x86_64-libwebp mingw-w64-x86_64-libjpeg-turbo mingw-w64-x86_64-giflib mingw-w64-x86_64-libwinpthread autoconf autogen automake libtool make"
+          } else {
+            Write-Host "MSYS2 already installed from cache, skipping installation"
+          }
+
+      - name: Clone HsQML
+        run: C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/prolic/HsQML"
+
+      - name: Build secp256k1
+        run: |
+          C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
+
+      - name: Fix pkg-config files
+        run: |
+          refreshenv
+          C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:$PATH && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
+
+      - name: Configure
+        run: |
+          refreshenv
+          C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal configure --enable-tests --project-file=cabal.project.windows"
+
+      - name: Build
+        run: |
+          refreshenv
+          C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal build --project-file=cabal.project.windows"
+
+      - name: Test
+        run: |
+          refreshenv
+          C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal test --project-file=cabal.project.windows"

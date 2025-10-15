@@ -1,0 +1,155 @@
+name: Windows Continuous Build and Release
+
+on:
+  push:
+    branches: ["master"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows-build-and-release:
+    name: Windows Build and Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.7'
+          cabal-version: '3.10.3.0'
+
+      - name: Cache Cabal packages
+        uses: actions/cache@v4.2.3
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc-9.6.7-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-9.6.7-cabal-
+
+      - name: Cache MSYS2 installation
+        uses: actions/cache@v4.2.3
+        with:
+          path: C:\msys64
+          key: ${{ runner.os }}-msys2-${{ hashFiles('**/cabal.project.windows') }}
+          restore-keys: |
+            ${{ runner.os }}-msys2-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Initialize Cabal user config
+        run: cabal user-config init --force
+
+      - name: Setup MSYS2 and Qt5
+        run: |
+          # Check if MSYS2 is already installed (from cache)
+          if (-not (Test-Path "C:\msys64\usr\bin\bash.exe")) {
+            # Install Chocolatey
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+            
+            # Add custom Chocolatey source (same as AppVeyor)
+            choco source add -n mistuke -s https://www.myget.org/F/mistuke/api/v2
+            
+            # Install MSYS2
+            choco install -y msys2
+            refreshenv
+            
+            # Install Qt5 and build dependencies via MSYS2
+            C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm git mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-qt5-base mingw-w64-x86_64-qt5-declarative mingw-w64-x86_64-qt5-graphicaleffects mingw-w64-x86_64-qt5-imageformats mingw-w64-x86_64-qt5-multimedia mingw-w64-x86_64-qt5-quickcontrols2 mingw-w64-x86_64-qt5-svg mingw-w64-x86_64-qt5-tools mingw-w64-x86_64-qt5-translations mingw-w64-x86_64-qt5-winextras mingw-w64-x86_64-openssl mingw-w64-x86_64-angleproject mingw-w64-x86_64-lmdb mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-zlib mingw-w64-x86_64-libwebp mingw-w64-x86_64-libjpeg-turbo mingw-w64-x86_64-giflib mingw-w64-x86_64-libwinpthread autoconf autogen automake libtool make"
+          } else {
+            Write-Host "MSYS2 already installed from cache, skipping installation"
+          }
+
+      - name: Clone HsQML
+        run: C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/prolic/HsQML"
+
+      - name: Build secp256k1
+        run: |
+          C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
+
+      - name: Fix pkg-config files
+        run: |
+          refreshenv
+          C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:$PATH && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
+
+      - name: Build with Cabal
+        run: |
+          refreshenv
+          C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal build --project-file=cabal.project.windows"
+
+      - name: Install Inno Setup
+        run: choco install -y innosetup
+
+      - name: Build Windows Installer
+        run: |
+          # Get version from futr.cabal
+          $version = (Get-Content "futr.cabal" | Where-Object { $_ -match "^version:\s*(.+)" } | ForEach-Object { $matches[1].Trim() })
+          Write-Host "Building installer for version: $version"
+          
+          # Prepare Inno Setup script from template
+          $template = Get-Content "platform\windows\innosetup.iss.template"
+          $script = $template -replace "@VERSION@", $version
+          $script | Set-Content "platform\windows\innosetup.iss"
+
+          # Prepare copy-dlls script from template
+          $template = Get-Content "platform\windows\copy-dlls.sh.template"
+          $script = $template -replace "@VERSION@", $version
+          $script | Set-Content "platform\windows\copy-dlls.sh"
+
+          # Prepare Windows resource file from template
+          $template = Get-Content "platform\windows\futr.rc.template"
+          $versionComma = $version -replace '\.', ','
+          $script = $template -replace "@VERSION_COMMA@", $versionComma
+          $script = $script -replace "@VERSION_STRING@", $version
+          $script | Set-Content "platform\windows\futr.rc"
+          
+          # Create dist directory if it doesn't exist
+          if (-not (Test-Path "dist")) { New-Item -ItemType Directory -Path "dist" }
+          
+          # Deploy Qt dependencies
+          C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:/c/ProgramData/chocolatey/bin:/usr/bin:`$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
+          
+          # Copy additional DLLs
+          C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && bash ./platform/windows/copy-dlls.sh"
+          
+          # Clean up temporary build artifacts
+          C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$version/build/futr/futr-tmp"
+          
+          # Create Installer Binary
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "platform\windows\innosetup.iss"
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: futr-windows-installer
+          path: dist\futr-*-setup.exe
+          retention-days: 7
+
+      - name: Delete existing release and tag
+        uses: dev-drprasad/delete-tag-and-release@v1.1
+        with:
+          tag_name: continuous
+          delete_release: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: continuous
+          name: "🚧 Development Build (Continuous)"
+          files: "dist\futr-*-setup.exe"
+          prerelease: true
+          body: |
+            ⚠️ This is an automated development build from the latest master branch.
+            This build is not recommended for production use.
+            
+            Last updated: ${{ github.event.head_commit.timestamp }}
+          token: ${{ secrets.GITHUB_TOKEN }}

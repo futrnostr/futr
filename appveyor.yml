@@ -10,13 +10,11 @@ branches:
 # Skip builds for pull requests to prevent interfering with continuous releases
 skip_branch_with_pr: true
 
-# Use MSYS2 environment  
 environment:
   matrix:
     - MSYS2_ARCH: x86_64
-      MSYSTEM: UCRT64
+      MSYSTEM: MINGW64
 
-# Install dependencies
 install:
   - choco source add -n mistuke -s https://www.myget.org/F/mistuke/api/v2
   - choco install -y cabal --version 3.10.2.0
@@ -28,55 +26,28 @@ install:
 before_build:
   - cabal --version
   - ghc --version
+  
+  # Install build dependencies
+  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm git mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-qt5-base mingw-w64-x86_64-qt5-declarative mingw-w64-x86_64-qt5-graphicaleffects mingw-w64-x86_64-qt5-imageformats mingw-w64-x86_64-qt5-multimedia mingw-w64-x86_64-qt5-quickcontrols2 mingw-w64-x86_64-qt5-svg mingw-w64-x86_64-qt5-tools mingw-w64-x86_64-qt5-translations mingw-w64-x86_64-qt5-winextras mingw-w64-x86_64-openssl mingw-w64-x86_64-angleproject mingw-w64-x86_64-lmdb mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-zlib mingw-w64-x86_64-libwebp mingw-w64-x86_64-libjpeg-turbo mingw-w64-x86_64-giflib mingw-w64-x86_64-libwinpthread autoconf autogen automake libtool make"
+
+build_script:
+  # Clone HsQML
+  - C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/prolic/HsQML
+
   - cabal update
   - cabal user-config init --force
-  
-  # Install MSYS2 build dependencies
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm pacman-mirrors"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm git"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-gcc"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-make"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-base"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-declarative"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-graphicaleffects"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-imageformats"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-multimedia"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-quickcontrols2"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-svg"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-tools"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-translations"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qt5-winextras"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-openssl"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-angleproject"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-lmdb"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-libunwind"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-toolchain"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-zlib"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-libc++"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-libwebp"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-libjpeg-turbo"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-giflib"
-  - C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm autoconf autogen automake libtool make"
-
-# Build script
-build_script:
-  # Fix Cabal config for UCRT64
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && ./platform/windows/fix-cabal-ucrt64-appveyor.sh"
-
-  # Clone dependencies
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/prolic/hsc2hs"
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/hsc2hs && git checkout 339a832b7bfa4d8072bfc3911af7d2f4b03c432d"
-
-
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/prolic/HsQML"
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && cp cabal.project.windows cabal.project"
 
   # Build secp256k1 from source
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects && export PATH=/ucrt64/bin:/usr/bin:\$PATH && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
+  - C:\msys64\usr\bin\bash -lc "cd /c/projects && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
 
-  # Build
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && cabal configure --extra-include-dirs=C:/msys64/ucrt64/include --extra-lib-dirs=C:/msys64/ucrt64/lib"
-  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && cabal build"
+  # Refresh environment after installing libsecp256k1 from source
+  - refreshenv
+
+  # Fix pkg-config files for libsecp256k1 and lmdb with persistent environment
+  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:$PATH && bash ./platform/windows/fix-pkgconfig-appveyor.sh"  
+
+  # Cabal Build with proper environment
+  - C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:$PATH && cabal build --project-file=cabal.project.windows"
 
   # Build Windows Installer
   - ps: |
@@ -103,10 +74,10 @@ build_script:
       if (-not (Test-Path "dist")) { New-Item -ItemType Directory -Path "dist" }
       
       # Deploy Qt dependencies
-      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:`$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
+      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/mingw64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:`$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
       
       # Copy additional DLLs
-      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PATH=/ucrt64/bin:/c/tools/ghc-9.6.5/bin:/c/ProgramData/chocolatey/bin:/usr/bin:\$PATH && bash ./platform/windows/copy-dlls.sh"
+      C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && bash ./platform/windows/copy-dlls.sh"
       
       # Clean up temporary build artifacts
       C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-$version/build/futr/futr-tmp"
@@ -114,12 +85,10 @@ build_script:
       # Create Installer Binary
       & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "platform\windows\innosetup.iss"
 
-# Artifacts to collect
 artifacts:
   - path: dist\futr-*-setup.exe
     name: futr-windows-installer
 
-# Deploy to GitHub Releases
 deploy:
   # Continuous builds from master branch
   - provider: GitHub

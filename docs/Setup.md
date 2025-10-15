@@ -89,6 +89,12 @@ git clone https://github.com/bitcoin-core/secp256k1 && \
 cabal build
 ```
 
+for Windows:
+
+```bash
+cabal build --project-file=cabal.project.windows
+```
+
 ### Building Flatpak
 
 ```bash
@@ -120,7 +126,7 @@ The easiest way to get Windows binaries is through our automated CI/CD pipeline 
 The automated builds use:
 - GHC 9.6.5
 - Cabal 3.10.2.0
-- UCRT64 environment
+- MINGW64 environment
 - Qt5 with all required modules
 - Inno Setup for Windows installer creation
 
@@ -149,7 +155,6 @@ $ghcLocal = "$env:LOCALAPPDATA\ghc"
 $projectDirs = @(
     "C:\projects\futr",
     "C:\projects\HsQML",
-    "C:\projects\hsc2hs",
     "C:\projects\libsecp256k1"
 )
 
@@ -177,17 +182,17 @@ ghcup set ghc 9.6.5
 ghcup set cabal 3.10.2.0
 ```
 
-2. Start the UCRT64 shell (should be in "C:\ghcup\msys64\ucrt64.exe")
+2. Start the MINGW64 shell (should be in "C:\ghcup\msys64\mingw64.exe")
 
-All following commands are from the UCRT64 shell!
+All following commands are from the MINGW64 shell!
 
-**Note**: We use UCRT64 environment (not MinGW64) for better compatibility and performance. This matches our automated CI/CD setup.
+**Note**: We use MINGW64 environment for better compatibility and performance. This matches our automated CI/CD setup.
 
 3. Install dependencies (Qt5, LMDB, build tools)
 
 ```bash
 pacman -Syu
-pacman -S autoconf autogen automake libtool gcc git make mingw-w64-ucrt-x86_64-qt5-base mingw-w64-ucrt-x86_64-qt5-declarative mingw-w64-ucrt-x86_64-qt5-graphicaleffects mingw-w64-ucrt-x86_64-qt5-imageformats mingw-w64-ucrt-x86_64-qt5-multimedia mingw-w64-ucrt-x86_64-qt5-quickcontrols2 mingw-w64-ucrt-x86_64-qt5-svg mingw-w64-ucrt-x86_64-qt5-tools mingw-w64-ucrt-x86_64-qt5-translations mingw-w64-ucrt-x86_64-qt5-winextras mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-angleproject mingw-w64-ucrt-x86_64-lmdb mingw-w64-ucrt-x86_64-libunwind mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-make mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-libc++ mingw-w64-ucrt-x86_64-libwebp mingw-w64-ucrt-x86_64-libjpeg-turbo mingw-w64-ucrt-x86_64-giflib
+pacman -S autoconf autogen automake libtool gcc git make mingw-w64-x86_64-qt5-base mingw-w64-x86_64-qt5-declarative mingw-w64-x86_64-qt5-graphicaleffects mingw-w64-x86_64-qt5-imageformats mingw-w64-x86_64-qt5-multimedia mingw-w64-x86_64-qt5-quickcontrols2 mingw-w64-x86_64-qt5-svg mingw-w64-x86_64-qt5-tools mingw-w64-x86_64-qt5-translations mingw-w64-x86_64-qt5-winextras mingw-w64-x86_64-openssl mingw-w64-x86_64-angleproject mingw-w64-x86_64-lmdb mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-make mingw-w64-x86_64-zlib mingw-w64-x86_64-libc++ mingw-w64-x86_64-libwebp mingw-w64-x86_64-libjpeg-turbo mingw-w64-x86_64-giflib
 
 ```
 
@@ -208,13 +213,9 @@ git clone https://github.com/bitcoin-core/secp256k1 && \
 
 Note: Don't ask me why, just do it. If you can solve it without doing this stupid step, please notify me, I sincerely want to know what is going on.
 
-5.1. Clone dependencies parallel to futr
+5.1. Clone HsQML dependency parallel to futr
 
 ```bash
-# Clone hsc2hs dependency
-git clone https://github.com/prolic/hsc2hs
-cd hsc2hs && git checkout 339a832b7bfa4d8072bfc3911af7d2f4b03c432d && cd ..
-
 # Clone HsQML dependency
 git clone https://github.com/prolic/HsQML
 ```
@@ -224,7 +225,6 @@ Your directory structure should be similar to this:
 ```bash
 C:\projects\futr
 C:\projects\HsQML
-C:\projects\hsc2hs
 ```
 
 Now copy the cabal.project windows fix.
@@ -239,14 +239,14 @@ Make sure you don't accidentally commit those changes.
 6. Start the build process
 
 ```bash
-export PATH=/ucrt64/bin:$PATH
+export PATH=/mingw64/bin:$PATH
 cabal build
 ```
 
 7. Run the application locally
 
 ```bash
-export PATH=/ucrt64/bin:$PATH
+export PATH=/mingw64/bin:$PATH
 cabal run
 ```
 
@@ -259,7 +259,7 @@ https://jrsoftware.org/isdl.php
 8.1. Deploy Qt with windeployqt
 
 ```bash
-export PATH=/ucrt64/bin:$PATH
+export PATH=/mingw64/bin:$PATH
 windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-0.4.0.0/build/futr/futr.exe --qmldir=resources/qml
 ```
 
