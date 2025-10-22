@@ -51,20 +51,20 @@ jobs:
 
       - name: Setup MSYS2 environment
         run: |
-          C:\msys64\usr\bin\bash -lc "echo 'export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH' >> ~/.bashrc"
-          C:\msys64\usr\bin\bash -lc "echo 'export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH' >> ~/.bashrc"
+          C:\msys64\usr\bin\bash -lc "echo 'export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH' > ~/setup-env.sh"
+          C:\msys64\usr\bin\bash -lc "echo 'export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH' >> ~/setup-env.sh"
 
       - name: Clone HsQML
         run: C:\msys64\usr\bin\bash -lc "git clone https://github.com/prolic/HsQML"
 
       - name: Build secp256k1
         run: |
-          C:\msys64\usr\bin\bash -lc "git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install && cd .."
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install && cd .."
 
       - name: Fix pkg-config files
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "bash ./platform/windows/fix-pkgconfig-appveyor.sh"
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
 
       - name: Update Cabal package list
         run: cabal update
@@ -72,48 +72,41 @@ jobs:
       - name: Build with Cabal
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "cabal build --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && cabal build --project-file=cabal.project.windows"
 
-      - name: Install Inno Setup
-        run: choco install -y innosetup
-
-      - name: Build Windows Installer
+      - name: Prepare installer files
         run: |
           # Get version from futr.cabal
-          $version = (Get-Content "futr.cabal" | Where-Object { $_ -match "^version:\s*(.+)" } | ForEach-Object { $matches[1].Trim() })
-          Write-Host "Building installer for version: $version"
+          version=$(grep "^version:" futr.cabal | sed 's/version:\s*//' | tr -d ' ')
+          echo "Building installer for version: $version"
           
           # Prepare Inno Setup script from template
-          $template = Get-Content "platform\windows\innosetup.iss.template"
-          $script = $template -replace "@VERSION@", $version
-          $script | Set-Content "platform\windows\innosetup.iss"
-
+          sed "s/@VERSION@/$version/g" platform/windows/innosetup.iss.template > platform/windows/innosetup.iss
+          
           # Prepare copy-dlls script from template
-          $template = Get-Content "platform\windows\copy-dlls.sh.template"
-          $script = $template -replace "@VERSION@", $version
-          $script | Set-Content "platform\windows\copy-dlls.sh"
-
+          sed "s/@VERSION@/$version/g" platform/windows/copy-dlls.sh.template > platform/windows/copy-dlls.sh
+          
           # Prepare Windows resource file from template
-          $template = Get-Content "platform\windows\futr.rc.template"
-          $versionComma = $version -replace '\.', ','
-          $script = $template -replace "@VERSION_COMMA@", $versionComma
-          $script = $script -replace "@VERSION_STRING@", $version
-          $script | Set-Content "platform\windows\futr.rc"
+          version_comma=$(echo $version | sed 's/\./,/g')
+          sed "s/@VERSION_COMMA@/$version_comma/g" platform/windows/futr.rc.template | sed "s/@VERSION_STRING@/$version/g" > platform/windows/futr.rc
           
           # Create dist directory if it doesn't exist
-          if (-not (Test-Path "dist")) { New-Item -ItemType Directory -Path "dist" }
+          mkdir -p dist
           
           # Deploy Qt dependencies
-          C:\msys64\usr\bin\bash -lc "windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
           
           # Copy additional DLLs
           C:\msys64\usr\bin\bash -lc "bash ./platform/windows/copy-dlls.sh"
           
           # Clean up temporary build artifacts
           C:\msys64\usr\bin\bash -lc "rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$version/build/futr/futr-tmp"
-          
-          # Create Installer Binary
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "platform\windows\innosetup.iss"
+
+      - name: Build Windows Installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          path: platform/windows/innosetup.iss
+          options: /O+
 
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4

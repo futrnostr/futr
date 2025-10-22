@@ -49,25 +49,25 @@ jobs:
 
       - name: Setup MSYS2 environment
         run: |
-          C:\msys64\usr\bin\bash -lc "echo 'export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH' >> ~/.bashrc"
-          C:\msys64\usr\bin\bash -lc "echo 'export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH' >> ~/.bashrc"
+          C:\msys64\usr\bin\bash -lc "echo 'export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH' > ~/setup-env.sh"
+          C:\msys64\usr\bin\bash -lc "echo 'export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH' >> ~/setup-env.sh"
 
       - name: Clone HsQML
         run: C:\msys64\usr\bin\bash -lc "git clone https://github.com/prolic/HsQML"
 
       - name: Build secp256k1
         run: |
-          C:\msys64\usr\bin\bash -lc "git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install && cd .."
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install && cd .."
 
       - name: Fix pkg-config files
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "bash ./platform/windows/fix-pkgconfig-appveyor.sh"
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
 
       - name: Configure
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "cabal configure --enable-tests --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && cabal configure --enable-tests --project-file=cabal.project.windows"
 
       - name: Update Cabal package list
         run: cabal update
@@ -75,9 +75,9 @@ jobs:
       - name: Build
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "cabal build --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && cabal build --project-file=cabal.project.windows"
 
       - name: Test
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "cabal test --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && cabal test --project-file=cabal.project.windows"
