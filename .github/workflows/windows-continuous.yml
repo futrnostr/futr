@@ -32,52 +32,39 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ghc-9.6.7-cabal-
 
-      - name: Cache MSYS2 installation
+      - name: Cache MSYS2 pacman packages
         uses: actions/cache@v4.2.3
         with:
-          path: C:\msys64
-          key: ${{ runner.os }}-msys2-${{ hashFiles('**/cabal.project.windows') }}
+          path: |
+            C:\msys64\var\cache\pacman\pkg
+          key: ${{ runner.os }}-pacman-pkg-v1
           restore-keys: |
-            ${{ runner.os }}-msys2-
+            ${{ runner.os }}-pacman-pkg-
 
       - name: Initialize Cabal user config
         run: cabal user-config init --force
 
-      - name: Setup MSYS2 and Qt5
+      - name: Install MSYS2 packages (Qt5, toolchain)
         run: |
-          # Check if MSYS2 is already installed (from cache)
-          if (-not (Test-Path "C:\msys64\usr\bin\bash.exe")) {
-            # Install Chocolatey
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-            
-            # Add custom Chocolatey source (same as AppVeyor)
-            choco source add -n mistuke -s https://www.myget.org/F/mistuke/api/v2
-            
-            # Install MSYS2
-            choco install -y msys2
-            refreshenv
-            
-          } else {
-            Write-Host "MSYS2 already installed from cache"
-          }
-          
-          # Always install packages (they might not be cached properly)
-          Write-Host "Installing Qt5 and build dependencies via MSYS2..."
+          C:\msys64\usr\bin\bash -lc "pacman -Syu --noconfirm"
           C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm git mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-qt5-base mingw-w64-x86_64-qt5-declarative mingw-w64-x86_64-qt5-graphicaleffects mingw-w64-x86_64-qt5-imageformats mingw-w64-x86_64-qt5-multimedia mingw-w64-x86_64-qt5-quickcontrols2 mingw-w64-x86_64-qt5-svg mingw-w64-x86_64-qt5-tools mingw-w64-x86_64-qt5-translations mingw-w64-x86_64-qt5-winextras mingw-w64-x86_64-openssl mingw-w64-x86_64-angleproject mingw-w64-x86_64-lmdb mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-zlib mingw-w64-x86_64-libwebp mingw-w64-x86_64-libjpeg-turbo mingw-w64-x86_64-giflib mingw-w64-x86_64-libwinpthread autoconf autogen automake libtool make"
+
+      - name: Setup MSYS2 environment
+        run: |
+          C:\msys64\usr\bin\bash -lc "echo 'export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH' >> ~/.bashrc"
+          C:\msys64\usr\bin\bash -lc "echo 'export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH' >> ~/.bashrc"
 
       - name: Clone HsQML
         run: C:\msys64\usr\bin\bash -lc "git clone https://github.com/prolic/HsQML"
 
       - name: Build secp256k1
         run: |
-          C:\msys64\usr\bin\bash -lc "export PATH=/usr/bin:/mingw64/bin:$PATH && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
+          C:\msys64\usr\bin\bash -lc "git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install && cd .."
 
       - name: Fix pkg-config files
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/usr/bin:/mingw64/bin:$PATH && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
+          C:\msys64\usr\bin\bash -lc "bash ./platform/windows/fix-pkgconfig-appveyor.sh"
 
       - name: Update Cabal package list
         run: cabal update
@@ -85,7 +72,7 @@ jobs:
       - name: Build with Cabal
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal build --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "cabal build --project-file=cabal.project.windows"
 
       - name: Install Inno Setup
         run: choco install -y innosetup
@@ -117,7 +104,7 @@ jobs:
           if (-not (Test-Path "dist")) { New-Item -ItemType Directory -Path "dist" }
           
           # Deploy Qt dependencies
-          C:\msys64\usr\bin\bash -lc "export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:/c/ProgramData/chocolatey/bin:`$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
+          C:\msys64\usr\bin\bash -lc "windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
           
           # Copy additional DLLs
           C:\msys64\usr\bin\bash -lc "bash ./platform/windows/copy-dlls.sh"
