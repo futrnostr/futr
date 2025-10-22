@@ -62,14 +62,6 @@ jobs:
         run: |
           C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install && cd .."
 
-      - name: Fix pkg-config files
-        run: |
-          refreshenv
-          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
-
-      - name: Update Cabal package list
-        run: cabal update
-
       - name: Build with Cabal
         run: |
           refreshenv
