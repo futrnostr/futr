@@ -73,12 +73,12 @@ jobs:
 
       - name: Build secp256k1
         run: |
-          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:$PATH && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
+          C:\msys64\usr\bin\bash -lc "export PATH=/usr/bin:/mingw64/bin:$PATH && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
 
       - name: Fix pkg-config files
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:$PATH && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
+          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/usr/bin:/mingw64/bin:$PATH && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
 
       - name: Update Cabal package list
         run: cabal update
@@ -86,7 +86,7 @@ jobs:
       - name: Build with Cabal
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal build --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal build --project-file=cabal.project.windows"
 
       - name: Install Inno Setup
         run: choco install -y innosetup
@@ -118,7 +118,7 @@ jobs:
           if (-not (Test-Path "dist")) { New-Item -ItemType Directory -Path "dist" }
           
           # Deploy Qt dependencies
-          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:/c/ProgramData/chocolatey/bin:/usr/bin:`$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
+          C:\msys64\usr\bin\bash -lc "export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:/c/ProgramData/chocolatey/bin:`$PATH && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-$version/build/futr/futr.exe --qmldir=resources/qml"
           
           # Copy additional DLLs
           C:\msys64\usr\bin\bash -lc "bash ./platform/windows/copy-dlls.sh"

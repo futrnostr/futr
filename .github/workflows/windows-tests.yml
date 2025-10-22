@@ -69,17 +69,17 @@ jobs:
 
       - name: Build secp256k1
         run: |
-          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:$PATH && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
+          C:\msys64\usr\bin\bash -lc "export PATH=/usr/bin:/mingw64/bin:$PATH && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install"
 
       - name: Fix pkg-config files
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:$PATH && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
+          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/usr/bin:/mingw64/bin:$PATH && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
 
       - name: Configure
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal configure --enable-tests --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal configure --enable-tests --project-file=cabal.project.windows"
 
       - name: Update Cabal package list
         run: cabal update
@@ -87,9 +87,9 @@ jobs:
       - name: Build
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal build --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal build --project-file=cabal.project.windows"
 
       - name: Test
         run: |
           refreshenv
-          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal test --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH && cabal test --project-file=cabal.project.windows"
