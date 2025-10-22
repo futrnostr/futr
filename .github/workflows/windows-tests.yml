@@ -53,7 +53,7 @@ jobs:
           C:\msys64\usr\bin\bash -lc "echo 'export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH' >> ~/setup-env.sh"
 
       - name: Clone HsQML
-        run: C:\msys64\usr\bin\bash -lc "git clone https://github.com/prolic/HsQML"
+        run: C:\msys64\usr\bin\bash -lc "cd /d/a/futr && git clone https://github.com/prolic/HsQML"
 
       - name: Build secp256k1
         run: |
@@ -61,8 +61,8 @@ jobs:
 
       - name: Build
         run: |
-          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && cabal build --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "cd /d/a/futr/futr && source ~/setup-env.sh && cabal build --project-file=cabal.project.windows"
 
       - name: Test
         run: |
-          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && cabal test --project-file=cabal.project.windows"
+          C:\msys64\usr\bin\bash -lc "cd /d/a/futr/futr && source ~/setup-env.sh && cabal test --project-file=cabal.project.windows"
