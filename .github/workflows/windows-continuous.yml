@@ -40,9 +40,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-msys2-
 
-      - name: Update Cabal package list
-        run: cabal update
-
       - name: Initialize Cabal user config
         run: cabal user-config init --force
 
@@ -79,6 +76,9 @@ jobs:
         run: |
           refreshenv
           C:\msys64\usr\bin\bash -lc "cd /c/projects/futr && export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH && export PATH=/mingw64/bin:$PATH && bash ./platform/windows/fix-pkgconfig-appveyor.sh"
+
+      - name: Update Cabal package list
+        run: cabal update
 
       - name: Build with Cabal
         run: |
