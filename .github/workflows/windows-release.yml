@@ -52,7 +52,7 @@ jobs:
 
       - name: Setup MSYS2 environment
         run: |
-          C:\msys64\usr\bin\bash -lc "echo 'export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:$PATH' > ~/setup-env.sh"
+          C:\msys64\usr\bin\bash -lc "echo 'export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:/c/tools/cabal-3.10.3.0/bin:$PATH' > ~/setup-env.sh"
           C:\msys64\usr\bin\bash -lc "echo 'export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH' >> ~/setup-env.sh"
 
       - name: Clone HsQML
@@ -64,7 +64,6 @@ jobs:
 
       - name: Build with Cabal
         run: |
-          refreshenv
           C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && cabal build --project-file=cabal.project.windows"
 
       - name: Prepare installer files
