@@ -82,14 +82,30 @@ jobs:
           path: dist/futr-*-setup.exe
           retention-days: 7
 
-      - name: Delete existing release and tag
-        uses: dev-drprasad/delete-tag-and-release@v1.1
-        with:
-          tag_name: continuous
-          delete_release: true
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Delete existing Windows installer files from release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/continuous" \
+            | jq -r '.id // empty')
 
-      - name: Create Release
+          if [ -n "$RELEASE_ID" ]; then
+            echo "Found existing release with ID: $RELEASE_ID"
+            ASSETS=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" \
+              | jq -r '.[] | select(.name | test("futr-.*-setup.exe")) | .id')
+
+            for ASSET_ID in $ASSETS; do
+              echo "Deleting asset with ID: $ASSET_ID"
+              curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID"
+            done
+          else
+            echo "No existing release found"
+          fi
+
+      - name: Create or Update Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: continuous

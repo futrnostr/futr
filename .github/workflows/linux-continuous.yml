@@ -101,14 +101,7 @@ jobs:
           path: futr.flatpak
           retention-days: 7
 
-      - name: Delete existing release and tag
-        uses: dev-drprasad/delete-tag-and-release@v1.1
-        with:
-          tag_name: continuous
-          delete_release: true
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Release
+      - name: Create or Update Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: continuous
@@ -123,3 +116,4 @@ jobs:
 
             This release includes both Linux Flatpak and Windows installer.
           token: ${{ secrets.GITHUB_TOKEN }}
+          overwrite_files: true
