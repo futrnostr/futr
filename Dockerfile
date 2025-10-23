@@ -20,7 +20,6 @@ RUN apt-get update && apt-get install -y \
     libgflags-dev \
     libsnappy-dev \
     zlib1g-dev \
-    zlib1g-dev \
     liblz4-dev \
     libzstd-dev \
     qt5-image-formats-plugins \
@@ -28,6 +27,7 @@ RUN apt-get update && apt-get install -y \
     qtbase5-dev \
     qtmultimedia5-dev \
     qml-module-qtmultimedia \
+    liblmdb-dev \
     wget \
     sudo \
     build-essential \

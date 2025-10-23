@@ -48,10 +48,10 @@ You can grab GHCUp from the [GHCUp website](https://www.haskell.org/ghcup/).
 ```bash
 sudo apt-get install build-essential zlib1g-dev
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
-ghcup install ghc 9.6.5
-ghcup install cabal 3.10.2.0
-ghcup set ghc 9.6.5
-ghcup set cabal 3.10.2.0
+ghcup install ghc 9.6.7
+ghcup install cabal 3.10.3.0
+ghcup set ghc 9.6.7
+ghcup set cabal 3.10.3.0
 ```
 
 ### Qt5 & LMDB
