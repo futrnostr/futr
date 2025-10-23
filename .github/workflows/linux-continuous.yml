@@ -120,4 +120,6 @@ jobs:
             This build is not recommended for production use.
             
             Last updated: ${{ github.event.head_commit.timestamp }}
+
+            This release includes both Linux Flatpak and Windows installer.
           token: ${{ secrets.GITHUB_TOKEN }}

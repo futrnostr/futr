@@ -38,7 +38,7 @@ flatpak install com.futrnostr.futr
 Download Windows installers from [GitHub Releases](https://github.com/futrnostr/futr/releases):
 
 - **Stable releases**: Download from the latest stable release
-- **Development builds**: Download from [continuous release](https://github.com/futrnostr/futr/releases/tag/continuous) (automatically updated from master branch)
+- **Development builds**: Download from [continuous release](https://github.com/futrnostr/futr/releases/tag/continuous) (includes both Linux Flatpak and Windows installer)
 
 ### Other Platforms
 
