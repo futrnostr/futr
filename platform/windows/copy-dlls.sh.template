@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 
 # Script to copy required DLLs to the build directory
 
@@ -19,7 +20,8 @@ copy_dll() {
         cp "/mingw64/bin/$dll_name" "$BUILD_DIR/"
         echo "✓ Copied $dll_name"
     else
-        echo "⚠ Warning: $dll_name not found in /mingw64/bin/"
+        echo "❌ Error: $dll_name not found in /mingw64/bin/"
+        exit 1
     fi
 }
 
