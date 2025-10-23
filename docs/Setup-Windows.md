@@ -7,7 +7,7 @@ This guide provides instructions for setting up the development environment for 
 The easiest way to get Windows binaries is through our automated CI/CD pipeline using GitHub Actions. No local setup required!
 
 ### Continuous Builds
-- **Automatic**: Every commit to `master` and `fix_windows` branches triggers a build
+- **Automatic**: Every commit to `master` branch triggers a build
 - **Download**: Available at [GitHub Releases](https://github.com/futrnostr/futr/releases/tag/continuous) under "🚧 Development Build (Continuous)"
 - **Status**: Check build status in the [Actions tab](https://github.com/futrnostr/futr/actions)
 - **Use Case**: Testing latest features and bug fixes
