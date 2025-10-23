@@ -188,9 +188,11 @@ If you encounter pkg-config errors, verify that the environment variables are se
 source ~/setup-env.sh
 pkg-config --libs libsecp256k1
 pkg-config --libs lmdb
+pkg-config --cflags libsecp256k1
+pkg-config --cflags lmdb
 ```
 
-Both commands should return library paths without errors.
+All four commands should return library paths / cflags without errors.
 
 #### Build failures
 
