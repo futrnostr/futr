@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-echo "Patching pkg-config files for AppVeyor build..."
+echo "Patching pkg-config files..."
 
 # Debug environment
 echo "=== Environment Debug ==="
