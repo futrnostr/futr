@@ -84,13 +84,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: futr-windows-installer
-          path: dist\futr-*-setup.exe
+          path: dist/futr-*-setup.exe
           retention-days: 7
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: "dist\futr-*-setup.exe"
+          files: "dist/futr-*-setup.exe"
           prerelease: false
           name: "Release ${{ github.ref_name }}"
           body: |

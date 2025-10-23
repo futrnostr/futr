@@ -83,7 +83,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: futr-windows-installer
-          path: dist\futr-*-setup.exe
+          path: dist/futr-*-setup.exe
           retention-days: 7
 
       - name: Delete existing release and tag
@@ -98,7 +98,7 @@ jobs:
         with:
           tag_name: continuous
           name: "🚧 Development Build (Continuous)"
-          files: "dist\futr-*-setup.exe"
+          files: "dist/futr-*-setup.exe"
           prerelease: true
           body: |
             ⚠️ This is an automated development build from the latest master branch.
