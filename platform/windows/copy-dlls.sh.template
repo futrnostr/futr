@@ -2,7 +2,7 @@
 
 # Script to copy required DLLs to the build directory
 
-BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.5/futr-@VERSION@/build/futr"
+BUILD_DIR="dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-@VERSION@/build/futr"
 
 # Check if build directory exists
 if [ ! -d "$BUILD_DIR" ]; then
@@ -15,11 +15,11 @@ echo "Copying DLLs to $BUILD_DIR"
 # Function to copy DLL with error handling
 copy_dll() {
     local dll_name="$1"
-    if [ -f "/ucrt64/bin/$dll_name" ]; then
-        cp "/ucrt64/bin/$dll_name" "$BUILD_DIR/"
+    if [ -f "/mingw64/bin/$dll_name" ]; then
+        cp "/mingw64/bin/$dll_name" "$BUILD_DIR/"
         echo "✓ Copied $dll_name"
     else
-        echo "⚠ Warning: $dll_name not found in /ucrt64/bin/"
+        echo "⚠ Warning: $dll_name not found in /mingw64/bin/"
     fi
 }
 
@@ -37,9 +37,11 @@ copy_dll libglib-2.0-0.dll
 copy_dll libgraphite2.dll
 copy_dll libharfbuzz-0.dll
 copy_dll libiconv-2.dll
-copy_dll libicudt75.dll
-copy_dll libicuin75.dll
-copy_dll libicuuc75.dll
+copy_dll libicudt76.dll
+copy_dll libicuin76.dll
+copy_dll libicuio76.dll
+copy_dll libicutu76.dll
+copy_dll libicuuc76.dll
 copy_dll libintl-8.dll
 copy_dll liblmdb.dll
 copy_dll libmd4c.dll

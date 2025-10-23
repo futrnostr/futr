@@ -2,7 +2,7 @@ name: Update Flatpak Repository
 
 on:
   workflow_run:
-    workflows: ["Flatpak Tagged Release", "Flatpak Build and Release"]
+    workflows: ["Linux Flatpak Tagged Release", "Linux Flatpak Build and Release"]
     types:
       - completed
 
@@ -78,7 +78,7 @@ jobs:
         run: |
           cd flatpak-repo
           TARGET_REPO=""
-          if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
+          if [[ "$WORKFLOW_NAME" == "Linux Flatpak Tagged Release" ]]; then
             TARGET_REPO="repo-stable"
           else
             TARGET_REPO="repo-continuous"
@@ -93,7 +93,7 @@ jobs:
           # Trust the key in the repository
           echo "Setting up repository GPG trust..."
 
-          if [[ "$WORKFLOW_NAME" == "Flatpak Tagged Release" ]]; then
+          if [[ "$WORKFLOW_NAME" == "Linux Flatpak Tagged Release" ]]; then
             ostree --repo="$TARGET_REPO" remote add futr-stable https://flatpak.futrnostr.com/repo-stable
             ostree --repo="$TARGET_REPO" remote gpg-import --stdin futr-stable < <(gpg --export $GPG_KEY_ID)
           else
@@ -216,7 +216,7 @@ jobs:
       - name: Update Repository appdata.xml
         run: |
           cd flatpak-repo
-          REPO_TYPE="${{ github.event.workflow_run.name == 'Flatpak Tagged Release' && 'stable' || 'continuous' }}"
+          REPO_TYPE="${{ github.event.workflow_run.name == 'Linux Flatpak Tagged Release' && 'stable' || 'continuous' }}"
           APPDATA="repo-${REPO_TYPE}/appstream/x86_64/appdata.xml"
 
           # Create directory if it doesn't exist

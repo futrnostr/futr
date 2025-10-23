@@ -1,0 +1,101 @@
+name: Windows Tagged Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-build-and-release:
+    name: Windows Build and Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.7'
+          cabal-version: '3.10.3.0'
+
+      - name: Cache Cabal packages
+        uses: actions/cache@v4.2.3
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc-9.6.7-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-9.6.7-cabal-
+
+      - name: Cache MSYS2 pacman packages
+        uses: actions/cache@v4.2.3
+        with:
+          path: |
+            C:\msys64\var\cache\pacman\pkg
+          key: ${{ runner.os }}-pacman-pkg-v1
+          restore-keys: |
+            ${{ runner.os }}-pacman-pkg-
+
+      - name: Initialize Cabal user config
+        run: cabal user-config init --force
+
+      - name: Install MSYS2 packages (Qt5, toolchain)
+        run: |
+          C:\msys64\usr\bin\bash -lc "pacman -Syu --noconfirm"
+          C:\msys64\usr\bin\bash -lc "pacman -S --needed --noconfirm git mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-qt5-base mingw-w64-x86_64-qt5-declarative mingw-w64-x86_64-qt5-graphicaleffects mingw-w64-x86_64-qt5-imageformats mingw-w64-x86_64-qt5-multimedia mingw-w64-x86_64-qt5-quickcontrols2 mingw-w64-x86_64-qt5-svg mingw-w64-x86_64-qt5-tools mingw-w64-x86_64-qt5-translations mingw-w64-x86_64-qt5-winextras mingw-w64-x86_64-openssl mingw-w64-x86_64-angleproject mingw-w64-x86_64-lmdb mingw-w64-x86_64-libunwind mingw-w64-x86_64-toolchain mingw-w64-x86_64-zlib mingw-w64-x86_64-libwebp mingw-w64-x86_64-libjpeg-turbo mingw-w64-x86_64-giflib mingw-w64-x86_64-libwinpthread autoconf autogen automake libtool make"
+
+      - name: Setup MSYS2 environment
+        run: |
+          C:\msys64\usr\bin\bash -lc "echo 'export PATH=/usr/bin:/mingw64/bin:/c/tools/ghc-9.6.7/bin:/c/ghcup/bin:$PATH' > ~/setup-env.sh"
+          C:\msys64\usr\bin\bash -lc "echo 'export PKG_CONFIG_PATH=C:/msys64/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH' >> ~/setup-env.sh"
+
+      - name: Clone HsQML
+        run: C:\msys64\usr\bin\bash -lc "cd /d/a/futr && git clone https://github.com/prolic/HsQML"
+
+      - name: Build secp256k1
+        run: |
+          C:\msys64\usr\bin\bash -lc "source ~/setup-env.sh && git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && git checkout v0.5.1 && ./autogen.sh && ./configure --prefix=/mingw64 --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && make && make install && cd .."
+
+      - name: Build with Cabal
+        run: |
+          C:\msys64\usr\bin\bash -lc "cd /d/a/futr/futr && source ~/setup-env.sh && cabal build --project-file=cabal.project.windows"
+
+      - name: Prepare installer files
+        run: |
+          C:\msys64\usr\bin\bash -lc "cd /d/a/futr/futr && source ~/setup-env.sh && version=\$(grep '^version:' futr.cabal | sed 's/version:\\s*//' | tr -d ' ') && echo \"Building installer for version: \$version\" && sed \"s/@VERSION@/\$version/g\" platform/windows/innosetup.iss.template > platform/windows/innosetup.iss && sed \"s/@VERSION@/\$version/g\" platform/windows/copy-dlls.sh.template > platform/windows/copy-dlls.sh && version_comma=\$(echo \$version | sed 's/\\./,/g') && sed \"s/@VERSION_COMMA@/\$version_comma/g\" platform/windows/futr.rc.template | sed \"s/@VERSION_STRING@/\$version/g\" > platform/windows/futr.rc && mkdir -p dist && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-\$version/build/futr/futr.exe --qmldir=resources/qml && bash ./platform/windows/copy-dlls.sh && rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-\$version/build/futr/futr-tmp"
+
+      - name: Build Windows Installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          path: platform/windows/innosetup.iss
+          options: /O+
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: futr-windows-installer
+          path: dist/futr-*-setup.exe
+          retention-days: 7
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "dist/futr-*-setup.exe"
+          prerelease: false
+          name: "Release ${{ github.ref_name }}"
+          body: |
+            Official release ${{ github.ref_name }}
+
+            This release includes both Linux Flatpak and Windows installer.
+
+            For the latest development builds, see:
+            - [Continuous build](https://github.com/${{ github.repository }}/releases/tag/continuous)
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          overwrite_files: true

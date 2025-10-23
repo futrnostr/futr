@@ -1,4 +1,4 @@
-name: Flatpak Build and Release
+name: Linux Flatpak Build and Release
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   flatpak-build-and-release:
-    name: Flatpak Build and Release
+    name: Linux Flatpak Build and Release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -120,4 +120,6 @@ jobs:
             This build is not recommended for production use.
             
             Last updated: ${{ github.event.head_commit.timestamp }}
+
+            This release includes both Linux Flatpak and Windows installer.
           token: ${{ secrets.GITHUB_TOKEN }}

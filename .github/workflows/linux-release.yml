@@ -1,4 +1,4 @@
-name: Flatpak Tagged Release
+name: Linux Flatpak Tagged Release
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   flatpak-build-and-release:
-    name: Flatpak Build and Release
+    name: Linux Flatpak Build and Release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -108,7 +108,10 @@ jobs:
           name: "Release ${{ github.ref_name }}"
           body: |
             Official release ${{ github.ref_name }}
-            
-            For the latest development build, see the [continuous release](https://github.com/${{ github.repository }}/releases/tag/continuous).
+
+            This release includes both Linux Flatpak and Windows installer.
+
+            For the latest development builds, see:
+            - [Continuous build](https://github.com/${{ github.repository }}/releases/tag/continuous)
           generate_release_notes: true
           token: ${{ secrets.GITHUB_TOKEN }}
