@@ -1,15 +1,101 @@
-name: Windows Continuous Build and Release
+name: Continuous Build and Release
 
 on:
   push:
-    branches: ["master", "fix_windows"]
+    branches: ["master"]
 
 permissions:
   contents: write
 
 jobs:
-  windows-build-and-release:
-    name: Windows Build and Release
+  build-linux:
+    name: Linux Flatpak Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install Flatpak and Flatpak Builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.kde.Platform//5.15-23.08 org.kde.Sdk//5.15-23.08
+
+      - name: Set up Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.7'
+          cabal-version: '3.10.3.0'
+
+      - name: Cache Cabal packages
+        uses: actions/cache@v4.3.0
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc-9.6.7-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-9.6.7-cabal-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autogen automake libtool liblmdb-dev
+
+      - name: Install Qt5 Dependencies
+        run: |
+          sudo apt-get install -y qtdeclarative5-dev qml-module-qtquick-controls2 libqt5quick5 qt5-image-formats-plugins qtmultimedia5-dev qml-module-qtmultimedia qttools5-dev-tools qtbase5-dev
+
+      - name: Install secp256k1 Library
+        run: |
+          git clone https://github.com/bitcoin-core/secp256k1 && \
+          cd secp256k1 && \
+          git checkout v0.5.1 && \
+          ./autogen.sh && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+          make && \
+          sudo make install && \
+          cd ..
+
+      - name: Set Library Path
+        run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
+
+      - name: Build with Cabal
+        run: cabal build
+
+      - name: Update appdata.xml
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          APPDATA="flatpak/com.futrnostr.futr.appdata.xml"
+
+          # Copy template if appdata.xml doesn't exist
+          if [ ! -f "$APPDATA" ]; then
+            cp flatpak/com.futrnostr.futr.appdata.xml.template "$APPDATA"
+          fi
+
+          # Remove any existing continuous release entry
+          sed -i '/<release version="continuous"/,/<\/release>/d' "$APPDATA"
+
+          # Add new continuous release entry at the top of releases section
+          sed -i "/<releases>/a \    <release version=\"continuous\" date=\"$TODAY\" type=\"development\">\n      <description>\n        <p>Development build from master branch</p>\n        <p>Commit: ${{ github.sha }}</p>\n      </description>\n    </release>" "$APPDATA"
+
+      - name: Build Flatpak
+        run: ./build-flatpak.sh
+
+      - name: Upload Flatpak Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-bundle
+          path: futr.flatpak
+          retention-days: 7
+
+  build-windows:
+    name: Windows Build
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -82,42 +168,32 @@ jobs:
           path: dist/futr-*-setup.exe
           retention-days: 7
 
-      - name: Delete existing Windows installer files from release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/continuous" \
-            | jq -r '.id // empty')
+  release:
+    name: Create Release
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
 
-          if [ -n "$RELEASE_ID" ]; then
-            echo "Found existing release with ID: $RELEASE_ID"
-            ASSETS=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" \
-              | jq -r '.[] | select(.name | test("futr-.*-setup.exe")) | .id')
+      - name: Delete existing release and tag
+        uses: dev-drprasad/delete-tag-and-release@v1.1
+        with:
+          tag_name: continuous
+          delete_release: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
-            for ASSET_ID in $ASSETS; do
-              echo "Deleting asset with ID: $ASSET_ID"
-              curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID"
-            done
-          else
-            echo "No existing release found"
-          fi
-
-      - name: Create or Update Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: continuous
           name: "🚧 Development Build (Continuous)"
-          files: "dist/futr-*-setup.exe"
+          files: |
+            flatpak-bundle/futr.flatpak
+            futr-windows-installer/futr-*-setup.exe
           prerelease: true
           body: |
-            ⚠️ This is an automated development build from the latest master branch.
-            This build is not recommended for production use.
-
+            ⚠️ Automated development build from latest master.
             Last updated: ${{ github.event.head_commit.timestamp }}
-
-            This release includes both Linux Flatpak and Windows installer.
-          token: ${{ secrets.GITHUB_TOKEN }}
-          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

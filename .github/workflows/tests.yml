@@ -1,4 +1,4 @@
-name: Windows Tests
+name: Tests
 
 on:
   pull_request:
@@ -6,6 +6,83 @@ on:
     branches: ["master"]
 
 jobs:
+  generate-matrix:
+    name: "Generate matrix from cabal"
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract the tested GHC versions
+        id: set-matrix
+        uses: kleidukos/get-tested@v0.1.7.1
+        with:
+          cabal-file: futr.cabal
+          ubuntu-version: latest
+          version: 0.1.7.1
+
+  linux-tests:
+    name: ${{ matrix.ghc }} on ${{ matrix.os }}
+    needs: generate-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix: ${{ fromJSON(needs.generate-matrix.outputs.matrix) }}
+    steps:
+      - name: Checkout base repo
+        uses: actions/checkout@v5
+
+      - name: Set up Haskell
+        id: setup-haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: '3.10.3.0'
+
+      - name: Cache Cabal packages
+        uses: actions/cache@v4.3.0
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autogen automake libtool liblmdb-dev
+
+      - name: Install Qt5 Dependencies
+        run: |
+          sudo apt-get install -y qtdeclarative5-dev qml-module-qtquick-controls2 libqt5quick5 qt5-image-formats-plugins qtmultimedia5-dev qml-module-qtmultimedia qttools5-dev-tools qtbase5-dev
+
+      - name: Install secp256k1 Library
+        run: |
+          git clone https://github.com/bitcoin-core/secp256k1 && \
+          cd secp256k1 && \
+          git checkout v0.5.1 && \
+          ./autogen.sh && \
+          ./configure --enable-module-schnorrsig --enable-module-extrakeys --enable-module-ecdh --enable-experimental --enable-module-recovery && \
+          make && \
+          sudo make install && \
+          cd ..
+
+      - name: Set Library Path
+        run: echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf && sudo ldconfig
+
+      - name: Configure
+        run: cabal configure --enable-tests
+
+      - name: Build
+        run: cabal build all
+
+      - name: Test
+        run: cabal test
+
   windows-tests:
     name: Windows Tests
     runs-on: windows-latest

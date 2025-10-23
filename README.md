@@ -1,11 +1,8 @@
 # futr - nostr client
 
-[![Linux Tests](https://github.com/futrnostr/futr/workflows/Linux%20Tests/badge.svg)](https://github.com/futrnostr/futr/actions/workflows/linux-tests.yml)
-[![Windows Tests](https://github.com/futrnostr/futr/workflows/Windows%20Tests/badge.svg)](https://github.com/futrnostr/futr/actions/workflows/windows-tests.yml)
-[![Linux Development Build](https://github.com/futrnostr/futr/workflows/Linux%20Continuous%20Build%20and%20Release/badge.svg)](https://github.com/futrnostr/futr/actions/workflows/linux-continuous.yml)
-[![Windows Development Build](https://github.com/futrnostr/futr/workflows/Windows%20Continuous%20Build%20and%20Release/badge.svg)](https://github.com/futrnostr/futr/actions/workflows/windows-continuous.yml)
-[![Linux Release](https://github.com/futrnostr/futr/workflows/Linux%20Tagged%20Release/badge.svg)](https://github.com/futrnostr/futr/actions/workflows/linux-release.yml)
-[![Windows Release](https://github.com/futrnostr/futr/workflows/Windows%20Tagged%20Release/badge.svg)](https://github.com/futrnostr/futr/actions/workflows/windows-release.yml)
+[![Tests](https://github.com/futrnostr/futr/workflows/Tests/badge.svg)](https://github.com/futrnostr/futr/actions/workflows/tests.yml)
+[![Continuous Build](https://github.com/futrnostr/futr/workflows/Continuous%20Build%20and%20Release/badge.svg)](https://github.com/futrnostr/futr/actions/workflows/continuous.yml)
+[![Release](https://github.com/futrnostr/futr/workflows/Release/badge.svg)](https://github.com/futrnostr/futr/actions/workflows/release.yml)
 
 nostr client desktop app written in Haskell and Qt5.
 
