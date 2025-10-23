@@ -63,6 +63,10 @@ jobs:
         run: |
           C:\msys64\usr\bin\bash -lc "cd /d/a/futr/futr && source ~/setup-env.sh && echo 'pkg-config --libs lmdb:' && pkg-config --libs lmdb || echo 'Failed to get libs for lmdb' && echo 'pkg-config --libs libsecp256k1:' && pkg-config --libs libsecp256k1 || echo 'Failed to get libs for libsecp256k1' && echo 'pkg-config --cflags lmdb:' && pkg-config --cflags lmdb || echo 'Failed to get cflags for lmdb' && echo 'pkg-config --cflags libsecp256k1:' && pkg-config --cflags libsecp256k1 || echo 'Failed to get cflags for libsecp256k1' && echo ''"
 
+      - name: Fix pkg-config
+        run: |
+          C:\msys64\usr\bin\bash -lc "cd /d/a/futr/futr && source ~/setup-env.sh && bash ./platform/windows/fix-pkgconfig.sh"
+
       - name: Build
         run: |
           C:\msys64\usr\bin\bash -lc "cd /d/a/futr/futr && source ~/setup-env.sh && cabal build --project-file=cabal.project.windows"
