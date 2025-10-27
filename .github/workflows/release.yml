@@ -87,7 +87,7 @@ jobs:
         run: ./build-flatpak.sh
 
       - name: Upload Flatpak Bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: flatpak-bundle
           path: futr.flatpak
@@ -161,7 +161,7 @@ jobs:
           options: /O+
 
       - name: Upload Windows Installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: futr-windows-installer
           path: dist/futr-*-setup.exe
