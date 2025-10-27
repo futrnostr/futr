@@ -156,7 +156,7 @@ jobs:
           C:\msys64\usr\bin\bash -lc "cd /d/a/futr/futr && source ~/setup-env.sh && version=\$(grep '^version:' futr.cabal | sed 's/version:\\s*//' | tr -d ' ') && echo \"Building installer for version: \$version\" && sed \"s/@VERSION@/\$version/g\" platform/windows/innosetup.iss.template > platform/windows/innosetup.iss && sed \"s/@VERSION@/\$version/g\" platform/windows/copy-dlls.sh.template > platform/windows/copy-dlls.sh && version_comma=\$(echo \$version | sed 's/\\./,/g') && sed \"s/@VERSION_COMMA@/\$version_comma/g\" platform/windows/futr.rc.template | sed \"s/@VERSION_STRING@/\$version/g\" > platform/windows/futr.rc && mkdir -p dist && windeployqt.exe dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-\$version/build/futr/futr.exe --qmldir=resources/qml && bash ./platform/windows/copy-dlls.sh && rm -rf dist-newstyle/build/x86_64-windows/ghc-9.6.7/futr-\$version/build/futr/futr-tmp"
 
       - name: Build Windows Installer
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
           path: platform/windows/innosetup.iss
           options: /O+
