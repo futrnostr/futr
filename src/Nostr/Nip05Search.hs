@@ -20,6 +20,7 @@ import GHC.Generics (Generic)
 import Network.Wreq (Response, getWith, defaults, param, responseBody)
 
 import Nostr.Keys (PubKeyXO, pubKeyXOFromHex)
+import Nostr.Nip05Search.Namecoin (isNamecoinIdentifier, searchNamecoinNip05)
 
 -- | Result of a NIP-05 search
 data Nip05SearchResult = Nip05SearchResult
@@ -60,22 +61,38 @@ parseNip05Identifier input = case splitOn "@" (T.strip input) of
     Just (localPart, domain)
   _ -> Nothing
 
--- | Search for a user by NIP-05 identifier
+-- | Search for a user by NIP-05 identifier.
+--
+-- '.bit'-suffixed identifiers (and the bare 'd/' / 'id/' Namecoin name
+-- shapes) are routed to 'searchNamecoinNip05' for ElectrumX-based
+-- resolution. Everything else takes the standard HTTPS
+-- @.well-known/nostr.json@ path. Both branches return the same
+-- 'Nip05SearchResult' shape so callers do not need to care which
+-- transport answered.
 searchNip05 :: Text -> IO (Maybe Nip05SearchResult)
-searchNip05 identifier = case parseNip05Identifier identifier of
-  Nothing -> return Nothing
-  Just (localPart, domain) -> do
-    let opts = defaults & param "name" .~ [localPart]
-        url = "https://" ++ unpack domain ++ "/.well-known/nostr.json"
+searchNip05 identifier
+  | isNamecoinIdentifier identifier = do
+      mResult <- searchNamecoinNip05 identifier
+      return $ fmap (\(pk, rs) -> Nip05SearchResult
+                       { nip05Identifier = identifier
+                       , userPubKey      = pk
+                       , relayHints      = rs
+                       }) mResult
+  | otherwise =
+      case parseNip05Identifier identifier of
+        Nothing -> return Nothing
+        Just (localPart, domain) -> do
+          let opts = defaults & param "name" .~ [localPart]
+              url = "https://" ++ unpack domain ++ "/.well-known/nostr.json"
 
-    result <- try (getWith opts url) :: IO (Either SomeException (Response ByteString))
-    case result of
-      Left _ -> return Nothing
-      Right response -> do
-        let body = response ^. responseBody
-        case decode body of
-          Just nip05Response -> extractSearchResult identifier localPart nip05Response
-          Nothing -> return Nothing
+          result <- try (getWith opts url) :: IO (Either SomeException (Response ByteString))
+          case result of
+            Left _ -> return Nothing
+            Right response -> do
+              let body = response ^. responseBody
+              case decode body of
+                Just nip05Response -> extractSearchResult identifier localPart nip05Response
+                Nothing -> return Nothing
 
 -- | Extract search result from NIP-05 response
 extractSearchResult :: Text -> Text -> Nip05Response -> IO (Maybe Nip05SearchResult)
