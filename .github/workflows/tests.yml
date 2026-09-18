@@ -88,7 +88,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout base repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Haskell
         uses: haskell-actions/setup@v2
