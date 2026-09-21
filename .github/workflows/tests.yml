@@ -28,7 +28,7 @@ jobs:
       matrix: ${{ fromJSON(needs.generate-matrix.outputs.matrix) }}
     steps:
       - name: Checkout base repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Haskell
         id: setup-haskell
@@ -88,7 +88,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout base repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Haskell
         uses: haskell-actions/setup@v2
